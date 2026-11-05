@@ -119,3 +119,40 @@ def test_inference_api_masks_key(paths):
         assert c.app.state.services.db.get_setting("inference")["cloud_api_key"] == "secret-key"
         r = c.post("/api/chat", json={"message": "hi"}, headers=H)
         assert r.status_code == 409 and "MOTH Cloud" in r.json()["detail"]
+
+
+def test_router_uses_signed_in_account_server(tmp_path):
+    seen = {}
+
+    def factory(s):
+        seen["url"], seen["key"] = s.cloud_url, s.cloud_api_key
+        return MothCloudClient(s.cloud_url, s.cloud_api_key)
+
+    acct = {"server_url": "https://moth.example/", "token": "session-token"}
+    r = InferenceRouter(LocalInference(tmp_path), lambda: InferenceSettings(mode="cloud", consent_remote_chat=True),
+                        client_factory=factory, account=lambda: acct)
+    r.cloud()
+    assert seen == {"url": "https://moth.example/cloud", "key": "session-token"}
+    # explicit endpoint settings take precedence over the account
+    r2 = InferenceRouter(LocalInference(tmp_path), lambda: InferenceSettings(mode="cloud", cloud_url="https://self.host"),
+                         client_factory=factory, account=lambda: acct)
+    r2.cloud()
+    assert seen["url"] == "https://self.host"
+
+
+def test_cloud_client_surfaces_server_errors():
+    from fastapi import FastAPI, HTTPException
+
+    app = FastAPI()
+
+    @app.get("/v1/health")
+    def h():
+        return {"service": "moth-cloud", "protocol": 1, "models": [{"name": "m", "architecture": "moth-decoder-v1"}]}
+
+    @app.post("/v1/chat")
+    def chat():
+        raise HTTPException(402, "You've used your MOTH Cloud allowance for this period.")
+
+    client = MothCloudClient("", http=TestClient(app))
+    with pytest.raises(CloudUnavailable, match="allowance"):
+        client.chat([Message("user", "hi")], GenerationParams(max_new_tokens=2), lambda t: None)

@@ -53,15 +53,27 @@ class InferenceSettings:
 
 class InferenceRouter:
     def __init__(self, local: LocalInference, load_settings: Callable[[], InferenceSettings],
-                 client_factory: Callable[[InferenceSettings], MothCloudClient] | None = None):
+                 client_factory: Callable[[InferenceSettings], MothCloudClient] | None = None,
+                 account: Callable[[], dict | None] | None = None):
         self.local = local
-        self.load_settings = load_settings
+        self._load_settings = load_settings
+        self.account = account or (lambda: None)
         self.client_factory = client_factory or (lambda s: MothCloudClient(s.cloud_url, s.cloud_api_key or None))
+
+    def load_settings(self) -> InferenceSettings:
+        """Explicit endpoint settings win; otherwise use the signed-in MOTH account's server (metered)."""
+        s = self._load_settings()
+        acct = self.account() or {}
+        if not s.cloud_url and acct.get("server_url") and acct.get("token"):
+            s.cloud_url = acct["server_url"].rstrip("/") + "/cloud"
+            s.cloud_api_key = acct["token"]
+        return s
 
     def cloud(self, s: InferenceSettings | None = None) -> MothCloudClient:
         s = s or self.load_settings()
         if not s.cloud_url:
-            raise CloudUnavailable("No MOTH Cloud endpoint is configured. MOTH-operated servers are not available yet.")
+            raise CloudUnavailable("No MOTH Cloud endpoint is configured. Sign in to a MOTH account, or note that "
+                                   "MOTH-operated GPU servers are not available yet.")
         return self.client_factory(s)
 
     def status(self) -> dict[str, Any]:

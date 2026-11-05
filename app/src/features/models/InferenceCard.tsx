@@ -63,7 +63,10 @@ export function InferenceCard() {
               MOTH Cloud status:
               {!cloud.configured ? <Badge>not configured</Badge> : cloud.reachable ? <Badge variant="success">reachable · {cloud.models?.map((m) => m.name).join(", ")}</Badge> : <Badge variant="danger">{cloud.error}</Badge>}
             </div>
-            <div className="text-[11px] text-muted">MOTH does not operate public cloud servers yet. You can point this at a self-hosted server started with <code className="text-fg">moth cloud-serve</code>.</div>
+            <div className="text-[11px] text-muted">
+              Signed in? Leave the endpoint empty: MOTH Cloud then uses your account's server and plan allowance. MOTH-operated GPU
+              inference is not available yet; a self-hosted <code className="text-fg">moth cloud-serve</code> endpoint also works.
+            </div>
             <div className="grid grid-cols-[1fr_200px_auto] items-end gap-2">
               <div><Label>Endpoint URL</Label><Input className="mt-1" placeholder="https://…" value={url} onChange={(e) => setUrl(e.target.value)} /></div>
               <div><Label>API key (optional)</Label><Input className="mt-1" type="password" value={key} onChange={(e) => setKey(e.target.value)} /></div>

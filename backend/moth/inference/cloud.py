@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import threading
+import uuid
 from typing import Any, Callable
 
 import httpx
@@ -80,9 +81,16 @@ class MothCloudClient:
                 "messages": [{"role": m.role, "content": m.content, "trusted": m.allow_special} for m in messages],
                 "params": {k: v for k, v in params.__dict__.items()}}
         stats = GenerationStats()
+        headers = {**self._headers(), "X-Request-Id": uuid.uuid4().hex}  # one charge per request, never reused
         try:
-            with self.http.stream("POST", self._url("/v1/chat"), json=body, headers=self._headers()) as r:
-                r.raise_for_status()
+            with self.http.stream("POST", self._url("/v1/chat"), json=body, headers=headers) as r:
+                if r.status_code >= 400:
+                    r.read()
+                    try:
+                        detail = r.json().get("detail")
+                    except ValueError:
+                        detail = None
+                    raise CloudUnavailable(detail or f"MOTH Cloud returned HTTP {r.status_code}")
                 for line in r.iter_lines():
                     if cancel_event is not None and cancel_event.is_set():
                         stats.stop_reason = "cancelled"

@@ -19,6 +19,9 @@ from moth_server.ratelimit import RateLimiter
 # Components are separate modules; each exposes ``router`` and optionally ``setup(ctx)``.
 COMPONENTS = [
     "moth_server.routes.auth",
+    "moth_server.routes.billing",
+    "moth_server.routes.admin",
+    "moth_server.routes.inference",
     "moth_server.pages.web",
 ]
 

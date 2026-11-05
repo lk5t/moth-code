@@ -29,7 +29,7 @@ def register(app: FastAPI, svc: Services, deps) -> None:
     def inference_settings() -> InferenceSettings:
         return InferenceSettings.from_dict(svc.db.get_setting("inference"))
 
-    router = InferenceRouter(local, inference_settings)
+    router = InferenceRouter(local, inference_settings, account=lambda: svc.extras.get("account"))
     svc.extras["inference_router"] = router
 
     # ---- hybrid inference ----------------------------------------------------------------
