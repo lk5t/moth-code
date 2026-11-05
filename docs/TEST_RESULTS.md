@@ -77,10 +77,21 @@ These were run in the development environment, not by the automated suites.
   returned its output), chat streaming, agent report, training dashboard (live loss curve), models, community and
   settings.
 
+## Windows release build ([run](https://github.com/lk5t/moth-code/actions/runs/42023871281)) — passed
+
+- PyInstaller backend built on Windows. The frozen-backend smoke test passed: server handshake, all subsystems
+  loaded, and a CLI tokenizer job ran.
+- The Tauri release build bundled `MOTH Code_0.1.0_x64-setup.exe` (123 MiB, LZMA, with the MOTH theme hooks and
+  artwork) using NSIS 3.13.
+- It was published as pre-release [v0.1.0](https://github.com/lk5t/moth-code/releases/tag/v0.1.0).
+- The installer's look was checked by compiling an NSIS installer with the same theme, pages and artwork, running it
+  under Wine and screenshotting each page (see `docs/images/`).
+
 ## Not verified here
 
-- Building or installing the Windows NSIS installer and the signed update flow. These run only in the release
-  workflow, which needs a version tag and signing secrets.
+- Installing the released setup.exe on a real Windows PC (the repository is private, so this environment cannot
+  download release assets).
+- The signed update flow (it needs signing secrets).
 - GPU (CUDA) training and inference. No GPU was available. The code paths are written for CUDA, and CPU fallback is
   tested.
 - Training MOTH-50M to a useful quality level.
