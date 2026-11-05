@@ -19,9 +19,10 @@ echo "== bootstrap training data and coordinator"
   --shards 4 --steps 4 --batch-size 2 --seq-len 32 --min-contributions 1
 echo "crimson wings 2026!" | "$PY" -m moth_server.cli init-owner --email owner@moth.test --password-stdin
 
-echo "== publish worker release"
+WV=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$ROOT/worker/moth_worker/__init__.py")
+echo "== publish worker release $WV"
 "$PY" "$ROOT/scripts/build-worker-release.py" --out "$WORK/dist"
-"$PY" -m moth_server.cli worker-release "$WORK/dist/moth-worker-0.2.0.tar.gz" --version 0.2.0
+"$PY" -m moth_server.cli worker-release "$WORK/dist/moth-worker-$WV.tar.gz" --version $WV
 
 echo "== start server"
 "$PY" -m moth_server.cli serve --port "$PORT" >"$WORK/server.log" 2>&1 &
@@ -44,9 +45,9 @@ export MOTH_WORKER_HOME="$WORK/worker-home" XDG_DATA_HOME="$WORK/xdg"
 bash -c "$CMD --use-system-torch --allow-cpu --no-service"
 
 echo "== tampered download is refused"
-cp moth-worker-0.2.0.tar.gz good.tgz && printf 'x' >> moth-worker-0.2.0.tar.gz
-SHA=$(cut -d' ' -f1 "$WORK/dist/moth-worker-0.2.0.tar.gz.sha256")
-if echo "$SHA  moth-worker-0.2.0.tar.gz" | sha256sum -c - 2>/dev/null; then echo "tamper not detected" >&2; exit 1; fi
+cp moth-worker-$WV.tar.gz good.tgz && printf 'x' >> moth-worker-$WV.tar.gz
+SHA=$(cut -d' ' -f1 "$WORK/dist/moth-worker-$WV.tar.gz.sha256")
+if echo "$SHA  moth-worker-$WV.tar.gz" | sha256sum -c - 2>/dev/null; then echo "tamper not detected" >&2; exit 1; fi
 echo "tampered tarball rejected by sha256sum"
 
 echo "== run the installed worker for one job"

@@ -2,7 +2,7 @@
 """Build a versioned MOTH Worker release tarball (+ SHA-256) for one-command enrollment.
 
     python scripts/build-worker-release.py --out dist/
-    moth-server worker-release dist/moth-worker-0.2.0.tar.gz --version 0.2.0   # on the MOTH Server
+    moth-server worker-release dist/moth-worker-<version>.tar.gz --version <version>   # on the MOTH Server
 
 The tarball contains the worker package, the MOTH backend package it trains with, and
 install.sh. Enrollment commands pin the tarball's SHA-256, so a modified download fails
