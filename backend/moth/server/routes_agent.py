@@ -7,8 +7,6 @@ from pydantic import BaseModel
 
 from moth.agent.engine import EngineConfig
 from moth.agent.manager import TaskManager
-from moth.inference.local import NoModelLoaded
-from moth.policy.engine import PolicyEngine
 from moth.server.services import NotFound, Services
 
 
@@ -37,13 +35,8 @@ def register(app: FastAPI, svc: Services, deps) -> None:
     manager = TaskManager(svc.db, svc.bus, svc.approvals)
     svc.extras["tasks"] = manager
 
-    def agent_llm():
-        router = svc.extras.get("inference_router")
-        if router is not None:
-            return router.agent_llm()
-        from moth.inference.local import LocalAgentLLM
-
-        return LocalAgentLLM(svc.extras["local_inference"])
+    def agent_llm(project_id: int):
+        return svc.extras["inference_router"].agent_llm(project_id)
 
     @app.get("/api/tasks", dependencies=deps)
     def tasks(project_id: int):
@@ -59,19 +52,20 @@ def register(app: FastAPI, svc: Services, deps) -> None:
     def _start(project_id: int, goal: str, cfg: EngineConfig, task_id: str | None = None):
         if not goal.strip():
             raise HTTPException(422, "describe the task")
-        pol = PolicyEngine.load(svc.paths.policy)
-        decision = pol.check_input(goal)
-        if not decision.allowed:
-            raise HTTPException(422, decision.message)
+        from moth.inference.cloud import CloudUnavailable
+        from moth.inference.router import NotSignedIn, WorkspaceConsentRequired
+
         try:
-            llm = agent_llm()
-        except NoModelLoaded as e:
-            raise HTTPException(409, str(e)) from None
-        except PermissionError as e:
-            raise HTTPException(403, str(e)) from None
+            llm = agent_llm(project_id)
+        except NotSignedIn as e:
+            raise HTTPException(401, str(e)) from None
+        except WorkspaceConsentRequired as e:
+            raise HTTPException(412, str(e), headers={"X-Moth-Reason": "workspace_consent_required"}) from None
+        except CloudUnavailable as e:
+            raise HTTPException(503, str(e)) from None
         try:
             tid = manager.start(project_id, svc.workspace(project_id), goal, llm, svc.permission_engine(),
-                                pol.system_prompt, cfg, task_id=task_id)
+                                "", cfg, task_id=task_id)
         except RuntimeError as e:
             raise HTTPException(409, str(e)) from None
         return manager.get(tid)

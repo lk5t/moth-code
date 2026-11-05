@@ -158,3 +158,24 @@ def set_flags(body: dict[str, bool], auth: Auth = Depends(owner_reauthed), ctx: 
     ctx.db.set_config("feature_flags", current)
     audit(ctx.db, "admin.flags_updated", auth.uid, "config:feature_flags", body)
     return {"feature_flags": flags(ctx)}
+
+
+# ---- content policy (applied server-side to every MOTH Cloud request) ----------------------------
+@router.get("/policy")
+def get_policy(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    from moth.policy.engine import PolicyEngine
+
+    return PolicyEngine(ctx.db.get_config("content_policy", {}) or {}).data
+
+
+@router.put("/policy")
+def put_policy(body: dict[str, Any], auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    from moth.policy.engine import PolicyEngine, PolicyError
+
+    try:
+        engine = PolicyEngine(body)
+    except PolicyError as e:
+        raise HTTPException(422, str(e)) from None
+    ctx.db.set_config("content_policy", engine.data)
+    audit(ctx.db, "admin.policy_updated", auth.uid, "config:content_policy", {"rules": len(engine.rules)})
+    return engine.data

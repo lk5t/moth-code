@@ -1,19 +1,21 @@
-import { Brain, Cpu, Settings, SquareTerminal, Users } from "lucide-react";
+import { Brain, Cpu, Network, Settings, SquareTerminal } from "lucide-react";
+import { useAccount } from "@/lib/account";
 import { appStore, useApp, type View } from "@/lib/app-state";
 import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { MothEmblem } from "./MothEmblem";
 import { AccountMenu } from "@/features/account/AccountMenu";
 
-const items: { view: View; label: string; icon: React.ReactNode }[] = [
+const items: { view: View; label: string; icon: React.ReactNode; owner?: boolean }[] = [
   { view: "workspace", label: "Workspace", icon: <SquareTerminal /> },
-  { view: "training", label: "Training", icon: <Brain /> },
-  { view: "models", label: "Models & inference", icon: <Cpu /> },
-  { view: "community", label: "Community learning", icon: <Users /> },
+  { view: "network", label: "Training & Referrals", icon: <Network /> },
+  { view: "training", label: "Owner · model training", icon: <Brain />, owner: true },
+  { view: "models", label: "Owner · model packages", icon: <Cpu />, owner: true },
 ];
 
 export function NavRail() {
   const view = useApp((s) => s.view);
+  const isOwner = useAccount((s) => s.user?.role === "owner");
   const button = (v: View, label: string, icon: React.ReactNode) => (
     <Tip key={v} label={label}>
       <button
@@ -31,7 +33,7 @@ export function NavRail() {
   return (
     <nav className="flex w-[52px] shrink-0 flex-col items-center gap-1 border-r border-border bg-bg py-3">
       <MothEmblem className="mb-3 size-8 transition-[filter] hover:drop-shadow-[0_0_10px_rgba(193,18,31,0.6)]" />
-      {items.map((i) => button(i.view, i.label, i.icon))}
+      {items.filter((i) => !i.owner || isOwner).map((i) => button(i.view, i.label, i.icon))}
       <div className="flex-1" />
       {button("settings", "Settings", <Settings />)}
       <div className="mt-2"><AccountMenu /></div>

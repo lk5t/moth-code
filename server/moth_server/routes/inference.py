@@ -64,8 +64,20 @@ def chat(request: Request, body: dict, auth: Auth = Depends(current_auth), ctx: 
         raise HTTPException(404, "Model not available.")
     if auth.user["email_verified_at"] is None:
         raise HTTPException(403, "Verify your email address first.")
+    from moth.policy.engine import PolicyEngine
+
+    policy = PolicyEngine(ctx.db.get_config("content_policy", {}) or {})
     messages = [Message(m["role"], str(m["content"]), bool(m.get("trusted")) and m["role"] == "assistant")
                 for m in body.get("messages", [])][:200]
+    last_user = next((m.content for m in reversed(messages) if m.role == "user"), "")
+    decision = policy.check_input(last_user)
+    if not decision.allowed:
+        raise HTTPException(422, decision.message)
+    # The Owner's system prompt always leads; client system text (e.g. agent tool instructions) follows it.
+    if messages and messages[0].role == "system":
+        messages[0] = Message("system", f"{policy.system_prompt}\n\n{messages[0].content}")
+    else:
+        messages.insert(0, Message("system", policy.system_prompt))
     params = GenerationParams.from_dict(body.get("params"))
     params.max_new_tokens = max(1, min(int(params.max_new_tokens), MAX_NEW_TOKENS))
     prompt_tokens = len(encode_chat(engine.tokenizer, messages)[0])
@@ -85,8 +97,8 @@ def chat(request: Request, body: dict, auth: Auth = Depends(current_auth), ctx: 
         stats = None
         try:
             stats = engine.chat(messages, params, chunks.append, cancel)
-            for c in chunks:
-                yield json.dumps({"text": c}) + "\n"
+            out = policy.filter_output("".join(chunks))
+            yield json.dumps({"text": out.text if out.allowed else out.message}) + "\n"
             yield json.dumps({"done": True, "stats": {
                 "prompt_tokens": stats.prompt_tokens, "generated_tokens": stats.generated_tokens,
                 "seconds": stats.seconds, "stop_reason": stats.stop_reason}}) + "\n"

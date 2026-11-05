@@ -1,4 +1,2 @@
-import { InferenceCard } from "./InferenceCard";
-
-/** Additional cards contributed to the Models view. */
-export const modelsExtraSections: React.ComponentType[] = [InferenceCard];
+/** Additional cards contributed to the Owner model-packages view. */
+export const modelsExtraSections: React.ComponentType[] = [];

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Loader2, Play, RotateCcw, Square, Undo2, XCircle } from "lucide-react";
-import { get, post } from "@/lib/backend";
+import { ApiError, get, post, put } from "@/lib/backend";
+import { openAccountDialog } from "@/features/account/AccountDialog";
 import { useEvent } from "@/lib/events";
 import { useApp } from "@/lib/app-state";
 import { useResource } from "@/lib/hooks";
@@ -83,7 +84,22 @@ export function AgentPanel() {
 
   const start = () =>
     act(async () => {
-      const t = await post<Task>("/api/tasks", { project_id: project!.id, goal });
+      let t: Task;
+      try {
+        t = await post<Task>("/api/tasks", { project_id: project!.id, goal });
+      } catch (e) {
+        if ((e as ApiError).status === 401) {
+          openAccountDialog("login");
+          throw e;
+        }
+        if ((e as ApiError).status !== 412) throw e;
+        const ok = confirm(
+          `Allow MOTH Cloud to read files from "${project!.name}"?\n\nThe agent sends the contents of files it opens and command output to MOTH Cloud to decide each step. Credentials are redacted, nothing is used for training, and you can revoke this in the workspace menu.`,
+        );
+        if (!ok) throw new Error("MOTH Cloud access for this workspace was not granted.");
+        await put(`/api/projects/${project!.id}/cloud-consent`, { granted: true });
+        t = await post<Task>("/api/tasks", { project_id: project!.id, goal });
+      }
       setGoal("");
       setSelected(t.id);
       setTask(t);

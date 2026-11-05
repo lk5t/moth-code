@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { MothEvent } from "@/lib/events";
-import { ArrowUp, Brain, Cpu, MessageSquarePlus, Square } from "lucide-react";
+import { ArrowUp, Cloud, LogIn, MessageSquarePlus, RefreshCw, Square } from "lucide-react";
+import { useCloudStatus } from "@/lib/cloud";
+import { openAccountDialog } from "@/features/account/AccountDialog";
 import { get, post } from "@/lib/backend";
 import { useEvent } from "@/lib/events";
-import { appStore, useApp } from "@/lib/app-state";
+import { useApp } from "@/lib/app-state";
 import { useResource } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
@@ -26,16 +28,11 @@ interface Conversation {
   title: string;
 }
 
-interface ModelStatus {
-  loaded: boolean;
-  name?: string;
-  device?: string;
-}
 
 export function ChatPanel() {
   const project = useApp((s) => s.project);
   const [mode, setMode] = useState<"chat" | "agent">("chat");
-  const { data: status } = useResource<ModelStatus>("/api/model/status", ["model"]);
+  const { status: cloud, reload: reloadCloud } = useCloudStatus();
   const { data: conversations, reload: reloadConversations } = useResource<Conversation[]>(
     `/api/conversations${project ? `?project_id=${project.id}` : ""}`,
     [],
@@ -132,7 +129,8 @@ export function ChatPanel() {
     }
   };
 
-  const noModel = status && !status.loaded;
+  const signedOut = cloud ? !cloud.signed_in : false;
+  const noModel = !!cloud && (!cloud.signed_in || !cloud.available);
 
   return (
     <div className="flex h-full flex-col">
@@ -173,8 +171,8 @@ export function ChatPanel() {
           </Button>
         )}
         <span className="flex items-center gap-1 text-[11px] text-faint">
-          <Cpu className="size-3" />
-          {status?.loaded ? `${status.name} · ${status.device}` : "no model"}
+          <Cloud className="size-3" />
+          {cloud?.available ? cloud.model?.name : cloud?.signed_in ? "MOTH Cloud unavailable" : "signed out"}
         </span>
       </div>
 
@@ -187,18 +185,21 @@ export function ChatPanel() {
               <div className="flex h-full flex-col items-center justify-center gap-3 text-center animate-fade-in">
                 <MothEmblem className="size-14" />
                 <div className="text-sm font-medium">What should MOTH work on?</div>
-                {noModel ? (
+                {signedOut ? (
                   <div className="max-w-sm text-xs leading-relaxed text-muted">
-                    No MOTH model is loaded. MOTH answers only with its own neural network, so a model must be
-                    trained (or an exported one loaded) first.
-                    <div className="mt-3 flex justify-center gap-2">
-                      <Button size="sm" variant="outline" onClick={() => appStore.setState({ view: "training" })}><Brain /> Train a model</Button>
-                      <Button size="sm" variant="secondary" onClick={() => appStore.setState({ view: "models" })}><Cpu /> Load a model</Button>
-                    </div>
+                    MOTH runs in MOTH Cloud. Sign in to chat with the official MOTH model and use the coding agent.
+                    <div className="mt-3 flex justify-center"><Button size="sm" onClick={() => openAccountDialog("login")}><LogIn /> Sign in</Button></div>
+                  </div>
+                ) : noModel ? (
+                  <div className="max-w-sm text-xs leading-relaxed text-muted">
+                    {cloud?.reachable === false
+                      ? "Can't reach MOTH Cloud right now. Your editor, terminal and Git keep working; MOTH will be back when the connection returns."
+                      : cloud?.error ?? "MOTH Cloud inference is not available yet."}
+                    <div className="mt-3 flex justify-center"><Button size="sm" variant="secondary" onClick={() => reloadCloud()}><RefreshCw /> Retry</Button></div>
                   </div>
                 ) : (
                   <div className="max-w-sm text-xs text-muted">
-                    Responses come from {status?.name}. Early MOTH models are small and experimental — expect limited answers.
+                    Responses come from {cloud?.model?.name} on MOTH Cloud. MOTH is an early, independently trained model — expect limited answers.
                   </div>
                 )}
               </div>
@@ -236,7 +237,7 @@ export function ChatPanel() {
               <Textarea
                 rows={2}
                 value={input}
-                placeholder={noModel ? "Load a MOTH model to start chatting" : "Message MOTH  (Enter to send, Shift+Enter for a new line)"}
+                placeholder={signedOut ? "Sign in to chat with MOTH" : noModel ? "MOTH Cloud is unavailable" : "Message MOTH  (Enter to send, Shift+Enter for a new line)"}
                 disabled={!!noModel}
                 className="max-h-48 min-h-10 border-0 bg-transparent focus:shadow-none"
                 onChange={(e) => setInput(e.target.value)}

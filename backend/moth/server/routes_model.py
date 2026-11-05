@@ -1,4 +1,4 @@
-"""Model management, chat (streamed through MOTH) and owner policy routes."""
+"""Owner model tools (list/delete local training outputs) and cloud chat routes."""
 
 from __future__ import annotations
 
@@ -11,17 +11,10 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from moth.inference.local import LocalInference, NoModelLoaded
 from moth.model.chat_format import Message
 from moth.model.generation import GenerationParams
 from moth.model.registry import delete_model, list_models
-from moth.policy.engine import PolicyEngine, PolicyError
 from moth.server.services import NotFound, Services
-
-
-class LoadIn(BaseModel):
-    id: str
-    device: str = "auto"
 
 
 class ChatIn(BaseModel):
@@ -39,61 +32,20 @@ HISTORY_MESSAGES = 12
 
 
 def register(app: FastAPI, svc: Services, deps) -> None:
-    local = LocalInference(svc.paths.models)
-    svc.extras["local_inference"] = local
-    policy_lock = threading.Lock()
     active: dict[int, threading.Event] = {}
-
-    def policy() -> PolicyEngine:
-        return PolicyEngine.load(svc.paths.policy)
 
     # ---- models -------------------------------------------------------------
     @app.get("/api/models", dependencies=deps)
     def models():
         return list_models(svc.paths.models)
 
-    @app.get("/api/model/status", dependencies=deps)
-    def model_status():
-        return local.status()
-
-    @app.post("/api/models/load", dependencies=deps)
-    def load(body: LoadIn):
-        try:
-            st = local.load(body.id, body.device)
-        except FileNotFoundError:
-            raise NotFound(f"model {body.id} not found") from None
-        except Exception as e:
-            raise HTTPException(400, f"could not load model: {e}") from None
-        svc.db.set_setting("active_model", {"id": body.id, "device": body.device})
-        svc.db.log_activity("model", f"Loaded model {st['name']} on {st['device']}")
-        svc.bus.publish("model", {"status": st})
-        return st
-
-    @app.post("/api/models/unload", dependencies=deps)
-    def unload():
-        local.unload()
-        svc.db.set_setting("active_model", None)
-        svc.bus.publish("model", {"status": local.status()})
-        return local.status()
-
     @app.delete("/api/models/{model_id}", dependencies=deps)
     def remove(model_id: str):
-        if local.model_id == model_id:
-            local.unload()
-            svc.bus.publish("model", {"status": local.status()})
         try:
             delete_model(svc.paths.models, model_id)
         except FileNotFoundError:
             raise NotFound(f"model {model_id} not found") from None
         return {"ok": True}
-
-    # Restore the previously active model (failures are reported, not fatal).
-    active_model = svc.db.get_setting("active_model")
-    if active_model:
-        try:
-            local.load(active_model["id"], active_model.get("device", "auto"))
-        except Exception as e:
-            svc.db.log_activity("model", f"Could not reload model {active_model['id']}: {e}")
 
     # ---- conversations ------------------------------------------------------
     @app.get("/api/conversations", dependencies=deps)
@@ -116,22 +68,16 @@ def register(app: FastAPI, svc: Services, deps) -> None:
 
     @app.post("/api/chat", dependencies=deps)
     def chat(body: ChatIn):
-        pol = policy()
-        decision = pol.check_input(body.message)
-        if not decision.allowed:
-            raise HTTPException(422, decision.message)
-        router = svc.extras.get("inference_router")
+        """Chat with the official MOTH model on MOTH Cloud (cloud-only; metered by the MOTH Server).
+
+        The Owner's content policy and persona are applied server-side, not here."""
+        from moth.inference.router import NotSignedIn
+
+        router = svc.extras["inference_router"]
         try:
-            target = router.select(project_data=False) if router else ("local" if local.available() else None)
-        except NoModelLoaded as e:
-            raise HTTPException(409, str(e)) from None
-        except PermissionError as e:
-            raise HTTPException(403, str(e)) from None
-        except RuntimeError as e:  # cloud unavailable
-            raise HTTPException(409, str(e)) from None
-        if target is None:
-            raise HTTPException(409, "No MOTH model is loaded. Train a model and load it under Models first.")
-        model_name = router.describe(target) if router else local.status().get("name")
+            router.endpoint()
+        except NotSignedIn as e:
+            raise HTTPException(401, str(e)) from None
         cid = body.conversation_id
         now = time.time()
         if cid is None:
@@ -146,51 +92,36 @@ def register(app: FastAPI, svc: Services, deps) -> None:
                                "('user','assistant') ORDER BY id DESC LIMIT ?", (cid, HISTORY_MESSAGES))[::-1]
         svc.db.execute("INSERT INTO messages(conversation_id, role, content, meta, ts) VALUES (?,?,?,?,?)",
                        (cid, "user", body.message, None, now))
-        msgs = [Message("system", pol.system_prompt)] + [Message(h["role"], h["content"]) for h in history]
-        msgs.append(Message("user", body.message))
-        params = GenerationParams.from_dict({**pol.generation_defaults, **(body.params or {})})
+        msgs = [Message(h["role"], h["content"]) for h in history] + [Message("user", body.message)]
+        params = GenerationParams.from_dict({"max_new_tokens": 256, "temperature": 0.7, **(body.params or {})})
         cancel = threading.Event()
         active[cid] = cancel
         msg_key = uuid.uuid4().hex[:10]
-        has_output_rules = any(r.enabled and r.applies_to in ("output", "both") for r in pol.rules)
 
         def work() -> None:
             text = ""
+            model_name = "MOTH Cloud"
             try:
+                model_name = router.describe()
                 svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "start",
                                          "model": model_name})
 
                 def on_text(piece: str) -> None:
                     nonlocal text
                     text += piece
-                    if has_output_rules:
-                        d = pol.filter_output(text)
-                        if not d.allowed:
-                            cancel.set()
-                        svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "replace",
-                                                 "text": d.text if d.allowed else d.message})
-                    else:
-                        svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "token",
-                                                 "text": piece})
+                    svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "token",
+                                             "text": piece})
 
-                if router:
-                    _, stats = router.chat(msgs, params, on_text, cancel)
-                else:
-                    stats = local.chat(msgs, params, on_text, cancel)
-                final = pol.filter_output(text)
-                content = final.text if final.allowed else final.message
-                meta = {"model": model_name, "via": target, "tokens": stats.generated_tokens,
-                        "tokens_per_sec": round(stats.tokens_per_sec, 1), "stop_reason": stats.stop_reason,
-                        "policy": final.triggered or None}
+                stats = router.chat(msgs, params, on_text, cancel)
+                meta = {"model": model_name, "via": "cloud", "tokens": stats.generated_tokens,
+                        "tokens_per_sec": round(stats.tokens_per_sec, 1), "stop_reason": stats.stop_reason}
                 svc.db.execute("INSERT INTO messages(conversation_id, role, content, meta, ts) VALUES (?,?,?,?,?)",
-                               (cid, "assistant", content, json.dumps(meta), time.time()))
+                               (cid, "assistant", text, json.dumps(meta), time.time()))
                 svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "done",
-                                         "text": content, "meta": meta})
-            except NoModelLoaded as e:
-                svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "error", "error": str(e)})
-            except Exception as e:
+                                         "text": text, "meta": meta})
+            except Exception as e:  # cloud outage, limits, sign-in: reported, never crashes the app
                 svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "error",
-                                         "error": f"{type(e).__name__}: {e}"})
+                                         "error": str(e) or type(e).__name__})
             finally:
                 active.pop(cid, None)
 
@@ -203,31 +134,3 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         if ev:
             ev.set()
         return {"cancelled": bool(ev)}
-
-    # ---- owner policy ----------------------------------------------------------
-    @app.get("/api/policy", dependencies=deps)
-    def get_policy():
-        return policy().data
-
-    @app.put("/api/policy", dependencies=deps)
-    def put_policy(data: dict[str, Any]):
-        with policy_lock:
-            try:
-                engine = PolicyEngine(data)
-            except PolicyError as e:
-                raise HTTPException(422, str(e)) from None
-            engine.save(svc.paths.policy)
-        svc.db.log_activity("policy", "Owner content policy updated")
-        return engine.data
-
-    @app.post("/api/policy/reset", dependencies=deps)
-    def reset_policy():
-        engine = PolicyEngine()
-        engine.save(svc.paths.policy)
-        return engine.data
-
-    @app.post("/api/policy/test", dependencies=deps)
-    def test_policy(body: PolicyTestIn):
-        pol = policy()
-        i, o = pol.check_input(body.text), pol.filter_output(body.text)
-        return {"input": i.__dict__, "output": o.__dict__}

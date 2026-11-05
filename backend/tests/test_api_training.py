@@ -1,4 +1,4 @@
-"""Integration: train a model entirely through the HTTP API, then chat with it."""
+"""Integration: Owner tools train, export and evaluate a model entirely through the HTTP API."""
 
 import time
 
@@ -56,44 +56,9 @@ def test_full_training_flow_and_chat(paths, corpus_dir):
 
         info = c.post(f"/api/training/runs/{run['id']}/export", json={"name": "moth-api"}, headers=H).json()
         assert info["id"] == "moth-api"
-        st = c.post("/api/models/load", json={"id": "moth-api", "device": "cpu"}, headers=H).json()
-        assert st["loaded"] and st["device"] == "cpu"
-
-        with c.websocket_connect("/ws/events?token=t") as ws:
-            ws.receive_json()
-            r = c.post("/api/chat", json={"message": "def add(a, b):", "params": {"max_new_tokens": 12}}, headers=H)
-            assert r.status_code == 200, r.text
-            cid = r.json()["conversation_id"]
-            done = None
-            while done is None:
-                ev = ws.receive_json()
-                if ev["topic"] == "chat" and ev["kind"] in ("done", "error"):
-                    done = ev
-            assert done["kind"] == "done", done
-            assert done["meta"]["model"] == "moth-api" and done["meta"]["tokens"] <= 12
-        msgs = c.get(f"/api/conversations/{cid}/messages", headers=H).json()
-        assert [m["role"] for m in msgs] == ["user", "assistant"]
-
+        assert c.get("/api/models", headers=H).json()[0]["id"] == "moth-api"
         # evaluation job produces real measured numbers
         job = c.post("/api/models/moth-api/evaluate", json={"dataset": "ds"}, headers=H).json()
         wait_job(c, job["id"])
         ev = c.get("/api/models/moth-api/evaluation", headers=H).json()
         assert ev["val_loss"] > 0 and ev["code_total"] > 0
-
-
-def test_chat_without_model_is_honest(paths):
-    with TestClient(create_app(paths, token="t")) as c:
-        r = c.post("/api/chat", json={"message": "hello"}, headers=H)
-        assert r.status_code == 409 and "No MOTH model is loaded" in r.json()["detail"]
-
-
-def test_policy_api(paths):
-    with TestClient(create_app(paths, token="t")) as c:
-        assert c.get("/api/policy", headers=H).json()["content_rules"] == []
-        bad = c.put("/api/policy", json={"content_rules": [{"id": "x", "action": "nope", "match": {}}]}, headers=H)
-        assert bad.status_code == 422
-        rule = {"id": "b", "action": "block", "applies_to": "input", "match": {"type": "keywords", "patterns": ["zzz"]}}
-        assert c.put("/api/policy", json={"content_rules": [rule]}, headers=H).status_code == 200
-        assert c.post("/api/chat", json={"message": "zzz please"}, headers=H).status_code == 422
-        t = c.post("/api/policy/test", json={"text": "zzz"}, headers=H).json()
-        assert t["input"]["allowed"] is False

@@ -17,37 +17,74 @@ from moth.jobs import Job
 from moth.server.services import Services
 
 
+class ConsentIn(BaseModel):
+    granted: bool
+
+
 class PersonalExportIn(BaseModel):
     project_id: int | None = None
     name: str = "personal-tasks"
 
 
 def register(app: FastAPI, svc: Services, deps) -> None:
-    local = svc.extras["local_inference"]
     jobs = svc.extras["jobs"]
 
     def inference_settings() -> InferenceSettings:
         return InferenceSettings.from_dict(svc.db.get_setting("inference"))
 
-    router = InferenceRouter(local, inference_settings, account=lambda: svc.extras.get("account"))
+    def consented(project_id: int | None) -> bool:
+        return project_id is not None and project_id in (svc.db.get_setting("cloud_workspace_consent") or [])
+
+    router = InferenceRouter(inference_settings, account=lambda: svc.extras.get("account"), consent=consented)
     svc.extras["inference_router"] = router
 
-    # ---- hybrid inference ----------------------------------------------------------------
-    @app.get("/api/inference", dependencies=deps)
-    def get_inference():
-        return {"settings": inference_settings().public(), "status": router.status()}
+    # ---- MOTH Cloud status & per-workspace consent -----------------------------------------------
+    @app.get("/api/cloud/status", dependencies=deps)
+    def cloud_status():
+        return router.status()
 
-    @app.put("/api/inference", dependencies=deps)
-    def put_inference(body: dict[str, Any]):
-        current = inference_settings()
-        merged = {**current.__dict__, **body}
-        if body.get("cloud_api_key") == "********":
-            merged["cloud_api_key"] = current.cloud_api_key
-        s = InferenceSettings.from_dict(merged)
-        svc.db.set_setting("inference", s.__dict__)
-        svc.db.log_activity("inference", f"Inference mode set to {s.mode}")
-        svc.bus.publish("model", {"inference": s.public()})
-        return {"settings": s.public(), "status": router.status()}
+    @app.get("/api/projects/{pid}/cloud-consent", dependencies=deps)
+    def get_consent(pid: int):
+        svc.project(pid)
+        return {"granted": consented(pid)}
+
+    @app.put("/api/projects/{pid}/cloud-consent", dependencies=deps)
+    def set_consent(pid: int, body: ConsentIn):
+        project = svc.project(pid)
+        ids = set(svc.db.get_setting("cloud_workspace_consent") or [])
+        ids = ids | {pid} if body.granted else ids - {pid}
+        svc.db.set_setting("cloud_workspace_consent", sorted(ids))
+        svc.db.log_activity("cloud", f"{'Allowed' if body.granted else 'Revoked'} MOTH Cloud access for {project['name']}", pid)
+        return {"granted": body.granted}
+
+    # ---- Owner tools: publish a locally trained model as a MOTH Cloud candidate -----------------
+    @app.post("/api/models/{model_id}/publish", dependencies=deps)
+    def publish_candidate(model_id: str):
+        import io
+        import tarfile
+
+        import httpx
+
+        acct = svc.extras.get("account") or {}
+        if not acct.get("token") or (acct.get("user") or {}).get("role") != "owner":
+            raise HTTPException(403, "Only the signed-in Owner can publish model candidates.")
+        mdir = svc.paths.models / model_id
+        if not (mdir / "manifest.json").exists():
+            raise HTTPException(404, "model not found")
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            tar.add(mdir, arcname=model_id)
+        try:
+            r = httpx.post(acct["server_url"].rstrip("/") + "/v1/admin/models/upload",
+                           headers={"Authorization": f"Bearer {acct['token']}"}, data={"name": model_id},
+                           files={"file": (f"{model_id}.tar.gz", buf.getvalue(), "application/gzip")}, timeout=600)
+        except httpx.HTTPError as e:
+            raise HTTPException(503, f"MOTH Server unreachable: {e}") from None
+        if r.status_code >= 400:
+            detail = r.json().get("detail") if r.headers.get("content-type", "").startswith("application/json") else r.text
+            raise HTTPException(r.status_code, detail)
+        svc.db.log_activity("model", f"Published {model_id} to MOTH Cloud as candidate v{r.json()['version']}")
+        return r.json()
 
     # ---- community learning ----------------------------------------------------------------
     def participation() -> ParticipationSettings:

@@ -5,11 +5,11 @@ from moth.server.app import create_app
 H = {"Authorization": "Bearer t"}
 
 
-def test_task_requires_loaded_model(paths, project):
+def test_task_requires_sign_in(paths, project):
     with TestClient(create_app(paths, token="t")) as c:
         pid = c.post("/api/projects", json={"path": str(project)}, headers=H).json()["id"]
         r = c.post("/api/tasks", json={"project_id": pid, "goal": "do it"}, headers=H)
-        assert r.status_code == 409 and "No MOTH model" in r.json()["detail"]
+        assert r.status_code == 401 and "Sign in" in r.json()["detail"]
 
 
 def test_memory_and_search_api(paths, project):

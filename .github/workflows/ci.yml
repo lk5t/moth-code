@@ -74,6 +74,22 @@ jobs:
           MOTH_TEST_DATABASE_URL: ${{ matrix.db == 'postgres' && 'postgresql+psycopg://moth:moth-ci-only@localhost:5432/moth_test' || '' }}
         run: python -m pytest -q
 
+  worker-install:
+    name: MOTH Worker one-command install (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install server dependencies (CPU PyTorch; the runner has no GPU)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ./backend -e ./server
+      - name: Enrollment command → verified download → install → verified training job
+        run: bash scripts/test-worker-install.sh
+
   frontend:
     name: Frontend typecheck, tests and build
     runs-on: ubuntu-latest
