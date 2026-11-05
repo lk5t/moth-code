@@ -53,7 +53,7 @@ const DEFAULT_SERVER = ((import.meta.env.VITE_MOTH_SERVER_URL as string | undefi
 
 function loadServerUrl(): string {
   try {
-    return localStorage.getItem("moth.serverUrl") ?? DEFAULT_SERVER;
+    return normalizeServerUrl(localStorage.getItem("moth.serverUrl") ?? DEFAULT_SERVER);
   } catch {
     return DEFAULT_SERVER;
   }
@@ -82,7 +82,7 @@ export async function serverApi<T = any>(
   path: string,
   init: RequestInit & { json?: unknown; token?: string | null; server?: string } = {},
 ): Promise<T> {
-  const server = (init.server ?? accountStore.getState().serverUrl).replace(/\/$/, "");
+  const server = normalizeServerUrl(init.server ?? accountStore.getState().serverUrl);
   if (!server) throw new ServerError(0, "No MOTH Server is configured. Set its address in Settings → Account.");
   const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
   const token = init.token === undefined ? accountStore.getState().token : init.token;
@@ -109,6 +109,9 @@ export async function serverApi<T = any>(
       /* not json */
     }
     if (res.status === 401 && token && path !== "/v1/auth/login") handleExpired();
+    if (res.status === 404 && (!detail || detail === "Not Found") && path.startsWith("/v1/auth/")) {
+      detail = `${server} doesn't look like a MOTH Server. Check the address in Settings → Account.`;
+    }
     throw new ServerError(res.status, detail, res.headers.get("X-Moth-Reason"), Number(res.headers.get("Retry-After") ?? 0));
   }
   return (res.status === 204 ? undefined : await res.json()) as T;
@@ -171,8 +174,32 @@ function handleExpired() {
 }
 
 // ---- public API -------------------------------------------------------------------------------
+/**
+ * Turn what the user typed into a server origin: adds the scheme when it is missing (http for local
+ * addresses, https otherwise) and drops trailing paths such as /v1 or /cloud, so requests reach the API.
+ */
+export function normalizeServerUrl(input: string): string {
+  let s = input.trim();
+  if (!s) return "";
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+    const local = /^(localhost|127\.|\[::1\]|0\.0\.0\.0|192\.168\.|10\.)/i.test(s);
+    s = (local ? "http://" : "https://") + s;
+  }
+  let u: URL;
+  try {
+    u = new URL(s);
+  } catch {
+    throw new ServerError(0, `"${input.trim()}" is not a valid server address. Example: https://moth.example.com`);
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new ServerError(0, "The server address must start with https:// (or http:// for a local test server).");
+  }
+  const path = u.pathname.replace(/\/+$/, "").replace(/\/(v1|cloud)(\/.*)?$/i, "");
+  return u.origin + path;
+}
+
 export function setServerUrl(url: string) {
-  const clean = url.trim().replace(/\/$/, "");
+  const clean = normalizeServerUrl(url);
   try {
     localStorage.setItem("moth.serverUrl", clean);
   } catch {

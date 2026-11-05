@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+- **Fix: signing in failed with "Not Found"** when the MOTH Server address was typed without `https://`. Addresses
+  are now normalised (`moth.example.com` → `https://moth.example.com`, `localhost:8900` → `http://localhost:8900`,
+  pasted `/v1/...` paths dropped), and an address that isn't a MOTH Server shows a clear message.
+- **Fix:** the desktop app's content security policy only allowed connections to `127.0.0.1`, so an HTTPS MOTH Server
+  (and avatars served from it) was blocked in the installed app.
+
 ## 0.2.0 — CONNECT
 
 MOTH becomes a cloud service with accounts, usage plans, referrals and a GPU training network.

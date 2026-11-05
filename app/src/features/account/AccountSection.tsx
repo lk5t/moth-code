@@ -50,7 +50,15 @@ export function AccountSection() {
       <CardContent className="flex flex-col gap-4">
         <div className="flex items-end gap-2">
           <div className="flex-1"><Label>MOTH Server address</Label><Input className="mt-1" placeholder="https://your-moth-server" value={server} onChange={(e) => setServer(e.target.value)} /></div>
-          <Button variant="secondary" onClick={() => { setServerUrl(server); setMsg({ ok: true, text: "Server address saved." }); }}>Save</Button>
+          <Button variant="secondary" onClick={() => {
+            try {
+              setServerUrl(server);
+              setServer(accountStore.getState().serverUrl);
+              setMsg({ ok: true, text: "Server address saved." });
+            } catch (e) {
+              setMsg({ ok: false, text: (e as Error).message });
+            }
+          }}>Save</Button>
         </div>
         {!user ? (
           <div className="flex gap-2">

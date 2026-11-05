@@ -48,3 +48,24 @@ describe("event bus", () => {
     expect(chat).toHaveBeenCalledTimes(1);
   });
 });
+
+import { normalizeServerUrl } from "@/lib/account";
+
+describe("normalizeServerUrl", () => {
+  it("adds https:// to a bare domain and http:// to local addresses", () => {
+    expect(normalizeServerUrl("moth.example.com")).toBe("https://moth.example.com");
+    expect(normalizeServerUrl(" moth.example.com/ ")).toBe("https://moth.example.com");
+    expect(normalizeServerUrl("127.0.0.1:8900")).toBe("http://127.0.0.1:8900");
+    expect(normalizeServerUrl("localhost:8900")).toBe("http://localhost:8900");
+  });
+  it("drops API paths users paste by mistake but keeps a real prefix", () => {
+    expect(normalizeServerUrl("https://moth.example.com/v1/auth/login")).toBe("https://moth.example.com");
+    expect(normalizeServerUrl("https://moth.example.com/cloud")).toBe("https://moth.example.com");
+    expect(normalizeServerUrl("https://example.com/moth/")).toBe("https://example.com/moth");
+  });
+  it("rejects invalid addresses and other schemes", () => {
+    expect(() => normalizeServerUrl("ftp://moth.example.com")).toThrow();
+    expect(() => normalizeServerUrl("http://")).toThrow();
+    expect(normalizeServerUrl("")).toBe("");
+  });
+});
