@@ -398,12 +398,20 @@ class Agent:
         self.log(f"database restored from {backup.name}")
 
     def pid(self, name: str) -> int | None:
+        """The live process for ``name``. A killed process whose parent hasn't reaped it yet (a zombie)
+        still answers ``kill -0``, so the process state is checked as well."""
         try:
             p = int((self.i.home / "run" / f"{name}.pid").read_text().strip())
             os.kill(p, 0)
-            return p
         except (OSError, ValueError):
             return None
+        try:
+            state = Path(f"/proc/{p}/stat").read_text().rsplit(")", 1)[1].split()[0]
+            if state in ("Z", "X"):
+                return None
+        except (OSError, IndexError):
+            pass
+        return p
 
     @property
     def maintenance_flag(self) -> Path:

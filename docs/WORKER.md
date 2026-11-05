@@ -63,6 +63,25 @@ used when enrolling the server, after a minimum number of verified jobs and a pe
 (Owner-configurable). Idle or failing servers earn nothing, and you cannot refer your own
 server.
 
+## Automatic updates
+
+Workers update themselves. Every 30 minutes, between training jobs, the worker asks MOTH Cloud whether a
+newer worker release is available for it (releases roll out in stages). An update is installed only if:
+
+- the release manifest's ed25519 signature verifies against the key built into the worker, and
+- the downloaded bundle matches the SHA-256 in that signed manifest, and
+- the new code passes a start test.
+
+The new version is installed next to the current one (`versions/<version>`, with `current` and
+`previous` links in the worker's state directory), and the worker restarts into it and reconnects with
+the same credential. A job in progress is always finished first — training progress is never discarded
+for an update. If a new version fails to start three times, the previous version is restored
+automatically. The worker's version is shown in MOTH Code → Training & Referrals and in the Owner
+Dashboard. Use `moth-worker run --no-auto-update` to opt out.
+
+Workers installed with v0.2 don't have the updater yet: reinstall them once with a new enrollment
+command; from then on they update themselves.
+
 ## Commands
 
 | Command | Purpose |

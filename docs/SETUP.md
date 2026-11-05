@@ -1,5 +1,10 @@
 # Setup & building
 
+> **v0.3 note.** Users install once; MOTH Code updates itself and connects to the MOTH Cloud address
+> built into release builds. In development, the app connects to `http://127.0.0.1:8900` (run
+> `moth-server serve`). Developer mode in Settings → Advanced can point a production build at a test
+> server. Server installation: [SERVER.md](SERVER.md); releases: [RELEASING.md](RELEASING.md).
+>
 > **v0.2 note.** MOTH is cloud-only. Users sign in to a MOTH account and use MOTH Cloud, so no GPU or model is
 > needed on their PC. The PyTorch/CUDA notes below apply only to the Owner's local model-training tools and to
 > development. To run the MOTH Server see [SERVER.md](SERVER.md); for GPU workers see [WORKER.md](WORKER.md).

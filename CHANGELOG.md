@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.3.0 — SIMPLIFY
+
+MOTH becomes self-managing: install once, sign in, code; everything else updates itself.
+
+- **Automatic connection:**
+  - the official MOTH Cloud HTTPS endpoint is built into release builds (no server address, SSH
+    tunnel or port on first launch), with production, staging and development environments
+  - a developer-only override, hidden under Settings → Advanced
+  - background reconnects with exponential backoff, request timeouts and retries
+  - a quiet connection status that never pops up
+- **Sessions:** session restore, automatic token rotation, clear expiry handling, and version
+  compatibility checks (HTTP 426 for outdated clients; older clients can still update).
+- **Automatic updates for the whole ecosystem:**
+  - Desktop: Tauri updater served by MOTH Cloud with staged rollouts, background download, install
+    on restart or exit, and outcome reporting.
+  - MOTH Cloud: a standalone update agent with signature verification, verified backups, migration
+    checks, health checks, automatic rollback (including database restore), crash and reboot
+    recovery, and self-update.
+  - Workers: verified self-update between jobs, with automatic revert on failure.
+  - Releases: one signed release workflow for every component, release channels, rollouts that halt
+    automatically, and deployment history.
+- **One-time server installation** (`deploy/install-server.sh`):
+  - adopts the existing VPS in place, with no data moved and a backup first
+  - works without sudo, listing the administrator steps separately
+  - systemd or cron supervision, daily verified backups, Caddy HTTPS with internal endpoints blocked
+- **Owner Dashboard:** Server (CPU, RAM, disk, API health, active users, errors), Updates (versions,
+  rollouts, deployment history, pause, retry, approve migrations, rollback), AI models (lifecycle,
+  evaluation, publish, deploy, rollback, evaluation data) and Workers (CPU/GPU, versions, progress).
+- **Model publishing fixed:**
+  - *"no evaluation set is configured"* no longer blocks publishing. Evaluation datasets can be
+    uploaded and validated in the dashboard, and a built-in held-out text set is always available.
+    Text datasets are scored in bits per byte, so models with any tokenizer can be evaluated.
+  - Releases rejected for missing data (including v0.2 rejections) are re-evaluated automatically
+    without re-uploading.
+  - Persistent lifecycle states. Local validation before upload. Resumable, checksummed chunked
+    uploads with duplicate detection.
+  - Evaluation runs in an isolated process with real inference. Deployment checks resources and runs
+    an inference health check first.
+  - Interrupted work is recovered after restarts.
+- **Desktop UI:** a first-launch flow (sign in → open a workspace → code), one Owner entry in the
+  navigation, simpler settings, and a guided Validate → Publish view with live upload progress.
+- **Tests:** the new evaluation, publishing, update-service and worker-update suites, plus a real-process
+  end-to-end test of installation, adoption, updates, rollback, recovery and reboot.
+
 ## 0.2.1
 
 - **Fix: signing in failed with "Not Found"** when the MOTH Server address was typed without `https://`. Addresses

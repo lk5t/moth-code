@@ -1,5 +1,49 @@
 # MOTH Code architecture
 
+## v0.3 additions: self-managing updates
+
+```mermaid
+flowchart LR
+  GH["GitHub Release<br/>(Owner-approved, CI-tested)<br/>signed manifest + bundles"]
+  subgraph VPS["MOTH Cloud host"]
+    A["Update agent<br/>stdlib only · own process"]
+    S["MOTH Server<br/>current → releases/v"]
+    B[("Verified backups")]
+  end
+  D["MOTH Code desktops"]
+  W["MOTH Workers"]
+  GH -- "verify ed25519 + SHA-256" --> A
+  A -- "backup · switch · restart · health check · rollback" --> S
+  A --> B
+  A -- "register desktop/worker files" --> S
+  S -- "staged rollout (Tauri updater endpoint)" --> D
+  S -- "/v1/worker/update (signed manifest)" --> W
+  D -- "update outcome reports" --> S
+```
+
+- **One release, one signature.** `scripts/build-release.py` builds `moth-cloud-<v>.tar.gz`,
+  `moth-worker-<v>.tar.gz` and `moth-release-<v>.json`. The manifest lists the SHA-256 of every file
+  (including the signed desktop installer), the schema and API versions, destructive migrations, the
+  minimum upgrade version and the rollout policy, and is signed with ed25519 in CI.
+- **Update agent** (`deploy/agent/moth_agent.py`). A separate, standard-library-only process supervised
+  by systemd or cron. For each new release it installs into `releases/<v>` (Python environments are
+  shared per dependency set in `runtime/`), takes a verified backup, atomically switches `current`,
+  restarts the server and verifies health. On any failure it switches back, restoring the database
+  backup if the schema changed. It reports every step to `/v1/agent/*` (a private API blocked at the
+  proxy) and updates itself last, with crash protection.
+- **Compatibility.** Clients send `X-Moth-Client`. `compat.py` refuses versions below the minimum with
+  HTTP 426 before any handler runs. Health reports `api_version`, `schema_version` and the minimum
+  client versions.
+- **Migrations.** `db.MIGRATIONS` are versioned. Additive ones run at startup; destructive ones need
+  Owner approval.
+- **Model lifecycle.** `models.py` has persistent states. `evalsets.py` selects a compatible evaluation
+  dataset per model (text datasets are scored in bits per byte). `moth.model.evaluate` runs in a
+  subprocess. Resumable chunked uploads live in `routes/uploads.py`; the desktop side is
+  `moth.publish.Publisher`.
+- **Desktop.** `lib/endpoint.ts` picks the official endpoint for the environment. `lib/connection.ts`
+  monitors and reconnects with backoff. `lib/updater.ts` checks, downloads, installs on restart and
+  reports. The session is refreshed daily.
+
 ## v0.2 system overview (cloud-only)
 
 ```mermaid

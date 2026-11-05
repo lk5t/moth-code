@@ -12,7 +12,25 @@ MOTH Code is a desktop development environment with chat, an autonomous coding a
 editor, a terminal and Git. Its intelligence comes **only** from MOTH's own models: original decoder-only Transformers
 initialised from random weights. No pretrained weights and no third-party AI APIs are used anywhere.
 
-**v0.2.0 "CONNECT"** makes MOTH a cloud service:
+**v0.3.0 "SIMPLIFY"** makes the whole platform self-managing:
+
+- **Users** install once, sign in and start coding. MOTH Cloud's address is built in, and MOTH Code
+  updates itself in the background.
+- **MOTH Cloud** is installed once on a Linux server, even without sudo, by
+  [`deploy/install-server.sh`](docs/SERVER.md). From then on it keeps running and updates itself from
+  signed releases, with verified backups, health checks and automatic rollback.
+- **Workers** update themselves between training jobs.
+- **Model publishing works end to end** (Validate → Upload → Evaluate → Publish → Deploy), including
+  evaluation data the Owner manages in the dashboard. This fixes *"no evaluation set is configured"*.
+- **The Owner Dashboard** shows the server, updates, AI models and workers in one place.
+
+| Who | What they do |
+| --- | --- |
+| User | Install MOTH Code → sign in → open a folder → code. Updates arrive on their own. |
+| Owner | Approve a release in GitHub Actions. MOTH Cloud, desktops and workers update in stages. Watch it in Owner Dashboard → Updates. |
+| Owner, for models | Owner → Model packages → *Publish*. Evaluation is automatic. Then *Deploy* in Owner Dashboard → AI models. |
+
+**v0.2.0 "CONNECT"** made MOTH a cloud service:
 
 - Everyone, including the Owner, uses the official MOTH model on **MOTH Cloud** through a MOTH account. Usage is
   metered on the server.

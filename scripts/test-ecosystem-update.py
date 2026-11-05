@@ -324,7 +324,13 @@ def main() -> None:
         time.sleep(1)
         assert api.health() is None
         sh([str(moth), "supervise"])  # what @reboot and the per-minute cron run
-        h = api.wait(lambda h: h.get("version") == "0.3.4", "server after reboot")
+        try:
+            h = api.wait(lambda h: h.get("version") == "0.3.4", "server after reboot", timeout=120)
+        except SystemExit:
+            print("run/:", {p.name: p.read_text()[:40] for p in (home / "run").iterdir()})
+            print("server.log:", (home / "logs" / "server.log").read_text()[-3000:])
+            print("agent.log:", (home / "logs" / "agent.log").read_text()[-3000:])
+            raise
         ok("MOTH Cloud 0.3.4 back after a simulated reboot")
 
         # ---- 11. Owner rollback --------------------------------------------------------------------------------------

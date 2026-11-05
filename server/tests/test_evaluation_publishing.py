@@ -248,3 +248,35 @@ def test_stale_uploads_expire_and_interrupted_work_recovers(client, settings, ow
     # explicit retry from the dashboard works without re-uploading
     assert client.post(f"/v1/admin/models/{rel['version']}/evaluate?wait=true", headers=o).json()["status"] == "published"
     assert select is not None
+
+
+def test_upload_completion_survives_a_transient_server_error(client, settings, owner, tmp_path, monkeypatch):
+    """Found in live testing: a server-side error while completing must not destroy the upload."""
+    ctx = client.app.state.ctx
+    o = H(owner["token"])
+    pkg = make_tiny_model(tmp_path, 51, "transient")
+    data = tar_bytes(pkg, gz=False)
+    start = {"name": "transient", "size": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+             "manifest": json.loads((pkg / "manifest.json").read_text())}
+    up = client.post("/v1/admin/models/uploads", json=start, headers=o).json()["upload"]
+    cs = up["chunk_size"]
+    for i in range(up["chunks"]):
+        chunk = data[i * cs:(i + 1) * cs]
+        client.put(f"/v1/admin/models/uploads/{up['id']}/chunks/{i}", content=chunk,
+                   headers={**o, "X-Chunk-Sha256": hashlib.sha256(chunk).hexdigest()})
+    real = M.register_upload
+    calls = {"n": 0}
+
+    def flaky(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ModuleNotFoundError("No module named 'moth'")
+        return real(*a, **kw)
+
+    monkeypatch.setattr(M, "register_upload", flaky)
+    r = client.post(f"/v1/admin/models/uploads/{up['id']}/complete", headers=o)
+    assert r.status_code == 503 and "retried" in r.json()["detail"]
+    assert "retried automatically" in M.release(ctx, up["release_version"])["error"]
+    r = client.post(f"/v1/admin/models/uploads/{up['id']}/complete", headers=o)
+    assert r.status_code == 200, r.text
+    assert M.release(ctx, up["release_version"])["status"] == "published"

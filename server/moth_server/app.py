@@ -65,6 +65,11 @@ class DbErrorLog(logging.Handler):
 
 def create_app(settings: Settings | None = None, extras: dict | None = None) -> FastAPI:
     settings = (settings or Settings.from_env()).ensure_dirs()
+    try:  # the shared MOTH model code is required (model registry, evaluation, inference)
+        import moth  # noqa: F401
+    except ImportError as e:
+        raise RuntimeError("the MOTH backend package (moth) is not installed or not on PYTHONPATH; install "
+                           "MOTH Cloud with deploy/install-server.sh or `pip install ./backend`") from e
     db = Database(settings.db_url)
     db.migrate()  # additive migrations only; destructive ones need explicit Owner approval
     ctx = Ctx(settings=settings, db=db, mailer=Mailer(settings), limiter=RateLimiter(db), extras=dict(extras or {}))

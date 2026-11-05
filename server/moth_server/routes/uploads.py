@@ -63,6 +63,14 @@ def _get(ctx: Ctx, uid: str) -> dict:
     row = ctx.db.one(select(uploads).where(uploads.c.id == uid))
     if not row:
         raise HTTPException(404, "Unknown upload (it may have expired). Start the upload again.")
+    if row["status"] == "uploading":  # trust the disk, not the record: lost chunks are simply sent again
+        received = json.loads(row["received"])
+        present = [i for i in received if (upload_dir(ctx, uid) / f"{i:06d}.chunk").exists()]
+        if len(present) != len(received):
+            upload_dir(ctx, uid).mkdir(parents=True, exist_ok=True)
+            with ctx.db.tx() as c:
+                c.execute(uploads.update().where(uploads.c.id == uid).values(received=json.dumps(present)))
+            row["received"] = json.dumps(present)
     return row
 
 
@@ -86,7 +94,7 @@ def start(body: StartIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depend
     existing = ctx.db.one(select(uploads).where(uploads.c.sha256 == body.sha256, uploads.c.status == "uploading",
                                                 uploads.c.user_id == auth.uid))
     if existing:
-        return {"duplicate": False, "resumed": True, "upload": public(existing)}
+        return {"duplicate": False, "resumed": True, "upload": public(_get(ctx, existing["id"]))}
     free = shutil.disk_usage(ctx.settings.storage_dir).free
     if free < body.size * 3 + 512 * 2**20:
         raise HTTPException(507, f"MOTH Cloud does not have enough free disk space for this model "
@@ -147,11 +155,22 @@ def _fail(ctx: Ctx, row: dict, msg: str) -> None:
                                                                          updated_at=now()))
 
 
+_complete_locks: dict[str, threading.Lock] = {}
+
+
 @router.post("/{uid}/complete")
 def complete(uid: str, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    lock = _complete_locks.setdefault(uid, threading.Lock())
+    with lock:  # a retried request waits for the first one instead of racing it
+        return _complete(uid, auth, ctx)
+
+
+def _complete(uid: str, auth: Auth, ctx: Ctx):
     row = _get(ctx, uid)
     if row["status"] == "complete":
         return {"upload": public(row), "release": M.release(ctx, row["release_version"])}
+    if row["status"] != "uploading":
+        raise HTTPException(409, f"This upload is {row['status']}: {row['error'] or 'start the upload again'}")
     pub = public(row)
     if pub["missing"]:
         raise HTTPException(409, f"{len(pub['missing'])} chunk(s) are still missing; resume the upload.")
@@ -171,11 +190,17 @@ def complete(uid: str, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(g
         raise HTTPException(422, "The upload was corrupted (checksum mismatch). Please upload the model again.")
     try:
         rel = M.register_upload(ctx, archive, row["name"], auth.uid, version=row["release_version"])
-    except M.ReleaseError as e:
+    except M.ReleaseError as e:  # the package itself is invalid: permanent, clean up
+        shutil.rmtree(d, ignore_errors=True)
         _fail(ctx, row, str(e))
         raise HTTPException(422, str(e)) from None
-    finally:
-        shutil.rmtree(d, ignore_errors=True)
+    except Exception as e:  # noqa: BLE001 — a server-side problem: keep the chunks so a retry can succeed
+        archive.unlink(missing_ok=True)
+        M.log.exception("processing upload %s failed", uid)
+        M._set(ctx, row["release_version"], error=f"MOTH Cloud could not process the upload yet ({type(e).__name__}); "
+                                                  "it is retried automatically.")
+        raise HTTPException(503, "MOTH Cloud could not process the upload right now; it will be retried.") from None
+    shutil.rmtree(d, ignore_errors=True)
     with ctx.db.tx() as c:
         c.execute(uploads.update().where(uploads.c.id == uid).values(status="complete", updated_at=now()))
     audit(ctx.db, "models.upload_completed", auth.uid, f"release:{rel['version']}", {"size": row["size"]})

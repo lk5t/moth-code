@@ -1,65 +1,55 @@
-# Known limitations & remaining deployment requirements (v0.2.0)
+# Known limitations & remaining requirements (v0.3.0)
 
-Everything the README lists as working is implemented and tested. This page lists what still
-depends on external infrastructure, what is unfinished, and what has not been verified, so
-nothing is overstated.
+Everything the README lists as working is implemented and tested (see [TEST_RESULTS.md](TEST_RESULTS.md)).
+This page lists what depends on the Owner's infrastructure or accounts, what could not be verified in
+the development environment, and what is unfinished — so nothing is overstated.
 
-## Infrastructure the Owner must provide
+## Steps only the Owner can do (one time)
 
-| Needed | Why | Until then |
+| Needed | Why | Where |
 | --- | --- | --- |
-| A deployed **MOTH Server** on owner-controlled hosting (TLS domain, PostgreSQL, backups) | Accounts, metering, billing, referrals, training coordination, MOTH Cloud | Development: `moth-server serve` locally (SQLite, email outbox). See [SERVER.md](SERVER.md) |
-| **SMTP** credentials | Real verification and recovery emails | Emails are written to `data/outbox/` |
-| **Stripe** credentials, prices and a webhook | Paid Pro/Max subscriptions | Paid plans show "Coming soon"; checkout returns 503 |
-| **GPU capacity** for MOTH Cloud inference, plus a deployed model, plus `cloud_inference_enabled` | MOTH is cloud-only | Chat and the agent report that MOTH Cloud inference is not available yet. The server can serve on CPU for testing only. |
-| A published **MOTH Worker release** on the server | One-command enrollment | The app shows the manual `moth-worker enroll` command |
-| An initialised **training coordinator** (base model + licensed dataset) | Workers need jobs | Workers stay idle; the UI says no training run is active |
-| An updater signing key ([RELEASING.md](RELEASING.md)) and an Authenticode certificate | Signed in-app updates; no SmartScreen warning | Release builds don't offer updates; Windows warns on install |
+| A **domain** pointing at the VPS, and **Caddy** (or another TLS proxy) on ports 80/443 | The official HTTPS endpoint desktops connect to | DNS at your registrar; Caddy needs root once ([SERVER.md](SERVER.md#steps-that-need-an-administrator-root)) |
+| Run **`install-server.sh`** on the VPS | Switches the existing server to supervised, self-updating operation (adopts its data) | [SERVER.md](SERVER.md#moving-the-existing-vps-over-no-data-is-moved-or-deleted) |
+| GitHub **secrets** `MOTH_RELEASE_SIGNING_KEY`, `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` and the variable **`MOTH_CLOUD_URL`** | Signed releases and the built-in endpoint | [RELEASING.md](RELEASING.md) |
+| A read-only **GitHub token** on the server (while the repository is private) | The update agent downloads releases | `--github-token-file` |
+| **SMTP**, **Stripe**, an Authenticode certificate | Real emails, paid plans, no SmartScreen warning | unchanged from v0.2 |
+
+Until `MOTH_CLOUD_URL` and the signing secrets exist, release builds still work but have no built-in
+address (the sign-in screen asks for one) and no automatic desktop updates.
+
+**Desktops already on v0.2.x need one manual install of v0.3.0**, because v0.2 had no working updater.
+After that every update is automatic. The same is true for workers enrolled with v0.2.
+
+## Not verified in the development environment
+
+- **Windows:** installing the v0.3.0 setup.exe, upgrading from v0.2.1 on a real PC, and a real
+  signed desktop update. CI builds the installer and signed updater artifacts. The update service, the
+  staged rollout logic and the client logic are tested, but no Windows machine was available to click
+  through an actual update.
+- **The live VPS:** it was not touched. The installer and update agent were tested end to end on Linux
+  with real processes: adopting a running v0.2.1 server, updates, rollback with database restore,
+  recovery after a crash mid-update, and a simulated reboot. They were not run on the actual VPS or
+  under real systemd (the container has no systemd). The cron supervisor path was tested.
+- **HTTPS:** the Caddy configuration is generated and syntax-correct but was not run against a real
+  domain and certificate.
+- **GPU:** no NVIDIA GPU was available. CPU inference and CPU workers are tested; the CUDA paths are
+  unchanged from v0.2 and untested on hardware.
+- **PostgreSQL backups by the agent** need `pg_dump`/`pg_restore` on the server; the agent's backup and
+  restore were exercised with SQLite. The server itself is tested on PostgreSQL.
 
 ## Model capability
 
-No well-trained MOTH model exists yet. The only real model trained during development was a
-6.2M-parameter `moth-small` (10 minutes on CPU, stdlib code, validation loss ≈4.19). It was
-deployed in development to verify the cloud pipeline, and its output is code-like text, not
-useful answers. The agent reports "beyond current model" until MOTH-50M is trained at scale
-and fine-tuned on agent data.
+No well-trained MOTH model exists yet. Publishing and deployment now work reliably, but the models
+available today (a few million parameters, trained for minutes on CPU) produce code-like text, not
+useful answers. The agent reports "beyond current model" until MOTH-50M is trained at scale.
 
-## Training network
+## Design limits
 
-- Verified end to end on CPU only. The development environment has no NVIDIA GPU, so the
-  worker's CUDA path, the driver-matched PyTorch install and the RTX 3060 reference
-  configuration are untested on real hardware.
-- The worker loop and enrollment were verified on Linux. Real rented-GPU providers and
-  systemd service startup on a booted machine were not exercised: the unit file is written
-  and validated, but the container has no running systemd.
-- Aggregation is token-weighted federated averaging with per-update validation and a
-  held-out probe loss. Robust aggregation against coordinated poisoning, secure aggregation,
-  contributor reputation and large-model sharding are future work. Each round downloads the
-  full checkpoint, which is fine at ≤50M parameters.
-- Scheduling is first-come. There is no GPU-capability matching beyond "has a GPU".
-
-## Billing
-
-- The Stripe integration is verified with signed test webhooks and a mocked API. It was not
-  run against Stripe's real test mode, because no credentials were available here.
-- There are no taxes, invoices or emails beyond what Stripe provides. Usage-based overage
-  billing is not implemented; usage beyond the allowance draws on earned credits only.
-
-## Accounts
-
-- Changing email address and deleting an account aren't implemented yet. The Owner can
-  suspend accounts.
-- Rate limits are per IP and per account. Distributed attacks need an upstream WAF.
-- In browser development mode (no Tauri), tokens are kept in `sessionStorage` for the tab
-  only. The desktop app uses Windows Credential Manager. A real Credential Manager round
-  trip is asserted in the Windows CI job; on Linux CI the keyring may be unavailable and that
-  test is skipped.
-
-## Desktop
-
-- The terminal is line-oriented, not a full PTY.
-- The installer bundles CPU PyTorch for the Owner's local training tools only. Users don't
-  need it for inference.
-- The Docker image and Compose stack were written and syntax-checked but not built here (no
-  Docker in the development environment). The server, backup and restore were verified
-  directly with Python, SQLite and PostgreSQL.
+- Staged rollouts use the install's random id; there is no per-region or per-plan targeting.
+- The update agent keeps the latest 3 releases and 5 backups locally; off-host backups still use
+  `scripts/backup-server.sh` (needs your storage and GPG key).
+- Downloads that are interrupted restart from the beginning (desktop) or are retried (server, worker);
+  only model uploads resume chunk by chunk.
+- Docker installations update by pulling a new image, not through the agent.
+- The terminal is line-oriented (not a full PTY). Changing the email address and deleting accounts are
+  not implemented.

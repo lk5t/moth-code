@@ -2,6 +2,98 @@
 
 Everything below was actually run. Commands are listed so the results can be reproduced.
 
+# v0.3.0 — SIMPLIFY
+
+## Automated suites (Linux x86-64, 4 CPU threads, no GPU, Python 3.13, PyTorch CPU)
+
+| Suite | Command | Result |
+| --- | --- | --- |
+| MOTH Server | `cd server && python -m pytest -q` | **60 passed** (46 from v0.2, 14 new) |
+| Desktop backend | `cd backend && python -m pytest -q` | **104 passed** |
+| Frontend | `cd app && npx tsc -b && npm test && npm run build` | typecheck ok, **19 passed**, build ok |
+| Rust shell | `cargo test` | **5 passed** |
+| **Ecosystem end-to-end** (real processes) | `python scripts/test-ecosystem-update.py` | **PASS, all 11 steps** |
+
+## Model publishing and the evaluation fix
+
+The reported failure was `ReleaseError: no evaluation set is configured (coordinator probe or
+data/eval/tokens.bin)`. v0.2 evaluated only against the training coordinator's probe tokens or a
+hand-placed `tokens.bin`, so a server without a training run rejected every model.
+
+| Test | What it proves |
+| --- | --- |
+| `test_v02_rejected_model_is_recovered_without_reupload` | A database built with the **real v0.2 schema** (from git history) holding a model rejected with exactly that error migrates to v0.3. The pipeline re-evaluates it automatically on the built-in dataset (bits per byte) without re-uploading; it is published, then deployed. |
+| `test_missing_eval_data_guided_recovery` | With no dataset at all the release fails with a clear guided message and can't be deployed. Invalid datasets are refused with specific reasons (too short, binary, not UTF-8, missing tokenizer, bad token file). Uploading valid text makes the waiting release continue automatically (attempt 2) to *published*. Duplicates, pinning and tampered datasets are handled. |
+| `test_token_datasets_require_matching_tokenizer` | Token datasets are used only for models with the same tokenizer; otherwise they are skipped with the reason. |
+| `test_chunked_upload_resumes_after_interruption` | A non-MOTH manifest is refused before upload. A damaged chunk is rejected; completing early reports what is missing. Restarting resumes the same upload, re-sent chunks are harmless, temporary files are cleaned up, and duplicates are detected before upload. |
+| `test_stale_uploads_expire_and_interrupted_work_recovers` | Abandoned uploads expire. A release stuck in *evaluating* after a restart becomes *failed: interrupted*, is retried automatically, and can be retried from the dashboard without re-uploading. |
+| `test_upload_completion_survives_a_transient_server_error` | Found in live testing: a server error while completing keeps the chunks and returns a retryable 503; the retry publishes the model. |
+| `test_publish_with_network_failures_and_app_restart` | The **desktop publisher** against a real server. The network fails mid-upload and the job pauses with its state persisted; a new publisher (an app restart) resumes it, despite more failures. Real evaluation, publish, deploy, then a user's chat is served by the model. Re-publishing is detected as a duplicate. |
+| `test_publish_errors_are_clear` | Local validation stops a broken package before upload with the reason. Non-owners are refused. A stale Owner sign-in triggers re-authentication (428). |
+| `test_upload_evaluate_deploy_rollback_and_restore` (updated) | v0.3 states. A failed deployment (corrupted weights) keeps the current model serving. A lower-scoring model needs an explicit override. Rollback works, and so does restore after a server restart. |
+
+## Automatic updates
+
+| Test | What it proves |
+| --- | --- |
+| `test_agent_api_is_hidden_and_signatures_enforced` | The agent API is 404 without its token. Tampered manifests, other keys' signatures and files that don't match the signed SHA-256 are refused. |
+| `test_desktop_updates_staged_rollout_and_automatic_halt` | The Tauri update endpoint offers the signed update to about 10% of installs, then 50%. Reported failures above the limit halt the rollout automatically and log/notify; the Owner can promote it. |
+| `test_outdated_clients_get_426_but_can_still_update` | Clients below the minimum version get 426 but can still reach health and the update service. The floor can't be lowered. |
+| `test_owner_update_controls_require_owner` | Pause, check now, rollback requests, deployment history with logs, failure notification and system metrics; all Owner-only. |
+| `test_worker_update_waits_for_job_and_verifies` | The running job is accepted *before* the update installs. Tampered offers are refused. A version that fails to start three times is reverted. |
+| `test_stdlib_verifier_copies_are_identical_and_correct` | The agent, worker and server ed25519 verifiers are identical and correct; the committed public keys match. |
+
+### `scripts/test-ecosystem-update.py`: real installation and updates
+
+1. A **real v0.2.1 server** (code from git history) runs with an Owner account, like the VPS today.
+2. `install-server.sh` **adopts it in place** without sudo: verified backup, migration to schema 2,
+   cron supervision.
+3. The Owner signs in with the **v0.2 password**.
+4. A real **MOTH Worker 0.3.0** enrolls and connects over HTTP.
+5. Signed release **0.3.1** (new migration, new agent): the agent verifies, backs up, migrates to schema
+   3, restarts and health-checks, records the deployment with its log, and **updates itself**.
+6. The **worker** installs 0.3.1 between jobs, restarts into it, reconnects and reports success.
+7. Broken release **0.3.2** migrates to schema 4 then crashes. It is **rolled back automatically**, the
+   database is restored to schema 3, and the Owner is notified.
+8. A **tampered** release is ignored.
+9. The agent is killed **right after switching** to 0.3.4; the next run finishes and verifies the update.
+10. **Reboot**: all processes are SIGKILLed, and the supervisor brings MOTH Cloud back on 0.3.4.
+11. An **Owner-requested rollback** returns to 0.3.1 with accounts intact.
+
+Bugs this test found and that are fixed:
+
+- the installer couldn't find the old server process without `ss`;
+- worker update URLs depended on the public URL;
+- recovery after a mid-update crash didn't restart the old process;
+- the agent treated killed but unreaped (zombie) processes as running, so the cron supervisor would
+  not restart a crashed server;
+- the background agent and a manual `moth check` could overlap (now an exclusive lock).
+
+## Live verification in the browser (real MOTH Server, local backend, production-mode UI)
+
+- **First launch:** the welcome screen (Sign in → Open a workspace → Code). No server address is shown
+  anywhere; the production build connected to its built-in endpoint.
+- **Training:** a real `moth-small` model (6.16M parameters) was trained on CPU for 300 steps
+  (validation loss 3.67) and exported.
+- **Publishing:** *Validate* in Owner → Model packages reported checksum, architecture, tokenizer and
+  resources. *Publish* uploaded it.
+  - The first attempt hit a server error (that server had been started without the MOTH backend on its
+    path), which exposed the completion bug above.
+  - After the fix, the **same release recovered through the resumed upload**: it was evaluated
+    (2.06 bits/byte on the built-in dataset, with the warning that a stdlib-trained model overlaps that
+    data), published, then **deployed** from Owner Dashboard → AI models.
+- **Inference:** after enabling cloud inference, workspace chat streamed a reply from
+  `moth-small-v0.3-step300` on MOTH Cloud (CPU) at about 100 tokens/s.
+- **Evaluation data:** a held-out text file was uploaded through the dashboard and validated.
+- **Dashboard:** the Server (CPU, memory, disk, active users, recent errors), Updates and Workers panels
+  rendered against real data.
+
+## Not verified here (v0.3)
+
+- A real Windows install, upgrade and signed desktop update (no Windows machine; CI builds the installer).
+- The live VPS (not touched), real systemd, a real domain with HTTPS, real GPUs, and agent backups on
+  PostgreSQL. See [LIMITATIONS.md](LIMITATIONS.md).
+
 # v0.2.0 — CONNECT
 
 ## Automated suites (Linux x86-64, 4 CPU threads, no GPU, Python 3.13, PyTorch 2.15 CPU)

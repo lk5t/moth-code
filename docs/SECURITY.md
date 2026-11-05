@@ -1,5 +1,34 @@
 # Security, permissions & owner policy
 
+## v0.3 changes
+
+- **Signed updates everywhere.**
+  - Every release has one manifest signed in CI with an ed25519 key that never leaves GitHub Actions
+    secrets.
+  - The MOTH Cloud update agent and MOTH Workers verify that signature, and each file's SHA-256,
+    before installing anything. Both use a standard-library verifier, so they don't depend on the code
+    they're about to replace.
+  - Desktop updates are additionally signed with the Tauri updater key; the app refuses unsigned or
+    altered updates.
+- **No arbitrary deployments.**
+  - Only the Release workflow, started by the Owner after the full test suite passes, can produce a
+    signed release.
+  - Destructive database migrations need the Owner's explicit approval, and a verified backup is
+    always taken before migrating.
+- **Private operations API.** The update agent's endpoints need a random token from a mode-600 file
+  and are blocked by the HTTPS proxy. Without the token they answer 404, like a missing route. The
+  Owner Dashboard has no shell access.
+- **Compatibility gate.** Clients declare their version. The server refuses outdated clients (HTTP 426)
+  before any request handler runs, so an old client can't write data in an old format.
+- **Model publishing.**
+  - Uploads are Owner-only and re-authenticated, chunked, and checksummed per chunk and overall.
+  - Archives are checked for unsafe paths.
+  - Every model is validated, actually run in an isolated process and scored before it can be
+    published. No check can be skipped. The Owner can override only a lower score than the active
+    model, never a failed check.
+- **Production hardening.** API docs (`/docs`) are disabled unless development mode is on. The API
+  listens on 127.0.0.1 behind the TLS proxy, and the installer opens only ports 80/443.
+
 ## v0.2 changes
 
 - **Content policy** moved to the MOTH Server. It is Owner-only (Owner Dashboard → Policy) and applied to every MOTH
