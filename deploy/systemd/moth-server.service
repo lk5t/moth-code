@@ -1,0 +1,24 @@
+# Alternative to Docker: run the MOTH Server as a systemd service behind your own TLS proxy.
+#   python3 -m venv /opt/moth-server && /opt/moth-server/bin/pip install ./backend "./server[postgres]"
+#   install -m 600 moth-server.env /etc/moth-server.env
+[Unit]
+Description=MOTH Server
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=moth
+Group=moth
+EnvironmentFile=/etc/moth-server.env
+Environment=MOTH_SERVER_DATA_DIR=/var/lib/moth-server
+ExecStart=/opt/moth-server/bin/moth-server serve --host 127.0.0.1 --port 8900
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/moth-server
+
+[Install]
+WantedBy=multi-user.target

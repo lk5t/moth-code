@@ -1,5 +1,9 @@
 # Setup & building
 
+> **v0.2 note.** MOTH is cloud-only. Users sign in to a MOTH account and use MOTH Cloud, so no GPU or model is
+> needed on their PC. The PyTorch/CUDA notes below apply only to the Owner's local model-training tools and to
+> development. To run the MOTH Server see [SERVER.md](SERVER.md); for GPU workers see [WORKER.md](WORKER.md).
+
 ## Installing (end users)
 
 Download `MOTH Code_x.y.z_x64-setup.exe` from the repository's GitHub Releases and run it. It installs per user (no

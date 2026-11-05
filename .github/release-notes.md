@@ -1,8 +1,8 @@
 <p align="center"><img src="https://raw.githubusercontent.com/lk5t/moth-code/__REF__/branding/moth-icon-1024.png" width="96" alt="MOTH"/></p>
 
-## MOTH Code — Foundation release
+## MOTH Code — CONNECT
 
-An independent Windows desktop AI coding agent powered by its own neural network, trained from scratch on your PC.
+An independent AI coding agent for Windows, powered by MOTH, its own neural network trained from scratch and served from MOTH Cloud. Version 0.2 adds MOTH accounts, plans and metered usage, referrals, one-command GPU worker enrollment for the MOTH training network, and the Owner Dashboard.
 
 ### Install
 
@@ -12,9 +12,10 @@ An independent Windows desktop AI coding agent powered by its own neural network
 
 ### Before you start
 
-- **No trained model is included.** Open **Training** to train your first MOTH model (tokenizer → dataset → run →
-  export), then load it under **Models**.
-- The installer bundles a CPU build of PyTorch. For NVIDIA GPUs, see `docs/SETUP.md` (`MOTH_PYTHON`).
+- MOTH runs in MOTH Cloud. Sign in with a MOTH account. Chat and the agent work once the Owner's MOTH Server has a
+  deployed model and cloud inference enabled; until then the app says so.
+- To contribute GPU compute, open **Training & Referrals** and generate a one-time enrollment command for a Linux
+  GPU server. The checksummed `moth-worker-<version>.tar.gz` release is attached below.
 - Read the [known limitations](https://github.com/lk5t/moth-code/blob/__REF__/docs/LIMITATIONS.md) before relying on
   this release.
 

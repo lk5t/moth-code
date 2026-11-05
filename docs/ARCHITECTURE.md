@@ -1,5 +1,49 @@
 # MOTH Code architecture
 
+## v0.2 system overview (cloud-only)
+
+```mermaid
+flowchart LR
+  subgraph PC["User PC (Windows)"]
+    UI["MOTH Code UI"] --> LB["Local backend<br/>files · terminal · git · agent runtime"]
+    UI -. "session token in Windows Credential Manager" .- Vault[(OS vault)]
+  end
+  subgraph Owner["Owner-controlled infrastructure"]
+    S["MOTH Server<br/>auth · billing · referrals · admin"]
+    C["MOTH Cloud<br/>deployed official model, metered"]
+    R["Model registry<br/>candidates → eval gate → deploy/rollback"]
+    K["Training coordinator<br/>jobs · leases · verification · aggregation"]
+    DB[("PostgreSQL")]
+    ST[("Model & checkpoint storage<br/>+ off-host backups")]
+  end
+  W["MOTH Worker<br/>(optional Linux GPU servers)"]
+  Stripe["Payment processor"]
+  LB -- "chat/agent: HTTPS + session (redacted, per-workspace consent)" --> C
+  UI -- "accounts, usage, referrals, enrollment" --> S
+  W -- "worker credential: heartbeats, jobs, verified updates" --> K
+  K --> R --> C
+  S --- DB
+  R --- ST
+  K --- ST
+  Stripe -- "signed webhooks" --> S
+```
+
+- **Cloud-only inference:** the desktop never runs the model for users. Chat and agent steps go to MOTH Cloud,
+  where requests are authenticated, policy-checked, metered with reserve-then-settle, and served by the
+  deployed official release.
+- **One official model:** training contributions produce candidate checkpoints. A candidate reaches users only
+  after passing the evaluation gate and being deployed. All users benefit immediately, with no downloads.
+- **Isolation:** user sessions, worker credentials and admin capabilities are distinct. Worker credentials cannot
+  call user APIs, and admin routes require the Owner role plus recent re-authentication. The desktop app holds no
+  backend secrets.
+- **Replaceable helpers:** the friend's large-RAM server may run dataset preparation or a coordinator, but
+  production auth, billing, inference, model releases and permanent storage live on owner infrastructure.
+
+The v0.1 sections below still describe the desktop shell, the local backend (agent runtime, tools and
+permissions) and the MOTH model and training pipeline, which the server and worker reuse.
+
+## v0.1 foundation
+
 ## Overview
 
 ```mermaid

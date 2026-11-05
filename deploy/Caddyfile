@@ -1,0 +1,9 @@
+# Automatic HTTPS (Let's Encrypt) in front of the MOTH Server.
+{$MOTH_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 4GB  # worker training updates and model uploads
+	}
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy moth-server:8900
+}

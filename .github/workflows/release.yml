@@ -8,7 +8,7 @@ on:
       tag:
         description: "Release tag to create (e.g. v0.1.0); must match the app version"
         required: true
-        default: "v0.1.0"
+        default: "v0.2.0"
 
 permissions:
   contents: write
@@ -95,8 +95,16 @@ jobs:
           projectPath: app
           args: --config src-tauri/tauri.release.conf.json
           tagName: ${{ env.RELEASE_TAG }}
-          releaseName: "MOTH Code ${{ env.RELEASE_TAG }} — Foundation"
+          releaseName: "MOTH Code ${{ env.RELEASE_TAG }}"
           releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: true
           includeUpdaterJson: true
+
+      - name: Build and attach the MOTH Worker release (checksummed)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/build-worker-release.py --out dist
+          gh release upload "$RELEASE_TAG" dist/moth-worker-*.tar.gz dist/moth-worker-*.tar.gz.sha256 --clobber

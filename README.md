@@ -4,34 +4,47 @@
 
 <h1 align="center">MOTH Code</h1>
 
-<p align="center">An independent Windows desktop AI coding agent powered by its own neural network — MOTH Model — trained from scratch.</p>
+<p align="center">An independent AI coding agent for Windows, powered by MOTH — its own neural network, trained from scratch and served from MOTH Cloud.</p>
 
 ---
 
-MOTH Code is a desktop development environment (chat, project explorer, Monaco editor, terminal, Git) whose
-intelligence comes **only** from MOTH's own models: original decoder-only Transformers initialised from random weights
-and trained by you, on your machine, with data you are licensed to use. No pretrained weights and no third-party AI APIs
-are used anywhere.
+MOTH Code is a desktop development environment with chat, an autonomous coding agent, a project explorer, a Monaco
+editor, a terminal and Git. Its intelligence comes **only** from MOTH's own models: original decoder-only Transformers
+initialised from random weights. No pretrained weights and no third-party AI APIs are used anywhere.
 
-> **Status: v0.1.0 — Foundation.** The full pipeline works end to end: tokenizer → dataset → training → evaluation
-> → export → local inference → chat and autonomous agent. **No trained MOTH model ships with this release.** A small
-> model trained for a few minutes produces code-flavoured text, not useful answers, and the agent will report that a task
-> is beyond the current model rather than pretend. Capability comes from training MOTH-50M on enough data (see
-> [docs/TRAINING.md](docs/TRAINING.md)).
+**v0.2.0 "CONNECT"** makes MOTH a cloud service:
 
-## What's in v0.1
+- Everyone, including the Owner, uses the official MOTH model on **MOTH Cloud** through a MOTH account. Usage is
+  metered on the server.
+- Users never download model weights.
+- Anyone can contribute GPU training compute with **MOTH Worker**.
+- New checkpoints must pass an evaluation gate before they are deployed for all users.
+
+> **Status.** All of the systems below are implemented and tested. They depend on infrastructure the Owner has to
+> provide: a deployed MOTH Server, SMTP, Stripe credentials, and GPU capacity for MOTH Cloud inference. Until that
+> exists, the app honestly reports what is unavailable. See [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
+
+## What's in v0.2.0
 
 | Area | What works today |
 | --- | --- |
-| **Desktop app** | Tauri 2 + React/TypeScript, black-and-crimson MOTH design, resizable workspace: chat, collapsible explorer, Monaco editor, integrated terminal, Git changes, activity, memory; training dashboard; models; learning network; settings. |
-| **MOTH Model** | Original Transformer (RoPE, RMSNorm, SwiGLU, optional grouped-query attention, KV cache). Presets from `moth-tiny` to `moth-400m`; **MOTH-50M = 49.3M parameters**, 2K context. Custom byte-level BPE tokenizer written from scratch. |
-| **Training** | Real forward/backward passes and AdamW updates; CUDA mixed precision with CPU fallback; validation loss; atomic checkpoints with bit-exact resume; pause/resume from the UI; license-tracked datasets; evaluation (loss, perplexity, next-token accuracy, code benchmark); checksummed export. |
-| **Owner policy** | Editable conversational content policy (system prompt, generation defaults, block/warn/redact rules). Ships with no topic restrictions. Separate from operational security. |
-| **Coding agent** | MOTH-driven plan → tool-call loop over files, search, terminal, Git and memory; permission engine with approvals for destructive/external/out-of-workspace actions; test-based verification; cancel, resume, revert; honest "beyond current model" reporting. |
-| **Memory & retrieval** | Per-project memory (architecture, preferences, verified solutions, errors) and an incremental FTS5 code index for large projects. |
-| **Learning network** | Strictly opt-in community training protocol: client trains on public shards and uploads only weight deltas; reference coordinator validates (checksums, shapes, update size, probe loss) and aggregates into versioned checkpoints. Personal learning from test-verified tasks, local only. |
-| **Hybrid inference** | Local / MOTH Cloud / Automatic. MOTH Cloud protocol, client and a self-hostable reference server; consent required before sending anything remotely, credentials always redacted. **No MOTH-operated servers exist yet**, and the app says so. |
-| **Release** | GitHub Actions CI (Windows + Linux), tag-triggered Windows NSIS installer with bundled backend, signed in-app updates from GitHub Releases. |
+| **Accounts** | Username/password accounts on the owner-operated MOTH Server: Argon2id, email verification, password recovery, rate limits, no account enumeration. Remember Me sessions stored in Windows Credential Manager. Saved accounts and switching, session revocation, profiles and avatars. |
+| **Owner (LK5T)** | One-time `init-owner` setup with a password entered interactively. Permanent Owner role that cannot be assigned through the API. Unlimited, unmetered usage. Re-authentication for sensitive actions. Owner Dashboard. |
+| **Plans & usage** | Configurable Free/Pro/Max allowances. Atomic reserve-then-settle token metering with no negative balances or double charges. Credit ledger and transaction history. Stripe subscriptions with verified webhooks; checkout stays off until configured. |
+| **Referrals** | Codes and share links. Rewards are usage credits only, earned from verified paid invoices or verified GPU training work, with pending periods, caps, reversals, fraud holds and an auditable ledger. |
+| **Training network** | One-command, checksum-pinned Linux GPU worker enrollment, isolated worker credentials, job leases, heartbeats, resume after interruption, pause/revoke and GPU limits. Every contribution is verified before it is accepted. |
+| **Model deployment** | Candidates come from aggregated checkpoints or Owner uploads. An evaluation gate runs before deploy, with smoke-tested hot swap, automatic rollback, and restore after restart. No weights on user PCs. |
+| **Coding agent** | Runs on MOTH Cloud with per-workspace consent before any file content is sent. Includes v0.1's permissions, approvals, verification, memory, cancel, resume and revert. |
+| **Desktop app** | Tauri 2 with the black-and-crimson MOTH UI, workspace, Training & Referrals, Plan & usage, Referrals, Owner Dashboard, signed in-app updates, and a themed installer. |
+| **MOTH Model** | Original Transformer (MOTH-50M = 49.3M parameters), custom BPE, full training pipeline. Model training tools are Owner-only in the desktop app. |
+
+## Components
+
+| Component | Path | Runs on |
+| --- | --- | --- |
+| Desktop client | `app/` (Tauri, React) + `backend/` (local tools, agent runtime) | Users' Windows PCs |
+| MOTH Server | `server/` (auth, billing, referrals, coordinator, model registry, MOTH Cloud) | Owner-controlled server ([docs/SERVER.md](docs/SERVER.md)) |
+| MOTH Worker | `worker/` | Optional Linux GPU servers ([docs/WORKER.md](docs/WORKER.md)) |
 
 ## Installer
 
@@ -65,8 +78,19 @@ cd app && npm install && npm run tauri dev
 
 `tauri dev` starts the frontend dev server and the desktop shell, which launches the Python backend automatically.
 
-Then, in the app: **Training → Tokenizer → Dataset → Training run → Export**, load the model under **Models**, and chat
-or start an agent task in the **Workspace**.
+Run a development MOTH Server in another terminal (development mode writes emails to `data/outbox/`):
+
+```bash
+python -m pip install -e "./server[dev]"
+```
+
+```bash
+cd server && moth-server init-owner && moth-server serve
+```
+
+Then set the server address in the app (Settings → Account, or `VITE_MOTH_SERVER_URL=http://127.0.0.1:8900`), and
+create an account. To serve chat, deploy a model and enable `cloud_inference_enabled` in the Owner Dashboard
+([docs/SERVER.md](docs/SERVER.md)).
 
 ## Repository layout
 
@@ -91,6 +115,9 @@ docs/                Architecture, setup, training, security, protocols, releasi
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [MOTH Server deployment & operations](docs/SERVER.md)
+- [MOTH Worker (GPU training)](docs/WORKER.md)
+- [Plans, metering & payments](docs/BILLING.md)
 - [Setup & building](docs/SETUP.md)
 - [Training MOTH models](docs/TRAINING.md)
 - [Security, permissions & owner policy](docs/SECURITY.md)
@@ -103,6 +130,14 @@ docs/                Architecture, setup, training, security, protocols, releasi
 
 ```bash
 cd backend && python -m pytest -q
+```
+
+```bash
+cd server && python -m pytest -q
+```
+
+```bash
+bash scripts/test-worker-install.sh
 ```
 
 ```bash

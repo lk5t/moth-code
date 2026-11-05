@@ -1,0 +1,55 @@
+# MOTH Server on an owner-controlled host (VPS or dedicated server).
+#   cp moth-server.env.example moth-server.env   # fill in secrets; never commit this file
+#   docker compose up -d
+#   docker compose exec moth-server moth-server init-owner   # one-time, interactive
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: moth
+      POSTGRES_DB: moth
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moth"]
+      interval: 10s
+      retries: 10
+    networks: [internal]
+
+  moth-server:
+    build: {context: .., dockerfile: server/Dockerfile}
+    image: moth-server:0.2.0
+    restart: unless-stopped
+    env_file: moth-server.env
+    environment:
+      MOTH_SERVER_DATA_DIR: /data
+      MOTH_TRUST_PROXY_HEADERS: "true"   # only Caddy can reach the server
+    volumes: [moth-data:/data]
+    depends_on: {postgres: {condition: service_healthy}}
+    networks: [internal]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      MOTH_DOMAIN: ${MOTH_DOMAIN:?set MOTH_DOMAIN, e.g. moth.example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [moth-server]
+    networks: [internal]
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+
+volumes:
+  pgdata:
+  moth-data:
+  caddy-data:
+
+networks:
+  internal:

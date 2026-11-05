@@ -1,64 +1,65 @@
-# Known limitations & unfinished work (v0.1.0)
+# Known limitations & remaining deployment requirements (v0.2.0)
 
-This is a foundation release. Everything listed as working in the README is implemented and tested. This page
-lists what is **not** done yet, or done only partially, so nothing is overstated.
+Everything the README lists as working is implemented and tested. This page lists what still
+depends on external infrastructure, what is unfinished, and what has not been verified, so
+nothing is overstated.
+
+## Infrastructure the Owner must provide
+
+| Needed | Why | Until then |
+| --- | --- | --- |
+| A deployed **MOTH Server** on owner-controlled hosting (TLS domain, PostgreSQL, backups) | Accounts, metering, billing, referrals, training coordination, MOTH Cloud | Development: `moth-server serve` locally (SQLite, email outbox). See [SERVER.md](SERVER.md) |
+| **SMTP** credentials | Real verification and recovery emails | Emails are written to `data/outbox/` |
+| **Stripe** credentials, prices and a webhook | Paid Pro/Max subscriptions | Paid plans show "Coming soon"; checkout returns 503 |
+| **GPU capacity** for MOTH Cloud inference, plus a deployed model, plus `cloud_inference_enabled` | MOTH is cloud-only | Chat and the agent report that MOTH Cloud inference is not available yet. The server can serve on CPU for testing only. |
+| A published **MOTH Worker release** on the server | One-command enrollment | The app shows the manual `moth-worker enroll` command |
+| An initialised **training coordinator** (base model + licensed dataset) | Workers need jobs | Workers stay idle; the UI says no training run is active |
+| An updater signing key ([RELEASING.md](RELEASING.md)) and an Authenticode certificate | Signed in-app updates; no SmartScreen warning | Release builds don't offer updates; Windows warns on install |
 
 ## Model capability
 
-- **No trained model ships with MOTH Code.** Users train their own. The only model trained during development was a
-  6.2M-parameter `moth-small` trained for ~10 minutes on 852K tokens of Python stdlib code (validation loss 4.19).
-  It produces Python-flavoured text and cannot follow instructions.
-- **The agent needs a model trained for tool use.** A model pretrained on raw text will not emit
-  `<|tool_call|>` actions, and tasks end as "beyond current model". The engine, tools and permissions are ready.
-  What's missing is (1) MOTH-50M pretraining at scale and (2) an instruction/agent fine-tuning dataset, which does not
-  exist yet. Personal learning can grow one from verified tasks, but bootstrapping it needs a model that can already
-  complete some tasks.
-- MOTH-50M has a 2K-token context. Prompts for large projects are trimmed (retrieved code first, then old steps), so
-  long multi-file tasks will need larger presets (`moth-150m`/`moth-400m`, 4K context) and more training.
-- The code benchmark is a small set of greedy completion checks for tracking early progress. It is not a
-  standard benchmark.
+No well-trained MOTH model exists yet. The only real model trained during development was a
+6.2M-parameter `moth-small` (10 minutes on CPU, stdlib code, validation loss ≈4.19). It was
+deployed in development to verify the cloud pipeline, and its output is code-like text, not
+useful answers. The agent reports "beyond current model" until MOTH-50M is trained at scale
+and fine-tuned on agent data.
 
-## Training
+## Training network
 
-- One training run at a time; single GPU; no multi-GPU or distributed data parallel yet.
-- The BPE tokenizer trainer is pure Python. Fine for tens to hundreds of MB, slow for multi-GB corpora (use
-  `max_mb`). Dataset preparation is likewise single-process.
-- Hugging Face datasets need the optional `datasets` package and network access. Gated datasets need terms accepted
-  on huggingface.co first. The license catalog records published licenses; users remain responsible for compliance.
-- Fine-tuning from an exported model (`init_from`) is available only as an advanced config field, with no dedicated
-  UI flow.
+- Verified end to end on CPU only. The development environment has no NVIDIA GPU, so the
+  worker's CUDA path, the driver-matched PyTorch install and the RTX 3060 reference
+  configuration are untested on real hardware.
+- The worker loop and enrollment were verified on Linux. Real rented-GPU providers and
+  systemd service startup on a booted machine were not exercised: the unit file is written
+  and validated, but the container has no running systemd.
+- Aggregation is token-weighted federated averaging with per-update validation and a
+  held-out probe loss. Robust aggregation against coordinated poisoning, secure aggregation,
+  contributor reputation and large-model sharding are future work. Each round downloads the
+  full checkpoint, which is fine at ≤50M parameters.
+- Scheduling is first-come. There is no GPU-capability matching beyond "has a GPU".
 
-## Application
+## Billing
 
-- **The terminal is line-oriented, not a full PTY.** Commands run with streamed output, a persistent working
-  directory and Ctrl+C cancellation, but interactive full-screen programs (vim, interactive REPLs, password prompts)
-  are not supported.
-- The installer bundles **CPU PyTorch only** (the CUDA build exceeds NSIS's 2 GB limit). GPU users point `MOTH_PYTHON`
-  at a CUDA environment (see SETUP.md). A separate GPU runtime download is planned.
-- The installer is ~1 GB unpacked because of PyTorch.
-- The Windows installer and in-app updates are built only by the GitHub Actions release workflow. They have not been
-  produced or installed in this development environment. The frozen backend and the bundled-resource launch path
-  were verified on Linux.
-- Signed updates need the owner to generate a key and configure repository secrets (see RELEASING.md). Until then,
-  release builds don't offer updates. The installer itself is not Authenticode code-signed, so Windows SmartScreen
-  will warn.
-- Single window; no multi-workspace tabs; no inline diff review before the agent applies edits (changes can be
-  reverted afterwards per task).
-- Chat history is kept per project, without search or export.
+- The Stripe integration is verified with signed test webhooks and a mocked API. It was not
+  run against Stripe's real test mode, because no credentials were available here.
+- There are no taxes, invoices or emails beyond what Stripe provides. Usage-based overage
+  billing is not implemented; usage beyond the allowance draws on earned credits only.
 
-## Learning network & cloud
+## Accounts
 
-- **No MOTH Cloud servers and no public community coordinator are operated.** The protocols, clients and reference
-  servers are implemented and tested. Endpoints must be configured by the user and are empty by default.
-- Community aggregation is token-weighted FedAvg with per-update validation and a probe-loss check. Secure
-  aggregation, robust aggregation against coordinated poisoning, reputation and differential privacy are future work.
-- Community jobs download the full model each round, which is fine at 50M parameters but needs deltas or sharding for
-  larger models.
-- The GPU memory cap uses PyTorch's per-process memory fraction, and throttling is a duty cycle between steps. There
-  is no OS-level GPU scheduling or idle detection yet.
+- Changing email address and deleting an account aren't implemented yet. The Owner can
+  suspend accounts.
+- Rate limits are per IP and per account. Distributed attacks need an upstream WAF.
+- In browser development mode (no Tauri), tokens are kept in `sessionStorage` for the tab
+  only. The desktop app uses Windows Credential Manager. A real Credential Manager round
+  trip is asserted in the Windows CI job; on Linux CI the keyring may be unavailable and that
+  test is skipped.
 
-## Testing
+## Desktop
 
-- The Rust shell has unit tests only; desktop UI behaviour was verified by launching the real app under a virtual
-  display and by browser screenshots, not by an automated end-to-end UI suite.
-- Windows-specific behaviour is covered by the Windows CI jobs, not by manual testing on a Windows PC.
+- The terminal is line-oriented, not a full PTY.
+- The installer bundles CPU PyTorch for the Owner's local training tools only. Users don't
+  need it for inference.
+- The Docker image and Compose stack were written and syntax-checked but not built here (no
+  Docker in the development environment). The server, backup and restore were verified
+  directly with Python, SQLite and PostgreSQL.

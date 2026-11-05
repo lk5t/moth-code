@@ -30,3 +30,10 @@ data/cache/
 Thumbs.db
 .vscode/
 .idea/
+
+# MOTH Server deployment secrets and data
+deploy/moth-server.env
+deploy/secrets/*.txt
+!deploy/secrets/README.txt
+server/data/
+dist/

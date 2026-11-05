@@ -1,8 +1,67 @@
-# Verified test results — v0.1.0
+# Verified test results
 
 Everything below was actually run. Commands are listed so the results can be reproduced.
 
-## Automated suites (development environment: Linux x86-64, 4 CPU threads, no GPU, Python 3.13, PyTorch 2.15 CPU)
+# v0.2.0 — CONNECT
+
+## Automated suites (Linux x86-64, 4 CPU threads, no GPU, Python 3.13, PyTorch 2.15 CPU)
+
+| Suite | Command | Result |
+| --- | --- | --- |
+| MOTH Server on SQLite | `cd server && python -m pytest -q` | **46 passed** |
+| MOTH Server on PostgreSQL 16 | `MOTH_TEST_DATABASE_URL=postgresql+psycopg://… python -m pytest -q` | **46 passed** |
+| Desktop backend | `cd backend && python -m pytest -q` | **104 passed** |
+| Linux worker install, end to end | `bash scripts/test-worker-install.sh` | **PASS** |
+| Frontend unit tests | `cd app && npm test` | **13 passed** |
+| Frontend typecheck and production build | `npm run typecheck && npm run build` | passed |
+| Rust shell | `cargo test` | **5 passed** (Windows CI also runs a strict Credential Manager round trip) |
+
+## What the v0.2 tests cover
+
+| Area | Highlights |
+| --- | --- |
+| Authentication | Register → email verification (single-use, expiring) → username-only login; passwords stored as Argon2id; case-insensitive unique usernames; reserved LK5T/admin names; duplicate emails (including Gmail dot and `+tag` variants) give an identical response and notify the real owner; generic login errors; per-IP and per-username rate limits with Retry-After; Remember Me and short sessions; listing, revocation, sign-out-everywhere, expiry; password change and reset revoke other sessions; scanner-safe verification page; avatar validation (type, size, no SVG). |
+| Owner | One-time CLI initialisation (a second attempt fails); Owner role cannot be created or assigned; the Owner can't be demoted or suspended; re-authentication returns 428 when stale; every admin route returns 401/403 for non-owners. |
+| Metering | Allowance is used before credits; the unused reservation is refunded; settlement is idempotent; a reused request id is refused (no free re-serving); balances never go negative; 25 concurrent reservations against a 10-request budget produce exactly 10 successes; ledger sum equals balance; period rollover; Owner is unlimited and unmetered; real metered inference counts exactly prompt + generated tokens. |
+| Payments | Webhook signature, timestamp and secret verification; exactly-once processing; subscription create/update/delete; renewal via `invoice.paid`; `past_due`; checkout disabled until configured; mocked Stripe checkout sends no card data. |
+| Referrals | Registration alone earns nothing; first paid invoice → pending reward → credited after the pending period, exactly once; refunds and disputes reverse with ledger clawback; monthly cap; same-IP referrals held for review, then approved; invalid codes and suspended referrers ignored; masked dashboard; share page. |
+| Training network | Single-use, expiring enrollment tokens; install command pins the release SHA-256; worker and user credentials are mutually isolated; GPU required unless the development flag is set; two real workers complete a verified round aggregated into checkpoint v1; expired leases are requeued; reconnect resumes the same job; pause and revoke (revoked jobs return to the queue); tampered updates are rejected without credit; GPU referral rewards only after verified jobs, with self-referral blocked; mid-job checkpoint resume. |
+| Model deployment | Network checkpoint → candidate → evaluation gate → deploy → metered MOTH Cloud serving with Owner exemption; uploads; unevaluated or rejected releases can't deploy; a corrupted release fails deployment while the previous model keeps serving; rollback; a restarted server restores the deployment; unsafe archives are rejected. |
+| Server policy | Owner-only editing; validation; blocked input refused before metering. |
+| Desktop cloud-only | No local load endpoints or inference modes; chat and agent require sign-in; agent requires per-workspace consent; secrets redacted before sending; outages reported clearly; server errors (402 allowance) surfaced. |
+
+## Live verification (real services, browser-driven UI)
+
+- **Accounts.** Register in the desktop UI, verify through the branded email page from the development outbox,
+  sign in, then use the account menu (saved accounts) and Settings → Account (profile, sessions). The local backend
+  received the session in memory only.
+- **MOTH Cloud.**
+  - Setup: the 6.2M `moth-small` model was uploaded to a real MOTH Server, evaluated (held-out loss 4.156) and
+    deployed, then cloud inference was enabled.
+  - Chat: a normal user chatted from the desktop UI and the reply streamed from MOTH Cloud.
+  - Metering: the server metered exactly **316 tokens**.
+  - Visibility: owner tools stay hidden for that user.
+- **Outage.** With the server stopped, chat shows "Can't reach MOTH Cloud right now" with Retry, and the status bar
+  shows "MOTH Cloud offline". Editor, terminal and Git are unaffected.
+- **Training & Referrals** generated a single-use enrollment command.
+- **Owner Dashboard (LK5T)** showed overview, users, and the models tab against real data.
+- **Linux worker install, step by step:**
+  - the generated command downloaded the release and passed `sha256sum -c`;
+  - a tampered copy was rejected;
+  - `install.sh` built the venv and enrolled (credential file mode 600);
+  - the installed `moth-worker run` completed a **verified** training job;
+  - the systemd unit was written.
+- **Backup and restore.** `scripts/backup-server.sh` produced a checksummed archive. A fresh server started from the
+  restored data redeployed model v1 and accepted existing logins.
+
+## Not verified here (v0.2)
+
+- Real NVIDIA GPU execution (no GPU available); real Stripe test mode; real SMTP delivery.
+- Docker image build; systemd on a booted host; the v0.2 Windows installer (built by the release workflow).
+
+# v0.1.0 — Foundation
+
+## v0.1 automated suites
 
 | Suite | Command | Result |
 | --- | --- | --- |

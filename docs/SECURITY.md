@@ -1,5 +1,17 @@
 # Security, permissions & owner policy
 
+## v0.2 changes
+
+- **Content policy** moved to the MOTH Server. It is Owner-only (Owner Dashboard → Policy) and applied to every MOTH
+  Cloud request, before metering. There is no local policy editor any more. The rule format below is unchanged.
+- **Cloud consent.**
+  - Chat requires a signed-in MOTH account.
+  - The agent asks once **per workspace** before sending any file contents or command output to MOTH Cloud.
+  - Credentials are always redacted, and MOTH Cloud never uses user projects as training data.
+- **Accounts and server security.** See [SERVER.md](SERVER.md#security-notes): Argon2id, hashed tokens, rate
+  limits, no enumeration, isolated worker credentials, Owner re-authentication, audit log. Desktop session tokens
+  live in Windows Credential Manager.
+
 MOTH Code separates two things that are often conflated:
 
 | | Owner content policy | Operational security |
