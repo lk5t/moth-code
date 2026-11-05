@@ -85,6 +85,21 @@ jobs:
             echo 'MOTH_EOF'
           } >> "$GITHUB_ENV"
 
+      # Create the release up front with gh so a failure is reported clearly (tauri-action exits silently)
+      # and the gh permissions used by the worker upload below are checked before the long build.
+      - name: Create the GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists"
+          else
+            sed "s|__REF__|${RELEASE_TAG}|g" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --prerelease \
+              --title "MOTH Code $RELEASE_TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
       - name: Build installer and publish release
         uses: tauri-apps/tauri-action@v0
         env:
