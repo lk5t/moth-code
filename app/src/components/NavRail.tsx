@@ -3,6 +3,7 @@ import { appStore, useApp, type View } from "@/lib/app-state";
 import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { MothEmblem } from "./MothEmblem";
+import { AccountMenu } from "@/features/account/AccountMenu";
 
 const items: { view: View; label: string; icon: React.ReactNode }[] = [
   { view: "workspace", label: "Workspace", icon: <SquareTerminal /> },
@@ -33,6 +34,7 @@ export function NavRail() {
       {items.map((i) => button(i.view, i.label, i.icon))}
       <div className="flex-1" />
       {button("settings", "Settings", <Settings />)}
+      <div className="mt-2"><AccountMenu /></div>
     </nav>
   );
 }

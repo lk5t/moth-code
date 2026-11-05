@@ -37,6 +37,43 @@ jobs:
         working-directory: backend
         run: python -m pytest -q
 
+  server:
+    name: MOTH Server tests (${{ matrix.db }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: moth
+          POSTGRES_PASSWORD: moth-ci-only
+          POSTGRES_DB: moth_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U moth" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/pyproject.toml
+            server/pyproject.toml
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ./backend -e "./server[dev,postgres]"
+      - name: Run tests
+        working-directory: server
+        env:
+          MOTH_TEST_DATABASE_URL: ${{ matrix.db == 'postgres' && 'postgresql+psycopg://moth:moth-ci-only@localhost:5432/moth_test' || '' }}
+        run: python -m pytest -q
+
   frontend:
     name: Frontend typecheck, tests and build
     runs-on: ubuntu-latest

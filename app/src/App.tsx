@@ -12,6 +12,9 @@ import { SettingsView } from "@/features/settings/SettingsView";
 import { loadProjects } from "@/features/workspace/project-actions";
 import { views } from "@/views";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { initAccounts } from "@/lib/account";
+import { AccountDialog } from "@/features/account/AccountDialog";
+import { ReauthDialog } from "@/features/account/reauth";
 import { checkForUpdate } from "@/features/settings/UpdatesSection";
 
 export default function App() {
@@ -38,6 +41,7 @@ export default function App() {
         setInfo(i);
         if (i.status === "ready") {
           startEvents();
+          initAccounts().catch(() => {});
           // Silent background check; installing always needs the user's click in Settings.
           checkForUpdate()
             .then((u) => u && appStore.setState({ updateVersion: u.version }))
@@ -92,6 +96,8 @@ export default function App() {
         </div>
         <StatusBar />
         <ApprovalDialog />
+        <AccountDialog />
+        <ReauthDialog />
       </div>
     </TooltipProvider>
   );

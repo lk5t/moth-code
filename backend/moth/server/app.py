@@ -82,6 +82,12 @@ class ApprovalIn(BaseModel):
     approved: bool
 
 
+class AccountSessionIn(BaseModel):
+    server_url: str | None = None
+    token: str | None = None
+    user: dict[str, Any] | None = None
+
+
 def create_app(paths: Paths, token: str | None = None, services: Services | None = None) -> FastAPI:
     svc = services or Services.create(paths)
     api_token = token if token is not None else os.environ.get("MOTH_API_TOKEN") or ""
@@ -278,6 +284,18 @@ def create_app(paths: Paths, token: str | None = None, services: Services | None
     def close_terminal(sid: str):
         svc.terminals.close(sid)
         return {"ok": True}
+
+    # ---- MOTH account (in memory only; the desktop shell keeps tokens in the OS vault) ----
+    @app.put("/api/account/session", dependencies=A)
+    def set_account_session(body: AccountSessionIn):
+        svc.extras["account"] = body.model_dump()
+        svc.bus.publish("account", {"signed_in": bool(body.token), "user": body.user})
+        return {"ok": True}
+
+    @app.get("/api/account/session", dependencies=A)
+    def get_account_session():
+        acct = svc.extras.get("account") or {}
+        return {"server_url": acct.get("server_url"), "signed_in": bool(acct.get("token")), "user": acct.get("user")}
 
     # ---- approvals ----------------------------------------------------------
     @app.get("/api/approvals", dependencies=A)
