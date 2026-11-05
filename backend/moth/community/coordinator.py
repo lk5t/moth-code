@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import secrets
+import shutil
 import threading
 import time
 import uuid
@@ -54,6 +55,9 @@ def init_coordinator(root: Path, model_dir: Path, dataset_dir: Path, shards: int
         part.astype(np.uint32).tofile(root / "shards" / f"{sid}.bin")
         shard_ids.append({"id": sid, "sha256": sha256_file(root / "shards" / f"{sid}.bin"), "tokens": int(len(part))})
     val[: 64 * 1024].astype(np.uint32).tofile(root / "probe.bin")
+    # Keep the tokenizer and architecture so aggregated checkpoints can be packaged as models.
+    shutil.copy2(Path(model_dir) / "tokenizer.json", root / "tokenizer.json")
+    shutil.copy2(Path(model_dir) / "config.json", root / "model_config.json")
     state = torch.load(Path(model_dir) / "model.pt", map_location="cpu", weights_only=True)
     state = {k: v.float() for k, v in state.items()}
     licenses = sorted({s["license"] for s in meta.get("sources", [])})

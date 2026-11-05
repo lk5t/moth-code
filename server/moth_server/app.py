@@ -23,6 +23,8 @@ COMPONENTS = [
     "moth_server.routes.admin",
     "moth_server.routes.inference",
     "moth_server.routes.referrals",
+    "moth_server.routes.training",
+    "moth_server.routes.models",
     "moth_server.pages.web",
 ]
 

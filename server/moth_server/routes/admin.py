@@ -22,6 +22,8 @@ FEATURE_FLAGS = {
     "registration_open": True,
     "referrals_enabled": True,
     "training_enrollment_open": True,
+    "allow_cpu_workers": False,         # development/testing only
+    "auto_deploy_models": False,        # deploy candidates automatically when they pass evaluation
 }
 
 

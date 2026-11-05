@@ -43,6 +43,37 @@ def cmd_init_owner(args) -> int:
     return 0
 
 
+def cmd_training_init(args) -> int:
+    from pathlib import Path
+
+    from moth.community.coordinator import init_coordinator
+    from moth.community.protocol import TrainSpec
+
+    s = Settings.from_env().ensure_dirs()
+    cfg = init_coordinator(s.data_dir / "coordinator", Path(args.model), Path(args.dataset), args.shards,
+                           TrainSpec(steps=args.steps, lr=args.lr, batch_size=args.batch_size, seq_len=args.seq_len),
+                           args.min_contributions)
+    print(f"Training coordinator initialised: {len(cfg['shards'])} shards, round 0, checkpoint v0.")
+    return 0
+
+
+def cmd_worker_release(args) -> int:
+    import hashlib
+    import json
+    import shutil
+    from pathlib import Path
+
+    s = Settings.from_env().ensure_dirs()
+    src = Path(args.tarball)
+    h = hashlib.sha256(src.read_bytes()).hexdigest()
+    dest = s.storage_dir / "worker"
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest / src.name)
+    (dest / "manifest.json").write_text(json.dumps({"version": args.version, "file": src.name, "sha256": h}, indent=2))
+    print(f"Published MOTH Worker {args.version}: {src.name} sha256={h}")
+    return 0
+
+
 def cmd_serve(args) -> int:
     import uvicorn
 
@@ -59,6 +90,20 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("--email")
     o.add_argument("--password-stdin", action="store_true", help="read the password from stdin (automation)")
     o.set_defaults(fn=cmd_init_owner)
+    t = sub.add_parser("training-init", help="initialise the training coordinator from a base model and dataset")
+    t.add_argument("--model", required=True, help="exported MOTH model directory (initial checkpoint)")
+    t.add_argument("--dataset", required=True, help="prepared dataset directory (licensed, public data only)")
+    t.add_argument("--shards", type=int, default=16)
+    t.add_argument("--steps", type=int, default=200)
+    t.add_argument("--lr", type=float, default=3e-4)
+    t.add_argument("--batch-size", type=int, default=8)
+    t.add_argument("--seq-len", type=int, default=512)
+    t.add_argument("--min-contributions", type=int, default=2)
+    t.set_defaults(fn=cmd_training_init)
+    w = sub.add_parser("worker-release", help="publish a MOTH Worker release tarball for one-command enrollment")
+    w.add_argument("tarball")
+    w.add_argument("--version", required=True)
+    w.set_defaults(fn=cmd_worker_release)
     s = sub.add_parser("serve", help="run the server")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8900)

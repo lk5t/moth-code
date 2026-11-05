@@ -1,0 +1,235 @@
+"""Training network API: user enrollment/management and the worker-only API.
+
+Worker endpoints accept only worker credentials (``mw_…``); user sessions cannot call them,
+and worker credentials cannot call any user endpoint (they are not sessions).
+"""
+
+from __future__ import annotations
+
+import json
+import shlex
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import FileResponse, Response
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+
+from moth_server import training as T
+from moth_server.audit import audit
+from moth_server.context import Ctx, get_ctx
+from moth_server.db import now, training_jobs, workers
+from moth_server.deps import Auth, bearer, current_auth
+from moth_server.routes.admin import flags
+
+router = APIRouter(tags=["training"])
+
+
+class EnrollmentIn(BaseModel):
+    name: str | None = Field(default=None, max_length=64)
+    referral_code: str | None = Field(default=None, max_length=16)
+
+
+class LimitsIn(BaseModel):
+    gpu_memory_fraction: float | None = Field(default=None, ge=0.1, le=0.95)
+    duty_cycle: float | None = Field(default=None, ge=0.1, le=1.0)
+    max_hours_per_day: float | None = Field(default=None, ge=0.5, le=24)
+
+
+class WorkerEnrollIn(BaseModel):
+    token: str = Field(max_length=200)
+    hardware: dict = {}
+    version: str | None = None
+
+
+class HeartbeatIn(BaseModel):
+    hardware: dict | None = None
+    job_id: int | None = None
+    progress: float | None = None
+
+
+class ProgressIn(BaseModel):
+    progress: float = Field(ge=0, le=1)
+    message: str | None = Field(default=None, max_length=500)
+
+
+class FailIn(BaseModel):
+    error: str = Field(max_length=2000)
+
+
+def worker_release(ctx: Ctx) -> dict | None:
+    m = ctx.settings.storage_dir / "worker" / "manifest.json"
+    if not m.exists():
+        return None
+    data = json.loads(m.read_text())
+    if not (ctx.settings.storage_dir / "worker" / data["file"]).exists():
+        return None
+    return {**data, "url": f"{ctx.settings.public_url}/downloads/worker/{data['file']}"}
+
+
+def install_command(ctx: Ctx, release: dict, token: str) -> str:
+    f = shlex.quote(release["file"])
+    d = shlex.quote(release["file"].removesuffix(".tar.gz"))
+    return (f"curl -fsSLO {shlex.quote(release['url'])} && "
+            f"echo '{release['sha256']}  {release['file']}' | sha256sum -c - && "
+            f"tar xzf {f} && ./{d}/install.sh --server {shlex.quote(ctx.settings.public_url)} --token {shlex.quote(token)}")
+
+
+# ---- users -------------------------------------------------------------------------------------
+@router.post("/v1/training/enrollments")
+def new_enrollment(body: EnrollmentIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    if not flags(ctx).get("training_enrollment_open"):
+        raise HTTPException(503, "Training enrollment is currently closed.")
+    if auth.user["email_verified_at"] is None:
+        raise HTTPException(403, "Verify your email address first.")
+    from moth_server.routes.auth import limit
+
+    limit(ctx, f"enroll:user:{auth.uid}", 10, 3600)
+    token = T.create_enrollment(ctx, auth.user, body.name, body.referral_code)
+    release = worker_release(ctx)
+    return {
+        "token": token, "expires_at": now() + T.ENROLL_TTL, "single_use": True,
+        "release": release,
+        "command": install_command(ctx, release, token) if release else None,
+        "manual_command": f"moth-worker enroll --server {ctx.settings.public_url} --token {token}",
+        "note": None if release else "No MOTH Worker release is published on this server yet; install from source "
+                                     "(see docs/WORKER.md) and run the manual command.",
+    }
+
+
+def own_worker(ctx: Ctx, auth: Auth, wid: int) -> dict:
+    w = ctx.db.one(select(workers).where(workers.c.id == wid))
+    if not w or (w["user_id"] != auth.uid and not auth.is_owner):
+        raise HTTPException(404, "Worker not found.")
+    return w
+
+
+@router.get("/v1/training/workers")
+def my_workers(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    T.requeue_expired(ctx)
+    rows = ctx.db.all(select(workers).where(workers.c.user_id == auth.uid).order_by(workers.c.id))
+    jobs = T.worker_jobs(ctx, [w["id"] for w in rows])
+    coord = T.coordinator(ctx)
+    return {"workers": [T.public_worker(w) for w in rows], "jobs": jobs,
+            "network": {"configured": coord is not None,
+                        "round": coord.config["round"] if coord else None,
+                        "checkpoint_version": coord.config["version"] if coord else None}}
+
+
+@router.post("/v1/training/workers/{wid}/{action}")
+def control_worker(wid: int, action: str, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    w = own_worker(ctx, auth, wid)
+    if w["revoked_at"]:
+        raise HTTPException(409, "This worker was revoked.")
+    values = {"pause": {"paused": True}, "resume": {"paused": False},
+              "revoke": {"revoked_at": now(), "status": "revoked", "token_hash": f"revoked-{wid}-{now()}"}}.get(action)
+    if values is None:
+        raise HTTPException(404, "Unknown action.")
+    with ctx.db.tx() as c:
+        c.execute(workers.update().where(workers.c.id == wid).values(**values))
+        if action == "revoke":  # release its jobs back to the queue
+            c.execute(training_jobs.update().where(training_jobs.c.worker_id == wid, training_jobs.c.status == "leased")
+                      .values(status="queued", worker_id=None, lease_expires_at=None, updated_at=now()))
+        audit(ctx.db, f"training.worker_{action}", auth.uid, f"worker:{wid}", conn=c)
+    return T.public_worker(ctx.db.one(select(workers).where(workers.c.id == wid)))
+
+
+@router.put("/v1/training/workers/{wid}/limits")
+def set_limits(wid: int, body: LimitsIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    w = own_worker(ctx, auth, wid)
+    limits = {**json.loads(w["limits"] or "{}"), **body.model_dump(exclude_none=True)}
+    with ctx.db.tx() as c:
+        c.execute(workers.update().where(workers.c.id == wid).values(limits=json.dumps(limits)))
+    return T.public_worker(ctx.db.one(select(workers).where(workers.c.id == wid)))
+
+
+@router.get("/downloads/worker/{name}", include_in_schema=False)
+def download_worker(name: str, ctx: Ctx = Depends(get_ctx)):
+    rel = worker_release(ctx)
+    if not rel or name != rel["file"]:
+        raise HTTPException(404, "Not found.")
+    return FileResponse(ctx.settings.storage_dir / "worker" / rel["file"], media_type="application/gzip")
+
+
+# ---- workers (worker credentials only) ---------------------------------------------------------
+def current_worker(request: Request, ctx: Ctx = Depends(get_ctx)) -> dict:
+    w = T.worker_by_token(ctx, bearer(request))
+    if not w:
+        raise HTTPException(401, "Invalid or revoked worker credential.")
+    return w
+
+
+@router.post("/v1/worker/enroll")
+def worker_enroll(body: WorkerEnrollIn, request: Request, ctx: Ctx = Depends(get_ctx)):
+    from moth_server.context import client_ip
+    from moth_server.routes.auth import limit
+
+    limit(ctx, f"worker-enroll:ip:{client_ip(request)}", 20, 3600)
+    try:
+        wid, secret = T.enroll_worker(ctx, body.token, body.hardware, body.version)
+    except T.TrainingError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"worker_id": wid, "worker_token": secret, "heartbeat_seconds": 30}
+
+
+@router.post("/v1/worker/heartbeat")
+def worker_heartbeat(body: HeartbeatIn, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
+    return T.heartbeat(ctx, w, body.hardware, body.job_id, body.progress)
+
+
+@router.post("/v1/worker/jobs/claim")
+def worker_claim(w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
+    job = T.claim_job(ctx, w, allow_cpu=bool(flags(ctx).get("allow_cpu_workers")))
+    return job or Response(status_code=204)
+
+
+def _job(ctx: Ctx, w: dict, job_id: int) -> dict:
+    try:
+        return T.leased_job(ctx, w, job_id)
+    except T.TrainingError as e:
+        raise HTTPException(409, str(e)) from None
+
+
+@router.get("/v1/worker/jobs/{job_id}/weights")
+def job_weights(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
+    spec = json.loads(_job(ctx, w, job_id)["spec"])
+    p = T.coordinator(ctx).version_dir(spec["model_version"]) / "model.pt"
+    return FileResponse(p, media_type="application/octet-stream")
+
+
+@router.get("/v1/worker/jobs/{job_id}/shard")
+def job_shard(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
+    spec = json.loads(_job(ctx, w, job_id)["spec"])
+    p = T.coordinator_root(ctx) / "shards" / f"{spec['shard_id']}.bin"
+    return FileResponse(p, media_type="application/octet-stream")
+
+
+@router.post("/v1/worker/jobs/{job_id}/progress")
+def job_progress(job_id: int, body: ProgressIn, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
+    _job(ctx, w, job_id)
+    T.extend_lease(ctx, w, job_id, body.progress)
+    return {"paused": bool(w["paused"])}
+
+
+@router.post("/v1/worker/jobs/{job_id}/result")
+async def job_result(job_id: int, request: Request, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
+    _job(ctx, w, job_id)
+    try:
+        meta = json.loads(request.headers.get("x-moth-contribution", ""))
+    except json.JSONDecodeError:
+        raise HTTPException(400, "missing contribution metadata") from None
+    payload = await request.body()
+    if len(payload) > 4 * 1024**3:
+        raise HTTPException(413, "update too large")
+    try:
+        result = T.submit_result(ctx, w, job_id, meta, payload)
+    except T.TrainingError as e:
+        raise HTTPException(409, str(e)) from None
+    return {k: v for k, v in result.items() if k != "aggregated"} | {"aggregated": bool(result.get("aggregated"))}
+
+
+@router.post("/v1/worker/jobs/{job_id}/fail")
+def job_fail(job_id: int, body: FailIn, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
+    _job(ctx, w, job_id)
+    T.fail_job(ctx, w, job_id, body.error)
+    return {"ok": True}

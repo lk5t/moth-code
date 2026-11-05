@@ -121,3 +121,36 @@ def tiny_model_dir(tmp_path):
                 "tokenizer_fingerprint": tok.fingerprint(), "step": 1}, ckpt)
     info = export_model(ckpt, tmp_path / "models", "moth-cloud-test", dtype="float32")
     return tmp_path / "models" / info["id"]
+sys.path.insert(0, str(ROOT / "worker"))
+
+
+@pytest.fixture
+def training_world(client, settings, owner, tmp_path):
+    """Initialised coordinator (tiny real model + licensed synthetic dataset) and CPU workers allowed."""
+    import torch
+
+    from moth.community.coordinator import init_coordinator
+    from moth.community.protocol import TrainSpec
+    from moth.model.config import preset
+    from moth.model.registry import export_model
+    from moth.model.tokenizer import train_bpe
+    from moth.model.transformer import MothModel
+    from moth.training.data import prepare_dataset
+
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    for i in range(30):
+        (corpus / f"f{i}.py").write_text("def add(a, b):\n    return a + b\n\nclass Point:\n    x = 1\n" * (1 + i % 3))
+    src = {"spec": f"dir:{corpus}", "license": "MIT"}
+    tok = train_bpe([(corpus / f"f{i}.py").read_text() for i in range(30)], vocab_size=300)
+    tok.save(tmp_path / "tok.json")
+    prepare_dataset([src], tok, tmp_path / "tok.json", tmp_path / "ds", val_fraction=0.1)
+    torch.manual_seed(0)
+    cfg = preset("moth-tiny", vocab_size=320)
+    torch.save({"model": MothModel(cfg).state_dict(), "model_config": cfg.to_dict(), "tokenizer_path": str(tmp_path / "tok.json"),
+                "tokenizer_fingerprint": tok.fingerprint(), "step": 0}, tmp_path / "base.pt")
+    info = export_model(tmp_path / "base.pt", tmp_path / "models", "moth-base", dtype="float32")
+    init_coordinator(settings.data_dir / "coordinator", Path(info["path"]), tmp_path / "ds", shards=4,
+                     train=TrainSpec(steps=6, lr=1e-3, batch_size=4, seq_len=32), min_contributions=2)
+    client.put("/v1/admin/config/flags", json={"allow_cpu_workers": True}, headers=H(owner["token"]))
+    return {"owner": owner, "base_model": Path(info["path"]), "tokenizer": tmp_path / "tok.json", "dataset": tmp_path / "ds"}
