@@ -10,7 +10,10 @@ from __future__ import annotations
 import importlib
 import traceback
 
-SUBSYSTEMS: list[str] = []
+SUBSYSTEMS: list[str] = [
+    "moth.server.routes_model",
+    "moth.server.routes_training",
+]
 STATUS: dict[str, dict] = {}
 
 

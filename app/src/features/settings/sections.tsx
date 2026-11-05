@@ -1,2 +1,4 @@
-/** Additional settings cards contributed by later subsystems. */
-export const settingsSections: React.ComponentType[] = [];
+import { PolicySection } from "./PolicySection";
+
+/** Additional settings cards contributed by subsystems. */
+export const settingsSections: React.ComponentType[] = [PolicySection];
