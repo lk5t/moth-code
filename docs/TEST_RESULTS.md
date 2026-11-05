@@ -13,6 +13,11 @@ Everything below was actually run. Commands are listed so the results can be rep
 | Frontend | `cd app && npx tsc -b && npm test && npm run build` | typecheck ok, **19 passed**, build ok |
 | Rust shell | `cargo test` | **5 passed** |
 | **Ecosystem end-to-end** (real processes) | `python scripts/test-ecosystem-update.py` | **PASS, all 11 steps** |
+| MOTH Worker one-command install | `bash scripts/test-worker-install.sh` | **PASS** |
+
+GitHub Actions CI [run 23](https://github.com/lk5t/moth-code/actions/runs/42113035558) (commit `d088cb7`) passed all
+nine jobs: backend on Ubuntu and Windows, server on SQLite and **PostgreSQL 16**, worker install, the MOTH
+Cloud install/update/rollback/recovery end-to-end test, frontend, and the desktop shell on Ubuntu and Windows.
 
 ## Model publishing and the evaluation fix
 
