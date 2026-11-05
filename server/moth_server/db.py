@@ -19,7 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Connection, Engine
 
 metadata = MetaData()
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # see MIGRATIONS below
 
 
 def now() -> float:
@@ -65,6 +65,7 @@ sessions = Table(
     Column("expires_at", Float, nullable=False),
     Column("revoked_at", Float),
     Column("reauth_at", Float),
+    Column("client", String(64)),  # e.g. desktop/0.3.0 (compatibility reporting)
 )
 
 email_tokens = Table(
@@ -251,6 +252,7 @@ workers = Table(
     Column("enrolled_at", Float, nullable=False),
     Column("last_heartbeat_at", Float),
     Column("revoked_at", Float),
+    Column("update_status", String(64)),
 )
 
 training_jobs = Table(
@@ -276,7 +278,8 @@ model_releases = Table(
     Column("version", Integer, nullable=False, unique=True),
     Column("name", String(128), nullable=False),
     Column("channel", String(16), nullable=False, default="stable"),
-    Column("status", String(16), nullable=False),  # draft | published | revoked
+    # uploading | uploaded | evaluating | evaluated | published | deploying | deployed | failed
+    Column("status", String(16), nullable=False),
     Column("sha256", String(64), nullable=False),
     Column("size", BigInteger, nullable=False),
     Column("path", Text, nullable=False),
@@ -285,7 +288,116 @@ model_releases = Table(
     Column("created_at", Float, nullable=False),
     Column("published_at", Float),
     Column("published_by", Integer),
+    Column("error", Text),
+    Column("state_changed_at", Float),
+    Column("previously_deployed", Boolean, nullable=False, default=False),
+    Column("deployed_at", Float),
 )
+
+# ---- v0.3: resumable uploads, software releases, deployments, error log ------------------------
+uploads = Table(
+    "uploads", metadata,
+    Column("id", String(32), primary_key=True),
+    Column("user_id", Integer, nullable=False),
+    Column("name", String(128), nullable=False),
+    Column("size", BigInteger, nullable=False),
+    Column("sha256", String(64), nullable=False, index=True),
+    Column("chunk_size", Integer, nullable=False),
+    Column("received", Text, nullable=False, default="[]"),  # chunk indexes already stored
+    Column("manifest", Text, nullable=False, default="{}"),
+    Column("status", String(16), nullable=False),  # uploading | complete | failed | expired
+    Column("error", Text),
+    Column("release_version", Integer),
+    Column("created_at", Float, nullable=False),
+    Column("updated_at", Float, nullable=False),
+)
+
+software_releases = Table(
+    "software_releases", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("component", String(16), nullable=False),  # server | desktop | worker
+    Column("version", String(32), nullable=False),
+    Column("channel", String(16), nullable=False, default="stable"),
+    # available | rolling_out | paused | halted | complete | withdrawn
+    Column("status", String(16), nullable=False, default="available"),
+    Column("rollout_percent", Integer, nullable=False, default=100),
+    Column("manifest", Text, nullable=False, default="{}"),
+    Column("notes", Text),
+    Column("created_at", Float, nullable=False),
+    Column("updated_at", Float, nullable=False),
+    UniqueConstraint("component", "version", name="uq_software_release"),
+)
+
+deployments = Table(
+    "deployments", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("component", String(16), nullable=False),
+    Column("from_version", String(32)),
+    Column("to_version", String(32), nullable=False),
+    # started | succeeded | failed | rolled_back | needs_approval | skipped
+    Column("status", String(16), nullable=False),
+    Column("step", String(64)),
+    Column("log", Text, nullable=False, default=""),
+    Column("error", Text),
+    Column("started_at", Float, nullable=False),
+    Column("finished_at", Float),
+)
+
+update_reports = Table(
+    "update_reports", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("component", String(16), nullable=False),  # desktop | worker
+    Column("client_id", String(64), nullable=False),
+    Column("from_version", String(32)),
+    Column("to_version", String(32), nullable=False),
+    Column("ok", Boolean, nullable=False),
+    Column("error", Text),
+    Column("created_at", Float, nullable=False),
+    Index("ix_update_reports_version", "component", "to_version"),
+)
+
+error_log = Table(
+    "error_log", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("ts", Float, nullable=False, index=True),
+    Column("source", String(64), nullable=False),
+    Column("message", Text, nullable=False),
+)
+
+
+# ---- schema migrations ------------------------------------------------------------------------
+# ``create_all`` adds new tables; columns and data changes are versioned migrations. A migration
+# marked destructive (drops or rewrites data irreversibly) is never applied automatically: it needs
+# ``moth-server migrate --approve-destructive`` or Owner approval in the dashboard.
+def _add_column(c: Connection, table: str, column: str, ddl: str) -> None:
+    cols = {r[1] if c.dialect.name == "sqlite" else r[0] for r in c.execute(text(
+        f"PRAGMA table_info({table})" if c.dialect.name == "sqlite" else
+        f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}'"))}
+    if column not in cols:
+        c.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+
+
+def _m2_lifecycle(c: Connection) -> None:
+    """v0.3 model lifecycle: candidate→uploaded, passed→published, rejected→failed, retired→published."""
+    _add_column(c, "model_releases", "error", "TEXT")
+    _add_column(c, "model_releases", "state_changed_at", "FLOAT")
+    _add_column(c, "model_releases", "previously_deployed", "BOOLEAN NOT NULL DEFAULT FALSE")
+    _add_column(c, "model_releases", "deployed_at", "FLOAT")
+    _add_column(c, "workers", "update_status", "VARCHAR(64)")
+    _add_column(c, "sessions", "client", "VARCHAR(64)")
+    for old, new in (("candidate", "uploaded"), ("passed", "published"), ("rejected", "failed"), ("retired", "published")):
+        extra = ", previously_deployed = TRUE" if old == "retired" else ""
+        c.execute(text(f"UPDATE model_releases SET status = :new{extra} WHERE status = :old"), {"new": new, "old": old})
+    c.execute(text("UPDATE model_releases SET deployed_at = published_at WHERE status = 'deployed'"))
+
+
+MIGRATIONS: list[tuple[int, str, bool, Any]] = [
+    (2, "v0.3: model lifecycle states, resumable uploads, software releases, deployments", False, _m2_lifecycle),
+]
+
+
+class MigrationApprovalRequired(RuntimeError):
+    pass
 
 
 class Database:
@@ -306,13 +418,50 @@ class Database:
                 cur.close()
         self.is_sqlite = url.startswith("sqlite")
 
-    def migrate(self) -> None:
-        metadata.create_all(self.engine)
+    def schema_version(self) -> int:
         with self.engine.begin() as c:
             c.execute(text("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)"))
             v = c.execute(text("SELECT MAX(version) FROM schema_version")).scalar()
-            if v is None:
+        return int(v) if v is not None else 0
+
+    def pending_migrations(self) -> list[dict]:
+        cur = self.schema_version()
+        if cur == 0:  # brand-new database: create_all builds the current schema directly
+            return []
+        return [{"version": v, "description": d, "destructive": destructive}
+                for v, d, destructive, _ in MIGRATIONS if v > cur]
+
+    def approved_migrations(self) -> set[int]:
+        try:
+            return {int(v) for v in (self.get_config("approved_destructive_migrations", []) or [])}
+        except Exception:  # noqa: BLE001 — config table may not exist yet on a brand-new database
+            return set()
+
+    def migrate(self, approve_destructive: bool = False) -> list[int]:
+        """Bring the schema up to date. Returns the migrations applied. Never applies a destructive
+        migration without explicit approval (CLI flag, or the Owner approving that migration version
+        in the dashboard); raises MigrationApprovalRequired instead."""
+        fresh = self.schema_version() == 0
+        pending = self.pending_migrations()
+        approved = self.approved_migrations()
+        blocked = [m for m in pending if m["destructive"] and not approve_destructive and m["version"] not in approved]
+        if blocked:
+            raise MigrationApprovalRequired(
+                "destructive migration(s) need Owner approval: " + ", ".join(f"{m['version']} ({m['description']})"
+                                                                            for m in blocked))
+        metadata.create_all(self.engine)
+        applied = []
+        if fresh:
+            with self.engine.begin() as c:
                 c.execute(text("INSERT INTO schema_version (version) VALUES (:v)"), {"v": SCHEMA_VERSION})
+            return applied
+        for v, _d, _destructive, fn in MIGRATIONS:
+            if v in {m["version"] for m in pending}:
+                with self.engine.begin() as c:  # each migration is its own transaction
+                    fn(c)
+                    c.execute(text("INSERT INTO schema_version (version) VALUES (:v)"), {"v": v})
+                applied.append(v)
+        return applied
 
     @contextmanager
     def tx(self) -> Iterator[Connection]:

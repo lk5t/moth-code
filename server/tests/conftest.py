@@ -35,7 +35,7 @@ def settings(tmp_path):
 
 @pytest.fixture
 def client(settings):
-    with TestClient(create_app(settings)) as c:
+    with TestClient(create_app(settings, extras={"synchronous_jobs": True, "disable_background": True})) as c:
         yield c
 
 
@@ -100,9 +100,9 @@ def sign_webhook(payload: bytes, secret: str, ts: int | None = None) -> str:
     return f"t={ts},v1={sig}"
 
 
-@pytest.fixture
-def tiny_model_dir(tmp_path):
-    """An exported (untrained) moth-tiny model: real MOTH weights, created locally."""
+def make_tiny_model(tmp_path, seed: int = 0, name: str = "moth-cloud-test"):
+    """An exported (untrained) moth-tiny model: real MOTH weights, created locally. Different seeds
+    give different weights (distinct releases)."""
     import torch
 
     from moth.model.config import preset
@@ -110,17 +110,25 @@ def tiny_model_dir(tmp_path):
     from moth.model.tokenizer import train_bpe
     from moth.model.transformer import MothModel
 
-    tok = train_bpe(["def add(a, b):\n    return a + b\n"] * 20, vocab_size=300)
     tok_path = tmp_path / "tok.json"
-    tok.save(tok_path)
-    torch.manual_seed(0)
+    if not tok_path.exists():
+        train_bpe(["def add(a, b):\n    return a + b\n"] * 20, vocab_size=300).save(tok_path)
+    from moth.model.tokenizer import Tokenizer
+
+    tok = Tokenizer.load(tok_path)
+    torch.manual_seed(seed)
     cfg = preset("moth-tiny", vocab_size=320)
     model = MothModel(cfg)
-    ckpt = tmp_path / "ck.pt"
+    ckpt = tmp_path / f"ck-{seed}.pt"
     torch.save({"model": model.state_dict(), "model_config": cfg.to_dict(), "tokenizer_path": str(tok_path),
                 "tokenizer_fingerprint": tok.fingerprint(), "step": 1}, ckpt)
-    info = export_model(ckpt, tmp_path / "models", "moth-cloud-test", dtype="float32")
+    info = export_model(ckpt, tmp_path / "models", name if seed == 0 else f"{name}-{seed}", dtype="float32")
     return tmp_path / "models" / info["id"]
+
+
+@pytest.fixture
+def tiny_model_dir(tmp_path):
+    return make_tiny_model(tmp_path)
 sys.path.insert(0, str(ROOT / "worker"))
 
 

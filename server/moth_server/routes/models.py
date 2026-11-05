@@ -1,4 +1,8 @@
-"""Owner model-release management (evaluate, deploy, roll back) and public model status."""
+"""Owner model-release management and public model status.
+
+Workflow: (desktop) select → validate → upload (``routes/uploads.py``) → evaluate → publish → deploy.
+Evaluation datasets are managed here too (``/v1/admin/eval-datasets``).
+"""
 
 from __future__ import annotations
 
@@ -7,7 +11,9 @@ import threading
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
+from moth_server import evalsets as E
 from moth_server import models as M
 from moth_server.context import Ctx, get_ctx
 from moth_server.deps import Auth, owner_reauthed, require_owner
@@ -20,15 +26,25 @@ def setup(ctx: Ctx) -> None:
     M.restore_on_startup(ctx)
     stop = threading.Event()
     ctx.extras["models_stop"] = stop
+    if ctx.extras.get("disable_background"):
+        return
 
     def loop() -> None:
         while not stop.wait(PIPELINE_INTERVAL):
             try:
                 M.auto_pipeline(ctx)
             except Exception:  # noqa: BLE001
-                pass
+                M.log.exception("model pipeline failed")
 
     threading.Thread(target=loop, daemon=True, name="model-pipeline").start()
+
+
+def kick_pipeline(ctx: Ctx) -> None:
+    """Continue the workflow now (e.g. after evaluation data was added) instead of waiting."""
+    if ctx.extras.get("synchronous_jobs"):
+        M.auto_pipeline(ctx)
+    else:
+        threading.Thread(target=lambda: M.auto_pipeline(ctx), daemon=True, name="model-pipeline-kick").start()
 
 
 @router.get("/v1/models/current")
@@ -44,21 +60,29 @@ def current_model(ctx: Ctx = Depends(get_ctx)):
 
 @router.get("/v1/admin/models")
 def admin_models(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
-    return {"releases": M.list_releases(ctx), "deployed": ctx.extras.get("deployed_version")}
+    from moth_server.routes.system import hardware
+
+    sets = E.all_datasets(ctx)
+    return {"releases": M.list_releases(ctx), "deployed": ctx.extras.get("deployed_version"),
+            "eval_datasets": [E.public(d) for d in sets],
+            "eval_ready": any(d["valid"] for d in sets), "hardware": hardware()}
 
 
 @router.post("/v1/admin/models/upload")
 async def upload(name: str = Form(..., max_length=128), file: UploadFile = File(...),
                  auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    """Single-request upload (v0.2 desktops and small models). v0.3 uses resumable uploads."""
     with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
         while chunk := await file.read(1 << 20):
             tmp.write(chunk)
     try:
-        return M.register_upload(ctx, Path(tmp.name), name, auth.uid)
+        rel = M.register_upload(ctx, Path(tmp.name), name, auth.uid)
     except (M.ReleaseError, OSError, ValueError) as e:
         raise HTTPException(422, str(e)) from None
     finally:
         Path(tmp.name).unlink(missing_ok=True)
+    M.evaluate_in_background(ctx, rel["version"], auth.uid)
+    return rel
 
 
 @router.post("/v1/admin/models/sync")
@@ -67,11 +91,33 @@ def sync(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
 
 
 @router.post("/v1/admin/models/{version}/evaluate")
-def evaluate(version: int, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+def evaluate(version: int, wait: bool = False, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """Evaluate (or retry the evaluation of) a stored release. No re-upload is needed."""
     try:
-        return M.evaluate(ctx, version, actor_id=auth.uid)
+        rel = M.release(ctx, version)
+        if wait:
+            return M.evaluate(ctx, version, actor_id=auth.uid)
+        if rel["status"] in ("uploading", "deploying", "deployed", "evaluating"):
+            raise M.ReleaseError(f"a release that is {rel['status']} cannot be evaluated now")
+        if not rel["path"]:
+            raise M.ReleaseError("this release has no stored package; upload the model again")
     except M.ReleaseError as e:
-        raise HTTPException(404, str(e)) from None
+        raise HTTPException(409 if "unknown" not in str(e) else 404, str(e)) from None
+    M.evaluate_in_background(ctx, version, auth.uid)
+    return {**rel, "queued": True}
+
+
+class PublishIn(BaseModel):
+    override_regression: bool = False
+
+
+@router.post("/v1/admin/models/{version}/publish")
+def publish(version: int, body: PublishIn | None = None, auth: Auth = Depends(owner_reauthed),
+            ctx: Ctx = Depends(get_ctx)):
+    try:
+        return M.publish(ctx, version, auth.uid, bool(body and body.override_regression))
+    except M.ReleaseError as e:
+        raise HTTPException(409, str(e)) from None
 
 
 @router.post("/v1/admin/models/{version}/deploy")
@@ -88,3 +134,55 @@ def rollback(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
         return M.rollback(ctx, auth.uid)
     except M.ReleaseError as e:
         raise HTTPException(409, str(e)) from None
+
+
+# ---- evaluation datasets -------------------------------------------------------------------------
+@router.get("/v1/admin/eval-datasets")
+def eval_datasets(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    return [E.public(d) for d in E.all_datasets(ctx)]
+
+
+@router.post("/v1/admin/eval-datasets")
+async def add_eval_dataset(name: str = Form("", max_length=128), kind: str = Form("text"),
+                           license: str = Form("", max_length=64), tokenizer_fingerprint: str = Form(""),
+                           file: UploadFile = File(...), auth: Auth = Depends(owner_reauthed),
+                           ctx: Ctx = Depends(get_ctx)):
+    tmp = Path(tempfile.mkstemp(prefix="moth-evalset-", dir=E.root(ctx))[1])
+    size = 0
+    try:
+        with open(tmp, "wb") as f:
+            while chunk := await file.read(1 << 20):
+                size += len(chunk)
+                if size > E.MAX_UPLOAD_BYTES:
+                    raise E.EvalSetError(f"the file is larger than {E.MAX_UPLOAD_BYTES // 2**20} MB")
+                f.write(chunk)
+        d = E.add(ctx, name, file.filename or "dataset", tmp, kind, license, tokenizer_fingerprint or None, auth.uid)
+    except E.EvalSetError as e:
+        raise HTTPException(422, str(e)) from None
+    finally:
+        tmp.unlink(missing_ok=True)
+    kick_pipeline(ctx)  # releases waiting for evaluation data continue automatically
+    return {**E.public(d), "retrying": M.retry_candidates(ctx)}
+
+
+class PinIn(BaseModel):
+    id: str | None = None
+
+
+@router.put("/v1/admin/eval-datasets/pinned")
+def pin_eval_dataset(body: PinIn, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    try:
+        E.pin(ctx, body.id, auth.uid)
+    except E.EvalSetError as e:
+        raise HTTPException(422, str(e)) from None
+    kick_pipeline(ctx)
+    return [E.public(d) for d in E.all_datasets(ctx)]
+
+
+@router.delete("/v1/admin/eval-datasets/{did}")
+def delete_eval_dataset(did: str, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    try:
+        E.remove(ctx, did, auth.uid)
+    except E.EvalSetError as e:
+        raise HTTPException(422, str(e)) from None
+    return {"ok": True}

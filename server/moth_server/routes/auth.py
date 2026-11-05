@@ -189,13 +189,36 @@ def login(body: LoginIn, request: Request, ctx: Ctx = Depends(get_ctx)):
         c.execute(sessions.insert().values(
             user_id=user["id"], token_hash=token_hash(token), remember=body.remember,
             device_name=(body.device_name or "")[:128] or None, user_agent=request.headers.get("user-agent", "")[:256],
-            ip=ip, created_at=t, last_used_at=t, expires_at=t + ttl, reauth_at=t))
+            ip=ip, created_at=t, last_used_at=t, expires_at=t + ttl, reauth_at=t,
+            client=(request.headers.get("x-moth-client") or "")[:64] or None))
         values = {"last_login_at": t}
         if needs_rehash(user["password_hash"]):
             values["password_hash"] = hash_password(body.password)
         c.execute(users.update().where(users.c.id == user["id"]).values(**values))
         audit(ctx.db, "auth.login", user["id"], f"user:{user['id']}", ip=ip, conn=c)
     return {"token": token, "expires_at": t + ttl, "remember": body.remember, "user": public_user(user, ctx)}
+
+
+REFRESH_GRACE_S = 120
+
+
+@router.post("/refresh")
+def refresh(request: Request, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """Rotate the session token. The old token keeps working for two minutes so a response lost
+    in transit cannot sign the user out; the new session keeps the remember/expiry policy."""
+    old = ctx.db.one(select(sessions).where(sessions.c.id == auth.session["id"]))
+    t = now()
+    ttl = ctx.settings.session_days_remember * 86400 if old["remember"] else max(0.0, old["expires_at"] - t)
+    token = new_token()
+    with ctx.db.tx() as c:
+        c.execute(sessions.insert().values(
+            user_id=old["user_id"], token_hash=token_hash(token), remember=old["remember"],
+            device_name=old["device_name"], user_agent=request.headers.get("user-agent", "")[:256] or old["user_agent"],
+            ip=client_ip(request), created_at=old["created_at"], last_used_at=t, expires_at=t + ttl,
+            reauth_at=old["reauth_at"], client=(request.headers.get("x-moth-client") or "")[:64] or old.get("client")))
+        c.execute(sessions.update().where(sessions.c.id == old["id"])
+                  .values(expires_at=min(old["expires_at"], t + REFRESH_GRACE_S)))
+    return {"token": token, "expires_at": t + ttl, "remember": old["remember"], "user": public_user(auth.user, ctx)}
 
 
 @router.post("/logout")

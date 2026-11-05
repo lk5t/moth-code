@@ -51,6 +51,12 @@ class Settings:
     # misc
     trust_proxy_headers: bool = False  # honour X-Forwarded-For only behind your own reverse proxy
     worker_release_manifest: str = ""  # path to the signed worker release manifest (JSON)
+    # v0.3 operations
+    dev_mode: bool = False  # enables /docs and development conveniences; never in production
+    environment: str = "production"  # production | staging | development (shown in health/dashboard)
+    agent_token_file: str = ""  # shared secret file of the local update agent (0600)
+    release_pubkey: str = ""  # ed25519 public key (base64) that signs MOTH software releases
+    max_upload_chunk: int = 16 * 1024 * 1024
 
     @property
     def db_url(self) -> str:
@@ -63,6 +69,11 @@ class Settings:
     @property
     def storage_dir(self) -> Path:
         return self.data_dir / "storage"
+
+    @property
+    def releases_dir(self) -> Path:
+        """Verified software release files (desktop updates, worker bundles) served to clients."""
+        return self.data_dir / "storage" / "software"
 
     @property
     def payments_configured(self) -> bool:
@@ -85,6 +96,10 @@ class Settings:
             signing_key_file=_env("MOTH_SIGNING_KEY_FILE"),
             trust_proxy_headers=_bool("MOTH_TRUST_PROXY_HEADERS", False),
             worker_release_manifest=_env("MOTH_WORKER_RELEASE_MANIFEST"),
+            dev_mode=_bool("MOTH_SERVER_DEV", False),
+            environment=_env("MOTH_ENVIRONMENT", "production"),
+            agent_token_file=_env("MOTH_AGENT_TOKEN_FILE"),
+            release_pubkey=_env("MOTH_RELEASE_PUBKEY"),
         )
         extra = _env("MOTH_SERVER_CORS_ORIGINS")
         if extra:
@@ -92,6 +107,6 @@ class Settings:
         return s
 
     def ensure_dirs(self) -> "Settings":
-        for d in (self.data_dir, self.outbox_dir, self.storage_dir):
+        for d in (self.data_dir, self.outbox_dir, self.storage_dir, self.releases_dir):
             d.mkdir(parents=True, exist_ok=True)
         return self

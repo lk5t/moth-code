@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import time
 
 from fastapi import FastAPI, Request
@@ -26,18 +27,74 @@ COMPONENTS = [
     "moth_server.routes.training",
     "moth_server.routes.models",
     "moth_server.routes.dashboard",
+    "moth_server.routes.uploads",
+    "moth_server.routes.updates",
+    "moth_server.routes.system",
     "moth_server.pages.web",
 ]
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+class DbErrorLog(logging.Handler):
+    """Keeps recent server errors in the database for the Owner Dashboard (bounded, best effort)."""
+
+    def __init__(self, db: Database, keep: int = 500):
+        super().__init__(level=logging.ERROR)
+        self.db, self.keep, self._busy = db, keep, False
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if self._busy:
+            return
+        self._busy = True
+        try:
+            from sqlalchemy import delete, func, select
+
+            from moth_server.db import error_log, now
+
+            msg = record.getMessage()
+            if record.exc_info and record.exc_info[1] is not None:
+                msg += f" — {type(record.exc_info[1]).__name__}: {record.exc_info[1]}"
+            with self.db.tx() as c:
+                c.execute(error_log.insert().values(ts=now(), source=record.name[:64], message=msg[:2000]))
+                newest = c.execute(select(func.max(error_log.c.id))).scalar() or 0
+                c.execute(delete(error_log).where(error_log.c.id <= newest - self.keep))
+        except Exception:  # noqa: BLE001 — logging must never raise
+            pass
+        finally:
+            self._busy = False
+
+
+def create_app(settings: Settings | None = None, extras: dict | None = None) -> FastAPI:
     settings = (settings or Settings.from_env()).ensure_dirs()
     db = Database(settings.db_url)
-    db.migrate()
-    ctx = Ctx(settings=settings, db=db, mailer=Mailer(settings), limiter=RateLimiter(db))
-    app = FastAPI(title="MOTH Server", version=__version__, docs_url="/docs", redoc_url=None)
+    db.migrate()  # additive migrations only; destructive ones need explicit Owner approval
+    ctx = Ctx(settings=settings, db=db, mailer=Mailer(settings), limiter=RateLimiter(db), extras=dict(extras or {}))
+    app = FastAPI(title="MOTH Server", version=__version__, docs_url="/docs" if settings.dev_mode else None,
+                  redoc_url=None, openapi_url="/openapi.json" if settings.dev_mode else None)
     app.state.ctx = ctx
     app.state.started_at = time.time()
+    log_handler = DbErrorLog(db)
+    for name in ("moth_server", "uvicorn.error"):
+        lg = logging.getLogger(name)
+        lg.handlers = [h for h in lg.handlers if not isinstance(h, DbErrorLog)] + [log_handler]
+
+    @app.middleware("http")
+    async def compatibility(request: Request, call_next):
+        from moth_server import compat
+
+        path = request.url.path
+        if request.method != "OPTIONS" and not path.startswith(compat.EXEMPT_PREFIXES):
+            client = compat.parse_client(request.headers.get("x-moth-client"))
+            need = compat.outdated(ctx, client)
+            if need:
+                kind = (client or compat.LEGACY_CLIENT)[0]
+                return JSONResponse(
+                    {"detail": f"This version of MOTH {'Code' if kind == 'desktop' else 'Worker'} is too old for "
+                               f"MOTH Cloud. Version {need} or newer is required; it updates automatically.",
+                     "min_version": need},
+                    status_code=426, headers={"X-Moth-Reason": "client_outdated",
+                                              "Access-Control-Expose-Headers": "X-Moth-Reason"})
+        return await call_next(request)
+
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=False,
                        allow_methods=["*"], allow_headers=["*"], expose_headers=["Retry-After", "X-Moth-Reason"])
 
@@ -66,7 +123,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/health")
     def health():
+        from moth_server import compat
+
+        engine = ctx.extras.get("inference_engine")
         return {"service": "moth-server", "version": __version__, "status": "ok",
+                "api_version": compat.API_VERSION, "min_client_versions": compat.min_versions(ctx),
+                "schema_version": db.schema_version(), "uptime_s": round(time.time() - app.state.started_at),
+                "model_version": ctx.extras.get("deployed_version") if engine else None,
                 "email": ctx.mailer.mode, "payments_configured": settings.payments_configured}
 
     return app
