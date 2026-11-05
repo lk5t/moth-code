@@ -99,3 +99,19 @@ def test_git_integration(project):
     assert {e["path"]: e["status"] for e in g.status()}["README.md"] == "modified"
     assert "+changed" in g.diff("README.md")
     assert g.log()[0]["subject"] == "initial"
+
+
+def test_edit_preserves_crlf_files(tmp_path):
+    (tmp_path / "w.py").write_bytes(b"def add(a, b):\r\n    return a + b\r\n")
+    ops = FileOps(Workspace(tmp_path))
+    ops.edit("w.py", "    return a + b\n", "    return a + b\n\n\ndef mul(a, b):\n    return a * b\n")
+    data = (tmp_path / "w.py").read_bytes()
+    assert b"def mul" in data and b"\n" not in data.replace(b"\r\n", b"")
+
+
+def test_powershell_script_wrapping():
+    from moth.workspace.terminal import powershell_script
+
+    s = powershell_script('"C:\\\\Program Files\\\\Python\\\\python.exe" -c "print(1)"')
+    assert '& "C:' in s and "exit $LASTEXITCODE" in s
+    assert "& " not in powershell_script("npm test").split("LASTEXITCODE=0; ")[1].split("\n")[0]

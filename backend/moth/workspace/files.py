@@ -47,6 +47,10 @@ class FileOps:
         """Replace exactly ``count`` occurrences of ``old`` (fails if ambiguous)."""
         text = self.read(rel)
         found = text.count(old)
+        if found == 0 and "\r\n" in text and "\n" in old and "\r\n" not in old:
+            # File uses Windows line endings: match and write in the file's own style.
+            old, new = old.replace("\n", "\r\n"), new.replace("\r\n", "\n").replace("\n", "\r\n")
+            found = text.count(old)
         if found == 0:
             raise ValueError(f"text to replace was not found in {rel}")
         if count and found != count:

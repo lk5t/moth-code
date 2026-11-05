@@ -36,10 +36,24 @@ def default_shell() -> list[str]:
     return [os.environ.get("MOTH_SHELL") or ("/bin/bash" if Path("/bin/bash").exists() else "/bin/sh"), "-c"]
 
 
+def powershell_script(command: str) -> str:
+    """Make a command line behave like a normal shell invocation under PowerShell.
+
+    * A command starting with a quoted path (``"C:\\Program Files\\x.exe" --flag``) needs the
+      call operator ``&``, otherwise PowerShell parses it as a string expression.
+    * The native exit code is propagated exactly (``exit 3`` stays 3); a failed cmdlet exits 1.
+    """
+    body = command.strip()
+    if body[:1] in ("'", '"'):
+        body = "& " + body
+    return ("[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $global:LASTEXITCODE=0; "
+            f"{body}\n$__moth_ok=$?; if ($LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }} elseif (-not $__moth_ok) {{ exit 1 }}")
+
+
 def _wrap_command(shell: list[str], command: str) -> list[str]:
     exe = Path(shell[0]).name.lower()
     if exe.startswith(("powershell", "pwsh")):
-        command = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; " + command
+        command = powershell_script(command)
     return [*shell, command]
 
 

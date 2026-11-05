@@ -30,6 +30,7 @@ def cloud(tiny_model):
             received.append((await request.body()).decode())
         return await call_next(request)
 
+    app.state.engine = engine
     return TestClient(app), received
 
 
@@ -76,7 +77,12 @@ def test_cloud_chat_streams_real_model_output_and_redacts_secrets(tmp_path, clou
     parts = []
     via, stats = r.chat([Message("user", "my key is AKIAABCDEFGHIJKLMNOP, def add(")],
                         GenerationParams(max_new_tokens=8, temperature=0.0), parts.append, threading.Event())
-    assert via == "cloud" and stats.generated_tokens > 0 and "".join(parts)
+    assert via == "cloud" and stats.generated_tokens == 8
+    # Exactly what the same MOTH model produces locally (greedy decoding is deterministic).
+    local_parts = []
+    http.app.state.engine.chat([Message("user", "my key is [REDACTED:aws_access_key], def add(")],
+                               GenerationParams(max_new_tokens=8, temperature=0.0), local_parts.append)
+    assert "".join(parts) == "".join(local_parts)
     assert "AKIAABCDEFGHIJKLMNOP" not in received[0] and "REDACTED" in received[0]
 
 
