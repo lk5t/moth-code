@@ -54,6 +54,24 @@ Everything below was actually run. Commands are listed so the results can be rep
 - **Backup and restore.** `scripts/backup-server.sh` produced a checksummed archive. A fresh server started from the
   restored data redeployed model v1 and accepted existing logins.
 
+## GitHub Actions (v0.2)
+
+- **CI** [run 14](https://github.com/lk5t/moth-code/actions/runs/42059010993) (commit `053021a`) passed every job:
+  - backend tests on Ubuntu and Windows
+  - server tests on SQLite and PostgreSQL
+  - the Linux worker-install test
+  - frontend typecheck, tests and build
+  - the desktop shell on Ubuntu and Windows, including the strict Credential Manager test
+- **Release (Windows)** [run](https://github.com/lk5t/moth-code/actions/runs/42061896108) (commit `5c7d380`)
+  passed:
+  - the frozen-backend smoke test
+  - the NSIS build of `MOTH Code_0.2.0_x64-setup.exe` (123 MiB)
+  - publishing pre-release [v0.2.0](https://github.com/lk5t/moth-code/releases/tag/v0.2.0) with the installer,
+    `moth-worker-0.2.0.tar.gz` and its `.sha256`
+- An earlier release attempt built the installer, but `tauri-action` failed silently while creating the release
+  (GitHub's API was also returning 502s at the time). The workflow now creates the release with `gh` before the
+  build, so a failure there is reported clearly.
+
 ## Not verified here (v0.2)
 
 - Real NVIDIA GPU execution (no GPU available); real Stripe test mode; real SMTP delivery.
