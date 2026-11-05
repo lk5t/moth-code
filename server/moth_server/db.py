@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import time
+import weakref
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -401,7 +402,10 @@ class MigrationApprovalRequired(RuntimeError):
 
 
 class Database:
+    _instances: "weakref.WeakSet[Database]"
+
     def __init__(self, url: str):
+        Database._instances.add(self)
         kwargs: dict[str, Any] = {"future": True}
         if url.startswith("sqlite"):
             kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
@@ -417,6 +421,12 @@ class Database:
                 cur.execute("PRAGMA busy_timeout=30000")
                 cur.close()
         self.is_sqlite = url.startswith("sqlite")
+
+    @classmethod
+    def dispose_all(cls) -> None:
+        """Close every connection pool (tests create many apps against one PostgreSQL server)."""
+        for db in list(cls._instances):
+            db.engine.dispose()
 
     def schema_version(self) -> int:
         with self.engine.begin() as c:
@@ -511,3 +521,6 @@ class Database:
         else:
             with self.tx() as c:
                 write(c)
+
+
+Database._instances = weakref.WeakSet()

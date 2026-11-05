@@ -57,6 +57,8 @@ jobs:
           --health-cmd "pg_isready -U moth" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # a migration test builds a database with the real v0.2 schema from git history
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

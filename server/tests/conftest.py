@@ -10,6 +10,13 @@ sys.path[:0] = [str(ROOT / "server"), str(ROOT / "backend")]
 
 from moth_server.app import create_app  # noqa: E402
 from moth_server.config import Settings  # noqa: E402
+from moth_server.db import Database  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _close_database_pools():
+    yield
+    Database.dispose_all()
 
 PASSWORD = "correct horse battery"
 
