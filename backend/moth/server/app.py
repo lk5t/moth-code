@@ -290,6 +290,9 @@ def create_app(paths: Paths, token: str | None = None, services: Services | None
     def set_account_session(body: AccountSessionIn):
         svc.extras["account"] = body.model_dump()
         svc.bus.publish("account", {"signed_in": bool(body.token), "user": body.user})
+        pub = svc.extras.get("publisher")
+        if pub is not None and body.token and (body.user or {}).get("role") == "owner":
+            pub.resume_pending()  # continue model uploads interrupted by closing the app
         return {"ok": True}
 
     @app.get("/api/account/session", dependencies=A)

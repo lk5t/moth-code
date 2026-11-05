@@ -57,34 +57,50 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         svc.db.log_activity("cloud", f"{'Allowed' if body.granted else 'Revoked'} MOTH Cloud access for {project['name']}", pid)
         return {"granted": body.granted}
 
-    # ---- Owner tools: publish a locally trained model as a MOTH Cloud candidate -----------------
-    @app.post("/api/models/{model_id}/publish", dependencies=deps)
-    def publish_candidate(model_id: str):
-        import io
-        import tarfile
+    # ---- Owner tools: Select → Validate → Upload → (cloud) Evaluate → Publish → Deploy -------------
+    from moth.publish import PublishError, Publisher
 
-        import httpx
+    publisher = Publisher(svc.paths.models, svc.paths.home / "cache" / "publish", svc.db,
+                          account=lambda: svc.extras.get("account"))
+    svc.extras["publisher"] = publisher
 
+    def owner_only() -> None:
         acct = svc.extras.get("account") or {}
-        if not acct.get("token") or (acct.get("user") or {}).get("role") != "owner":
-            raise HTTPException(403, "Only the signed-in Owner can publish model candidates.")
-        mdir = svc.paths.models / model_id
-        if not (mdir / "manifest.json").exists():
-            raise HTTPException(404, "model not found")
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-            tar.add(mdir, arcname=model_id)
+        if (acct.get("user") or {}).get("role") != "owner":
+            raise HTTPException(403, "Only the signed-in Owner can publish models to MOTH Cloud.")
+
+    @app.get("/api/publish", dependencies=deps)
+    def publish_overview():
+        from moth.model.registry import list_models
+        from moth.training.checkpoint import latest_checkpoint
+
+        owner_only()
+        runs = []
+        if svc.paths.runs.exists():
+            for rd in sorted(svc.paths.runs.iterdir()):
+                ck = rd / "checkpoints"
+                best, latest = ck / "best.pt", latest_checkpoint(rd)
+                if best.exists() or latest:
+                    runs.append({"run": rd.name, "best": best.exists(), "latest": latest.name if latest else None})
+        return {"models": list_models(svc.paths.models), "runs": runs, "jobs": publisher.status()}
+
+    @app.post("/api/publish/{model_id}/validate", dependencies=deps)
+    def publish_validate(model_id: str):
+        owner_only()
         try:
-            r = httpx.post(acct["server_url"].rstrip("/") + "/v1/admin/models/upload",
-                           headers={"Authorization": f"Bearer {acct['token']}"}, data={"name": model_id},
-                           files={"file": (f"{model_id}.tar.gz", buf.getvalue(), "application/gzip")}, timeout=600)
-        except httpx.HTTPError as e:
-            raise HTTPException(503, f"MOTH Server unreachable: {e}") from None
-        if r.status_code >= 400:
-            detail = r.json().get("detail") if r.headers.get("content-type", "").startswith("application/json") else r.text
-            raise HTTPException(r.status_code, detail)
-        svc.db.log_activity("model", f"Published {model_id} to MOTH Cloud as candidate v{r.json()['version']}")
-        return r.json()
+            return publisher.validate(model_id)
+        except PublishError as e:
+            raise HTTPException(e.status, str(e)) from None
+
+    @app.post("/api/models/{model_id}/publish", dependencies=deps)
+    def publish_model(model_id: str):
+        owner_only()
+        try:
+            job = publisher.start(model_id)
+        except PublishError as e:
+            raise HTTPException(e.status, str(e)) from None
+        svc.db.log_activity("model", f"Publishing {model_id} to MOTH Cloud (release v{job.get('release_version')})")
+        return job
 
     # ---- community learning ----------------------------------------------------------------
     def participation() -> ParticipationSettings:
