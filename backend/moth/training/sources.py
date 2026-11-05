@@ -90,6 +90,7 @@ class Document:
     source: str
     id: str
     messages: list[dict[str, str]] | None = None  # chat-formatted documents
+    trusted: bool = False  # written by MOTH Code itself: assistant turns may contain special tokens
 
 
 class LicenseError(ValueError):
@@ -200,7 +201,8 @@ def _iter_jsonl(path: Path) -> Iterator[Document]:
             row = json.loads(line)
             if "messages" in row:
                 text = "\n".join(m.get("content", "") for m in row["messages"])
-                yield Document(text, f"jsonl:{path}", str(i), messages=row["messages"])
+                yield Document(text, f"jsonl:{path}", str(i), messages=row["messages"],
+                               trusted=bool(row.get("moth_trusted")))
             else:
                 yield Document(row.get("text", ""), f"jsonl:{path}", str(i))
 

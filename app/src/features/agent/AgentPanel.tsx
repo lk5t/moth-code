@@ -49,7 +49,9 @@ export function AgentPanel() {
   useEffect(() => {
     setSelected(null);
   }, [project?.id]);
-  useEffect(() => bottom.current?.scrollIntoView({ behavior: "smooth" }), [task?.steps.length, live.output.length]);
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ behavior: "smooth" });
+  }, [task?.steps.length, live.output.length]);
 
   useEvent("task", (e) => {
     if (e.task_id !== selected) {

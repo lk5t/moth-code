@@ -120,8 +120,18 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         decision = pol.check_input(body.message)
         if not decision.allowed:
             raise HTTPException(422, decision.message)
-        if not local.available():
+        router = svc.extras.get("inference_router")
+        try:
+            target = router.select(project_data=False) if router else ("local" if local.available() else None)
+        except NoModelLoaded as e:
+            raise HTTPException(409, str(e)) from None
+        except PermissionError as e:
+            raise HTTPException(403, str(e)) from None
+        except RuntimeError as e:  # cloud unavailable
+            raise HTTPException(409, str(e)) from None
+        if target is None:
             raise HTTPException(409, "No MOTH model is loaded. Train a model and load it under Models first.")
+        model_name = router.describe(target) if router else local.status().get("name")
         cid = body.conversation_id
         now = time.time()
         if cid is None:
@@ -148,7 +158,7 @@ def register(app: FastAPI, svc: Services, deps) -> None:
             text = ""
             try:
                 svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "start",
-                                         "model": local.status().get("name")})
+                                         "model": model_name})
 
                 def on_text(piece: str) -> None:
                     nonlocal text
@@ -163,10 +173,13 @@ def register(app: FastAPI, svc: Services, deps) -> None:
                         svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "token",
                                                  "text": piece})
 
-                stats = local.chat(msgs, params, on_text, cancel)
+                if router:
+                    _, stats = router.chat(msgs, params, on_text, cancel)
+                else:
+                    stats = local.chat(msgs, params, on_text, cancel)
                 final = pol.filter_output(text)
                 content = final.text if final.allowed else final.message
-                meta = {"model": local.status().get("name"), "tokens": stats.generated_tokens,
+                meta = {"model": model_name, "via": target, "tokens": stats.generated_tokens,
                         "tokens_per_sec": round(stats.tokens_per_sec, 1), "stop_reason": stats.stop_reason,
                         "policy": final.triggered or None}
                 svc.db.execute("INSERT INTO messages(conversation_id, role, content, meta, ts) VALUES (?,?,?,?,?)",

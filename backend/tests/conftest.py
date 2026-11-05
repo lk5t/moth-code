@@ -65,3 +65,17 @@ def tiny_pipeline(tmp_path, corpus_dir):
     ds = tmp_path / "ds"
     meta = prepare_dataset([src], tok, tok_path, ds, val_fraction=0.1)
     return {"tokenizer": tok, "tokenizer_path": tok_path, "dataset": ds, "meta": meta, "source": src}
+
+
+@pytest.fixture
+def tiny_model(tiny_pipeline, tmp_path):
+    """A briefly trained and exported moth-tiny model (real training, CPU)."""
+    from moth.model.registry import export_model
+    from moth.training.trainer import TrainConfig, Trainer
+
+    cfg = TrainConfig(run_name="fx", dataset=str(tiny_pipeline["dataset"]), out_dir=str(tmp_path / "fx-run"),
+                      preset="moth-tiny", seq_len=64, batch_size=8, grad_accum=1, max_steps=30, lr=3e-3,
+                      warmup_steps=3, eval_interval=10, eval_iters=2, log_interval=10, device="cpu")
+    Trainer(cfg).run()
+    info = export_model(tmp_path / "fx-run/checkpoints/best.pt", tmp_path / "models", "fx-model", dtype="float32")
+    return {"dir": tmp_path / "models" / "fx-model", "models_dir": tmp_path / "models", "info": info}

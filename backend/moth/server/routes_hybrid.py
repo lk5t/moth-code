@@ -1,0 +1,156 @@
+"""Hybrid inference settings, community participation and personal learning routes."""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+import time
+import uuid
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+from moth.community.resources import ParticipationSettings, may_contribute
+from moth.inference.router import InferenceRouter, InferenceSettings
+from moth.jobs import Job
+from moth.server.services import Services
+
+
+class PersonalExportIn(BaseModel):
+    project_id: int | None = None
+    name: str = "personal-tasks"
+
+
+def register(app: FastAPI, svc: Services, deps) -> None:
+    local = svc.extras["local_inference"]
+    jobs = svc.extras["jobs"]
+
+    def inference_settings() -> InferenceSettings:
+        return InferenceSettings.from_dict(svc.db.get_setting("inference"))
+
+    router = InferenceRouter(local, inference_settings)
+    svc.extras["inference_router"] = router
+
+    # ---- hybrid inference ----------------------------------------------------------------
+    @app.get("/api/inference", dependencies=deps)
+    def get_inference():
+        return {"settings": inference_settings().public(), "status": router.status()}
+
+    @app.put("/api/inference", dependencies=deps)
+    def put_inference(body: dict[str, Any]):
+        current = inference_settings()
+        merged = {**current.__dict__, **body}
+        if body.get("cloud_api_key") == "********":
+            merged["cloud_api_key"] = current.cloud_api_key
+        s = InferenceSettings.from_dict(merged)
+        svc.db.set_setting("inference", s.__dict__)
+        svc.db.log_activity("inference", f"Inference mode set to {s.mode}")
+        svc.bus.publish("model", {"inference": s.public()})
+        return {"settings": s.public(), "status": router.status()}
+
+    # ---- community learning ----------------------------------------------------------------
+    def participation() -> ParticipationSettings:
+        return ParticipationSettings.from_dict(svc.db.get_setting("community"))
+
+    def client_id() -> str:
+        cid = svc.db.get_setting("community_client_id")
+        if not cid:  # random pseudonymous id: not derived from user/machine data
+            cid = uuid.uuid4().hex
+            svc.db.set_setting("community_client_id", cid)
+        return cid
+
+    def rounds_today() -> int:
+        start = dt.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        return int(svc.db.one("SELECT COUNT(*) AS n FROM activity WHERE kind='community' AND ts>=? AND message LIKE "
+                              "'Contributed%'", (start,))["n"])
+
+    @app.get("/api/community", dependencies=deps)
+    def community():
+        s = participation()
+        ok, reason = may_contribute(s, dt.datetime.now(), rounds_today())
+        coordinator = None
+        if s.coordinator_url:
+            try:
+                from moth.community.client import CommunityClient
+
+                coordinator = CommunityClient(s, client_id()).info()
+            except Exception as e:
+                coordinator = {"error": str(e)}
+        running = [j.public() for j in jobs.running("community")]
+        history = svc.db.query("SELECT ts, message FROM activity WHERE kind='community' ORDER BY id DESC LIMIT 20")
+        return {"settings": s.to_dict(), "can_contribute": ok, "reason": reason, "coordinator": coordinator,
+                "running": running, "history": history, "rounds_today": rounds_today()}
+
+    @app.put("/api/community", dependencies=deps)
+    def put_community(body: dict[str, Any]):
+        s = ParticipationSettings.from_dict({**participation().to_dict(), **body})
+        svc.db.set_setting("community", s.to_dict())
+        svc.db.log_activity("community", f"Community settings updated (enabled={s.enabled}, paused={s.paused})")
+        if (s.paused or not s.enabled):
+            for j in jobs.running("community"):
+                jobs.stop(j.id, grace=30)
+        return community()
+
+    @app.post("/api/community/contribute", dependencies=deps)
+    def contribute():
+        s = participation()
+        ok, reason = may_contribute(s, dt.datetime.now(), rounds_today())
+        if not ok:
+            raise HTTPException(409, f"cannot contribute now: {reason}")
+        if jobs.running("community") or jobs.running("train"):
+            raise HTTPException(409, "a training job is already running")
+        path = svc.paths.community / "participation.json"
+        path.write_text(json.dumps(s.to_dict()))
+
+        def on_event(job: Job, e: dict) -> None:
+            if e.get("kind") == "done" and e.get("accepted"):
+                svc.db.log_activity("community", f"Contributed round {e.get('round')}: {e.get('steps')} steps, "
+                                                 f"loss {e.get('loss_before', 0):.3f} → {e.get('loss_after', 0):.3f}")
+            elif e.get("kind") == "done":
+                svc.db.log_activity("community", f"Contribution rejected: {', '.join(e.get('reasons', []))}")
+            elif e.get("kind") == "error":
+                svc.db.log_activity("community", f"Contribution failed: {e.get('message')}")
+
+        job = jobs.start("community", "Community training round",
+                         ["community-round", "--settings", str(path), "--client-id", client_id()],
+                         on_event=on_event)
+        return job.public()
+
+    # ---- personal learning ------------------------------------------------------------------
+    @app.post("/api/learning/personal/export", dependencies=deps)
+    def export_personal(body: PersonalExportIn):
+        """Write verified agent transcripts as local chat-format training data (never uploaded)."""
+        from moth.agent.protocol import TOOL_CALL
+
+        q = "SELECT * FROM tasks WHERE status='completed'"
+        params: list[Any] = []
+        if body.project_id is not None:
+            q += " AND project_id=?"
+            params.append(body.project_id)
+        rows = svc.db.query(q, params)
+        out_dir = svc.paths.datasets / "_sources"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"{body.name}-{int(time.time())}.jsonl"
+        n = 0
+        with open(path, "w", encoding="utf-8") as f:
+            for r in rows:
+                result = json.loads(r["result"] or "{}")
+                verification = result.get("verification") or {}
+                if not (verification.get("ran") and verification.get("passed")):
+                    continue  # only test-verified successes
+                steps = json.loads(r["steps"] or "{}").get("steps", [])
+                msgs = [{"role": "user", "content": r["goal"]}]
+                for s in steps:
+                    call = json.dumps({"tool": s["tool"], "args": s["args"]})
+                    msgs.append({"role": "assistant", "content": f"{s.get('thought', '')}{TOOL_CALL}{call}"})
+                    msgs.append({"role": "tool_result", "content": s["result"]})
+                summary = result.get("model_summary") or "done"
+                msgs.append({"role": "assistant", "content": TOOL_CALL + json.dumps({"tool": "finish", "args": {"summary": summary}})})
+                f.write(json.dumps({"messages": msgs, "moth_trusted": True}) + "\n")
+                n += 1
+        if n == 0:
+            path.unlink(missing_ok=True)
+            raise HTTPException(409, "no test-verified completed tasks to learn from yet")
+        svc.db.log_activity("learning", f"Exported {n} verified task transcripts for local training")
+        return {"path": str(path), "examples": n, "source_spec": f"jsonl:{path}"}

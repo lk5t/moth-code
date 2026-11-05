@@ -14,6 +14,7 @@ SUBSYSTEMS: list[str] = [
     "moth.server.routes_model",
     "moth.server.routes_training",
     "moth.server.routes_agent",
+    "moth.server.routes_hybrid",
 ]
 STATUS: dict[str, dict] = {}
 

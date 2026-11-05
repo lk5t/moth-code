@@ -64,7 +64,7 @@ class JobManager:
         job._stop_file = stop_file or (self.work_dir / f"{job.id}.stop")
         job._stop_file.unlink(missing_ok=True)
         cmd = cli_command("--json-events", *args)
-        if kind != "train" and "--stop-file" not in args and args and args[0] in ("tokenizer", "prepare"):
+        if kind != "train" and "--stop-file" not in args and args and args[0] in ("tokenizer", "prepare", "community-round"):
             cmd += ["--stop-file", str(job._stop_file)]
         kwargs: dict[str, Any] = {}
         if sys.platform == "win32":

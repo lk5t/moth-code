@@ -61,7 +61,8 @@ def prepare_dataset(
                 if should_stop and should_stop():
                     raise InterruptedError("dataset preparation cancelled")
                 if doc.messages:
-                    msgs = [Message(m["role"], m["content"]) for m in doc.messages]
+                    msgs = [Message(m["role"], m["content"], allow_special=doc.trusted and m["role"] == "assistant")
+                            for m in doc.messages]
                     ids, mask = encode_chat(tokenizer, msgs, add_generation_prompt=False)
                 else:
                     ids = tokenizer.encode(doc.text)

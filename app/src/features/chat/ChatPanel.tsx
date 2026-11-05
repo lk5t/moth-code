@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { MothEvent } from "@/lib/events";
 import { ArrowUp, Brain, Cpu, MessageSquarePlus, Square } from "lucide-react";
 import { get, post } from "@/lib/backend";
 import { useEvent } from "@/lib/events";
@@ -52,7 +53,7 @@ export function ChatPanel() {
   }, [project?.id]);
 
   useEffect(() => {
-    if (cid === null) return;
+    if (cid === null || skipFetch.current === cid) return;
     get<ChatMessage[]>(`/api/conversations/${cid}/messages`).then((m) => setMessages((cur) => (cur.some((x) => x.streaming) ? cur : m)));
   }, [cid]);
 
@@ -60,14 +61,25 @@ export function ChatPanel() {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  useEvent("chat", (e) => {
-    if (e.conversation_id !== cid) return;
+  // Refs avoid a race: for a new conversation, streaming events can arrive
+  // before POST /api/chat returns the conversation id.
+  const cidRef = useRef<number | null>(null);
+  const sendingNew = useRef(false);
+  const early = useRef<MothEvent[]>([]);
+  const skipFetch = useRef<number | null>(null);
+  cidRef.current = cid;
+
+  const apply = (e: MothEvent) => {
     setMessages((cur) => {
       const last = cur[cur.length - 1];
       const streaming = last?.streaming ? last : null;
       if (e.kind === "start") {
         return streaming ? cur : [...cur, { id: e.message_key, role: "assistant", content: "", streaming: true }];
       }
+      if (e.kind === "done" && !streaming) {
+        return [...cur, { id: e.message_key, role: "assistant", content: e.text, meta: e.meta }];
+      }
+      if (e.kind === "error" && !streaming) return [...cur, { id: e.message_key, role: "error", content: e.error }];
       if (!streaming) return cur;
       const rest = cur.slice(0, -1);
       if (e.kind === "token") return [...rest, { ...streaming, content: streaming.content + e.text }];
@@ -77,6 +89,14 @@ export function ChatPanel() {
       return cur;
     });
     if (e.kind === "done" || e.kind === "error") setBusy(false);
+  };
+
+  useEvent("chat", (e) => {
+    if (cidRef.current === null && sendingNew.current) {
+      early.current.push(e);
+      return;
+    }
+    if (e.conversation_id === cidRef.current) apply(e);
   });
 
   const send = async () => {
@@ -85,17 +105,28 @@ export function ChatPanel() {
     setInput("");
     setBusy(true);
     setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: text }]);
+    const isNew = cid === null;
+    if (isNew) {
+      sendingNew.current = true;
+      early.current = [];
+    }
     try {
       const r = await post<{ conversation_id: number }>("/api/chat", {
         message: text,
         conversation_id: cid,
         project_id: project?.id ?? null,
       });
-      if (cid === null) {
+      if (isNew) {
+        skipFetch.current = r.conversation_id;
+        cidRef.current = r.conversation_id;
         setCid(r.conversation_id);
+        sendingNew.current = false;
+        early.current.filter((e) => e.conversation_id === r.conversation_id).forEach(apply);
+        early.current = [];
         reloadConversations();
       }
     } catch (e) {
+      sendingNew.current = false;
       setBusy(false);
       setMessages((m) => [...m, { id: `e${Date.now()}`, role: "error", content: String((e as Error).message ?? e) }]);
     }

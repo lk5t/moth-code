@@ -131,6 +131,22 @@ def cmd_coordinator(args, emit: Emitter) -> None:
     coord_main(args.rest)
 
 
+def cmd_community_round(args, emit: Emitter) -> None:
+    from moth.community.client import CommunityClient
+    from moth.community.resources import ParticipationSettings
+
+    settings = ParticipationSettings.from_dict(json.loads(Path(args.settings).read_text()))
+    client = CommunityClient(settings, client_id=args.client_id)
+    result = client.run_round(should_stop=_stop_file_checker(args.stop_file), on_event=emit)
+    emit({"kind": "done", **result})
+
+
+def cmd_cloud_serve(args, emit: Emitter) -> None:
+    from moth.inference.cloud_server import main as cloud_main
+
+    cloud_main(args.rest)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="moth", description="MOTH Code command-line tools")
     p.add_argument("--json-events", action="store_true", help="emit machine-readable progress events")
@@ -180,6 +196,16 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("serve", help="run the local API server")
     s.add_argument("rest", nargs=argparse.REMAINDER)
     s.set_defaults(fn=cmd_serve)
+
+    cr = sub.add_parser("community-round", help="contribute one community training round")
+    cr.add_argument("--settings", required=True, help="participation settings JSON file")
+    cr.add_argument("--client-id", required=True)
+    cr.add_argument("--stop-file")
+    cr.set_defaults(fn=cmd_community_round)
+
+    cs = sub.add_parser("cloud-serve", help="serve a MOTH model over the moth-cloud/1 protocol")
+    cs.add_argument("rest", nargs=argparse.REMAINDER)
+    cs.set_defaults(fn=cmd_cloud_serve)
 
     c = sub.add_parser("coordinator", help="run a community training coordinator")
     c.add_argument("rest", nargs=argparse.REMAINDER)
