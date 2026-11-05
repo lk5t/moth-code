@@ -1,0 +1,82 @@
+import { useEffect, useState } from "react";
+import { fetchBackendInfo, get, restartBackend, type BackendInfo } from "@/lib/backend";
+import { startEvents } from "@/lib/events";
+import { appStore, useApp, type Project } from "@/lib/app-state";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Splash } from "@/components/Splash";
+import { NavRail } from "@/components/NavRail";
+import { StatusBar } from "@/components/StatusBar";
+import { WorkspaceView } from "@/features/workspace/WorkspaceView";
+import { ApprovalDialog } from "@/features/workspace/ApprovalDialog";
+import { SettingsView } from "@/features/settings/SettingsView";
+import { loadProjects } from "@/features/workspace/project-actions";
+import { views } from "@/views";
+
+export default function App() {
+  const [info, setInfo] = useState<BackendInfo | null>(null);
+  const [minSplash, setMinSplash] = useState(true);
+  const view = useApp((s) => s.view);
+
+  useEffect(() => {
+    const t = setTimeout(() => setMinSplash(false), 900);
+    let cancelled = false;
+    const poll = async () => {
+      while (!cancelled) {
+        const i = await fetchBackendInfo().catch((e) => ({ status: "failed", url: "", token: "", error: String(e) }) as BackendInfo);
+        setInfo(i);
+        if (i.status === "ready") {
+          startEvents();
+          const projects = await loadProjects().catch(() => [] as Project[]);
+          let last: string | null = null;
+          try {
+            last = localStorage.getItem("moth.lastProject");
+          } catch {
+            /* storage unavailable */
+          }
+          const project = projects.find((p) => String(p.id) === last) ?? null;
+          if (project) await get(`/api/projects/${project.id}/tree`).then(() => appStore.setState({ project })).catch(() => {});
+          return;
+        }
+        if (i.status === "failed") return;
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    };
+    poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, []);
+
+  if (!info || info.status !== "ready" || minSplash) {
+    const failed = info?.status === "failed";
+    return (
+      <Splash
+        status={failed ? "The MOTH backend failed to start" : "Starting MOTH…"}
+        error={failed ? [info?.error, ...(info?.logs ?? [])].filter(Boolean).join("\n") : null}
+        onRetry={() => restartBackend().then(() => location.reload())}
+      />
+    );
+  }
+
+  const Extra = views[view];
+  return (
+    <TooltipProvider>
+      <div className="flex h-full flex-col animate-fade-in">
+        <div className="flex min-h-0 flex-1">
+          <NavRail />
+          <main className="min-w-0 flex-1">
+            {/* Workspace stays mounted so editor/terminal state survives view switches. */}
+            <div className={view === "workspace" ? "flex h-full" : "hidden"}>
+              <WorkspaceView />
+            </div>
+            {view === "settings" && <SettingsView />}
+            {Extra && <Extra />}
+          </main>
+        </div>
+        <StatusBar />
+        <ApprovalDialog />
+      </div>
+    </TooltipProvider>
+  );
+}

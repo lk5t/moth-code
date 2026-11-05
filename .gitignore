@@ -1,0 +1,32 @@
+# Node / frontend
+node_modules/
+app/dist/
+*.tsbuildinfo
+
+# Rust / Tauri
+app/src-tauri/target/
+app/src-tauri/gen/schemas/
+app/src-tauri/resources/backend/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+backend/build/
+backend/dist/
+
+# MOTH runtime data (never commit models, datasets, or user data)
+.moth/
+*.pt
+*.safetensors
+runs/
+data/cache/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
