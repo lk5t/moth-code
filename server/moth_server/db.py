@@ -211,6 +211,7 @@ referral_rewards = Table(
     Column("referral_id", Integer, ForeignKey("referrals.id")),
     Column("worker_id", Integer),
     Column("qualifying_ref", String(128), nullable=False, unique=True),  # one reward per qualifying event
+    Column("source_ref", String(128), index=True),  # e.g. the paid invoice id (for reversals)
     Column("amount", BigInteger, nullable=False),
     Column("status", String(16), nullable=False),  # pending | credited | reversed | capped | rejected
     Column("available_at", Float, nullable=False),
