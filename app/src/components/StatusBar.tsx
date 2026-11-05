@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { get } from "@/lib/backend";
 import { useEvent } from "@/lib/events";
-import { useApp } from "@/lib/app-state";
+import { appStore, useApp } from "@/lib/app-state";
 import { cn } from "@/lib/utils";
 
 interface StatusInfo {
@@ -13,6 +13,7 @@ interface StatusInfo {
 
 export function StatusBar() {
   const project = useApp((s) => s.project);
+  const updateVersion = useApp((s) => s.updateVersion);
   const [connected, setConnected] = useState(true);
   const [model, setModel] = useState<StatusInfo | null>(null);
   const [training, setTraining] = useState<string | null>(null);
@@ -37,6 +38,11 @@ export function StatusBar() {
       {project && <span className="truncate" title={project.path}>{project.path}</span>}
       <div className="flex-1" />
       {training && <span className="text-[#ff6b75]">{training}</span>}
+      {updateVersion && (
+        <button className="cursor-pointer text-[#ff6b75] hover:underline" onClick={() => appStore.setState({ view: "settings" })}>
+          update {updateVersion} available
+        </button>
+      )}
       <span>{model?.loaded ? `${model.name} · ${model.device}` : "no model loaded"}</span>
     </footer>
   );

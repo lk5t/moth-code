@@ -1,0 +1,85 @@
+name: Release (Windows)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the Python backend (PyInstaller, CPU PyTorch)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install "./backend[package]"
+          cd backend
+          pyinstaller --noconfirm --distpath dist packaging/moth-backend.spec
+      - name: Smoke-test the frozen backend
+        shell: pwsh
+        run: |
+          $exe = "backend/dist/moth-backend/moth-backend.exe"
+          $env:MOTH_HOME = "$env:RUNNER_TEMP/moth-smoke"
+          $p = Start-Process -FilePath $exe -RedirectStandardOutput "$env:RUNNER_TEMP/out.txt" -RedirectStandardError "$env:RUNNER_TEMP/err.txt" -PassThru -NoNewWindow
+          $ready = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            Start-Sleep -Seconds 2
+            if ((Test-Path "$env:RUNNER_TEMP/out.txt") -and (Select-String -Path "$env:RUNNER_TEMP/out.txt" -Pattern "MOTH_BACKEND_READY" -Quiet)) { $ready = $true; break }
+          }
+          Get-Content "$env:RUNNER_TEMP/out.txt"
+          if (-not $ready) { Get-Content "$env:RUNNER_TEMP/err.txt"; Stop-Process -Id $p.Id -Force; throw "frozen backend did not start" }
+          $port = ((Select-String -Path "$env:RUNNER_TEMP/out.txt" -Pattern '"port": (\d+)').Matches[0].Groups[1].Value)
+          $subs = Invoke-RestMethod "http://127.0.0.1:$port/api/subsystems"
+          $subs | ConvertTo-Json -Depth 4
+          Stop-Process -Id $p.Id -Force
+          foreach ($s in $subs.PSObject.Properties) { if (-not $s.Value.ok) { throw "subsystem $($s.Name) failed: $($s.Value.error)" } }
+          & $exe --json-events tokenizer --source stdlib --vocab-size 300 --max-mb 0.2 --out "$env:RUNNER_TEMP/tok.json"
+          if ($LASTEXITCODE -ne 0) { throw "frozen CLI failed" }
+      - name: Stage backend as a Tauri resource
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force app/src-tauri/resources | Out-Null
+          Copy-Item -Recurse backend/dist/moth-backend app/src-tauri/resources/backend
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - run: npm ci
+        working-directory: app
+      - name: Prepare release configuration
+        run: node scripts/prepare-release.mjs
+        env:
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+
+      - name: Build installer and publish draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          args: --config src-tauri/tauri.release.conf.json
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: "MOTH Code ${{ github.ref_name }}"
+          releaseBody: "See CHANGELOG.md. The installer bundles a CPU build of PyTorch; see docs/SETUP.md for GPU (CUDA) use."
+          releaseDraft: true
+          prerelease: true
+          includeUpdaterJson: true

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchBackendInfo, get, restartBackend, type BackendInfo } from "@/lib/backend";
-import { startEvents } from "@/lib/events";
+import { startEvents, useEvent } from "@/lib/events";
 import { appStore, useApp, type Project } from "@/lib/app-state";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Splash } from "@/components/Splash";
@@ -11,11 +11,23 @@ import { ApprovalDialog } from "@/features/workspace/ApprovalDialog";
 import { SettingsView } from "@/features/settings/SettingsView";
 import { loadProjects } from "@/features/workspace/project-actions";
 import { views } from "@/views";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { checkForUpdate } from "@/features/settings/UpdatesSection";
 
 export default function App() {
   const [info, setInfo] = useState<BackendInfo | null>(null);
   const [minSplash, setMinSplash] = useState(true);
   const view = useApp((s) => s.view);
+
+  // If the event stream drops, check whether the backend process itself has failed
+  // (crash, killed) and switch to the recovery screen instead of hanging.
+  useEvent("connection", (e) => {
+    if (e.connected) return;
+    setTimeout(async () => {
+      const i = await fetchBackendInfo().catch(() => null);
+      if (i && i.status === "failed") setInfo(i);
+    }, 3000);
+  });
 
   useEffect(() => {
     const t = setTimeout(() => setMinSplash(false), 900);
@@ -26,6 +38,10 @@ export default function App() {
         setInfo(i);
         if (i.status === "ready") {
           startEvents();
+          // Silent background check; installing always needs the user's click in Settings.
+          checkForUpdate()
+            .then((u) => u && appStore.setState({ updateVersion: u.version }))
+            .catch(() => {});
           const projects = await loadProjects().catch(() => [] as Project[]);
           let last: string | null = null;
           try {
@@ -68,10 +84,10 @@ export default function App() {
           <main className="min-w-0 flex-1">
             {/* Workspace stays mounted so editor/terminal state survives view switches. */}
             <div className={view === "workspace" ? "flex h-full" : "hidden"}>
-              <WorkspaceView />
+              <ErrorBoundary label="The workspace"><WorkspaceView /></ErrorBoundary>
             </div>
-            {view === "settings" && <SettingsView />}
-            {Extra && <Extra />}
+            {view === "settings" && <ErrorBoundary label="Settings"><SettingsView /></ErrorBoundary>}
+            {Extra && <ErrorBoundary key={view} label="This view"><Extra /></ErrorBoundary>}
           </main>
         </div>
         <StatusBar />

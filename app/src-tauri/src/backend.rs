@@ -4,8 +4,10 @@
 //! 1. `MOTH_BACKEND_URL` — connect to an already-running backend (development).
 //! 2. A bundled backend executable in the app's resource directory
 //!    (`backend/moth-backend[.exe]`, produced by PyInstaller in release builds).
+//! 2b. `MOTH_PYTHON` — use that interpreter with `-m moth.server` (e.g. a CUDA
+//!    PyTorch environment); takes precedence over the bundled backend.
 //! 3. Development fallback: `python -m moth.server` from the repository's
-//!    `backend/` directory (interpreter from `MOTH_PYTHON`, else `python`/`python3`).
+//!    `backend/` directory.
 //!
 //! The backend binds an ephemeral localhost port and prints
 //! `MOTH_BACKEND_READY {"port": N}`; a random per-launch token is required on
@@ -81,6 +83,17 @@ impl Backend {
     }
 
     fn command(resource_dir: Option<&Path>) -> Result<Command, String> {
+        // Explicit interpreter override, e.g. a Python environment with CUDA-enabled PyTorch
+        // and `pip install ./backend`. Takes precedence over the bundled CPU backend.
+        if let Ok(python) = std::env::var("MOTH_PYTHON") {
+            let mut c = Command::new(python);
+            c.args(["-m", "moth.server"]);
+            let dev_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../backend");
+            if dev_dir.join("moth").exists() {
+                c.current_dir(dev_dir);
+            }
+            return Ok(c);
+        }
         let exe_name = if cfg!(windows) { "moth-backend.exe" } else { "moth-backend" };
         if let Some(dir) = resource_dir {
             let bundled = dir.join("backend").join(exe_name);
@@ -98,9 +111,7 @@ impl Backend {
                 backend_dir.display()
             ));
         }
-        let python = std::env::var("MOTH_PYTHON").unwrap_or_else(|_| {
-            if cfg!(windows) { "python".into() } else { "python3".into() }
-        });
+        let python = if cfg!(windows) { "python" } else { "python3" };
         let mut c = Command::new(python);
         c.args(["-m", "moth.server"]).current_dir(backend_dir);
         Ok(c)

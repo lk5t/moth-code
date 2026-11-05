@@ -7,7 +7,6 @@ name = "moth-backend"
 version = "0.1.0"
 description = "MOTH Code backend: MOTH model, training, autonomous coding engine and local API server"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
 dependencies = [
   "torch>=2.2",
   "numpy>=1.24",

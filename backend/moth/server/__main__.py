@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> None:
     sock.bind((args.host, args.port))
     port = sock.getsockname()[1]
 
-    config = uvicorn.Config(app, log_level="warning", lifespan="on")
+    config = uvicorn.Config(app, log_level="warning", lifespan="on", timeout_graceful_shutdown=5)
     server = uvicorn.Server(config)
 
     def announce() -> None:
@@ -73,9 +73,13 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _watch_parent(pid: int, server: uvicorn.Server) -> None:
+    """Exit when the desktop shell is gone (crash, kill, or forced quit)."""
+    started_as_child = sys.platform != "win32" and os.getppid() == pid
     while True:
-        time.sleep(2)
-        if not _pid_alive(pid):
+        time.sleep(1.5)
+        # On POSIX a dead parent means we get re-parented; this also covers an unreaped (zombie) parent.
+        orphaned = started_as_child and os.getppid() != pid
+        if orphaned or not _pid_alive(pid):
             server.should_exit = True
             return
 

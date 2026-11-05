@@ -27,6 +27,7 @@ export interface AppState {
   terminalOpen: boolean;
   rightTab: string;
   treeVersion: number;
+  updateVersion: string | null;
 }
 
 export const appStore = createStore<AppState>({
@@ -40,6 +41,7 @@ export const appStore = createStore<AppState>({
   terminalOpen: false,
   rightTab: "editor",
   treeVersion: 0,
+  updateVersion: null,
 });
 
 export const useApp = appStore.useStore;
