@@ -13,6 +13,7 @@ import traceback
 SUBSYSTEMS: list[str] = [
     "moth.server.routes_model",
     "moth.server.routes_training",
+    "moth.server.routes_agent",
 ]
 STATUS: dict[str, dict] = {}
 

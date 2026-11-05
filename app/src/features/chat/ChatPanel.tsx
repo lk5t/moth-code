@@ -10,7 +10,7 @@ import { Select } from "@/components/ui/select";
 import { MothEmblem } from "@/components/MothEmblem";
 import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
-import { agentMode } from "./agent-slot";
+import { AgentPanel } from "@/features/agent/AgentPanel";
 
 interface ChatMessage {
   id: number | string;
@@ -45,7 +45,6 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
-  const AgentView = agentMode.component;
 
   useEffect(() => {
     setCid(null);
@@ -107,7 +106,7 @@ export function ChatPanel() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-        {agentMode.component && (
+        {(
           <div className="flex rounded-md border border-border p-0.5">
             {(["chat", "agent"] as const).map((m) => (
               <button
@@ -148,8 +147,8 @@ export function ChatPanel() {
         </span>
       </div>
 
-      {mode === "agent" && AgentView ? (
-        <AgentView />
+      {mode === "agent" ? (
+        <AgentPanel />
       ) : (
         <>
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
