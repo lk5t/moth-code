@@ -83,6 +83,29 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_migrate(args) -> int:
+    """Schema migrations. ``--plan`` prints JSON for the update agent and changes nothing."""
+    import json
+
+    from moth_server.db import SCHEMA_VERSION, Database, MigrationApprovalRequired
+
+    s = Settings.from_env().ensure_dirs()
+    db = Database(s.db_url)
+    if args.plan:
+        print(json.dumps({"current": db.schema_version(), "target": SCHEMA_VERSION, "pending": db.pending_migrations()}))
+        return 0
+    if args.approve:
+        approved = sorted(db.approved_migrations() | set(args.approve))
+        db.set_config("approved_destructive_migrations", approved)
+    try:
+        applied = db.migrate(approve_destructive=args.approve_destructive)
+    except MigrationApprovalRequired as e:
+        print(f"error: {e}. Approve it in the Owner Dashboard or re-run with --approve-destructive.", file=sys.stderr)
+        return 3
+    print(f"schema version {db.schema_version()} (applied: {applied or 'none'})")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="moth-server")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -104,6 +127,11 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("tarball")
     w.add_argument("--version", required=True)
     w.set_defaults(fn=cmd_worker_release)
+    m = sub.add_parser("migrate", help="apply database migrations (destructive ones need approval)")
+    m.add_argument("--plan", action="store_true", help="print pending migrations as JSON and exit")
+    m.add_argument("--approve-destructive", action="store_true")
+    m.add_argument("--approve", type=int, action="append", default=[], help="approve one destructive migration")
+    m.set_defaults(fn=cmd_migrate)
     s = sub.add_parser("serve", help="run the server")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8900)

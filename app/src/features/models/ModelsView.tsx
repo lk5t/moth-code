@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { CloudUpload, Cpu, FlaskConical, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, CloudUpload, Cpu, FlaskConical, ShieldCheck, Trash2, XCircle } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { serverApi } from "@/lib/account";
 import { askPassword } from "@/features/account/reauth";
 import { del, get, post } from "@/lib/backend";
@@ -24,12 +25,75 @@ interface ModelInfo {
 }
 interface Evaluation { val_loss: number; perplexity: number; next_token_accuracy: number; code_exact: number; code_total: number; dataset: string | null; ts: number; samples: { prompt: string; expected: string; output: string; pass: boolean | null }[] }
 
+interface PublishJob {
+  model_id: string;
+  stage: "validating" | "packaging" | "uploading" | "paused" | "processing" | "evaluating" | "evaluated" | "published" | "deployed" | "failed" | "idle";
+  progress?: number;
+  error?: string | null;
+  release_version?: number;
+  duplicate?: boolean;
+  message?: string;
+  resumed?: boolean;
+  active?: boolean;
+  evaluation?: { passed?: boolean; reason?: string; score?: { metric: string; value: number }; dataset?: { name: string }; guidance?: string; note?: string };
+}
+interface Validation { ok: boolean; problems: string[]; info: Record<string, any> }
+
+const STAGE_TEXT: Record<string, string> = {
+  validating: "Checking the package…", packaging: "Preparing upload…", uploading: "Uploading to MOTH Cloud",
+  paused: "Upload paused — it resumes automatically when MOTH Cloud is reachable", processing: "MOTH Cloud is verifying the upload…",
+  evaluating: "MOTH Cloud is evaluating the model (it runs real inference)…",
+  evaluated: "Evaluated — scored worse than the active model; you can still publish it from the Owner Dashboard",
+  published: "Published — ready to deploy from Owner Dashboard → AI models", deployed: "Deployed — serving MOTH Cloud users",
+  failed: "Publishing failed",
+};
+
+function usePublishJobs() {
+  const [jobs, setJobs] = useState<Record<string, PublishJob>>({});
+  const load = () => get<{ jobs: PublishJob[] }>("/api/publish")
+    .then((r) => setJobs(Object.fromEntries(r.jobs.map((j) => [j.model_id, j])))).catch(() => {});
+  const active = Object.values(jobs).some((j) => ["validating", "packaging", "uploading", "processing", "evaluating"].includes(j.stage));
+  useEffect(() => {
+    load();
+    const t = setInterval(load, active ? 1000 : 10000);
+    return () => clearInterval(t);
+  }, [active]);
+  return { jobs, load };
+}
+
+function PublishStatus({ job }: { job?: PublishJob }) {
+  if (!job || job.stage === "idle") return null;
+  const bad = job.stage === "failed";
+  const good = job.stage === "published" || job.stage === "deployed";
+  return (
+    <div className={`col-span-2 flex flex-col gap-1.5 rounded-md border px-3 py-2 ${bad ? "border-danger/30 bg-danger/5" : good ? "border-success/30 bg-success/5" : "border-border"}`}>
+      <div className="flex items-center gap-2">
+        {bad ? <XCircle className="size-4 text-danger" /> : good ? <CheckCircle2 className="size-4 text-success" /> : <CloudUpload className="size-4 text-accent" />}
+        <span className="text-fg">{job.duplicate && job.message ? job.message : STAGE_TEXT[job.stage] ?? job.stage}</span>
+        {job.release_version && <span className="text-faint">· release v{job.release_version}</span>}
+        {job.resumed && job.stage === "uploading" && <span className="text-faint">· resumed</span>}
+      </div>
+      {job.stage === "uploading" && <Progress value={(job.progress ?? 0) * 100} />}
+      {job.evaluation?.score && (
+        <div className="text-muted">
+          Score {job.evaluation.score.value.toFixed(3)} {job.evaluation.score.metric === "bits_per_byte" ? "bits/byte" : "loss"} on {job.evaluation.dataset?.name}
+        </div>
+      )}
+      {job.error && <div className={bad ? "text-danger" : "text-warning"}>{job.error}</div>}
+      {job.evaluation?.guidance && <div className="text-muted">{job.evaluation.guidance}</div>}
+      {job.evaluation?.note && <div className="text-faint">{job.evaluation.note}</div>}
+    </div>
+  );
+}
+
 export function ModelsView() {
   const { data: models, reload } = useResource<ModelInfo[]>("/api/models", ["model"], []);
   const { data: datasets } = useResource<{ name: string }[]>("/api/datasets", [], []);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [evals, setEvals] = useState<Record<string, Evaluation | null>>({});
+  const [checks, setChecks] = useState<Record<string, Validation>>({});
+  const { jobs, load: loadJobs } = usePublishJobs();
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -51,8 +115,9 @@ export function ModelsView() {
         <div>
           <h1 className="text-lg font-semibold">Owner · model packages</h1>
           <p className="mt-1 text-xs text-muted">
-            Models trained with the Owner training tools. They never serve users from this PC: publish one to MOTH Cloud as a
-            candidate, where it must pass evaluation before you deploy it from the Owner Dashboard.
+            Models trained with the Owner training tools. Publishing sends one to MOTH Cloud:
+            <span className="text-fg"> Validate → Upload → Evaluate → Publish</span> happen automatically (uploads resume if
+            interrupted); then deploy it for everyone from Owner Dashboard → AI models. Models never serve users from this PC.
           </p>
         </div>
         {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
@@ -70,19 +135,24 @@ export function ModelsView() {
                     {m.name}
                   </CardTitle>
                   <div className="flex gap-1.5">
-                    <Button size="sm" disabled={!!busy} onClick={() => run(`pub-${m.id}`, async () => {
-                      try {
-                        await post(`/api/models/${m.id}/publish`);
-                      } catch (e) {
-                        if ((e as { status?: number }).status !== 428) throw e;
-                        const pw = await askPassword();
-                        if (!pw) throw e;
-                        await serverApi("/v1/auth/reauth", { method: "POST", json: { password: pw } });
-                        await post(`/api/models/${m.id}/publish`);
-                      }
-                      setError(null);
-                      alert("Published to MOTH Cloud as a candidate. Evaluate and deploy it from the Owner Dashboard.");
-                    })}><CloudUpload /> {busy === `pub-${m.id}` ? "Publishing…" : "Publish to MOTH Cloud"}</Button>
+                    <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => run(`val-${m.id}`, async () => {
+                      setChecks((c) => ({ ...c, [m.id]: undefined as any }));
+                      const v = await post<Validation>(`/api/publish/${m.id}/validate`);
+                      setChecks((c) => ({ ...c, [m.id]: v }));
+                    })}><ShieldCheck /> {busy === `val-${m.id}` ? "Validating…" : "Validate"}</Button>
+                    <Button size="sm" disabled={!!busy || ["validating", "packaging", "uploading", "processing", "evaluating"].includes(jobs[m.id]?.stage ?? "")}
+                      onClick={() => run(`pub-${m.id}`, async () => {
+                        try {
+                          await post(`/api/models/${m.id}/publish`);
+                        } catch (e) {
+                          if ((e as { status?: number }).status !== 428) throw e;
+                          const pw = await askPassword();
+                          if (!pw) throw e;
+                          await serverApi("/v1/auth/reauth", { method: "POST", json: { password: pw } });
+                          await post(`/api/models/${m.id}/publish`);
+                        }
+                        loadJobs();
+                      })}><CloudUpload /> {busy === `pub-${m.id}` ? "Starting…" : jobs[m.id]?.stage === "paused" || jobs[m.id]?.stage === "failed" ? "Retry publishing" : "Publish to MOTH Cloud"}</Button>
                     <Button size="sm" variant="outline" disabled={!!busy} onClick={() => run(`eval-${m.id}`, () => post(`/api/models/${m.id}/evaluate`, { dataset: datasets?.[0]?.name ?? null }))}><FlaskConical /> Evaluate</Button>
                     <Button size="icon-sm" variant="ghost" onClick={() => confirm(`Delete model ${m.name}?`) && run(`del-${m.id}`, () => del(`/api/models/${m.id}`))}><Trash2 /></Button>
                   </div>
@@ -92,6 +162,16 @@ export function ModelsView() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid grid-cols-2 gap-4 text-xs">
+                {checks[m.id] && (
+                  <div className={`col-span-2 rounded-md border px-3 py-2 ${checks[m.id].ok ? "border-success/30 bg-success/5" : "border-danger/30 bg-danger/5"}`}>
+                    {checks[m.id].ok ? (
+                      <span className="text-success">✓ Ready to publish: checksum, architecture ({checks[m.id].info.config?.n_layers} layers, d_model {checks[m.id].info.config?.d_model}), tokenizer ({checks[m.id].info.tokenizer?.vocab_size} tokens) and weights all verified. MOTH Cloud needs about {formatNumber(checks[m.id].info.resources?.ram_cpu_bytes / 2 ** 30, 1)} GB RAM to serve it on CPU.</span>
+                    ) : (
+                      <div className="text-danger">This model can't be published yet:<ul className="ml-4 list-disc">{checks[m.id].problems.map((p) => <li key={p}>{p}</li>)}</ul></div>
+                    )}
+                  </div>
+                )}
+                <PublishStatus job={jobs[m.id]} />
                 <div className="space-y-1 text-muted">
                   <div>Run: <span className="text-fg">{m.training.run ?? "—"}</span> · step {m.training.step ?? "—"}</div>
                   <div>Validation loss: <span className="text-fg">{m.training.val_loss?.toFixed(3) ?? m.training.best_val?.toFixed(3) ?? "—"}</span></div>

@@ -10,6 +10,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri, put } from "./backend";
 import { createStore } from "./store";
+import { CLIENT_HEADER, hasOfficialServer, rememberLegacyServer, resolveServer, setDeveloperOverride } from "./endpoint";
 
 export interface MothUser {
   id: number;
@@ -47,15 +48,15 @@ export interface AccountState {
   activeKey: string | null;
   ready: boolean;
   offline: boolean;
+  /** Set when MOTH Cloud says this version is too old (HTTP 426); the updater takes over. */
+  updateRequired: string | null;
 }
-
-const DEFAULT_SERVER = ((import.meta.env.VITE_MOTH_SERVER_URL as string | undefined) ?? "").replace(/\/$/, "");
 
 function loadServerUrl(): string {
   try {
-    return normalizeServerUrl(localStorage.getItem("moth.serverUrl") ?? DEFAULT_SERVER);
+    return normalizeServerUrl(resolveServer());
   } catch {
-    return DEFAULT_SERVER;
+    return "";
   }
 }
 
@@ -67,6 +68,7 @@ export const accountStore = createStore<AccountState>({
   activeKey: null,
   ready: false,
   offline: false,
+  updateRequired: null,
 });
 export const useAccount = accountStore.useStore;
 
@@ -78,13 +80,18 @@ export class ServerError extends Error {
   }
 }
 
+const RETRY_DELAYS_MS = [500, 1500, 4000];
+
+/** Call MOTH Cloud. Every request declares the client version (so the server can refuse outdated
+ *  clients before they touch data), times out instead of hanging, and safe requests (GET) are
+ *  retried with exponential backoff on network errors and server errors. */
 export async function serverApi<T = any>(
   path: string,
-  init: RequestInit & { json?: unknown; token?: string | null; server?: string } = {},
+  init: RequestInit & { json?: unknown; token?: string | null; server?: string; timeoutMs?: number; retries?: number } = {},
 ): Promise<T> {
   const server = normalizeServerUrl(init.server ?? accountStore.getState().serverUrl);
-  if (!server) throw new ServerError(0, "No MOTH Server is configured. Set its address in Settings → Account.");
-  const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
+  if (!server) throw new ServerError(0, "MOTH Cloud isn't configured in this build. Ask the MOTH team for an updated installer.");
+  const headers: Record<string, string> = { "X-Moth-Client": CLIENT_HEADER, ...(init.headers as Record<string, string>) };
   const token = init.token === undefined ? accountStore.getState().token : init.token;
   if (token) headers.Authorization = `Bearer ${token}`;
   let body = init.body;
@@ -92,25 +99,41 @@ export async function serverApi<T = any>(
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(init.json);
   }
-  let res: Response;
-  try {
-    res = await fetch(server + path, { ...init, headers, body });
-  } catch {
+  const method = (init.method ?? "GET").toUpperCase();
+  const retries = init.retries ?? (method === "GET" ? RETRY_DELAYS_MS.length : 0);
+  let res: Response | null = null;
+  for (let attempt = 0; ; attempt++) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), init.timeoutMs ?? 20000);
+    try {
+      res = await fetch(server + path, { ...init, method, headers, body, signal: ctl.signal });
+    } catch {
+      res = null;
+    } finally {
+      clearTimeout(timer);
+    }
+    const retryable = res === null || res.status >= 500;
+    if (!retryable || attempt >= retries) break;
+    await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)]));
+  }
+  if (res === null) {
     accountStore.setState({ offline: true });
-    throw new ServerError(0, "Can't reach the MOTH Server. Local features keep working offline.");
+    throw new ServerError(0, "Can't reach MOTH Cloud right now. MOTH Code keeps trying in the background.");
   }
   accountStore.setState({ offline: false });
   if (!res.ok) {
     let detail = res.statusText;
+    let extra: any = {};
     try {
-      const d = await res.json();
-      detail = typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail);
+      extra = await res.json();
+      detail = typeof extra.detail === "string" ? extra.detail : JSON.stringify(extra.detail);
     } catch {
       /* not json */
     }
     if (res.status === 401 && token && path !== "/v1/auth/login") handleExpired();
+    if (res.status === 426) accountStore.setState({ updateRequired: extra.min_version ?? "newer" });
     if (res.status === 404 && (!detail || detail === "Not Found") && path.startsWith("/v1/auth/")) {
-      detail = `${server} doesn't look like a MOTH Server. Check the address in Settings → Account.`;
+      detail = `${server} doesn't look like MOTH Cloud. Check the server address in Settings → Advanced.`;
     }
     throw new ServerError(res.status, detail, res.headers.get("X-Moth-Reason"), Number(res.headers.get("Retry-After") ?? 0));
   }
@@ -198,15 +221,38 @@ export function normalizeServerUrl(input: string): string {
   return u.origin + path;
 }
 
+/** Developer/testing only when the build has an official endpoint; otherwise the address the
+ *  user was given. Pass "" to clear a developer override. */
 export function setServerUrl(url: string) {
-  const clean = normalizeServerUrl(url);
-  try {
-    localStorage.setItem("moth.serverUrl", clean);
-  } catch {
-    /* storage unavailable */
-  }
-  accountStore.setState({ serverUrl: clean });
+  const clean = url ? normalizeServerUrl(url) : "";
+  if (hasOfficialServer()) setDeveloperOverride(clean || null);
+  else rememberLegacyServer(clean);
+  accountStore.setState({ serverUrl: clean || normalizeServerUrl(resolveServer()) });
   syncBackend();
+}
+
+const REFRESH_EVERY_MS = 24 * 3600 * 1000;
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Rotate the session token (keeps remembered sessions alive without signing in again). */
+export async function refreshSession(): Promise<boolean> {
+  const { token, activeKey, accounts, user } = accountStore.getState();
+  if (!token || !user) return false;
+  try {
+    const r = await serverApi<{ token: string; user: MothUser }>("/v1/auth/refresh", { method: "POST", retries: 2 });
+    const acct = accounts.find((a) => accountKey(a.server, a.username) === activeKey);
+    if (acct) await vaultRemember({ ...acct, last_used: Date.now() / 1000 }, r.token);
+    accountStore.setState({ token: r.token, user: r.user });
+    await syncBackend();
+    return true;
+  } catch {
+    return false; // offline or an older server without /refresh: the current session stays valid
+  }
+}
+
+function scheduleRefresh() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => refreshSession(), REFRESH_EVERY_MS);
 }
 
 export async function initAccounts() {
@@ -220,18 +266,34 @@ export async function initAccounts() {
       try {
         const user = await serverApi<MothUser>("/v1/me", { token, server: acct.server });
         accountStore.setState({ user });
+        refreshSession();
       } catch (e) {
-        // Offline: stay signed in with the stored session; local features are unaffected.
-        if ((e as ServerError).status !== 0) accountStore.setState({ token: null, user: null });
+        // Offline: stay signed in with the stored session; it is restored when MOTH Cloud is back.
+        const st = (e as ServerError).status;
+        if (st !== 0 && st !== 426 && st < 500) accountStore.setState({ token: null, user: null });
       }
     }
   }
+  scheduleRefresh();
   accountStore.setState({ ready: true });
   syncBackend();
 }
 
+/** Called by the connection monitor when MOTH Cloud becomes reachable again. */
+export async function restoreSessionIfNeeded() {
+  const { token, user } = accountStore.getState();
+  if (token && !user) {
+    try {
+      accountStore.setState({ user: await serverApi<MothUser>("/v1/me") });
+      await syncBackend();
+    } catch {
+      /* stays signed out of cloud features until the next attempt */
+    }
+  }
+}
+
 export async function login(username: string, password: string, remember = true) {
-  const server = accountStore.getState().serverUrl;
+  const server = normalizeServerUrl(accountStore.getState().serverUrl);
   const r = await serverApi<{ token: string; user: MothUser; remember: boolean }>("/v1/auth/login", {
     method: "POST",
     token: null,

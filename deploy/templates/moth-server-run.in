@@ -1,0 +1,14 @@
+#!/bin/sh
+# Starts the current MOTH Cloud release. Used by systemd and by the cron supervisor.
+# While run/maintenance exists (the update agent is restoring or switching releases) it waits.
+H="@HOME@"
+while [ -e "$H/run/maintenance" ]; do sleep 1; done
+set -a
+. "$H/config/moth.env"
+set +a
+RELEASE=$(readlink -f "$H/current")
+RUNTIME=$(cat "$RELEASE/RUNTIME")
+export PYTHONPATH="$RELEASE/server:$RELEASE/backend"
+echo $$ > "$H/run/server.pid"
+cd "$H"
+exec "$RUNTIME/bin/python" -m moth_server.cli serve --host 127.0.0.1 --port "${MOTH_SERVER_PORT:-@PORT@}"

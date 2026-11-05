@@ -4,9 +4,10 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  workflow_call:  # the release workflow runs the full test suite before building anything
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -89,6 +90,25 @@ jobs:
           python -m pip install -e ./backend -e ./server
       - name: Enrollment command → verified download → install → verified training job
         run: bash scripts/test-worker-install.sh
+
+  cloud-updates:
+    name: MOTH Cloud install, automatic updates, rollback and recovery (Linux, real processes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the test starts a real v0.2.1 server from git history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies (CPU PyTorch)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ./backend -e ./server httpx
+      - name: v0.2.1 adoption → install → server/agent/worker updates → rollback → recovery → reboot
+        run: python scripts/test-ecosystem-update.py
 
   frontend:
     name: Frontend typecheck, tests and build

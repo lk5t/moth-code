@@ -26,7 +26,8 @@ class Stop(Exception):
 
 class WorkerRunner:
     def __init__(self, client: WorkerClient, state_dir: Path, allow_cpu: bool = False,
-                 log: Callable[[str], None] = print, heartbeat_seconds: float = 30.0):
+                 log: Callable[[str], None] = print, heartbeat_seconds: float = 30.0,
+                 update_check_seconds: float | None = 1800.0):
         self.client = client
         self.state_dir = Path(state_dir)
         (self.state_dir / "jobs").mkdir(parents=True, exist_ok=True)
@@ -39,11 +40,48 @@ class WorkerRunner:
         self.revoked = False
         self.limits: dict[str, Any] = {}
         self.stop_event = threading.Event()
+        self.update_check_seconds = update_check_seconds
+        self._next_update_check = 0.0
+        self.updated_to: str | None = None
 
     # ---- heartbeat -----------------------------------------------------------------------
     def beat(self) -> None:
         resp = self.client.heartbeat(detect(), self.current_job, self.progress)
         self.paused, self.revoked, self.limits = resp["paused"], resp["revoked"], resp.get("limits") or {}
+        from moth_worker import updater
+
+        done = updater.confirm_healthy(self.state_dir)
+        if done:
+            self.log(f"MOTH Worker {__version__} is connected (updated from {done.get('from')})")
+            try:
+                self.client.report_update(done.get("from"), __version__, True)
+            except Exception:  # noqa: BLE001 — reporting is best effort
+                pass
+
+    def maybe_update(self) -> bool:
+        """Between jobs only: install a newer verified worker if MOTH Cloud offers one."""
+        if self.update_check_seconds is None or time.time() < self._next_update_check:
+            return False
+        self._next_update_check = time.time() + self.update_check_seconds
+        from moth_worker import updater
+
+        try:
+            info = self.client.check_update()
+        except Exception as e:  # noqa: BLE001
+            self.log(f"update check failed: {e}")
+            return False
+        if not info:
+            return False
+        try:
+            self.updated_to = updater.apply(info, self.state_dir, self.client.download_file, self.log)
+            return True
+        except Exception as e:  # noqa: BLE001 — a failed update never stops the worker
+            self.log(f"update to {info.get('version')} was not installed: {e}")
+            try:
+                self.client.report_update(__version__, info.get("version", "?"), False, str(e))
+            except Exception:  # noqa: BLE001
+                pass
+            return False
 
     def _heartbeat_loop(self) -> None:
         while not self.stop_event.wait(self.heartbeat_seconds):
@@ -66,6 +104,8 @@ class WorkerRunner:
                 self.beat()
                 if self.revoked:
                     break
+                if self.maybe_update():
+                    break  # the CLI restarts into the new version; no job is in progress here
                 if self.paused:
                     self.stop_event.wait(idle_sleep)
                     continue

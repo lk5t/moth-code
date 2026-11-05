@@ -46,6 +46,7 @@ class HeartbeatIn(BaseModel):
     hardware: dict | None = None
     job_id: int | None = None
     progress: float | None = None
+    version: str | None = Field(default=None, max_length=32)
 
 
 class ProgressIn(BaseModel):
@@ -174,7 +175,7 @@ def worker_enroll(body: WorkerEnrollIn, request: Request, ctx: Ctx = Depends(get
 
 @router.post("/v1/worker/heartbeat")
 def worker_heartbeat(body: HeartbeatIn, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
-    return T.heartbeat(ctx, w, body.hardware, body.job_id, body.progress)
+    return T.heartbeat(ctx, w, body.hardware, body.job_id, body.progress, body.version)
 
 
 @router.post("/v1/worker/jobs/claim")

@@ -1,0 +1,14 @@
+[Unit]
+Description=MOTH Cloud update agent
+After=network-online.target moth-server.service
+Wants=network-online.target
+
+[Service]
+@SERVICE_USER@
+ExecStart=@HOME@/bin/moth-agent-run
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=@WANTED_BY@

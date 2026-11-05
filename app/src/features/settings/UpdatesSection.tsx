@@ -1,85 +1,46 @@
-import { useState } from "react";
 import { Download, RefreshCw } from "lucide-react";
 import { isTauri } from "@/lib/backend";
+import { APP_VERSION } from "@/lib/endpoint";
+import { checkForUpdates, installNow, useUpdater } from "@/lib/updater";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { timeAgo } from "@/lib/utils";
 
-type UpdateState =
-  | { kind: "idle" }
-  | { kind: "checking" }
-  | { kind: "none" }
-  | { kind: "available"; version: string; notes?: string }
-  | { kind: "downloading"; progress: number }
-  | { kind: "ready" }
-  | { kind: "error"; message: string };
-
-let pending: any = null;
-
-export async function checkForUpdate(): Promise<{ version: string; body?: string } | null> {
-  if (!isTauri()) return null;
-  const { check } = await import("@tauri-apps/plugin-updater");
-  pending = await check();
-  return pending ? { version: pending.version, body: pending.body } : null;
-}
-
-/** Signed in-app updates from GitHub Releases (verified with the bundled public key). */
+/** Automatic, signed updates from MOTH Cloud. Nothing to do here normally. */
 export function UpdatesSection() {
-  const [state, setState] = useState<UpdateState>({ kind: "idle" });
-
-  const check = async () => {
-    setState({ kind: "checking" });
-    try {
-      const u = await checkForUpdate();
-      setState(u ? { kind: "available", version: u.version, notes: u.body } : { kind: "none" });
-    } catch (e) {
-      setState({ kind: "error", message: String((e as Error).message ?? e) });
-    }
-  };
-
-  const install = async () => {
-    if (!pending) return;
-    let total = 0;
-    let done = 0;
-    try {
-      await pending.downloadAndInstall((ev: any) => {
-        if (ev.event === "Started") total = ev.data.contentLength ?? 0;
-        if (ev.event === "Progress") {
-          done += ev.data.chunkLength;
-          setState({ kind: "downloading", progress: total ? (done / total) * 100 : 0 });
-        }
-        if (ev.event === "Finished") setState({ kind: "ready" });
-      });
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
-    } catch (e) {
-      setState({ kind: "error", message: String((e as Error).message ?? e) });
-    }
-  };
-
+  const u = useUpdater((s) => s);
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Download className="size-4 text-accent" />Updates</CardTitle>
-        <CardDescription>Updates are downloaded from GitHub Releases and installed only if their signature verifies.</CardDescription>
+        <CardDescription>
+          MOTH Code updates itself. New versions download in the background and install the next time you restart or
+          close the app. Every update is signature-checked; your settings, workspaces and accounts are kept.
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-2 text-xs">
         {!isTauri() ? (
-          <span className="text-muted">Updates are available in the installed desktop app.</span>
+          <span className="text-muted">Automatic updates run in the installed desktop app.</span>
         ) : (
           <>
-            <div className="flex items-center gap-2">
-              <Button variant="secondary" size="sm" disabled={state.kind === "checking" || state.kind === "downloading"} onClick={check}>
-                <RefreshCw /> Check for updates
-              </Button>
-              {state.kind === "available" && <Button size="sm" onClick={install}>Install {state.version}</Button>}
-              {state.kind === "none" && <span className="text-muted">You're up to date.</span>}
-              {state.kind === "checking" && <span className="text-muted">Checking…</span>}
-              {state.kind === "ready" && <span className="text-success">Installed — restarting…</span>}
-              {state.kind === "error" && <span className="text-danger">{state.message}</span>}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-muted">Version {APP_VERSION}</span>
+              {u.phase === "up-to-date" && <span className="text-success">· up to date</span>}
+              {u.phase === "checking" && <span className="text-muted">· checking…</span>}
+              {u.phase === "downloading" && <span className="text-muted">· downloading {u.version}…</span>}
+              {u.phase === "error" && <span className="text-danger">· {u.error} (it will retry automatically)</span>}
+              {u.lastCheck && <span className="text-faint">· last checked {timeAgo(u.lastCheck / 1000)}</span>}
+              <div className="flex-1" />
+              {u.phase === "ready" ? (
+                <Button size="sm" onClick={() => installNow()}>Restart and update to {u.version}</Button>
+              ) : (
+                <Button variant="ghost" size="sm" disabled={u.phase === "checking" || u.phase === "downloading"}
+                  onClick={() => checkForUpdates({ manual: true }).catch(() => {})}><RefreshCw /> Check now</Button>
+              )}
             </div>
-            {state.kind === "available" && state.notes && <pre className="selectable max-h-32 overflow-auto whitespace-pre-wrap text-muted">{state.notes}</pre>}
-            {state.kind === "downloading" && <Progress value={state.progress} />}
+            {u.phase === "downloading" && <Progress value={u.progress} />}
+            {u.phase === "ready" && u.notes && <pre className="selectable max-h-32 overflow-auto whitespace-pre-wrap text-muted">{u.notes}</pre>}
           </>
         )}
       </CardContent>

@@ -102,7 +102,8 @@ def worker_update(request: Request, channel: str = "stable", ctx: Ctx = Depends(
     rel, f = found
     loaded = R.load_manifest(ctx, rel["version"])
     return {"update": {"version": rel["version"], "file": f["file"], "sha256": f["sha256"], "size": f.get("size"),
-                       "url": f"{ctx.settings.public_url}/v1/updates/files/worker/{rel['version']}/{f['file']}",
+                       # a path on the server the worker is already connected to (works behind any proxy/domain)
+                       "url": f"/v1/updates/files/worker/{rel['version']}/{f['file']}",
                        "manifest": R.encode_manifest(loaded[1]), "signature": loaded[2]}}
 
 

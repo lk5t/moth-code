@@ -10,6 +10,7 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/ui/empty";
 import { formatNumber, timeAgo } from "@/lib/utils";
+import { ModelsPanel, ServerPanel, UpdatesPanel, WorkersPanel } from "./ops";
 
 type Any = Record<string, any>;
 
@@ -243,80 +244,6 @@ function Referrals() {
   );
 }
 
-function Training() {
-  const { data: workers, load } = useAdmin<Any[]>("/v1/admin/workers");
-  const { data: jobs } = useAdmin<Any[]>("/v1/admin/jobs?limit=50");
-  const { msg, run } = useAction();
-  return (
-    <div className="flex flex-col gap-4">
-      <Card>
-        <CardHeader><CardTitle>Workers ({workers?.length ?? 0})</CardTitle></CardHeader>
-        <CardContent className="space-y-1 text-xs">
-          {workers?.map((w) => (
-            <div key={w.id} className="flex items-center justify-between rounded border border-border px-2.5 py-1.5">
-              <span className="truncate">#{w.id} {w.name} <span className="text-faint">@{w.owner} · {w.hardware.gpus?.map((g: Any) => `${g.name} ${g.memory_gb}GB`).join(", ") || "no GPU"} · {w.verified_jobs}✓ {w.failed_jobs}✗</span></span>
-              <span className="flex items-center gap-1">
-                <Badge variant={w.status === "online" ? "success" : w.status === "revoked" ? "danger" : "default"}>{w.status}</Badge>
-                {w.status !== "revoked" && <Button size="sm" variant="ghost" onClick={() => run(() => serverApi(`/v1/training/workers/${w.id}/revoke`, { method: "POST" }), "Worker revoked.", load)}>Revoke</Button>}
-              </span>
-            </div>
-          ))}
-          <Msg m={msg} />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader><CardTitle>Jobs</CardTitle></CardHeader>
-        <CardContent className="space-y-0.5 text-[11px]">
-          {jobs?.map((j) => (
-            <div key={j.id} className="flex justify-between border-b border-border py-1">
-              <span>#{j.id} round {j.spec.round} {j.spec.shard_id ?? ""} {j.error && <span className="text-danger">· {String(j.error).slice(0, 90)}</span>}</span>
-              <span className="text-muted">{j.status} · worker {j.worker_id ?? "—"} · attempts {j.attempts} · {timeAgo(j.updated_at)}</span>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function Models() {
-  const { data, load } = useAdmin<Any>("/v1/admin/models");
-  const { msg, run } = useAction();
-  if (!data) return null;
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <Button size="sm" variant="secondary" onClick={() => run(() => serverApi("/v1/admin/models/sync", { method: "POST" }), "Checked the training network for new checkpoints.", load)}>Sync network checkpoints</Button>
-        <Button size="sm" variant="ghost" onClick={() => confirm("Roll back MOTH Cloud to the previous deployment?") && run(() => serverApi("/v1/admin/models/rollback", { method: "POST" }), "Rolled back.", load)}>Roll back</Button>
-        <span className="text-xs text-muted">Deployed: {data.deployed ? `v${data.deployed}` : "none"}</span>
-      </div>
-      {!data.releases.length && <EmptyState title="No model releases">Publish a model from Owner · model packages, or let the training network produce checkpoints.</EmptyState>}
-      {data.releases.map((r: Any) => (
-        <Card key={r.version} className={r.status === "deployed" ? "border-accent/50 shadow-glow" : ""}>
-          <CardContent className="flex items-center justify-between gap-3 text-xs">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-[13px] font-medium">v{r.version} · {r.name}
-                <Badge variant={r.status === "deployed" ? "accent" : r.status === "passed" ? "success" : r.status === "rejected" ? "danger" : "default"}>{r.status}</Badge>
-              </div>
-              <div className="text-muted">
-                {formatNumber(r.info.params, 1)} params · {r.info.source?.type}{r.info.source?.checkpoint_version ? ` ckpt v${r.info.source.checkpoint_version}` : ""} · sha {r.sha256.slice(0, 10)}
-                {r.evaluation && (r.evaluation.passed ? ` · eval loss ${Number(r.evaluation.eval_loss).toFixed(3)}` : ` · failed: ${r.evaluation.error ?? Object.entries(r.evaluation.checks).filter(([, v]) => !v).map(([k]) => k).join(", ")}`)}
-              </div>
-            </div>
-            <div className="flex shrink-0 gap-1">
-              <Button size="sm" variant="secondary" onClick={() => run(() => serverApi(`/v1/admin/models/${r.version}/evaluate`, { method: "POST" }), `v${r.version} evaluated.`, load)}>Evaluate</Button>
-              {["passed", "retired"].includes(r.status) && (
-                <Button size="sm" onClick={() => confirm(`Deploy v${r.version} to MOTH Cloud for all users?`) && run(() => serverApi(`/v1/admin/models/${r.version}/deploy`, { method: "POST" }), `v${r.version} deployed.`, load)}>Deploy</Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-      <Msg m={msg} />
-    </div>
-  );
-}
-
 function Policy() {
   const { data } = useAdmin<Any>("/v1/admin/policy");
   const [p, setP] = useState<Any | null>(null);
@@ -391,12 +318,21 @@ function Audit() {
   );
 }
 
+function Billing() {
+  return <div className="flex flex-col gap-6"><Plans /><Referrals /></div>;
+}
+
+function PolicyAndFlags() {
+  return <div className="flex flex-col gap-6"><Flags /><Policy /></div>;
+}
+
 export function OwnerDashboard() {
   const role = useAccount((s) => s.user?.role);
   if (role !== "owner") return <EmptyState title="Owner Dashboard">Available to the MOTH Owner account only.</EmptyState>;
   const tabs: [string, string, React.ComponentType][] = [
-    ["overview", "Overview", Overview], ["users", "Users", Users], ["plans", "Plans", Plans], ["referrals", "Referrals", Referrals],
-    ["training", "Training", Training], ["models", "Models", Models], ["policy", "Policy", Policy], ["flags", "Flags", Flags], ["audit", "Audit log", Audit],
+    ["overview", "Overview", Overview], ["server", "Server", ServerPanel], ["updates", "Updates", UpdatesPanel],
+    ["models", "AI models", ModelsPanel], ["workers", "Workers", WorkersPanel], ["users", "Users", Users],
+    ["billing", "Plans & referrals", Billing], ["settings", "Policy & flags", PolicyAndFlags], ["audit", "Audit log", Audit],
   ];
   return (
     <div className="h-full overflow-auto">

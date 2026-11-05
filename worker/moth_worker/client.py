@@ -22,7 +22,12 @@ class WorkerClient:
         self.http = http or httpx.Client(base_url=self.server, timeout=timeout)
 
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        from moth_worker import __version__
+
+        h = {"X-Moth-Client": f"worker/{__version__}"}
+        if self.token:
+            h["Authorization"] = f"Bearer {self.token}"
+        return h
 
     def _check(self, r: httpx.Response) -> httpx.Response:
         if r.status_code >= 400:
@@ -34,12 +39,34 @@ class WorkerClient:
         return r
 
     def enroll(self, token: str, hardware: dict, version: str) -> dict:
-        return self._check(self.http.post("/v1/worker/enroll", json={"token": token, "hardware": hardware,
-                                                                     "version": version})).json()
+        return self._check(self.http.post("/v1/worker/enroll", headers=self._headers(),
+                                          json={"token": token, "hardware": hardware, "version": version})).json()
 
     def heartbeat(self, hardware: dict | None, job_id: int | None, progress: float | None) -> dict:
+        from moth_worker import __version__
+
         return self._check(self.http.post("/v1/worker/heartbeat", headers=self._headers(),
-                                          json={"hardware": hardware, "job_id": job_id, "progress": progress})).json()
+                                          json={"hardware": hardware, "job_id": job_id, "progress": progress,
+                                                "version": __version__})).json()
+
+    def check_update(self, channel: str = "stable") -> dict | None:
+        return self._check(self.http.get("/v1/worker/update", params={"channel": channel},
+                                         headers=self._headers())).json().get("update")
+
+    def download_file(self, url: str, dest) -> None:
+        with self.http.stream("GET", url, headers=self._headers()) as r:
+            if r.status_code >= 400:
+                r.read()
+                self._check(r)
+            with open(dest, "wb") as f:
+                for chunk in r.iter_bytes(1 << 20):
+                    f.write(chunk)
+
+    def report_update(self, from_version: str | None, to_version: str, ok: bool, error: str | None = None) -> None:
+        self.http.post("/v1/updates/report", headers={**self._headers(), "X-Moth-Install-Id": f"worker-{self.token[:12]}"
+                                                       if self.token else ""},
+                       json={"component": "worker", "from_version": from_version, "to_version": to_version, "ok": ok,
+                             "error": error})
 
     def claim(self) -> dict | None:
         r = self._check(self.http.post("/v1/worker/jobs/claim", headers=self._headers()))

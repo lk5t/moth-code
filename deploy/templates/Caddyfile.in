@@ -1,0 +1,17 @@
+# MOTH Cloud — HTTPS reverse proxy (Caddy obtains and renews TLS certificates automatically).
+@DOMAIN@ {
+	encode zstd gzip
+	# the local update agent API is never reachable from the internet
+	@internal path /v1/agent/* /docs* /openapi.json
+	respond @internal 404
+	request_body {
+		max_size 64MB
+	}
+	reverse_proxy 127.0.0.1:@PORT@ {
+		header_up X-Forwarded-For {remote_host}
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+}

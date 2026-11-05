@@ -69,3 +69,29 @@ describe("normalizeServerUrl", () => {
     expect(normalizeServerUrl("")).toBe("");
   });
 });
+
+import { backoffMs, versionLess } from "@/lib/connection";
+import { MOTH_ENV, developerOverride, resolveServer, setDeveloperOverride } from "@/lib/endpoint";
+
+describe("connection", () => {
+  it("backs off exponentially up to a minute", () => {
+    expect([1, 2, 3, 4, 5, 6, 10].map(backoffMs)).toEqual([2000, 4000, 8000, 16000, 32000, 60000, 60000]);
+  });
+  it("compares versions numerically", () => {
+    expect(versionLess("0.2.1", "0.3.0")).toBe(true);
+    expect(versionLess("0.10.0", "0.9.9")).toBe(false);
+    expect(versionLess("0.3.0", "0.3.0")).toBe(false);
+  });
+});
+
+describe("endpoint", () => {
+  it("uses the environment's endpoint and honours a developer override", () => {
+    expect(MOTH_ENV).toBe("development"); // vitest runs in dev mode
+    expect(resolveServer()).toBe("http://127.0.0.1:8900");
+    setDeveloperOverride("http://127.0.0.1:9999");
+    expect(developerOverride()).toBe("http://127.0.0.1:9999");
+    expect(resolveServer()).toBe("http://127.0.0.1:9999");
+    setDeveloperOverride(null);
+    expect(resolveServer()).toBe("http://127.0.0.1:8900");
+  });
+});

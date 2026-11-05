@@ -1,4 +1,4 @@
-import { Brain, Cpu, Crown, Network, Settings, SquareTerminal } from "lucide-react";
+import { Crown, Network, Settings, SquareTerminal } from "lucide-react";
 import { useAccount } from "@/lib/account";
 import { appStore, useApp, type View } from "@/lib/app-state";
 import { Tip } from "@/components/ui/tooltip";
@@ -9,10 +9,9 @@ import { AccountMenu } from "@/features/account/AccountMenu";
 const items: { view: View; label: string; icon: React.ReactNode; owner?: boolean }[] = [
   { view: "workspace", label: "Workspace", icon: <SquareTerminal /> },
   { view: "network", label: "Training & Referrals", icon: <Network /> },
-  { view: "owner", label: "Owner Dashboard", icon: <Crown />, owner: true },
-  { view: "training", label: "Owner · model training", icon: <Brain />, owner: true },
-  { view: "models", label: "Owner · model packages", icon: <Cpu />, owner: true },
+  { view: "owner", label: "Owner", icon: <Crown />, owner: true },
 ];
+const OWNER_VIEWS: View[] = ["owner", "training", "models"];
 
 export function NavRail() {
   const view = useApp((s) => s.view);
@@ -23,7 +22,7 @@ export function NavRail() {
         onClick={() => appStore.setState({ view: v })}
         className={cn(
           "relative flex size-9 cursor-pointer items-center justify-center rounded-lg text-faint transition-all hover:bg-surface-2 hover:text-fg [&_svg]:size-[18px]",
-          view === v && "text-fg bg-surface-2 before:absolute before:-left-[9px] before:h-5 before:w-0.5 before:rounded-full before:bg-accent before:shadow-[0_0_8px_#C1121F]",
+          (view === v || (v === "owner" && OWNER_VIEWS.includes(view))) && "text-fg bg-surface-2 before:absolute before:-left-[9px] before:h-5 before:w-0.5 before:rounded-full before:bg-accent before:shadow-[0_0_8px_#C1121F]",
         )}
         aria-label={label}
       >

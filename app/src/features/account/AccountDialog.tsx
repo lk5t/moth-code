@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createStore } from "@/lib/store";
+import { developerMode, hasOfficialServer } from "@/lib/endpoint";
 import { accountStore, forgotPassword, login, register, resendVerification, ServerError, setServerUrl, useAccount } from "@/lib/account";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
@@ -145,10 +146,12 @@ export function AccountDialog() {
                 <button type="button" className="cursor-pointer text-fg hover:underline" onClick={() => go("login")}>Back to sign in</button>
               )}
             </div>
-            <details className="text-[11px] text-faint">
-              <summary className="cursor-pointer">Server: {server || "not configured"}</summary>
-              <Input className="mt-1 h-7 text-xs" placeholder="https://your-moth-server" value={server} onChange={(e) => setServer(e.target.value.trim())} />
-            </details>
+            {(!hasOfficialServer() || developerMode()) && (
+              <details className="text-[11px] text-faint" open={!server}>
+                <summary className="cursor-pointer">{hasOfficialServer() ? "Developer: server" : "MOTH Cloud address"}: {server || "not configured"}</summary>
+                <Input className="mt-1 h-7 text-xs" placeholder="https://moth.example.com" value={server} onChange={(e) => setServer(e.target.value.trim())} />
+              </details>
+            )}
           </form>
         )}
       </DialogContent>

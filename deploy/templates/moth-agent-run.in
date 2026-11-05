@@ -1,0 +1,19 @@
+#!/bin/sh
+# Runs the MOTH Cloud update agent with the system Python (standard library only).
+# If a freshly self-updated agent keeps crashing, the previous agent is restored automatically.
+H="@HOME@"
+CRASHES="$H/run/agent-crashes"
+echo $$ > "$H/run/agent.pid"
+MOTH_HOME="$H" "@PYTHON@" "$H/agent/current/moth_agent.py" run
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  n=$(( $(cat "$CRASHES" 2>/dev/null || echo 0) + 1 ))
+  echo "$n" > "$CRASHES"
+  if [ "$n" -ge 3 ] && [ -L "$H/agent/previous" ]; then
+    ln -sfn "$(readlink -f "$H/agent/previous")" "$H/agent/current"
+    echo 0 > "$CRASHES"
+  fi
+else
+  echo 0 > "$CRASHES"
+fi
+exit "$rc"

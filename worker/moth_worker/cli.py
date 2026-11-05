@@ -67,12 +67,21 @@ def cmd_run(args) -> int:
     from moth_worker.client import WorkerClient
     from moth_worker.runner import WorkerRunner
 
+    from moth_worker import updater
+
     home = Path(args.home or default_dir())
     cfg = WorkerConfig.load(home)
+    guard = updater.startup_guard(home, log=lambda m: print(m, flush=True))
+    if guard and guard.get("reverted"):
+        updater.restart(sys.argv[1:])  # start the restored previous version
     runner = WorkerRunner(WorkerClient(cfg.server, cfg.token), home, allow_cpu=cfg.allow_cpu,
-                          log=lambda m: print(m, flush=True))
+                          log=lambda m: print(m, flush=True),
+                          update_check_seconds=None if args.no_auto_update else
+                          float(os.environ.get("MOTH_WORKER_UPDATE_CHECK_SECONDS", "1800")))
     print(f"MOTH Worker {__version__} running (worker #{cfg.worker_id}, server {cfg.server}).", flush=True)
     runner.run(max_jobs=args.max_jobs)
+    if runner.updated_to:
+        updater.restart(sys.argv[1:])  # same command line, new version (via reexec_into_current)
     return 0 if not runner.revoked else 3
 
 
@@ -115,6 +124,11 @@ def cmd_install_service(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from moth_worker import updater
+
+    raw = list(sys.argv[1:] if argv is None else argv)
+    home_arg = raw[raw.index("--home") + 1] if "--home" in raw[:-1] else None
+    updater.reexec_into_current(Path(home_arg or default_dir()), raw)  # newest installed version runs
     p = argparse.ArgumentParser(prog="moth-worker")
     p.add_argument("--home", help="state directory (default: /var/lib/moth-worker as root, else ~/.local/share/moth-worker)")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -131,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     e.set_defaults(fn=cmd_enroll)
     r = sub.add_parser("run", help="run the worker loop")
     r.add_argument("--max-jobs", type=int)
+    r.add_argument("--no-auto-update", action="store_true", help="don't install updates offered by MOTH Cloud")
     r.set_defaults(fn=cmd_run)
     s = sub.add_parser("status")
     s.set_defaults(fn=cmd_status)

@@ -1,0 +1,13 @@
+#!/bin/sh
+# MOTH Cloud operator command (exceptional recovery only; routine updates are automatic).
+#   moth status | check | rollback | backup | restart | logs | supervise
+#   moth server <moth-server command>     e.g. moth server init-owner
+H="@HOME@"
+if [ "$1" = "server" ]; then
+  shift
+  set -a; . "$H/config/moth.env"; set +a
+  RELEASE=$(readlink -f "$H/current")
+  export PYTHONPATH="$RELEASE/server:$RELEASE/backend"
+  cd "$H" && exec "$(cat "$RELEASE/RUNTIME")/bin/python" -m moth_server.cli "$@"
+fi
+MOTH_HOME="$H" exec "@PYTHON@" "$H/agent/current/moth_agent.py" "$@"

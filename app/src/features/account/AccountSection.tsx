@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 import { openAccountDialog } from "./AccountDialog";
+import { hasOfficialServer } from "@/lib/endpoint";
 
 interface SessionRow { id: number; device_name: string | null; user_agent: string; ip: string; created_at: number; last_used_at: number; current: boolean }
 
@@ -43,23 +44,25 @@ export function AccountSection() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><UserRound className="size-4 text-accent" />MOTH account</CardTitle>
         <CardDescription>
-          Accounts are hosted on the MOTH Server. Your session is stored in Windows Credential Manager, never in plain text.
-          Local models, chat and the agent work without signing in.
+          Your MOTH account lives in MOTH Cloud. You stay signed in on this computer (the session is kept in Windows
+          Credential Manager and renewed automatically). The editor, terminal and Git work without signing in.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <div className="flex items-end gap-2">
-          <div className="flex-1"><Label>MOTH Server address</Label><Input className="mt-1" placeholder="https://your-moth-server" value={server} onChange={(e) => setServer(e.target.value)} /></div>
-          <Button variant="secondary" onClick={() => {
-            try {
-              setServerUrl(server);
-              setServer(accountStore.getState().serverUrl);
-              setMsg({ ok: true, text: "Server address saved." });
-            } catch (e) {
-              setMsg({ ok: false, text: (e as Error).message });
-            }
-          }}>Save</Button>
-        </div>
+        {!hasOfficialServer() && (
+          <div className="flex items-end gap-2">
+            <div className="flex-1"><Label>MOTH Cloud address</Label><Input className="mt-1" placeholder="https://moth.example.com" value={server} onChange={(e) => setServer(e.target.value)} /></div>
+            <Button variant="secondary" onClick={() => {
+              try {
+                setServerUrl(server);
+                setServer(accountStore.getState().serverUrl);
+                setMsg({ ok: true, text: "Saved." });
+              } catch (e) {
+                setMsg({ ok: false, text: (e as Error).message });
+              }
+            }}>Save</Button>
+          </div>
+        )}
         {!user ? (
           <div className="flex gap-2">
             <Button onClick={() => openAccountDialog("login")}>Sign in</Button>

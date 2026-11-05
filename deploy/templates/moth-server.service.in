@@ -1,0 +1,17 @@
+[Unit]
+Description=MOTH Cloud (MOTH Server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+@SERVICE_USER@
+ExecStart=@HOME@/bin/moth-server-run
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=yes
+PrivateTmp=yes
+LimitNOFILE=65536
+
+[Install]
+WantedBy=@WANTED_BY@

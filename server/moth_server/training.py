@@ -247,9 +247,12 @@ def fail_job(ctx: Ctx, worker: dict, job_id: int, error: str) -> None:
         c.execute(workers.update().where(workers.c.id == worker["id"]).values(failed_jobs=workers.c.failed_jobs + 1))
 
 
-def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None, progress: float | None) -> dict:
+def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None, progress: float | None,
+              version: str | None = None) -> dict:
     t = now()
     values: dict[str, Any] = {"last_heartbeat_at": t, "status": "online"}
+    if version:
+        values["version"] = version[:32]
     if hardware:
         values["hardware"] = json.dumps(_clean_hw(hardware))
     with ctx.db.tx() as c:

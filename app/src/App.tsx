@@ -15,12 +15,15 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { initAccounts } from "@/lib/account";
 import { AccountDialog } from "@/features/account/AccountDialog";
 import { ReauthDialog } from "@/features/account/reauth";
-import { checkForUpdate } from "@/features/settings/UpdatesSection";
+import { startConnectionMonitor } from "@/lib/connection";
+import { startUpdater } from "@/lib/updater";
+import { Welcome, useWelcomeVisible } from "@/features/onboarding/Welcome";
 
 export default function App() {
   const [info, setInfo] = useState<BackendInfo | null>(null);
   const [minSplash, setMinSplash] = useState(true);
   const view = useApp((s) => s.view);
+  const welcome = useWelcomeVisible();
 
   // If the event stream drops, check whether the backend process itself has failed
   // (crash, killed) and switch to the recovery screen instead of hanging.
@@ -41,11 +44,8 @@ export default function App() {
         setInfo(i);
         if (i.status === "ready") {
           startEvents();
-          initAccounts().catch(() => {});
-          // Silent background check; installing always needs the user's click in Settings.
-          checkForUpdate()
-            .then((u) => u && appStore.setState({ updateVersion: u.version }))
-            .catch(() => {});
+          initAccounts().catch(() => {}).finally(() => startConnectionMonitor());
+          startUpdater(); // background checks and downloads; installs on restart or exit
           const projects = await loadProjects().catch(() => [] as Project[]);
           let last: string | null = null;
           try {
@@ -82,7 +82,8 @@ export default function App() {
   const Extra = views[view];
   return (
     <TooltipProvider>
-      <div className="flex h-full flex-col animate-fade-in">
+      <div className="relative flex h-full flex-col animate-fade-in">
+        {welcome && <Welcome />}
         <div className="flex min-h-0 flex-1">
           <NavRail />
           <main className="min-w-0 flex-1">
