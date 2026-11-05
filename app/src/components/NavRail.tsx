@@ -1,4 +1,4 @@
-import { Brain, Cpu, Network, Settings, SquareTerminal } from "lucide-react";
+import { Brain, Cpu, Crown, Network, Settings, SquareTerminal } from "lucide-react";
 import { useAccount } from "@/lib/account";
 import { appStore, useApp, type View } from "@/lib/app-state";
 import { Tip } from "@/components/ui/tooltip";
@@ -9,6 +9,7 @@ import { AccountMenu } from "@/features/account/AccountMenu";
 const items: { view: View; label: string; icon: React.ReactNode; owner?: boolean }[] = [
   { view: "workspace", label: "Workspace", icon: <SquareTerminal /> },
   { view: "network", label: "Training & Referrals", icon: <Network /> },
+  { view: "owner", label: "Owner Dashboard", icon: <Crown />, owner: true },
   { view: "training", label: "Owner · model training", icon: <Brain />, owner: true },
   { view: "models", label: "Owner · model packages", icon: <Cpu />, owner: true },
 ];

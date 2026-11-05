@@ -25,6 +25,7 @@ COMPONENTS = [
     "moth_server.routes.referrals",
     "moth_server.routes.training",
     "moth_server.routes.models",
+    "moth_server.routes.dashboard",
     "moth_server.pages.web",
 ]
 

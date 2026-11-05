@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/ui/empty";
 import { TrainingView } from "@/features/training/TrainingView";
 import { ModelsView } from "@/features/models/ModelsView";
 import { NetworkView } from "@/features/network/NetworkView";
+import { OwnerDashboard } from "@/features/owner/OwnerDashboard";
 
 /** Owner-only tools: local training and model packaging for publishing candidates to MOTH Cloud. */
 function ownerOnly(C: React.ComponentType): React.ComponentType {
@@ -17,6 +18,7 @@ function ownerOnly(C: React.ComponentType): React.ComponentType {
 /** Top-level views other than workspace/settings. */
 export const views: Partial<Record<View, React.ComponentType>> = {
   network: NetworkView,
+  owner: OwnerDashboard,
   training: ownerOnly(TrainingView),
   models: ownerOnly(ModelsView),
 };
