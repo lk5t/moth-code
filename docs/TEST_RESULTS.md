@@ -12,15 +12,15 @@ Everything below was actually run. Commands are listed so the results can be rep
 | Frontend production build | `cd app && npm run build` | passed |
 | Rust shell | `cargo test --manifest-path app/src-tauri/Cargo.toml` | **2 passed** |
 
-## GitHub Actions CI (run 2, commit `c24a67c`)
+## GitHub Actions CI ([run 3](https://github.com/lk5t/moth-code/actions/runs/42020977341), commit `0c22e73`) — all passed
 
 | Job | Result |
 | --- | --- |
 | Backend tests (ubuntu-latest, Python 3.12) | passed |
 | Backend tests (windows-latest, Python 3.12) | passed |
 | Frontend typecheck, tests and build | passed |
-| Desktop shell (ubuntu-latest) | passed |
-| Desktop shell (windows-latest) | see the Actions page for the latest status |
+| Desktop shell (ubuntu-latest), Rust build + tests | passed |
+| Desktop shell (windows-latest), Rust build + tests | passed |
 
 The first CI run (commit `1e5e744`) failed on Windows. It exposed real bugs that the Linux suite could not catch:
 
