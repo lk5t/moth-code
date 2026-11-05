@@ -33,6 +33,17 @@ are used anywhere.
 | **Hybrid inference** | Local / MOTH Cloud / Automatic. MOTH Cloud protocol, client and a self-hostable reference server; consent required before sending anything remotely, credentials always redacted. **No MOTH-operated servers exist yet**, and the app says so. |
 | **Release** | GitHub Actions CI (Windows + Linux), tag-triggered Windows NSIS installer with bundled backend, signed in-app updates from GitHub Releases. |
 
+## Installer
+
+The Windows installer is themed to match the app. Download it from
+[Releases](https://github.com/lk5t/moth-code/releases).
+
+<p>
+  <img src="docs/images/installer-welcome.png" width="32%" alt="Installer welcome page" />
+  <img src="docs/images/installer-location.png" width="32%" alt="Installer location page" />
+  <img src="docs/images/installer-finish.png" width="32%" alt="Installer finish page" />
+</p>
+
 ## Quick start (development)
 
 Prerequisites: Python 3.10+ (3.12 recommended), Node.js 22+, Rust (stable), Git. On Windows also the

@@ -68,7 +68,16 @@ jobs:
           TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
           HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
 
-      - name: Build installer and publish draft release
+      - name: Release notes
+        shell: bash
+        run: |
+          {
+            echo 'RELEASE_BODY<<MOTH_EOF'
+            sed "s|__REF__|${GITHUB_REF_NAME}|g" .github/release-notes.md
+            echo 'MOTH_EOF'
+          } >> "$GITHUB_ENV"
+
+      - name: Build installer and publish release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -78,8 +87,8 @@ jobs:
           projectPath: app
           args: --config src-tauri/tauri.release.conf.json
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: "MOTH Code ${{ github.ref_name }}"
-          releaseBody: "See CHANGELOG.md. The installer bundles a CPU build of PyTorch; see docs/SETUP.md for GPU (CUDA) use."
-          releaseDraft: true
+          releaseName: "MOTH Code ${{ github.ref_name }} — Foundation"
+          releaseBody: ${{ env.RELEASE_BODY }}
+          releaseDraft: false
           prerelease: true
           includeUpdaterJson: true
