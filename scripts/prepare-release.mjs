@@ -19,7 +19,7 @@ if (unique.size !== 1) {
   process.exit(1);
 }
 const version = conf.version;
-const ref = process.env.GITHUB_REF_NAME || "";
+const ref = process.env.RELEASE_TAG || process.env.GITHUB_REF_NAME || "";
 if (ref.startsWith("v") && ref.slice(1) !== version) {
   console.error(`Tag ${ref} does not match app version ${version}`);
   process.exit(1);

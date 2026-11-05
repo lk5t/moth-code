@@ -4,9 +4,17 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create (e.g. v0.1.0); must match the app version"
+        required: true
+        default: "v0.1.0"
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
 
 jobs:
   windows:
@@ -73,7 +81,7 @@ jobs:
         run: |
           {
             echo 'RELEASE_BODY<<MOTH_EOF'
-            sed "s|__REF__|${GITHUB_REF_NAME}|g" .github/release-notes.md
+            sed "s|__REF__|${RELEASE_TAG}|g" .github/release-notes.md
             echo 'MOTH_EOF'
           } >> "$GITHUB_ENV"
 
@@ -86,8 +94,8 @@ jobs:
         with:
           projectPath: app
           args: --config src-tauri/tauri.release.conf.json
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: "MOTH Code ${{ github.ref_name }} — Foundation"
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: "MOTH Code ${{ env.RELEASE_TAG }} — Foundation"
           releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: false
           prerelease: true
