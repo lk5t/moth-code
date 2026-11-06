@@ -814,7 +814,13 @@ class Agent:
             self.log(f"could not check for releases: {e}")
             self.heartbeat("error", str(e), last_error=str(e), **acks)
             return "error"
+        result = self._update_server(rels, control, acks)
+        # Relaying desktop/worker files (large downloads) comes after the server's own update, so a slow
+        # or failing download can never delay a server update or rollback.
         self.publish_to_server(rels)
+        return result
+
+    def _update_server(self, rels: list[dict], control: dict, acks: dict) -> str:
         channel = control.get("channel") or self.cfg["channel"]
         cur = self.i.current_version or "0.0.0"
         st = self.i.state()

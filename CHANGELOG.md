@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Update agent: the server's own update (and rollback) now runs before desktop and worker files are
+  relayed, so a slow or failing large download can no longer delay a server update. Found while
+  Server 0.3.2 was rolling out: the 0.3.1 agent re-downloaded the 129 MB desktop installer at the
+  start of every cycle before it checked for server updates.
+
 ## Server 0.3.2 — reliable release downloads
 
 - **Fix: the update agent could not relay Desktop 0.3.1 to clients.** The VPS logged *“could not fetch
