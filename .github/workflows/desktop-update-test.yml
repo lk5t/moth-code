@@ -108,7 +108,7 @@ jobs:
           for ($i = 0; $i -lt 60; $i++) { try { Invoke-RestMethod "$env:SERVER/v1/health" | Out-Null; break } catch { Start-Sleep 2 } }
           # publish B exactly as the update agent does (signed manifest + installer, re-verified by the server)
           python scripts/desktop-update-harness.py register --server $env:SERVER --data-dir $data --agent-token "$env:RUNNER_TEMP\agent.token" --dir "$env:RUNNER_TEMP\B-release"
-          $offer = Invoke-RestMethod "$env:SERVER/v1/updates/desktop/windows/x86_64/0.3.1" -Headers @{"X-Moth-Install-Id"="ci"}
+          $offer = Invoke-RestMethod "$env:SERVER/v1/updates/desktop/windows/x86_64/0.1.0" -Headers @{"X-Moth-Install-Id"="ci"}
           "Server offers: $($offer.version) at $($offer.url)"
           if ($offer.version -ne $env:NEW_VERSION) { throw "the server does not offer $env:NEW_VERSION" }
 

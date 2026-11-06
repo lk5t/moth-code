@@ -2,7 +2,18 @@
 
 Everything below was actually run. Commands are listed so the results can be reproduced.
 
-# Desktop 0.3.1 / Server 0.3.1
+# Server 0.3.2 — desktop release relay fix
+
+| Check | Result |
+| --- | --- |
+| Desktop 0.3.1: manifest SHA-256, GitHub asset digest, and `SHA256SUMS` from the release workflow | all `19bd549b85691bd373f05f8df33e71f8b805712b9e4d13221a2142e5f68a4583`, size 129277294 — the release is correct |
+| `urllib` given a response whose connection closes after 3 MB of an announced 10 MB | returns 3 MB, **no exception**: the root cause |
+| The 0.3.1 agent fed one dropped connection | `MOTH.Code_0.3.1_x64-setup.exe does not match the SHA-256 in the signed manifest`, the exact VPS error |
+| `server/tests/test_agent_download.py` (new, 5 tests) | an interrupted download is resumed with Range requests and verified; a server that ignores Range restarts the download; a download that never completes is refused, with nothing left behind; a complete file with other bytes is still rejected by SHA-256; a wrong size is refused |
+| MOTH Server suite | **70 passed** |
+| Desktop backend suite | **105 passed** |
+| `scripts/test-ecosystem-update.py` | **PASS, all 11 steps** |
+
 
 ## Automated suites (Linux x86-64)
 

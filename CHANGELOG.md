@@ -1,5 +1,21 @@
 # Changelog
 
+## Server 0.3.2 — reliable release downloads
+
+- **Fix: the update agent could not relay Desktop 0.3.1 to clients.** The VPS logged *“could not fetch
+  desktop 0.3.1: MOTH.Code_0.3.1_x64-setup.exe does not match the SHA-256 in the signed manifest”*.
+  The release was correct: the signed manifest, GitHub's own digest of the uploaded file, and the
+  release workflow's checksums all agree (`19bd549b…`). The agent's download was the problem. When a
+  connection dropped part-way through the 129 MB installer, Python's `urllib` returned the partial
+  body without an error. The agent then correctly rejected the short file, deleted it, and started
+  over 15 minutes later.
+- Downloads are now checked against the announced length and the size in the signed manifest, and
+  interrupted downloads resume with HTTP Range requests (up to 10 attempts). The SHA-256 and
+  signature checks are unchanged. A complete file with different bytes is still refused, and the
+  error now reports the received size and hash.
+- All components are now version 0.3.2. Desktop 0.3.1 stays the current desktop release: its signed
+  artifacts are correct and were not replaced.
+
 ## Desktop 0.3.1 / Server 0.3.1 — connection and updates
 
 Fixes *“MOTH Cloud unavailable”* and makes desktop updates work end to end.

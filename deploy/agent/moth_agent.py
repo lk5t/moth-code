@@ -46,7 +46,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-AGENT_VERSION = "0.3.1"
+AGENT_VERSION = "0.3.2"
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import ed25519_verify  # noqa: E402  (stdlib-only verifier shipped next to this file)
@@ -202,29 +202,70 @@ class Agent:
             "supervisor": self.cfg["supervisor"], "backups": backups, **extra})
 
     # ---- release source --------------------------------------------------------------------------------
-    def _http_get(self, url: str, headers: dict | None = None, dest: Path | None = None, timeout: float = 60):
+    def _http_get(self, url: str, headers: dict | None = None, dest: Path | None = None, timeout: float = 60,
+                  size: int | None = None):
+        """GET ``url``; with ``dest``, download to that file.
+
+        Downloads are checked for completeness: ``urllib`` returns a short body without an error when a
+        connection drops part-way, so the received length is compared with the length the server
+        announced (and the size in the signed manifest, when known). An interrupted download is resumed
+        with an HTTP Range request from where it stopped. Integrity is still decided only by the SHA-256
+        in the signed manifest (``fetch_verified``); this only makes sure a complete file reaches it.
+        """
         h = {"User-Agent": f"moth-agent/{AGENT_VERSION}", **(headers or {})}
         tok_file = self.cfg.get("github_token_file")
         if "api.github.com" in url and tok_file and Path(tok_file).exists():
             h["Authorization"] = "Bearer " + Path(tok_file).read_text().strip()
-        req = urllib.request.Request(url, headers=h)
+        name = url.split("?")[0]
+        tmp = dest.with_suffix(dest.suffix + ".part") if dest is not None else None
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)  # never resume a file left over from an earlier, unrelated run
         last = None
-        for delay in (0, 2, 5, 15):
+        delays = (0, 2, 5, 15) if dest is None else (0, 2, 5, 10, 20, 30, 60, 60, 60, 60)
+        for delay in delays:
             time.sleep(delay)
+            have = tmp.stat().st_size if tmp is not None and tmp.exists() else 0
+            if size is not None and have > size:
+                tmp.unlink(missing_ok=True)
+                have = 0
+            hdrs = dict(h)
+            if have:
+                hdrs["Range"] = f"bytes={have}-"
             try:
-                with urllib.request.urlopen(req, timeout=timeout) as r:
+                with urllib.request.urlopen(urllib.request.Request(url, headers=hdrs), timeout=timeout) as r:
                     if dest is None:
-                        return r.read()
-                    tmp = dest.with_suffix(dest.suffix + ".part")
-                    with open(tmp, "wb") as f:
+                        body = r.read()
+                        n = r.headers.get("Content-Length")
+                        if n is not None and n.isdigit() and len(body) != int(n):
+                            raise OSError(f"connection closed after {len(body)} of {n} bytes")
+                        return body
+                    resumed = have and r.status == 206
+                    if have and not resumed:
+                        have = 0  # the server ignored the Range request: start again from the beginning
+                    n = r.headers.get("Content-Length")
+                    expected = have + int(n) if n is not None and n.isdigit() else size
+                    with open(tmp, "ab" if resumed else "wb") as f:
                         shutil.copyfileobj(r, f, 1 << 20)
-                    os.replace(tmp, dest)
-                    return dest
+                got = tmp.stat().st_size
+                if expected is not None and got < expected:
+                    raise OSError(f"connection closed after {got} of {expected} bytes")
+                if size is not None and got != size:
+                    raise OSError(f"received {got} bytes, the signed manifest says {size}")
+                os.replace(tmp, dest)
+                if have:
+                    self.log(f"download of {dest.name} resumed at byte {have} and completed ({got} bytes)")
+                return dest
             except (urllib.error.URLError, OSError) as e:
                 last = e
                 if isinstance(e, urllib.error.HTTPError) and e.code in (401, 403, 404):
                     break
-        raise AgentError(f"download failed: {url.split('?')[0]}: {last}")
+                if isinstance(e, urllib.error.HTTPError) and e.code == 416 and tmp is not None:
+                    tmp.unlink(missing_ok=True)  # resume point not satisfiable: start again
+                if dest is not None:
+                    self.log(f"download of {dest.name} interrupted ({e}); retrying")
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+        raise AgentError(f"download failed: {name}: {last}")
 
     def list_releases(self) -> list[dict]:
         """Verified releases, newest first: {version, manifest, raw, sig, fetch(name)->Path}."""
@@ -235,7 +276,7 @@ class Agent:
             for mf in root.rglob("moth-release-*.json"):
                 sig = mf.with_name(mf.name + ".sig")
                 if sig.exists():
-                    found.append((mf.read_bytes(), sig.read_text(), lambda name, d=mf.parent: self._dir_fetch(d, name)))
+                    found.append((mf.read_bytes(), sig.read_text(), lambda name, size=None, d=mf.parent: self._dir_fetch(d, name)))
         elif src.startswith("github:"):
             repo = src[7:]
             data = json.loads(self._http_get(f"https://api.github.com/repos/{repo}/releases?per_page=20",
@@ -249,7 +290,7 @@ class Agent:
                     continue
                 raw = self._http_get(assets[mf], {"Accept": "application/octet-stream"})
                 sig = self._http_get(assets[mf + ".sig"], {"Accept": "application/octet-stream"}).decode()
-                found.append((raw, sig, lambda name, a=assets: self._gh_fetch(a, name)))
+                found.append((raw, sig, lambda name, size=None, a=assets: self._gh_fetch(a, name, size)))
         elif src:
             raise AgentError(f"unknown release source {src!r}")
         out = []
@@ -270,11 +311,11 @@ class Agent:
         shutil.copyfile(hits[0], dest)
         return dest
 
-    def _gh_fetch(self, assets: dict, name: str) -> Path:
+    def _gh_fetch(self, assets: dict, name: str, size: int | None = None) -> Path:
         if name not in assets:
             raise AgentError(f"{name} is missing from the GitHub release")
         return self._http_get(assets[name], {"Accept": "application/octet-stream"},
-                              dest=self.i.home / "downloads" / name, timeout=600)
+                              dest=self.i.home / "downloads" / name, timeout=600, size=size)
 
     @staticmethod
     def sha256(path: Path) -> str:
@@ -285,10 +326,15 @@ class Agent:
         return h.hexdigest()
 
     def fetch_verified(self, rel: dict, entry: dict) -> Path:
-        p = rel["fetch"](entry["file"])
-        if self.sha256(p) != entry["sha256"]:
+        """Download a release file and accept it only if its SHA-256 matches the signed manifest."""
+        size = entry.get("size") if isinstance(entry.get("size"), int) else None
+        p = rel["fetch"](entry["file"], size=size)
+        got_size, got_hash = p.stat().st_size, self.sha256(p)
+        if got_hash != entry["sha256"]:
             p.unlink(missing_ok=True)
-            raise AgentError(f"{entry['file']} does not match the SHA-256 in the signed manifest")
+            raise AgentError(f"{entry['file']} does not match the SHA-256 in the signed manifest "
+                             f"(received {got_size} bytes, SHA-256 {got_hash[:16]}…; "
+                             f"expected {size if size is not None else '?'} bytes, {entry['sha256'][:16]}…)")
         return p
 
     # ---- distribution of desktop/worker files through the server --------------------------------------
