@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "created": 1793983671.3656025,
+  "dtype": "uint16",
+  "tokenizer_path": "/home/user/moth-code/server/w/models/moth-cloud-test/tokenizer.json",
+  "tokenizer_fingerprint": "b38e15f25e913941",
+  "vocab_size": 288,
+  "tokens": {
+    "train": 5595,
+    "val": 145
+  },
+  "documents": {
+    "train": 39,
+    "val": 1
+  },
+  "sources": [
+    {
+      "spec": "dir:/home/user/moth-code/server/w/src",
+      "license": "MIT",
+      "tokens": 5740
+    }
+  ]
+}

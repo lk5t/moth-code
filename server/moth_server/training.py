@@ -138,7 +138,8 @@ def ensure_jobs(ctx: Ctx) -> None:
                                                          training_jobs.c.kind == "train_round")).scalar()
         cfg_round = coord.config["round"]
         # Drop queued jobs from an older round (their base checkpoint is outdated).
-        for j in c.execute(select(training_jobs).where(training_jobs.c.status == "queued")).mappings().all():
+        for j in c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
+                                                       training_jobs.c.kind == "train_round")).mappings().all():
             if json.loads(j["spec"]).get("round") != cfg_round:
                 c.execute(training_jobs.update().where(training_jobs.c.id == j["id"])
                           .values(status="cancelled", error="superseded by a newer round", updated_at=now()))
@@ -158,20 +159,24 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
     requeue_expired(ctx)
     ensure_jobs(ctx)
     coord = coordinator(ctx)
-    if coord is None:
-        return None
     t = now()
     with ctx.db.tx() as c:
         # Resume: a job this worker still holds comes back first (e.g. after a reconnect).
         job = c.execute(select(training_jobs).where(training_jobs.c.status == "leased",
                                                     training_jobs.c.worker_id == worker["id"])).mappings().first()
         if not job:
-            job = c.execute(select(training_jobs).where(training_jobs.c.status == "queued")
+            # model-evolution experiments first (one per worker), then training-network rounds
+            job = c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
+                                                        training_jobs.c.kind == "evolve_train")
                             .order_by(training_jobs.c.id)).mappings().first()
+            if not job and coord is not None:
+                job = c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
+                                                            training_jobs.c.kind == "train_round")
+                                .order_by(training_jobs.c.id)).mappings().first()
             if not job:
                 return None
             spec = json.loads(job["spec"])
-            if "job_id" not in spec or spec.get("round") != coord.config["round"]:
+            if job["kind"] == "train_round" and ("job_id" not in spec or spec.get("round") != coord.config["round"]):
                 spec = {**coord.next_job(f"worker-{worker['id']}").to_dict(), "round": coord.config["round"]}
             res = c.execute(training_jobs.update().where(training_jobs.c.id == job["id"],
                                                          training_jobs.c.status == "queued").values(
@@ -207,13 +212,18 @@ def submit_result(ctx: Ctx, worker: dict, job_id: int, meta: dict, payload: byte
     from moth.community.protocol import JobSpec
 
     job = leased_job(ctx, worker, job_id)
-    coord = coordinator(ctx)
-    if coord is None:
-        raise TrainingError("training is not configured on this server")
     spec = json.loads(job["spec"])
-    coord.jobs.setdefault(spec["job_id"], JobSpec.from_dict(spec))  # durable across coordinator restarts
-    meta = {**meta, "job_id": spec["job_id"], "client_id": f"worker-{worker['id']}"}
-    result = coord.submit(meta, payload)
+    if job["kind"] == "evolve_train":
+        from moth_server.evolution.backends import accept_worker_result
+
+        result = accept_worker_result(ctx, job, meta, payload)
+    else:
+        coord = coordinator(ctx)
+        if coord is None:
+            raise TrainingError("training is not configured on this server")
+        coord.jobs.setdefault(spec["job_id"], JobSpec.from_dict(spec))  # durable across coordinator restarts
+        meta = {**meta, "job_id": spec["job_id"], "client_id": f"worker-{worker['id']}"}
+        result = coord.submit(meta, payload)
     t = now()
     with ctx.db.tx() as c:
         if result.get("accepted"):

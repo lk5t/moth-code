@@ -194,14 +194,24 @@ def _job(ctx: Ctx, w: dict, job_id: int) -> dict:
 
 @router.get("/v1/worker/jobs/{job_id}/weights")
 def job_weights(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
-    spec = json.loads(_job(ctx, w, job_id)["spec"])
+    j = _job(ctx, w, job_id)
+    spec = json.loads(j["spec"])
+    if j["kind"] == "evolve_train":
+        from moth_server.evolution.backends import job_files
+
+        return FileResponse(job_files(ctx, spec)[0], media_type="application/octet-stream")
     p = T.coordinator(ctx).version_dir(spec["model_version"]) / "model.pt"
     return FileResponse(p, media_type="application/octet-stream")
 
 
 @router.get("/v1/worker/jobs/{job_id}/shard")
 def job_shard(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
-    spec = json.loads(_job(ctx, w, job_id)["spec"])
+    j = _job(ctx, w, job_id)
+    spec = json.loads(j["spec"])
+    if j["kind"] == "evolve_train":
+        from moth_server.evolution.backends import job_files
+
+        return FileResponse(job_files(ctx, spec)[1], media_type="application/octet-stream")
     p = T.coordinator_root(ctx) / "shards" / f"{spec['shard_id']}.bin"
     return FileResponse(p, media_type="application/octet-stream")
 

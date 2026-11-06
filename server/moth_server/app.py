@@ -30,6 +30,7 @@ COMPONENTS = [
     "moth_server.routes.uploads",
     "moth_server.routes.updates",
     "moth_server.routes.system",
+    "moth_server.routes.evolution",
     "moth_server.pages.web",
 ]
 

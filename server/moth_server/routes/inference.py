@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -101,9 +102,15 @@ def chat(request: Request, body: dict, auth: Auth = Depends(current_auth), ctx: 
                                  "switch to local inference.") from None
     cancel = threading.Event()
 
+    from moth_server.evolution.compute import activity
+
+    act, version, t_start = activity(ctx), ctx.extras.get("deployed_version"), time.time()
+    act.start()
+
     def stream():
         chunks: list[str] = []
         stats = None
+        ok = False
         try:
             stats = engine.chat(messages, params, chunks.append, cancel)
             out = policy.filter_output("".join(chunks))
@@ -111,9 +118,11 @@ def chat(request: Request, body: dict, auth: Auth = Depends(current_auth), ctx: 
             yield json.dumps({"done": True, "stats": {
                 "prompt_tokens": stats.prompt_tokens, "generated_tokens": stats.generated_tokens,
                 "seconds": stats.seconds, "stop_reason": stats.stop_reason}}) + "\n"
+            ok = True
         except Exception as e:  # noqa: BLE001
             yield json.dumps({"error": f"{type(e).__name__}"}) + "\n"
         finally:
+            act.finish(version, ok, time.time() - t_start, stats.generated_tokens if stats else 0)
             used_in = stats.prompt_tokens if stats else 0
             used_out = stats.generated_tokens if stats else 0
             billing.settle(ctx.db, f"{auth.uid}:{request_id}", used_in, used_out)

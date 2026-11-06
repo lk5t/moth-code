@@ -138,6 +138,11 @@ def finalize(ctx: Ctx, version: int, model_dir: Path, actor_id: int | None) -> d
     info["source"] = rel["info"].get("source", {})
     _set(ctx, version, "uploaded", sha256=check["info"]["sha256"], size=check["info"]["size"], path=str(dest),
          info=json.dumps(info), error=None)
+    src_type = (info["source"] or {}).get("type")
+    if src_type != "evolution":  # evolution records its own lineage (parent, cycle, experiment, data)
+        from moth_server.evolution.memory import record_lineage
+
+        record_lineage(ctx, version, None, "network" if src_type == "training-network" else "upload")
     audit(ctx.db, "models.uploaded", actor_id, f"release:{version}", {"sha256": check["info"]["sha256"]})
     return release(ctx, version)
 
@@ -516,8 +521,12 @@ def auto_pipeline(ctx: Ctx) -> dict[str, Any]:
 
     created = sync_candidates(ctx)
     results: dict[str, Any] = {"created": created, "evaluated": [], "passed": [], "deployed": None}
-    pending = [r["version"] for r in ctx.db.all(select(model_releases.c.version).where(model_releases.c.status == "uploaded"))]
-    for v in retry_candidates(ctx):
+    def evolution(v: int) -> bool:  # evolution candidates are evaluated by their own cycle
+        return release(ctx, v)["info"].get("source", {}).get("type") == "evolution"
+
+    pending = [r["version"] for r in ctx.db.all(select(model_releases.c.version).where(model_releases.c.status == "uploaded"))
+               if not evolution(r["version"])]
+    for v in [v for v in retry_candidates(ctx) if not evolution(v)]:
         rel = release(ctx, v)
         if (rel["evaluation"] or {}).get("reason") == "no_eval_dataset" or "no evaluation set" in str((rel["evaluation"] or {}).get("error", "")):
             ds, _ = evalsets.select_for(ctx, rel["info"].get("tokenizer_fingerprint"))

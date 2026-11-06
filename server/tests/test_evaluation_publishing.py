@@ -88,7 +88,9 @@ def test_v02_rejected_model_is_recovered_without_reupload(settings, tmp_path, mo
     eng.dispose()
     with TestClient(create_app(settings, extras=SYNC)) as client:
         ctx = client.app.state.ctx
-        assert ctx.db.schema_version() == 2
+        from moth_server.db import SCHEMA_VERSION
+
+        assert ctx.db.schema_version() == SCHEMA_VERSION
         rel = M.release(ctx, 1)
         assert rel["status"] == "failed"  # v0.2 'rejected' migrated, record preserved
         assert rel["path"] == str(stored) and rel["sha256"] == manifest["sha256"]

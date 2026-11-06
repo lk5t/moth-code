@@ -20,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Connection, Engine
 
 metadata = MetaData()
-SCHEMA_VERSION = 2  # see MIGRATIONS below
+SCHEMA_VERSION = 3  # see MIGRATIONS below
 
 
 def now() -> float:
@@ -366,6 +366,112 @@ error_log = Table(
 )
 
 
+# ---- v0.4: model evolution (approved data, cycles, experiments, evaluations, lineage) ----------------
+training_datasets = Table(
+    "training_datasets", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("name", String(128), nullable=False),
+    Column("path", Text, nullable=False),  # prepared dataset directory (train/val bins + meta.json)
+    Column("sha256", String(64), nullable=False),  # of train.bin: identifies the data, never its contents
+    Column("tokens_train", BigInteger, nullable=False, default=0),
+    Column("tokens_val", BigInteger, nullable=False, default=0),
+    Column("tokenizer_fingerprint", String(64), nullable=False),
+    Column("license", Text, nullable=False),
+    Column("sources", Text, nullable=False, default="[]"),  # source specs and licenses (no contents)
+    Column("tags", Text, nullable=False, default="[]"),
+    Column("contains_user_data", Boolean, nullable=False, default=False),
+    Column("status", String(16), nullable=False),  # pending | approved | revoked
+    Column("approved_by", Integer),
+    Column("approved_at", Float),
+    Column("created_by", Integer),
+    Column("created_at", Float, nullable=False),
+    Column("revoked_at", Float),
+)
+
+evolution_cycles = Table(
+    "evolution_cycles", metadata,
+    Column("id", Integer, primary_key=True),
+    # planning | waiting_for_compute | training | evaluating | deploying | monitoring
+    # | completed | rejected | failed | cancelled
+    Column("status", String(24), nullable=False, index=True),
+    Column("trigger", String(16), nullable=False),  # schedule | manual
+    Column("base_version", Integer),
+    Column("base_sha256", String(64)),
+    Column("plan", Text, nullable=False, default="{}"),
+    Column("candidate_version", Integer),
+    Column("result", Text, nullable=False, default="{}"),
+    Column("error", Text),
+    Column("created_at", Float, nullable=False),
+    Column("started_at", Float),
+    Column("updated_at", Float, nullable=False),
+    Column("finished_at", Float),
+)
+
+evolution_experiments = Table(
+    "evolution_experiments", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("cycle_id", Integer, nullable=False, index=True),
+    # planned | waiting | running | paused | trained | evaluating | passed | rejected | failed | cancelled
+    Column("status", String(16), nullable=False, index=True),
+    Column("backend", String(16)),  # local | worker
+    Column("config", Text, nullable=False),  # reproducible configuration (hyper-parameters, data, base, seed)
+    Column("config_hash", String(64), nullable=False, index=True),
+    Column("dataset_id", Integer, nullable=False),
+    Column("base_version", Integer, nullable=False),
+    Column("base_sha256", String(64), nullable=False),
+    Column("rationale", Text),
+    Column("job_id", Integer),
+    Column("worker_id", Integer),
+    Column("attempts", Integer, nullable=False, default=0),
+    Column("max_attempts", Integer, nullable=False, default=3),
+    Column("progress", Float),
+    Column("run_dir", Text),
+    Column("candidate_version", Integer),
+    Column("metrics", Text, nullable=False, default="{}"),
+    Column("resources", Text, nullable=False, default="{}"),
+    Column("compute_seconds", Float, nullable=False, default=0.0),
+    Column("error", Text),
+    Column("created_at", Float, nullable=False),
+    Column("started_at", Float),
+    Column("updated_at", Float, nullable=False),
+    Column("finished_at", Float),
+)
+
+evaluation_reports = Table(
+    "evaluation_reports", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("model_version", Integer, nullable=False, index=True),
+    Column("suite", String(64), nullable=False),
+    Column("suite_sha", String(64), nullable=False),
+    Column("metrics", Text, nullable=False),
+    Column("created_at", Float, nullable=False),
+    UniqueConstraint("model_version", "suite_sha", name="uq_eval_report"),
+)
+
+model_lineage = Table(
+    "model_lineage", metadata,
+    Column("version", Integer, primary_key=True),
+    Column("parent_version", Integer, index=True),
+    Column("method", String(24), nullable=False),  # upload | network | continued | migration | from_scratch
+    Column("cycle_id", Integer),
+    Column("experiment_id", Integer),
+    Column("datasets", Text, nullable=False, default="[]"),
+    Column("created_at", Float, nullable=False),
+)
+
+evolution_events = Table(
+    "evolution_events", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("ts", Float, nullable=False, index=True),
+    Column("cycle_id", Integer, index=True),
+    Column("experiment_id", Integer),
+    Column("level", String(8), nullable=False),  # info | warning | error
+    Column("kind", String(48), nullable=False),
+    Column("message", Text, nullable=False),
+    Column("data", Text, nullable=False, default="{}"),
+)
+
+
 # ---- schema migrations ------------------------------------------------------------------------
 # ``create_all`` adds new tables; columns and data changes are versioned migrations. A migration
 # marked destructive (drops or rewrites data irreversibly) is never applied automatically: it needs
@@ -392,8 +498,27 @@ def _m2_lifecycle(c: Connection) -> None:
     c.execute(text("UPDATE model_releases SET deployed_at = published_at WHERE status = 'deployed'"))
 
 
+def _m3_evolution(c: Connection) -> None:
+    """v0.4 model evolution: the new tables are created by ``create_all``; record the lineage of every
+    existing release (its origin; no parent is invented). Nothing existing is modified or removed."""
+    rows = c.execute(text("SELECT version, info, created_at FROM model_releases")).all()
+    known = {r[0] for r in c.execute(text("SELECT version FROM model_lineage")).all()}
+    for version, info, created in rows:
+        if version in known:
+            continue
+        try:
+            src = (json.loads(info or "{}").get("source") or {}).get("type")
+        except ValueError:
+            src = None
+        method = {"training-network": "network"}.get(src or "", "upload")
+        c.execute(text("INSERT INTO model_lineage (version, parent_version, method, datasets, created_at) "
+                       "VALUES (:v, NULL, :m, '[]', :t)"), {"v": version, "m": method, "t": created or now()})
+
+
 MIGRATIONS: list[tuple[int, str, bool, Any]] = [
     (2, "v0.3: model lifecycle states, resumable uploads, software releases, deployments", False, _m2_lifecycle),
+    (3, "v0.4: model evolution (training datasets, cycles, experiments, evaluation reports, lineage)", False,
+     _m3_evolution),
 ]
 
 

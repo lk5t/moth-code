@@ -167,6 +167,7 @@ def main() -> None:
     args = ap.parse_args()
     # the code under test is BASE; V1..V4 are newer releases built from modified copies of it
     BASE = re.search(r'__version__ = "([^"]+)"', (ROOT / "server/moth_server/__init__.py").read_text())[1]
+    SCHEMA = int(re.search(r"SCHEMA_VERSION = (\d+)", (ROOT / "server/moth_server/db.py").read_text())[1])
     major, minor, patch = (int(x) for x in BASE.split("."))
     V1, V2, V3, V4 = (f"{major}.{minor}.{patch + 90 + i}" for i in range(1, 5))
     base = os.environ.get("MOTH_E2E_DIR")
@@ -212,11 +213,11 @@ def main() -> None:
                   "--use-system-packages"])
         print("\n".join("    " + line for line in out.strip().splitlines()[-12:]))
         h = api.wait(lambda h: h.get("version") == BASE, f"{BASE} after install")
-        assert h["schema_version"] == 2
+        assert h["schema_version"] == SCHEMA
         assert list((home / "backups").glob(f"*pre-install-{BASE}")), "pre-install backup missing"
         cfg = json.loads((home / "config" / "agent.json").read_text())
         (home / "config" / "agent.json").write_text(json.dumps({**cfg, "health_timeout_s": 60}))  # faster failure tests
-        ok(f"installed {BASE}; v0.2 database migrated to schema 2 after a verified backup")
+        ok(f"installed {BASE}; v0.2 database migrated to schema {SCHEMA} after a verified backup")
 
         # ---- 3. accounts preserved -------------------------------------------------------------------------
         step("3. existing Owner account and password preserved")
@@ -247,11 +248,11 @@ def main() -> None:
         ok(f"worker connected and reports {BASE}")
 
         # ---- 5. server update 0.3.1 ------------------------------------------------------------------------
-        step(f"5. release {V1} → automatic server update (migration 3, new agent)")
-        build(variant(work, V1, migration=3, agent_version=V1), src / V1, priv)
+        step(f"5. release {V1} → automatic server update (migration {SCHEMA + 1}, new agent)")
+        build(variant(work, V1, migration=SCHEMA + 1, agent_version=V1), src / V1, priv)
         res = sh([str(moth), "check"]).strip().splitlines()[-1]
         h = api.wait(lambda h: h.get("version") == V1, V1)
-        assert h["schema_version"] == 3, h
+        assert h["schema_version"] == SCHEMA + 1, h
         assert res == "agent-updated", res
         assert (home / "agent" / "current").resolve().name == V1
         _, upd = api.call("GET", "/v1/admin/updates", expect=200)
@@ -260,7 +261,7 @@ def main() -> None:
         assert "backup verified" in dep["log"]
         assert list((home / "backups").glob(f"*pre-{V1}"))
         api.login()
-        ok(f"{V1} healthy, schema 3, deployment recorded with log, backup verified, agent self-updated to {V1}")
+        ok(f"{V1} healthy, schema {SCHEMA + 1}, deployment recorded with log, backup verified, agent self-updated to {V1}")
 
         # ---- 6. worker update ------------------------------------------------------------------------------
         step(f"6. worker is offered {V1} and updates itself")
@@ -282,18 +283,18 @@ def main() -> None:
         ok(f"worker verified, installed, restarted into {V1}, reconnected and reported success")
 
         # ---- 7. broken release → rollback ----------------------------------------------------------------------
-        step(f"7. broken release {V2} (migrates to schema 4, then crashes) → automatic rollback")
-        build(variant(work, V2, migration=4, crash=True), src / V2, priv)
+        step(f"7. broken release {V2} (migrates to schema {SCHEMA + 2}, then crashes) → automatic rollback")
+        build(variant(work, V2, migration=SCHEMA + 2, crash=True), src / V2, priv)
         res = sh([str(moth), "check"]).strip().splitlines()[-1]
         assert res == "failed", res
         h = api.wait(lambda h: h.get("version") == V1, f"{V1} after rollback")
-        assert h["schema_version"] == 3, f"database should be restored to schema 3: {h}"
+        assert h["schema_version"] == SCHEMA + 1, f"database should be restored to schema {SCHEMA + 1}: {h}"
         st = json.loads((home / "state" / "agent-state.json").read_text())
         assert V2 in st["failed"]
         api.login()
         _, upd = api.call("GET", "/v1/admin/updates", expect=200)
         assert upd["deployments"][0]["status"] == "rolled_back", upd["deployments"][0]
-        ok(f"rolled back to {V1}, database restored to schema 3, Owner notified, failure recorded")
+        ok(f"rolled back to {V1}, database restored to schema {SCHEMA + 1}, Owner notified, failure recorded")
 
         # ---- 8. tampered release ignored -------------------------------------------------------------------------
         step("8. tampered release is ignored")
@@ -306,7 +307,7 @@ def main() -> None:
 
         # ---- 9. crash in the middle of an update ---------------------------------------------------------------
         step(f"9. agent crashes right after switching to {V4} → recovered on the next run")
-        build(variant(work, V4, migration=3), src / V4, priv)
+        build(variant(work, V4, migration=SCHEMA + 1), src / V4, priv)
         p = subprocess.run([str(moth), "check"], env={**os.environ, "MOTH_AGENT_TEST_CRASH": "after-switch"},
                            capture_output=True, text=True)
         assert p.returncode == 9, (p.returncode, p.stderr[-500:])

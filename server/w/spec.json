@@ -1,0 +1,1 @@
+{"base_package": "/home/user/moth-code/server/w/models/moth-cloud-test", "dataset": "/home/user/moth-code/server/w/ds", "run_dir": "/home/user/moth-code/server/w/run", "steps": 30, "lr": 0.003, "batch_size": 4, "seq_len": 64, "eval_interval": 10, "checkpoint_interval": 10, "device": "cpu", "threads": 2}

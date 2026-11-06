@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "name": "moth-cloud-test",
+  "architecture": "moth-decoder-v1",
+  "created": 1793983671.3485367,
+  "params": 127296,
+  "dtype": "float32",
+  "context_length": 256,
+  "tokenizer_fingerprint": "b38e15f25e913941",
+  "sha256": "3d9d79303966406d4c257a0fc9e6d0e206ee1b6310d65c258eb2f1de8e4175cb",
+  "training": {
+    "run": null,
+    "step": 1,
+    "val_loss": null,
+    "best_val": null,
+    "dataset": null
+  }
+}
