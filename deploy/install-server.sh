@@ -223,8 +223,13 @@ echo "5. Supervision, restarts and backups"
 CRON_LINES="* * * * * $HOME_DIR/bin/moth supervise >/dev/null 2>&1
 @reboot $HOME_DIR/bin/moth supervise >/dev/null 2>&1"
 BACKUP_LINE="17 3 * * * $HOME_DIR/bin/moth backup >> $HOME_DIR/logs/backup.log 2>&1"
+CRON_OK=1
 install_cron() {
-  command -v crontab >/dev/null || { warn "crontab is not available"; admin "install cron (apt-get install cron) so MOTH Cloud restarts after crashes and reboots"; return; }
+  if ! command -v crontab >/dev/null; then
+    CRON_OK=0
+    admin "sudo apt-get install -y cron && sudo systemctl enable --now cron     # then re-run this installer (as $(id -un)) so MOTH Cloud restarts after crashes and reboots and backs up daily"
+    return 1
+  fi
   (crontab -l 2>/dev/null | grep -v "$HOME_DIR/bin/moth" || true; echo "$1") | crontab -
 }
 case "$SUPERVISOR" in
@@ -236,7 +241,7 @@ case "$SUPERVISOR" in
     systemctl daemon-reload
     systemctl enable moth-server moth-agent >/dev/null
     su -s /bin/sh moth -c "(crontab -l 2>/dev/null | grep -v '$HOME_DIR/bin/moth' || true; echo '$BACKUP_LINE') | crontab -" 2>/dev/null \
-      || install_cron "$BACKUP_LINE"
+      || install_cron "$BACKUP_LINE" || true
     ok "systemd services moth-server and moth-agent (user 'moth', start at boot, restart on failure)"
     ;;
   systemd-user)
@@ -246,24 +251,30 @@ case "$SUPERVISOR" in
     systemctl --user enable moth-server moth-agent >/dev/null
     if loginctl show-user "$USER" -p Linger 2>/dev/null | grep -q 'Linger=yes'; then
       ok "systemd user services (lingering enabled: they run without a login and after reboots)"
-      install_cron "$BACKUP_LINE"
+      install_cron "$BACKUP_LINE" || true
     elif loginctl enable-linger "$USER" 2>/dev/null; then
       ok "systemd user services (lingering enabled now)"
-      install_cron "$BACKUP_LINE"
+      install_cron "$BACKUP_LINE" || true
     else
       warn "systemd user services stop at logout until lingering is enabled; adding the cron supervisor as a fallback"
       admin "sudo loginctl enable-linger $USER     # keep MOTH Cloud running without a login and after reboots"
       install_cron "$CRON_LINES
-$BACKUP_LINE"
+$BACKUP_LINE" || true
     fi
     ;;
   cron)
-    install_cron "$CRON_LINES
-$BACKUP_LINE"
-    ok "cron supervisor: checks every minute and at boot, restarts MOTH Cloud and the agent if they stop"
+    if install_cron "$CRON_LINES
+$BACKUP_LINE"; then
+      ok "cron supervisor: checks every minute and at boot, restarts MOTH Cloud and the agent if they stop"
+    fi
     ;;
 esac
-ok "daily verified backup at 03:17 into $HOME_DIR/backups (keeps the latest 5)"
+if [ "$CRON_OK" = 1 ]; then
+  ok "daily verified backup at 03:17 into $HOME_DIR/backups (keeps the latest 5)"
+else
+  warn "cron is not installed: MOTH Cloud runs now, but it will NOT restart after a crash or reboot, and daily backups"
+  warn "are not scheduled, until an administrator installs cron and you run this installer again (see the end)"
+fi
 
 echo
 echo "6. HTTPS"
