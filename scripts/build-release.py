@@ -82,10 +82,17 @@ def requirements() -> str:
 
 
 def tar_gz(build) -> bytes:
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz", format=tarfile.PAX_FORMAT) as tar:
+    """A reproducible .tar.gz: entry mtimes are 0 and the gzip header carries no timestamp, so the
+    same source always gives the same bytes (and the same SHA-256)."""
+    import gzip
+
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w", format=tarfile.PAX_FORMAT) as tar:
         build(tar)
-    return buf.getvalue()
+    out = io.BytesIO()
+    with gzip.GzipFile(fileobj=out, mode="wb", mtime=0, compresslevel=9) as gz:
+        gz.write(raw.getvalue())
+    return out.getvalue()
 
 
 def entry(path: Path, **extra) -> dict:
@@ -122,6 +129,9 @@ def main() -> None:
         for f in ("install-server.sh",):
             add_file(tar, ROOT / "deploy" / f, f"{name}/deploy/{f}", mode=0o755)
         add_tree(tar, ROOT / "deploy" / "templates", f"{name}/deploy/templates")
+        add_file(tar, ROOT / "scripts/backup-server.sh", f"{name}/deploy/backup-server.sh", mode=0o755)
+        add_file(tar, ROOT / "deploy/moth-server.env.example", f"{name}/deploy/moth-server.env.example")
+        add_file(tar, ROOT / "docs/SERVER.md", f"{name}/INSTALL.md")
         add_file(tar, ROOT, f"{name}/requirements.txt", data=requirements().encode())
         add_file(tar, ROOT, f"{name}/VERSION", data=(v + "\n").encode())
 
