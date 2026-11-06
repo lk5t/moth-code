@@ -58,6 +58,7 @@ pub fn run() {
         .manage(Backend::new())
         .manage(updates::PendingUpdate::default())
         .setup(|app| {
+            updates::log_line(app.handle(), &format!("MOTH Code {} started", app.package_info().version));
             let resource_dir = app.path().resource_dir().ok();
             app.state::<Backend>().start(resource_dir);
             Ok(())
@@ -72,7 +73,8 @@ pub fn run() {
             accounts_forget,
             updates::update_check,
             updates::update_download,
-            updates::update_install
+            updates::update_install,
+            updates::update_log
         ])
         .build(tauri::generate_context!())
         .expect("error while building MOTH Code");

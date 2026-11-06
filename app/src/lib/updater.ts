@@ -60,6 +60,10 @@ export function installId(): string {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+function ulog(message: string) {
+  import("@tauri-apps/api/core").then(({ invoke }) => invoke("update_log", { message })).catch(() => {});
+}
+
 /** Check the connected MOTH Cloud server for an update and download it in the background. */
 export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<UpdaterState> {
   if (!isTauri()) {
@@ -74,6 +78,7 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<
     server = "";
   }
   if (!server) {
+    ulog("no MOTH Cloud address configured; not checking for updates");
     updaterStore.setState({ phase: "idle", error: null });
     return updaterStore.getState();
   }
@@ -103,6 +108,7 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<
     if (import.meta.env.VITE_MOTH_UPDATE_TEST === "1") installNow(); // automated update tests only
   } catch (e) {
     const msg = describeUpdateError(String((e as Error)?.message ?? e));
+    ulog(`update error: ${String((e as Error)?.message ?? e)}`);
     updaterStore.setState({ phase: "error", error: msg });
     if (opts.manual) throw new Error(msg);
     report(false, updaterStore.getState().version, msg);
@@ -175,6 +181,7 @@ let started = false;
 export function startUpdater() {
   if (started || !isTauri()) return;
   started = true;
+  ulog(`updater started (version ${APP_VERSION})`);
   reportPreviousUpdate();
   import("@tauri-apps/api/event")
     .then(({ listen }) => listen<{ downloaded: number; total: number | null }>("moth-update-progress", (e) => {

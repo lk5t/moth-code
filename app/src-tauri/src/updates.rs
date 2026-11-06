@@ -15,6 +15,31 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::Backend;
 
+/// Appends to `<app data>/logs/updates.log` (kept small): what the updater did and why, for support.
+pub fn log_line(app: &AppHandle, msg: &str) {
+    use std::io::Write;
+    if let Ok(dir) = app.path().app_data_dir() {
+        let dir = dir.join("logs");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("updates.log");
+        if std::fs::metadata(&path).map(|m| m.len() > 1_000_000).unwrap_or(false) {
+            let _ = std::fs::rename(&path, dir.join("updates.log.1"));
+        }
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = writeln!(f, "{ts} {msg}");
+        }
+    }
+}
+
+#[tauri::command]
+pub fn update_log(app: AppHandle, message: String) {
+    log_line(&app, &format!("[app] {}", message.chars().take(500).collect::<String>()));
+}
+
 #[derive(Default)]
 pub struct PendingUpdate {
     update: Mutex<Option<Update>>,
@@ -56,7 +81,11 @@ pub async fn update_check(
     install_id: String,
     channel: Option<String>,
 ) -> Result<Option<UpdateInfo>, String> {
-    let endpoint = endpoint_for(&server, channel.as_deref().unwrap_or("stable"))?;
+    log_line(&app, &format!("check {server} (current {})", app.package_info().version));
+    let endpoint = endpoint_for(&server, channel.as_deref().unwrap_or("stable")).map_err(|e| {
+        log_line(&app, &format!("check refused: {e}"));
+        e
+    })?;
     let updater = app
         .updater_builder()
         .endpoints(vec![endpoint])
@@ -68,7 +97,14 @@ pub async fn update_check(
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
-    let found = updater.check().await.map_err(|e| e.to_string())?;
+    let found = updater.check().await.map_err(|e| {
+        log_line(&app, &format!("check failed: {e}"));
+        e.to_string()
+    })?;
+    log_line(&app, &match &found {
+        Some(u) => format!("update available: {}", u.version),
+        None => "up to date".to_string(),
+    });
     let info = found.as_ref().map(|u| UpdateInfo {
         version: u.version.clone(),
         current_version: u.current_version.clone(),
@@ -94,7 +130,11 @@ pub async fn update_download(app: AppHandle, state: State<'_, PendingUpdate>) ->
             || {},
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            log_line(&app, &format!("download failed: {e}"));
+            e.to_string()
+        })?;
+    log_line(&app, &format!("downloaded and verified {} ({} bytes)", update.version, bytes.len()));
     *state.bytes.lock().unwrap() = Some(bytes);
     Ok(())
 }
@@ -104,8 +144,12 @@ pub async fn update_download(app: AppHandle, state: State<'_, PendingUpdate>) ->
 pub fn update_install(app: AppHandle, state: State<'_, PendingUpdate>) -> Result<(), String> {
     let update = state.update.lock().unwrap().clone().ok_or("no update is pending")?;
     let bytes = state.bytes.lock().unwrap().take().ok_or("the update has not been downloaded")?;
+    log_line(&app, &format!("installing {}", update.version));
     app.state::<Backend>().stop(); // release the backend's files before the installer replaces them
-    update.install(bytes).map_err(|e| e.to_string())
+    update.install(bytes).map_err(|e| {
+        log_line(&app, &format!("install failed: {e}"));
+        e.to_string()
+    })
 }
 
 #[cfg(test)]

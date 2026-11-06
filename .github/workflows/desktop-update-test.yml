@@ -133,6 +133,13 @@ jobs:
             if ($v -eq $env:NEW_VERSION) { break }
           }
           "Registry version now: $v"
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save("$env:RUNNER_TEMP\screen-after-update-wait.png")
+          "--- app update log ---"
+          Get-Content "$env:APPDATA\dev.mothcode.desktop\logs\updates.log" -ErrorAction SilentlyContinue
           Select-String -Path "$env:RUNNER_TEMP\server.err","$env:RUNNER_TEMP\server.log" -Pattern "updates" | Select-Object -Last 10 | ForEach-Object { $_.Line }
           if ($v -ne $env:NEW_VERSION) { throw "MOTH Code did not update itself to $env:NEW_VERSION (still $v)" }
           "PASS: A updated itself to $v"
@@ -154,9 +161,17 @@ jobs:
           if ((Get-Content "$env:APPDATA\MOTH Code\workspaces-marker\marker.txt") -ne "keep me") { throw "user data was not preserved" }
           "PASS: B started, reported success, user data preserved"
 
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: update-test-diagnostics
+          path: |
+            ${{ runner.temp }}/screen-*.png
+            ${{ runner.temp }}/server.*
+          if-no-files-found: ignore
       - name: Logs
         if: always()
         shell: pwsh
         run: |
           Get-Content "$env:RUNNER_TEMP\server.err" -ErrorAction SilentlyContinue | Select-Object -Last 60
-          Get-ChildItem "$env:LOCALAPPDATA\com.moth.code" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20 FullName
+          Get-Content "$env:APPDATA\dev.mothcode.desktop\logs\updates.log" -ErrorAction SilentlyContinue
