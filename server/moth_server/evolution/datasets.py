@@ -120,7 +120,7 @@ def _insert(ctx: Ctx, name: str, ds_dir: Path, info: dict, tags: list[str], cont
 
 def register_prepared(ctx: Ctx, src_dir: Path, name: str, tags: list[str], contains_user_data: bool,
                       actor_id: int | None) -> dict:
-    """Register a dataset prepared on the server (``moth data prepare``), copied into MOTH's storage."""
+    """Register a dataset prepared on the server (``moth prepare``), copied into MOTH's storage."""
     src_dir = Path(src_dir).resolve()
     info = inspect(src_dir)
     dest = root(ctx) / f"ds-{info['sha256'][:16]}"

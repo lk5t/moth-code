@@ -1,11 +1,58 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — EVOLUTION
 
-- Update agent: the server's own update (and rollback) now runs before desktop and worker files are
-  relayed, so a slow or failing large download can no longer delay a server update. Found while
-  Server 0.3.2 was rolling out: the 0.3.1 agent re-downloaded the 129 MB desktop installer at the
-  start of every cycle before it checked for server updates.
+MOTH Cloud can now improve its own model, safely and unattended. See [docs/EVOLUTION.md](docs/EVOLUTION.md).
+
+- **Automatic model evolution:**
+  - continued training from the deployed model's weights, with its exact architecture; never from
+    scratch unless explicitly configured
+  - candidates are new versions; the active model is never overwritten
+  - resumable, checkpointed training jobs
+  - one cycle at a time, scheduled automatically with back-off; evolution pauses itself after
+    repeated failures
+  - state survives restarts and upgrades
+- **Approved training data only:**
+  - training uses only datasets the Owner approved, each with a declared license
+  - data containing user data needs explicit confirmation that the users gave permission
+  - secret-looking files are skipped
+  - only hashes, licenses and counts are recorded
+  - revoking a dataset stops unfinished experiments that use it
+- **Training memory:**
+  - runs, reproducible configurations, data used, results, regressions, weaknesses, resource use,
+    duration and model lineage are kept in the database
+  - experiment planning uses this history: new data first, then measured weaknesses, then learning
+    rates that worked before
+  - an exact configuration is never run twice
+  - event retention is configurable
+- **Smart compute manager:**
+  - detects CPU, RAM, disk, GPUs and VRAM, and the GPUs of MOTH workers
+  - trains on a local GPU, a MOTH GPU worker (existing worker software, new `evolve_train` job), or
+    the server's CPU only if enabled
+  - only during low activity, within thread, memory, disk and daily-budget limits
+  - pauses with a checkpoint when MOTH Cloud gets busy or resources run low, and resumes later
+  - without suitable hardware, training waits and says why
+- **Experiment laboratory and evaluation gates:**
+  - the candidate and the deployed model run the same deterministic benchmarks: held-out score on
+    the training data, retention on everything learned before (catastrophic forgetting), Python
+    completion validity, optional Owner task suites (reasoning, instruction following, accuracy),
+    speed and memory
+  - every gate must pass; a lower training loss never counts as an improvement
+- **Safe promotion:**
+  - the existing checksum and inference health check, then an atomic switch
+  - post-deployment monitoring of real error rate and latency, plus health probes
+  - automatic rollback to the previous stable model
+  - Owner rollback to any earlier compatible version
+- **Evolution dashboard** (Owner Dashboard → Evolution):
+  - status, active and stable model, cycle and experiments with real progress, evaluation
+    comparison, version history with lineage, compute, training data, activity and warnings, and
+    settings
+- **Database:** migration 3 (additive) adds `training_datasets`, `evolution_cycles`,
+  `evolution_experiments`, `evaluation_reports`, `model_lineage` and `evolution_events`; existing
+  releases get their lineage recorded.
+- **Update agent:** the server's own update and rollback now run before relaying desktop/worker files,
+  so a slow download can no longer delay a server update.
+- **Fix:** the training network no longer cancels queued jobs of other kinds when a new round starts.
 
 ## Server 0.3.2 — reliable release downloads
 

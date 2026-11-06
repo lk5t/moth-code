@@ -1,4 +1,4 @@
-# Known limitations & remaining requirements (0.3.1)
+# Known limitations & remaining requirements (0.4.0)
 
 Everything the README lists as working is implemented and tested (see [TEST_RESULTS.md](TEST_RESULTS.md)).
 This page lists what depends on the Owner's infrastructure or accounts, what could not be verified in
@@ -38,6 +38,30 @@ After that every update is automatic. The same is true for workers enrolled with
   unchanged from v0.2 and untested on hardware.
 - **PostgreSQL backups by the agent** need `pg_dump`/`pg_restore` on the server; the agent's backup and
   restore were exercised with SQLite. The server itself is tested on PostgreSQL.
+
+## Model evolution (0.4.0)
+
+- **Training hardware.** The VPS has no GPU. Without a MOTH GPU worker, or CPU training enabled for a
+  small model, evolution plans its cycles and then **waits for compute**. It says so and never reports
+  training. CPU training was measured only with tiny models; training MOTH-50M on the VPS CPU is
+  possible within the memory estimate but slow, and was not measured.
+- **What the gates can measure.** Held-out bits per byte or token loss, retention of every dataset
+  learned before, Python completion validity, speed and memory are measured for every candidate.
+  Reasoning, instruction following and factual accuracy (hallucination rate) are measured only if you
+  upload task suites; otherwise they are reported as *not measured*. Small models also score 0 % on
+  valid-Python completions today, so that gate only catches regressions once a model can complete code.
+- **Architecture migration.** Continued training requires the same architecture and tokenizer.
+  Migrating to a larger architecture (e.g. distilling MOTH-50M into moth-150m) is not implemented:
+  datasets for another tokenizer are marked *needs migration*, and training from scratch is possible
+  only when explicitly enabled (`allow_from_scratch`).
+- **One host.** The engine assumes one MOTH Cloud server process (as installed). Two server processes
+  on one database would each run a scheduler.
+- **Zero downtime.** The model switch is atomic for new requests (requests already running finish on
+  the old model). On a CPU-only server, loading a large model briefly competes with inference for CPU.
+- **Monitoring** uses this server's own measurements (error rate, latency, health probes). It cannot
+  judge answer quality in production; quality is decided by the evaluation gates before deployment.
+- **Compute budget** counts training time as experiments report it (at pause and finish), so a single
+  long run is counted when it pauses or ends, not continuously.
 
 ## Model capability
 

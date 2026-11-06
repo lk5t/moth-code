@@ -283,7 +283,7 @@ class RegisterIn(BaseModel):
 
 @router.post("/datasets/register")
 def register_dataset(body: RegisterIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
-    """A dataset prepared on the server (``moth data prepare``); the path must be inside MOTH's data folder."""
+    """A dataset prepared on the server (``moth prepare``); the path must be inside MOTH's data folder."""
     p = Path(body.path).resolve()
     data = ctx.settings.data_dir.resolve()
     if data not in p.parents:

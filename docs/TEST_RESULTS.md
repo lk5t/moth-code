@@ -2,6 +2,83 @@
 
 Everything below was actually run. Commands are listed so the results can be reproduced.
 
+# 0.4.0 — EVOLUTION
+
+## Automated suites (Linux x86-64, 4 CPU threads, no GPU)
+
+| Suite | Command | Result |
+| --- | --- | --- |
+| MOTH Server | `cd server && python -m pytest -q` | **83 passed** (70 before, 13 new evolution tests) |
+| Desktop backend | `cd backend && python -m pytest -q` | **106 passed** (adds the code-syntax benchmark test) |
+| Frontend | `cd app && npx tsc -b && npm test && npm run build` | typecheck ok, **19 passed**, build ok |
+| Rust shell | `cargo test` | **6 passed** |
+| Ecosystem end to end | `python scripts/test-ecosystem-update.py` | **PASS, all 11 steps** (v0.2.1 database migrated to schema 3) |
+| Upgrade from the installed release | `python scripts/test-upgrade-from-installed.py` | **PASS** (see below) |
+
+## Evolution tests (`server/tests/test_evolution.py`): what is real and what is simulated
+
+All of these run for real, with the tiny MOTH model: dataset preparation from an uploaded `.zip`,
+continued training in a separate process (forward and backward passes, checkpoints, resume), candidate
+packaging, benchmark subprocesses, the release gate, deployment with an inference health check, chat
+requests, worker jobs through the real MOTH worker runner, and the database. Simulated, and named as
+such in the tests: low free memory, inference errors after a deployment, and repeated cycle failures.
+
+| Test | What it proves (requirement numbers from the request) |
+| --- | --- |
+| `test_full_cycle_continued_training_to_deployment` | Nothing trains without approved data (pending data is ignored). After approval: plan → train (real subprocess, 60 steps, continued from the deployed weights) → evaluate (every gate) → deploy → monitor → completed. The candidate is a new version with lineage (parent = the base, method `continued`). The base is kept and can be rolled back to. Chat works on the new model. The status, versions, resources and log APIs work. `.env` contents never reach the log. The planner refuses to repeat the same configuration (1, 2, 6, 7, 8, 11, 13, 14). |
+| `test_pause_on_resource_shortage_crash_and_resume` | Simulated memory shortage → training checkpoints and pauses, and stays paused while resources are short (the dashboard shows *waiting for compute*). Resources recover → it resumes. The trainer is killed with SIGKILL and a **new server process** takes over → *interrupted* → it resumes from the checkpoint and finishes all 400 steps (`resumed: true`) (3, 4, 12). |
+| `test_inference_available_during_training` | A chat request is answered while a training process is running (13). |
+| `test_without_compute_training_waits_and_says_why` | No GPU, no workers, CPU training off → the experiment *waits* with the reasons, progress stays 0, and chat still works. It never shows *training*. |
+| `test_experiment_runs_on_a_moth_worker` | An `evolve_train` job is claimed and run by the **unchanged** MOTH worker runner. Its update is validated and becomes a candidate with lineage, which is then evaluated. |
+| `test_forgetting_is_detected_even_when_the_training_data_improves` | Narrow synthetic training data: held-out score on that data improved, but general Python (built-in held-out) got worse → **rejected**, nothing deployed (6, 7). |
+| `test_degraded_candidate_is_rejected_and_never_deployed` | A candidate with damaged weights fails the target-improvement gate. The deployed model is unchanged (7). |
+| `test_failing_deployment_is_rolled_back_automatically` | During monitoring the stable model is still the previous one. Simulated: 6 of 8 production requests fail → automatic rollback to the previous model, the candidate is marked failed, chat still works, and the failure is counted (9). |
+| `test_repeated_failures_pause_evolution` | Exponential back-off. After the configured number of failed cycles, evolution pauses itself and records why. |
+| `test_training_data_requires_license_approval_and_user_permission` | No license → refused. User data → approval needs explicit permission. Revoking cancels unfinished experiments on that data and it is never used again. Listings expose neither paths nor contents. |
+| `test_evolution_api_is_owner_only_and_sensitive_actions_need_reauth` | Users get 403 and anonymous requests 401. Settings and rollback need a recent sign-in (428). Reading does not (11, 14). |
+| `test_settings_are_validated` | Out-of-range and unknown settings are refused. |
+| `test_migration_from_schema_2_keeps_everything_and_records_lineage` | A schema-2 database (0.3.x) migrates to 3. The existing release is untouched and its lineage is recorded (10). |
+
+## Live run in the browser (real MOTH Server, desktop backend and UI in Chromium)
+
+Starting point: a deployed tiny model; a dataset of 60 Python standard-library modules (PSF-2.0,
+896,942 training tokens) pending approval; CPU training enabled (the test machine has no GPU).
+Timeline from the server's own event log:
+
+| t | Event |
+| --- | --- |
+| 0 s | The Owner approves the dataset in Evolution → Training data; the cycle starts and plans one experiment (new data, lr 3e-3, 1500 steps) |
+| 0.1 s | Training starts on this server (CPU, 2 threads); the dashboard shows step *n*/1500 and the remaining time, from the trainer's events |
+| 47 s | Candidate v2 registered (18 s of training compute, peak memory 342 MB) |
+| 83 s | Every gate passed: held-out on the new data +39.6 %, built-in Python held-out +52.3 %, speed 92 % of the base, memory 100 % |
+| 83 s | v2 deployed (atomic switch); monitoring for 1 minute; the desktop status bar shows the new model |
+| 143 s | v2 passed monitoring and became the stable model; v1 stays available (*Use* button) |
+
+## Upgrade from the release the VPS runs (`scripts/test-upgrade-from-installed.py`)
+
+1. The exact `server-v0.3.2` code (commit `5808bc6`) is installed by its own `install-server.sh`.
+2. On 0.3.2, a model is uploaded, evaluated and deployed, and a chat request is served.
+3. A signed 0.4.0 release is published to the release source. The **0.3.2 agent** verifies it, backs
+   up, migrates the database to schema 3, switches over, and updates itself.
+4. After the upgrade:
+   - the Owner signs in with the same password;
+   - the same model (same SHA-256) is deployed and serving chat;
+   - its lineage is recorded as `upload`, and the Evolution API works;
+   - with approved data and no GPU, the cycle plans and then **waits for compute**, with the reasons
+     (*no GPU; no MOTH workers; CPU training off*); nothing trains and chat keeps working.
+5. Owner-requested rollback to 0.3.2: the agent takes a pre-rollback backup and switches the code back.
+   0.3.2 runs on the additively migrated database, so the Owner, the model and the data created on 0.4.0
+   are all intact. (Rollback of a *failed* update restores the database; the ecosystem test covers
+   that.)
+
+## Not verified here (0.4.0)
+
+- Training on a real GPU (local or worker): the GPU code paths (`device=cuda`, memory fraction) are
+  shared with the existing trainer and worker, but no GPU was available.
+- Evolution of MOTH-50M or larger: only the tiny model was trained in tests and in the live run.
+- The production VPS: not touched (see the upgrade instructions in the final report and
+  [EVOLUTION.md](EVOLUTION.md)).
+
 # Server 0.3.2 — desktop release relay fix
 
 | Check | Result |

@@ -13,4 +13,4 @@ Components (separate modules, one deployable app or several processes):
 MOTH's intelligence is always MOTH's own model; the server never calls third-party AI.
 """
 
-__version__ = "0.3.2"
+__version__ = "0.4.0"
