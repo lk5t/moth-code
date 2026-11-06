@@ -1,5 +1,39 @@
 # Changelog
 
+## Desktop 0.3.1 / Server 0.3.1 — connection and updates
+
+Fixes *“MOTH Cloud unavailable”* and makes desktop updates work end to end.
+
+- **Editable MOTH Cloud address (Settings → Connection).** Enter any address and choose *Test & use*.
+  MOTH Code checks that it really is a MOTH Cloud server before switching. If the same server is
+  reachable at the new address, you stay signed in. *Use default* goes back to the built-in address,
+  and changing the address never needs a new build. The sign-in dialog shows the address in use. No
+  temporary address is built into the release.
+- **Clear cloud status.** The status bar says why nothing is served:
+  - unreachable (retrying)
+  - not a MOTH Cloud server
+  - no model deployed yet
+  - inference turned off
+
+  Tunnel errors (HTTP 52x) are explained. `/v1/health` now returns `status` and `message`.
+- **Server behind a tunnel or proxy.** Download and update links follow the address the client used
+  (trusted `X-Forwarded-*` headers), so they work through Cloudflare tunnels. The Owner can set the
+  server's public address in the dashboard (Server → Public address). Emails and referral links use
+  that address.
+- **Model uploads.** Interrupted chunk uploads are retried, with a visible notice (*“HTTP 524 …
+  retrying in N s”*). Paused uploads resume by themselves every minute. The upload percentage and size
+  are shown. Errors from proxies (HTML pages, 413, 52x) are turned into readable messages.
+- **Desktop updates, verified end to end:**
+  - the update endpoint follows the configured server address
+  - checks run at start-up (not only after the local backend is ready) and every 6 hours
+  - the download is verified with the updater key, and downgrades are blocked
+  - *Restart now / Later*, installing on close if postponed
+  - the local backend is stopped before the installer runs
+  - an update log for support
+- **Separate desktop and server releases** (`desktop-vX.Y.Z` / `server-vX.Y.Z`, manifest `kind`).
+  The update agent installs only server releases on the VPS and relays desktop releases to clients.
+- Update agent: stale (zombie) process detection and a single-instance lock.
+
 ## 0.3.0 — SIMPLIFY
 
 MOTH becomes self-managing: install once, sign in, code; everything else updates itself.

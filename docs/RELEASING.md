@@ -1,6 +1,16 @@
-# Releasing MOTH (one signed release for every component)
+# Releasing MOTH (signed desktop and server releases)
 
-A MOTH release is **one approved, signed set of artifacts** built from one commit:
+Since 0.3.1 there are **two kinds of release**, published by separate workflows so that a desktop
+update never touches the server and a server update never changes the desktop:
+
+| Kind | Workflow | Tag | Contents |
+| --- | --- | --- | --- |
+| Desktop | **Desktop release** (`release.yml`) | `desktop-vX.Y.Z` | `MOTH.Code_<v>_x64-setup.exe` + `.sig`, `moth-release-desktop-<v>.json` + `.sig`, `SHA256SUMS` |
+| Server | **Server release** (`server-release.yml`) | `server-vX.Y.Z` | `moth-cloud-<v>.tar.gz`, `moth-worker-<v>.tar.gz`, `moth-release-<v>.json` + `.sig` |
+
+The manifest's `kind` field (`desktop` or `server`) says which is which. The MOTH Cloud update agent
+installs only server releases on the VPS and relays desktop releases to the server, which offers them
+to desktops. The artifacts:
 
 | Artifact | Who installs it |
 | --- | --- |
@@ -9,8 +19,9 @@ A MOTH release is **one approved, signed set of artifacts** built from one commi
 | `moth-worker-<v>.tar.gz` (+ `.sha256`) | MOTH Connect workers (automatic update, and one-command enrollment) |
 | `moth-release-<v>.json` + `.sig` | Everything above: versions, SHA-256 of every file, schema/API versions, rollout policy, signed with ed25519 |
 
-Nothing is deployed from arbitrary commits: only the **Release** workflow, started by the Owner, can
-produce a signed manifest, and it runs the full test suite first.
+Nothing is deployed from arbitrary commits: only these workflows, started by the Owner, can produce a
+signed manifest, and they run the full test suite first. The desktop workflow also runs the **Windows
+auto-update end-to-end test** (`desktop-update-test.yml`) and refuses to publish if it fails.
 
 ## One-time setup
 
@@ -27,7 +38,7 @@ In GitHub → the repository → **Settings → Secrets and variables → Action
 | Secret | `MOTH_RELEASE_SIGNING_KEY` | the release private key (one line of base64) |
 | Secret | `TAURI_SIGNING_PRIVATE_KEY` | the contents of the updater private key file |
 | Secret | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password |
-| Variable | `MOTH_CLOUD_URL` | the official HTTPS address of MOTH Cloud, e.g. `https://moth.example.com` |
+| Variable (optional) | `MOTH_CLOUD_URL` | the default HTTPS address of MOTH Cloud, e.g. `https://moth.example.com`. Only set it to a permanent address — never a temporary tunnel. Users can always change the address in Settings → Connection without a new build |
 | Variable (optional) | `MOTH_STAGING_URL` | a staging MOTH Cloud for the `beta` channel |
 
 Keep an offline copy of the private keys (a password manager). If the release key is ever lost, a
@@ -47,23 +58,33 @@ to the installer with `--github-token-file` (it is stored with mode 600 and neve
 2. If the database schema changed, add a migration to `server/moth_server/db.py` (`MIGRATIONS`) and bump
    `SCHEMA_VERSION`. Mark it destructive if it removes or rewrites data irreversibly: MOTH Cloud then
    waits for the Owner's approval before installing the release.
-3. GitHub → Actions → **Release** → *Run workflow* with the tag (e.g. `v0.3.0`) and channel (`stable`,
-   or `beta` for a staged pre-release).
+3. Server: GitHub → Actions → **Server release** → *Run workflow* with the tag (e.g. `server-v0.3.1`).
+4. Desktop: GitHub → Actions → **Desktop release** → *Run workflow* with the tag (e.g. `desktop-v0.3.1`).
+   Channel `stable`, or `beta` for a staged pre-release.
 
-The workflow runs all CI jobs (backend on Windows and Linux, server on SQLite and PostgreSQL, worker
-install, MOTH Cloud update end-to-end test, frontend, desktop shell), builds the Windows installer with
-signed updater artifacts, builds the cloud and worker bundles, signs the manifest and publishes the
-GitHub release.
+Both run all CI jobs (backend on Windows and Linux, server on SQLite and PostgreSQL, worker install,
+MOTH Cloud update end-to-end test, frontend, desktop shell). The desktop workflow then runs the Windows
+auto-update test, builds the installer with signed updater artifacts and signs a desktop manifest; the
+server workflow builds the cloud and worker bundles and signs a server manifest. Each manifest is
+verified before the GitHub release is published, and an existing tag is never overwritten.
+
+**Upgrading from 0.3.0:** publish `server-v0.3.1` first and wait until the Owner Dashboard → Updates
+shows MOTH Cloud 0.3.1. A 0.3.0 server stores manifests by version number only, so it cannot hold a
+desktop and a server release with the same version; 0.3.1 servers store them separately.
 
 ## What happens next (automatically)
 
 - **MOTH Cloud** (within 15 minutes): the agent verifies the release, takes a verified backup, updates
   the server, checks its health and rolls back on failure. The Owner Dashboard → Updates shows progress
   and history.
-- **Desktops**: offered in stages (10% → 50% → 100% of installs, six hours apart). Downloads happen in
-  the background and install at the next restart. If more than 20% of reported installs fail, the
+- **Desktops**: each desktop checks the MOTH Cloud address it is connected to (Settings → Connection)
+  5 seconds after start and every 6 hours. Updates are offered in stages (10% → 50% → 100% of installs, six hours apart). Downloads happen in
+  the background. Each one is verified against the updater key built into the app, and the app then
+  shows *“MOTH Code X is ready — Restart now / Later”*; if the user chooses Later, it installs when the
+  app closes. `%APPDATA%\dev.mothcode.desktop\logs\updates.log` records every step. If more than 20% of reported installs fail, the
   rollout halts and the Owner is notified. Pause, resume or release to everyone from the dashboard.
 - **Workers**: 25% → 100%; each worker updates between training jobs and reconnects.
 
-A build without the secrets still produces an installer, but it is marked as not updatable and has no
-built-in MOTH Cloud address — it is never published as an automatic update.
+A build without the signing secrets still produces an installer, but it is marked as not updatable and is
+never published as an automatic update. A build without `MOTH_CLOUD_URL` asks for the server address
+on first start.

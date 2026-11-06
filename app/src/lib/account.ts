@@ -133,7 +133,7 @@ export async function serverApi<T = any>(
     if (res.status === 401 && token && path !== "/v1/auth/login") handleExpired();
     if (res.status === 426) accountStore.setState({ updateRequired: extra.min_version ?? "newer" });
     if (res.status === 404 && (!detail || detail === "Not Found") && path.startsWith("/v1/auth/")) {
-      detail = `${server} doesn't look like MOTH Cloud. Check the server address in Settings → Advanced.`;
+      detail = `${server} doesn't look like MOTH Cloud. Check the server address in Settings → Connection.`;
     }
     throw new ServerError(res.status, detail, res.headers.get("X-Moth-Reason"), Number(res.headers.get("Retry-After") ?? 0));
   }

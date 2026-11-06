@@ -1,4 +1,4 @@
-# Known limitations & remaining requirements (v0.3.0)
+# Known limitations & remaining requirements (0.3.1)
 
 Everything the README lists as working is implemented and tested (see [TEST_RESULTS.md](TEST_RESULTS.md)).
 This page lists what depends on the Owner's infrastructure or accounts, what could not be verified in
@@ -14,18 +14,20 @@ the development environment, and what is unfinished — so nothing is overstated
 | A read-only **GitHub token** on the server (while the repository is private) | The update agent downloads releases | `--github-token-file` |
 | **SMTP**, **Stripe**, an Authenticode certificate | Real emails, paid plans, no SmartScreen warning | unchanged from v0.2 |
 
-Until `MOTH_CLOUD_URL` and the signing secrets exist, release builds still work but have no built-in
-address (the sign-in screen asks for one) and no automatic desktop updates.
+Without `MOTH_CLOUD_URL`, release builds have no built-in address. The app asks for one, and it can
+be changed at any time in Settings → Connection. Set the variable only to a permanent HTTPS address,
+never a temporary tunnel. Without the signing secrets, desktops get no automatic updates.
 
-**Desktops already on v0.2.x need one manual install of v0.3.0**, because v0.2 had no working updater.
+**Desktops on v0.2.x or v0.3.0 need one manual install of 0.3.1.** v0.2 had no working updater, and
+v0.3.0 only checked for updates at a built-in address.
 After that every update is automatic. The same is true for workers enrolled with v0.2.
 
 ## Not verified in the development environment
 
-- **Windows:** installing the v0.3.0 setup.exe, upgrading from v0.2.1 on a real PC, and a real
-  signed desktop update. CI builds the installer and signed updater artifacts. The update service, the
-  staged rollout logic and the client logic are tested, but no Windows machine was available to click
-  through an actual update.
+- **Windows:** the complete automatic update (detect → download → verify → install → relaunch → report,
+  with user data preserved) is verified on a GitHub Windows runner with real installers. It used
+  throw-away keys and a loopback server, not the production key or the VPS. Upgrading from v0.2.1 on
+  a real PC was not tested.
 - **The live VPS:** it was not touched. The installer and update agent were tested end to end on Linux
   with real processes: adopting a running v0.2.1 server, updates, rollback with database restore,
   recovery after a crash mid-update, and a simulated reboot. They were not run on the actual VPS or

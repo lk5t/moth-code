@@ -2,6 +2,71 @@
 
 Everything below was actually run. Commands are listed so the results can be reproduced.
 
+# Desktop 0.3.1 / Server 0.3.1
+
+## Automated suites (Linux x86-64)
+
+| Suite | Command | Result |
+| --- | --- | --- |
+| MOTH Server | `cd server && python -m pytest -q` | **65 passed** |
+| Desktop backend | `cd backend && python -m pytest -q` | **105 passed** |
+| Frontend | `cd app && npx tsc -b && npm test && npm run build` | typecheck ok, **19 passed**, build ok |
+| Rust shell | `cargo test` | **6 passed** (adds the update-endpoint test) |
+| Ecosystem end-to-end | `python scripts/test-ecosystem-update.py` | **PASS, all 11 steps** |
+
+GitHub Actions CI [run 28](https://github.com/lk5t/moth-code/actions/workflows/ci.yml) passed every job.
+
+New tests:
+
+| Test | What it proves |
+| --- | --- |
+| `test_desktop_and_server_releases_are_separate` | A desktop release is never offered to the server agent, and a server release is never offered to desktops. Both can have the same version. |
+| `test_update_links_follow_the_address_the_client_used` | Through a proxy or tunnel (`X-Forwarded-Proto/Host`), the desktop download URL uses the tunnel address, not the internal one. |
+| `test_owner_can_change_the_public_address` | Only an Owner who signed in again recently can set the public address, and it must be HTTPS. |
+| `test_cloud_health_explains_why_nothing_is_served` / `test_cloud_status_explains_why_nothing_is_served` | The server reports `no_model_deployed`, then `inference_disabled`, then `ready`. The desktop backend passes the reason through to the UI. |
+| `test_upload_shows_a_retry_notice_during_interruptions` | An HTTP 524 page and a dropped connection mid-upload are retried, a notice is shown, and publishing completes. |
+
+## Windows auto-update, end to end ([`desktop-update-test.yml`](../.github/workflows/desktop-update-test.yml))
+
+Run [42187948122](https://github.com/lk5t/moth-code/actions/runs/42187948122) (commit `19f2a34`)
+on `windows-latest` **passed**. Real installers, a real MOTH Server and a real NSIS installation were
+used. Nothing was mocked:
+
+1. Version A (0.3.1) and version B (0.3.99) were built with `tauri build`, signed with throw-away
+   test keys.
+2. A signed desktop manifest for B was built and verified with `verify-release.py`.
+3. B was registered with a running MOTH Server through the update-agent API, exactly as the agent
+   does. The server re-verified it and offered 0.3.99 to 0.3.1.
+4. A was installed silently, user data was written to `%APPDATA%\MOTH Code`, and A was started.
+5. A found, downloaded and verified B **by itself** and installed it. The registry now reports
+   0.3.99. App log: `MOTH Code 0.3.1 started` → `update available: 0.3.99` → `downloaded and verified
+   0.3.99 (5752675 bytes)` → `installing 0.3.99` → `MOTH Code 0.3.99 started` → `up to date`.
+6. B started and reported a successful update to the server, and the user data was preserved.
+
+The test builds differ from releases in only two ways: they use a loopback `http://` server, and they
+install the downloaded update without waiting for the user to click *Restart now*. The release
+workflow runs this test before every desktop release.
+
+## Live verification in the browser (real MOTH Server and desktop backend)
+
+These checks ran through a deliberately faulty “tunnel” proxy that injected five HTTP 524 errors and
+three dropped connections:
+
+- An address that is not a MOTH Cloud server was rejected with a reason, and the tunnel address was
+  accepted.
+- The status bar showed *no model deployed yet*, then *inference turned off*, then the model name.
+- The 90 MB MOTH-50M package was published through the failures (with visible retry notices),
+  evaluated, deployed and used in chat.
+- Switching to another address of the same server kept the user signed in.
+
+## Not verified here (0.3.1)
+
+- Installing on the Owner's own PC, and the one manual upgrade from v0.2.1.
+- The live VPS and `https://mothcloud.ddns.net` (HTTPS is not configured for that domain yet). The
+  Cloudflare tunnel address was not used from this environment.
+- A desktop update signed with the **production** updater key. The production key was checked by the
+  `check-secrets` workflow; the end-to-end update test uses throw-away keys.
+
 # v0.3.0 — SIMPLIFY
 
 ## Automated suites (Linux x86-64, 4 CPU threads, no GPU, Python 3.13, PyTorch CPU)
