@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import math
+import os
 import threading
 import time
 from pathlib import Path
@@ -15,7 +16,7 @@ import torch
 
 from moth_worker import __version__
 from moth_worker.client import ServerError, WorkerClient
-from moth_worker.hardware import detect
+from moth_worker.hardware import cached_benchmark, compute_kind, detect
 
 CHECKPOINT_EVERY = 25
 
@@ -43,10 +44,20 @@ class WorkerRunner:
         self.update_check_seconds = update_check_seconds
         self._next_update_check = 0.0
         self.updated_to: str | None = None
+        self.device: str | None = None
+        self.bench: dict[str, Any] | None = None
+
+    def hardware(self) -> dict[str, Any]:
+        """Detected hardware plus the measured benchmark (taken once, cached for a week)."""
+        hw = detect()
+        if self.device is None:
+            self.device = "cuda" if compute_kind(hw) == "gpu" else "cpu"
+            self.bench = cached_benchmark(self.state_dir, self.device)
+        return {**hw, "benchmark": self.bench}
 
     # ---- heartbeat -----------------------------------------------------------------------
     def beat(self) -> None:
-        resp = self.client.heartbeat(detect(), self.current_job, self.progress)
+        resp = self.client.heartbeat(self.hardware(), self.current_job, self.progress)
         self.paused, self.revoked, self.limits = resp["paused"], resp["revoked"], resp.get("limits") or {}
         from moth_worker import updater
 
@@ -138,7 +149,6 @@ class WorkerRunner:
         from moth.community.validation import serialize_state, tensor_bytes_sha256
         from moth.model.config import MothConfig
         from moth.model.transformer import MothModel
-        from moth.training.trainer import pick_device
 
         jid, spec = job["id"], job["spec"]
         self.current_job, self.progress = jid, 0.0
@@ -147,8 +157,10 @@ class WorkerRunner:
             weights = self.client.download(jid, "weights", spec["base_sha256"])
             shard = self.client.download(jid, "shard", spec["shard_sha256"])
             tokens = np.frombuffer(shard, dtype=np.uint32)
-            device = pick_device("cpu" if self.allow_cpu and not torch.cuda.is_available() else "auto")
+            device = self.device or ("cuda" if compute_kind(detect()) == "gpu" else "cpu")
             limits = {**job.get("limits", {}), **self.limits}
+            if device == "cpu":  # leave a core for the system unless the owner set a limit
+                torch.set_num_threads(max(1, int(limits.get("cpu_threads") or max(1, (os.cpu_count() or 2) - 1))))
             if device == "cuda" and limits.get("gpu_memory_fraction"):
                 torch.cuda.set_per_process_memory_fraction(float(limits["gpu_memory_fraction"]))
             base = torch.load(io.BytesIO(weights), map_location="cpu", weights_only=True)

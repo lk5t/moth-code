@@ -98,8 +98,42 @@ def _clean_hw(hw: dict[str, Any]) -> dict[str, Any]:
     gpus = [{"name": s(g.get("name")), "memory_gb": float(g.get("memory_gb") or 0), "driver": s(g.get("driver"), 32),
              "utilization": g.get("utilization"), "memory_used_gb": g.get("memory_used_gb")}
             for g in (hw.get("gpus") or [])[:16] if isinstance(g, dict)]
+    bench = hw.get("benchmark") if isinstance(hw.get("benchmark"), dict) else None
+    def num(v):
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
     return {"gpus": gpus, "cuda": s(hw.get("cuda"), 32), "torch": s(hw.get("torch"), 32), "cpu_count": hw.get("cpu_count"),
-            "ram_gb": hw.get("ram_gb"), "os": s(hw.get("os"), 128), "disk_free_gb": hw.get("disk_free_gb")}
+            "ram_gb": num(hw.get("ram_gb")), "os": s(hw.get("os"), 128), "disk_free_gb": num(hw.get("disk_free_gb")),
+            "cpu_model": s(hw.get("cpu_model"), 80), "compute": hw["compute"] if hw.get("compute") in ("gpu", "cpu") else ("gpu" if gpus else "cpu"),  # 0.4 workers
+
+            "machine_id": s(hw.get("machine_id"), 64),
+            "benchmark": {"device": s(bench.get("device"), 8), "gflops": num(bench.get("gflops"))} if bench else None}
+
+
+# ---- capability-based assignment -------------------------------------------------------------
+GB = 1024**3
+GPU_PREFERENCE_SECONDS = 300
+MIN_ROUND_BYTES = 1 * GB  # a training-network round needs at least this much memory  # a job that would run much faster on a GPU waits this long for one
+
+
+def capacity_bytes(hw: dict[str, Any]) -> int:
+    """Memory a worker can give one training job: most of a usable GPU's memory, else most of its RAM."""
+    if hw.get("compute") == "gpu" and hw.get("gpus"):
+        return int(max(float(g.get("memory_gb") or 0) for g in hw["gpus"]) * 0.9 * GB)
+    ram = hw.get("ram_gb")
+    return int((float(ram) * 0.7 if ram else 2.0) * GB)
+
+
+def fits(hw: dict[str, Any], spec: dict[str, Any]) -> bool:
+    need = int((spec.get("requirements") or {}).get("memory_bytes") or 0)
+    return need <= capacity_bytes(hw)
+
+
+def gpu_worker_online(conn) -> bool:
+    for w in conn.execute(select(workers.c.hardware).where(workers.c.status == "online", workers.c.paused.is_(False),
+                                                           workers.c.revoked_at.is_(None))).all():
+        if json.loads(w[0] or "{}").get("compute") == "gpu":
+            return True
+    return False
 
 
 def worker_by_token(ctx: Ctx, token: str | None) -> dict | None:
@@ -151,11 +185,13 @@ def ensure_jobs(ctx: Ctx) -> None:
 
 
 def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
+    """Give the worker a job its hardware can run. CPU and GPU workers are both production workers:
+    a job is offered only if its memory requirement fits the worker (GPU memory, else RAM); jobs that
+    benefit from a GPU wait briefly for an online GPU worker before a CPU worker takes them.
+    ``allow_cpu`` is kept for compatibility and no longer restricts anything."""
     if worker["paused"]:
         return None
     hw = json.loads(worker["hardware"] or "{}")
-    if not hw.get("gpus") and not allow_cpu:
-        return None  # GPU workers only (CPU allowed only in development)
     requeue_expired(ctx)
     ensure_jobs(ctx)
     coord = coordinator(ctx)
@@ -166,10 +202,21 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
                                                     training_jobs.c.worker_id == worker["id"])).mappings().first()
         if not job:
             # model-evolution experiments first (one per worker), then training-network rounds
-            job = c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
-                                                        training_jobs.c.kind == "evolve_train")
-                            .order_by(training_jobs.c.id)).mappings().first()
-            if not job and coord is not None:
+            job = None
+            gpu_online = None
+            for cand in c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
+                                                              training_jobs.c.kind == "evolve_train")
+                                  .order_by(training_jobs.c.id)).mappings().all():
+                spec = json.loads(cand["spec"])
+                if not fits(hw, spec):
+                    continue
+                if hw.get("compute") != "gpu" and spec.get("prefer_gpu") and t - cand["created_at"] < GPU_PREFERENCE_SECONDS:
+                    gpu_online = gpu_worker_online(c) if gpu_online is None else gpu_online
+                    if gpu_online:
+                        continue
+                job = cand
+                break
+            if not job and coord is not None and capacity_bytes(hw) >= MIN_ROUND_BYTES:
                 job = c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
                                                             training_jobs.c.kind == "train_round")
                                 .order_by(training_jobs.c.id)).mappings().first()

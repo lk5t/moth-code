@@ -75,13 +75,20 @@ def test_credentials_are_isolated(client, settings, training_world):
     assert client.get(f"/v1/worker/jobs/{job['id']}/weights", headers=H(w2["worker_token"])).status_code == 409
 
 
-def test_gpu_required_unless_cpu_allowed(client, settings, training_world):
+def test_cpu_and_gpu_workers_get_jobs_that_fit_them(client, settings, training_world):
+    """0.5: CPU workers are production workers; jobs are matched to memory, not to a GPU flag."""
     t = register_verified(client, settings, "cpuonly")["token"]
     _, w = enroll(client, t, hw=HW_CPU)
-    client.put("/v1/admin/config/flags", json={"allow_cpu_workers": False}, headers=H(training_world["owner"]["token"]))
-    assert client.post("/v1/worker/jobs/claim", headers=H(w["worker_token"])).status_code == 204
+    assert client.post("/v1/worker/jobs/claim", headers=H(w["worker_token"])).status_code == 200
     _, g = enroll(client, t, hw=HW_GPU)
     assert client.post("/v1/worker/jobs/claim", headers=H(g["worker_token"])).status_code == 200
+    _, tiny = enroll(client, t, hw={"gpus": [], "cpu_count": 2, "ram_gb": 0.5, "os": "Linux test"})
+    from sqlalchemy import update
+
+    with client.app.state.ctx.db.tx() as c:  # a job that needs more memory than that machine has
+        c.execute(update(training_jobs).where(training_jobs.c.status == "queued").values(
+            kind="evolve_train", spec=json.dumps({"requirements": {"memory_bytes": 4 << 30}, "round": -1})))
+    assert client.post("/v1/worker/jobs/claim", headers=H(tiny["worker_token"])).status_code == 204
 
 
 def test_two_workers_complete_a_verified_round(client, settings, training_world, tmp_path):

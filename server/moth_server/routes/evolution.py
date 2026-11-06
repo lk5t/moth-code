@@ -104,14 +104,13 @@ def status(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
 
 @router.get("/resources")
 def resources(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
-    from moth_server.routes.admin import flags
     from moth_server.routes.system import cpu_percent
 
     act = C.activity(ctx)
     hw = C.local(ctx)
     hw["cpu_percent"] = cpu_percent(0.2)
     running = [e for e in MEM.experiments(ctx, limit=20) if e["status"] == "running"]
-    return {"local": hw, "workers": C.worker_capacity(ctx, bool(flags(ctx).get("allow_cpu_workers"))),
+    return {"local": hw, "workers": C.worker_capacity(ctx),
             "inference": {"active_requests": act.active, "requests_per_minute": round(act.per_minute(), 2)},
             "training": {"running": [_exp_summary(ctx, e) for e in running],
                          # finished/paused work plus the time the running experiments have been training so far

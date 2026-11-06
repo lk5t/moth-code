@@ -98,13 +98,18 @@ def local(ctx: Ctx) -> dict[str, Any]:
     return out
 
 
-def worker_capacity(ctx: Ctx, allow_cpu_workers: bool) -> dict[str, Any]:
+def worker_capacity(ctx: Ctx, need_bytes: int = 0) -> dict[str, Any]:
+    """Online MOTH workers (CPU and GPU) and how many can take a job needing ``need_bytes``."""
+    from moth_server.training import capacity_bytes
+
     rows = ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
     online = [w for w in rows if w["status"] == "online" and not w["paused"]]
-    gpu = [w for w in online if (json.loads(w["hardware"] or "{}").get("gpus"))]
-    usable = gpu if not allow_cpu_workers else online
-    return {"total": len(rows), "online": len(online), "online_gpu": len(gpu), "usable": len(usable),
-            "gpus": [g.get("name") for w in gpu for g in json.loads(w["hardware"] or "{}").get("gpus", [])]}
+    hws = [json.loads(w["hardware"] or "{}") for w in online]
+    gpu = [h for h in hws if h.get("compute") == "gpu" or (h.get("compute") is None and h.get("gpus"))]
+    fitting = [h for h in hws if capacity_bytes(h) >= need_bytes]
+    return {"total": len(rows), "online": len(online), "online_gpu": len(gpu), "online_cpu": len(hws) - len(gpu),
+            "usable": len(fitting), "gpus": [g.get("name") for h in gpu for g in h.get("gpus", [])],
+            "gflops": round(sum(((h.get("benchmark") or {}).get("gflops") or 0) for h in hws), 1)}
 
 
 def estimate_training_memory(params: int, batch: int, seq: int, d_model: int, layers: int) -> int:
@@ -125,8 +130,6 @@ def in_quiet_hours(settings: dict) -> bool:
 
 def choose_backend(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[dict | None, list[str]]:
     """Where an experiment can train now: {"backend": "local"|"worker", "device": ...} or None + reasons."""
-    from moth_server.routes.admin import flags
-
     reasons: list[str] = []
     be = settings["backends"]
     hw = local(ctx)
@@ -138,10 +141,15 @@ def choose_backend(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[dict | No
     elif be.get("local_gpu"):
         reasons.append("this server has no GPU")
     if be.get("workers"):
-        cap = worker_capacity(ctx, bool(flags(ctx).get("allow_cpu_workers")))
+        cap = worker_capacity(ctx, need_bytes)
         if cap["usable"]:
             return {"backend": "worker", "device": "worker"}, []
-        reasons.append("no MOTH GPU worker is online" if cap["total"] else "no MOTH workers are enrolled")
+        if not cap["total"]:
+            reasons.append("no MOTH workers are enrolled")
+        elif not cap["online"]:
+            reasons.append("no MOTH worker is online")
+        else:
+            reasons.append(f"no online MOTH worker has {need_bytes / GB:.1f} GB of memory for this job")
     if be.get("local_cpu"):
         mem = hw["memory"] or {}
         reserve = float(settings["limits"]["min_free_memory_gb"]) * GB

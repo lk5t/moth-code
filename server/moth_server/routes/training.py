@@ -35,6 +35,7 @@ class LimitsIn(BaseModel):
     gpu_memory_fraction: float | None = Field(default=None, ge=0.1, le=0.95)
     duty_cycle: float | None = Field(default=None, ge=0.1, le=1.0)
     max_hours_per_day: float | None = Field(default=None, ge=0.5, le=24)
+    cpu_threads: int | None = Field(default=None, ge=1, le=256)  # CPU workers: threads used for training
 
 
 class WorkerEnrollIn(BaseModel):

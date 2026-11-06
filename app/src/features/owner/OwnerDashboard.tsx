@@ -274,8 +274,7 @@ const FLAG_LABELS: Record<string, string> = {
   cloud_inference_enabled: "MOTH Cloud inference (only with MOTH-operated GPU capacity)",
   registration_open: "Open registration",
   referrals_enabled: "Referral program",
-  training_enrollment_open: "GPU worker enrollment",
-  allow_cpu_workers: "Allow CPU workers (development only)",
+  training_enrollment_open: "Worker enrollment (CPU and GPU)",
   auto_deploy_models: "Auto-deploy candidates that pass evaluation",
 };
 

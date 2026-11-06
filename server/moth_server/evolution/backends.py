@@ -210,7 +210,7 @@ def register_candidate(ctx: Ctx, exp: dict, package: Path) -> dict:
 
 
 # ---- worker backend -----------------------------------------------------------------------------------
-def create_worker_job(ctx: Ctx, exp: dict) -> int:
+def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0) -> int:
     from moth.community.protocol import PROTOCOL
     from moth.model.registry import sha256_file
 
@@ -230,7 +230,9 @@ def create_worker_job(ctx: Ctx, exp: dict) -> int:
             "job_id": f"evolution-{exp['id']}",
             "train": {"steps": cfg["steps"], "lr": cfg["lr"], "batch_size": cfg["batch_size"],
                       "seq_len": cfg["seq_len"], "weight_decay": cfg["weight_decay"]},
-            "protocol": PROTOCOL}
+            "protocol": PROTOCOL,
+            # assignment: only workers with enough memory get it; a GPU worker is preferred briefly
+            "requirements": {"memory_bytes": int(need_bytes)}, "prefer_gpu": True}
     with ctx.db.tx() as c:
         res = c.execute(training_jobs.insert().values(kind="evolve_train", status="queued", spec=json.dumps(spec),
                                                       attempts=0, max_attempts=int(exp["max_attempts"]),

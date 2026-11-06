@@ -295,7 +295,7 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
                   f"Experiment #{exp['id']} {'resumed from its checkpoint' if resumed else 'started'} on this "
                   f"server ({choice['device']})", cycle_id=cyc["id"], experiment_id=exp["id"])
     else:
-        jid = B.create_worker_job(ctx, exp)
+        jid = B.create_worker_job(ctx, exp, _need_bytes(ctx, exp))
         MEM.update_experiment(ctx, exp["id"], status="running", backend="worker", job_id=jid, error=None,
                               started_at=now(), run_dir=str(B.run_dir(ctx, exp)))
         MEM.event(ctx, "experiment.queued", f"Experiment #{exp['id']} was queued for a MOTH worker (job {jid})",

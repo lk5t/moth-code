@@ -22,9 +22,10 @@ FEATURE_FLAGS = {
     "registration_open": True,
     "referrals_enabled": True,
     "training_enrollment_open": True,
-    "allow_cpu_workers": False,         # development/testing only
     "auto_deploy_models": False,        # deploy candidates automatically when they pass evaluation
 }
+# Flags that no longer do anything but are still accepted from older apps and scripts.
+RETIRED_FLAGS = {"allow_cpu_workers"}  # 0.5: CPU workers are production workers
 
 
 class PlanIn(BaseModel):
@@ -58,7 +59,8 @@ class StatusIn(BaseModel):
 
 
 def flags(ctx: Ctx) -> dict[str, Any]:
-    return {**FEATURE_FLAGS, **(ctx.db.get_config("feature_flags", {}) or {})}
+    stored = ctx.db.get_config("feature_flags", {}) or {}
+    return {**FEATURE_FLAGS, **{k: v for k, v in stored.items() if k in FEATURE_FLAGS}}
 
 
 @router.get("/plans")
@@ -151,9 +153,10 @@ def get_config(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx))
 
 @router.put("/config/flags")
 def set_flags(body: dict[str, bool], auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
-    unknown = set(body) - set(FEATURE_FLAGS)
+    unknown = set(body) - set(FEATURE_FLAGS) - RETIRED_FLAGS
     if unknown:
         raise HTTPException(422, f"Unknown flags: {', '.join(sorted(unknown))}")
+    body = {k: v for k, v in body.items() if k in FEATURE_FLAGS}
     current = {**(ctx.db.get_config("feature_flags", {}) or {}), **body}
     ctx.db.set_config("feature_flags", current)
     audit(ctx.db, "admin.flags_updated", auth.uid, "config:feature_flags", body)
