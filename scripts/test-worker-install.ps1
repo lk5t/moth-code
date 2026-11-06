@@ -56,7 +56,7 @@ try {
 
   Write-Host "== uninstall removes the task, revokes the worker and deletes its files"
   & $mw --home $wHome uninstall --yes
-  Start-Sleep 8
+  for ($i = 0; $i -lt 30 -and (Test-Path $wHome); $i++) { Start-Sleep 1 }  # files are deleted right after it exits
   schtasks /Query /TN "MOTH Worker" 2>$null | Out-Null
   if ($LASTEXITCODE -eq 0) { throw "the scheduled task is still there" }
   $w = (Invoke-RestMethod "$Base/v1/training/workers" -Headers $auth).workers | Select-Object -Last 1

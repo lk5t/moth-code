@@ -147,7 +147,7 @@ def resume(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     S.update(ctx, {"paused": False})
     EN._set_state(ctx, consecutive_failures=0)
     MEM.event(ctx, "engine.resumed", "Evolution resumed by the Owner", actor=auth.uid)
-    EN.kick(ctx)
+    EN.wake(ctx)
     return {"paused": False}
 
 
@@ -304,8 +304,7 @@ def approve_dataset(did: int, body: ApproveIn, auth: Auth = Depends(owner_reauth
     except DS.DatasetError as e:
         raise _bad(e) from None
     MEM.event(ctx, "data.approved", f"Training dataset #{did} ({d['name']}) was approved for training", actor=auth.uid)
-    EN._set_state(ctx, next_cycle_at=0)  # new data: plan a cycle at the next tick
-    EN.kick(ctx)
+    EN.wake(ctx)  # new data: plan a cycle now
     return DS.public(d)
 
 

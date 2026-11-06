@@ -137,16 +137,32 @@ def rollback_to(ctx: Ctx, version: int, actor_id: int | None) -> dict:
 
 # ---- the tick ------------------------------------------------------------------------------------------
 def tick(ctx: Ctx) -> dict[str, Any]:
+    """Advance evolution. A request that arrives while a tick is running is never lost: it is
+    remembered (``evolution_wake``) and the running tick goes round once more."""
     if not _tick_lock.acquire(blocking=False):
+        ctx.extras["evolution_wake"] = True
         return {"skipped": "busy"}
     try:
-        return _tick(ctx)
-    except Exception as e:  # noqa: BLE001 — the engine must keep running; the error is recorded
-        log.exception("evolution tick failed")
-        MEM.event(ctx, "engine.error", f"Evolution engine error: {type(e).__name__}: {e}", level="error")
-        return {"error": str(e)}
+        for _ in range(3):
+            ctx.extras["evolution_wake"] = False
+            try:
+                out = _tick(ctx)
+            except Exception as e:  # noqa: BLE001 — the engine must keep running; the error is recorded
+                log.exception("evolution tick failed")
+                MEM.event(ctx, "engine.error", f"Evolution engine error: {type(e).__name__}: {e}", level="error")
+                return {"error": str(e)}
+            if not ctx.extras.get("evolution_wake"):
+                return out
+        return out
     finally:
         _tick_lock.release()
+
+
+def wake(ctx: Ctx) -> None:
+    """Something changed (data approved, evolution resumed …): check now, not at the scheduled time."""
+    _set_state(ctx, next_cycle_at=0)
+    ctx.extras["evolution_wake"] = True
+    kick(ctx)
 
 
 def _tick(ctx: Ctx) -> dict[str, Any]:
@@ -200,7 +216,9 @@ def _maybe_start(ctx: Ctx, settings: dict) -> dict:
         if reason != st.get("idle_reason"):
             MEM.event(ctx, "engine.idle", reason)
         # check again in a while (approving data or deploying a model starts a cycle sooner)
-        _set_state(ctx, idle_reason=reason, next_cycle_at=now() + min(3600.0, float(settings["interval_hours"]) * 3600))
+        # an Owner action during this check (e.g. approving data) wins: don't push the next check later
+        later = 0.0 if ctx.extras.get("evolution_wake") else now() + min(3600.0, float(settings["interval_hours"]) * 3600)
+        _set_state(ctx, idle_reason=reason, next_cycle_at=later)
         return {"state": "idle", "reason": reason}
     cyc = start_cycle(ctx, "schedule")
     return {"cycle": cyc["id"], "status": cyc["status"]}

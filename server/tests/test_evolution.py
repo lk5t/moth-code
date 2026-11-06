@@ -449,3 +449,32 @@ def test_migration_from_schema_2_keeps_everything_and_records_lineage(settings, 
         assert kept["sha256"] == rel["sha256"] and kept["status"] == rel["status"]
         lin = ctx.db.one(select(model_lineage).where(model_lineage.c.version == rel["version"]))
         assert lin["method"] == "upload" and lin["parent_version"] is None
+
+
+def test_an_owner_action_during_a_running_check_is_not_lost(client, settings, world, monkeypatch):
+    """Regression: a background check that started before data was approved must not push the next
+    check an hour later (found by the upgrade test in CI)."""
+    ctx, o = world["ctx"], world["o"]
+    d = add_dataset(client, o)
+    real = EN._maybe_start
+    from moth_server.evolution import datasets as DSM
+
+    real_approved = DSM.approved
+    approved = {}
+
+    def slow_check(ctx_, settings_):
+        if approved:
+            return real(ctx_, settings_)
+        approved["done"] = True
+        # the approval lands while this check runs; this check already read "no approved data"
+        client.post(f"/v1/admin/evolution/datasets/{d['id']}/approve", json={}, headers=o)
+        DSM.approved = lambda *a, **k: []
+        try:
+            return real(ctx_, settings_)
+        finally:
+            DSM.approved = real_approved
+
+    monkeypatch.setattr(EN, "_maybe_start", slow_check)
+    EN.tick(ctx)
+    assert MEM.active_cycle(ctx) is not None, [e["message"] for e in MEM.events(ctx, 10)]
+

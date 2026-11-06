@@ -299,9 +299,18 @@ def cmd_uninstall(args) -> int:
     venv = Path(sys.prefix)
     ours = (venv.name == "venv" and venv.parent.name in ("moth-worker", "worker")) or str(venv) == "/opt/moth-worker"
     targets = [home] + ([venv] if ours and venv.exists() and home not in venv.parents and venv != home else [])
-    if os.name == "nt":  # files of a running program cannot be deleted on Windows: delete right after exit
-        dirs = " & ".join(f'rmdir /s /q "{t}"' for t in targets)
-        subprocess.Popen(f"cmd /c ping -n 4 127.0.0.1 >nul & {dirs}", shell=True, creationflags=0x08000000)
+    if os.name == "nt":
+        # Files of running programs cannot be deleted on Windows: stop every other process started from the
+        # worker's environment (e.g. the scheduled task's supervisor), then delete — retrying — after exit.
+        paths = ", ".join("'" + str(t).replace("'", "''") + "'" for t in targets)
+        ps = (f"$t = @({paths}); foreach ($p in Get-Process) {{ if ($p.Id -ne {os.getpid()} -and $p.Path) {{ "
+              "foreach ($d in $t) { if ($p.Path -like ($d + '*')) { Stop-Process -Id $p.Id -Force "
+              "-ErrorAction SilentlyContinue } } } }; "
+              f"Wait-Process -Id {os.getpid()} -ErrorAction SilentlyContinue; "
+              "for ($i = 0; $i -lt 30; $i++) { foreach ($d in $t) { Remove-Item -Recurse -Force $d "
+              "-ErrorAction SilentlyContinue }; if (-not ($t | Where-Object { Test-Path $_ })) { break }; Start-Sleep 1 }")
+        subprocess.Popen(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
+                         creationflags=0x08000000 | 0x00000008)  # no window, detached
     else:
         for t in targets:
             shutil.rmtree(t, ignore_errors=True)
