@@ -3,6 +3,7 @@ compatibility enforcement, agent API isolation and Owner controls."""
 
 import base64
 import json
+
 import shutil
 
 import pytest
@@ -10,6 +11,11 @@ import pytest
 from conftest import H, register_verified
 from moth_server import releases as R
 from release_helpers import TestKey, release, worker_bundle
+
+from moth_worker import __version__ as WORKER_VERSION
+
+_maj, _min, _pat = (int(x) for x in WORKER_VERSION.split('.'))
+NEWER = f"{_maj}.{_min}.{_pat + 9}"  # an update must be newer than the worker under test
 
 
 @pytest.fixture
@@ -175,22 +181,22 @@ def test_worker_update_waits_for_job_and_verifies(client, signed, training_world
                      log=lambda m: None, heartbeat_seconds=3600, update_check_seconds=0)
     r.beat()
     job = client.post("/v1/worker/jobs/claim", headers=H(w["worker_token"])).json()
-    bundle = worker_bundle(tmp_path, "0.3.9")
-    raw, sig = release(tmp_path, s["key"], "0.3.9", worker=bundle, rollout={"worker": {"stages": [100]}})
+    bundle = worker_bundle(tmp_path, NEWER)
+    raw, sig = release(tmp_path, s["key"], NEWER, worker=bundle, rollout={"worker": {"stages": [100]}})
     register(client, s, raw, sig, [("worker", bundle)])
     # the job in progress completes and is accepted first …
     assert r.run_job(job)["accepted"]
     # … then the verified update is installed side by side
-    assert r.maybe_update() and r.updated_to == "0.3.9"
-    assert (home / "current").resolve() == (home / "versions" / "0.3.9")
-    assert json.loads((home / "update-pending.json").read_text())["version"] == "0.3.9"
+    assert r.maybe_update() and r.updated_to == NEWER
+    assert (home / "current").resolve() == (home / "versions" / NEWER)
+    assert json.loads((home / "update-pending.json").read_text())["version"] == NEWER
     # a tampered offer is refused and reported, and the worker keeps running its version
     info = client.get("/v1/worker/update", headers=H(w["worker_token"])).json()["update"]
     info["signature"] = TestKey().sign(base64.b64decode(info["manifest"]))
     with pytest.raises(updater.UpdateError, match="signature"):
         updater.apply(info, tmp_path / "other-home", r.client.download_file)
     # a new version that fails to start three times is reverted automatically
-    (home / "update-pending.json").write_text(json.dumps({"version": "0.3.9", "from": "0.3.0", "attempts": 3}))
+    (home / "update-pending.json").write_text(json.dumps({"version": NEWER, "from": "0.3.0", "attempts": 3}))
     (home / "previous").unlink(missing_ok=True)
     reverted = updater.startup_guard(home, log=lambda m: None)
     assert reverted["reverted"] and not (home / "current").exists()
