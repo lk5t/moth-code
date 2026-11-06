@@ -53,8 +53,18 @@ def state(ctx: Ctx) -> dict[str, Any]:
 
 
 def _set_state(ctx: Ctx, **values: Any) -> dict:
-    st = {**state(ctx), **values}
-    ctx.db.set_config(STATE_KEY, st)
+    """Atomic read-merge-write: concurrent updates of different fields never erase each other."""
+    from moth_server.db import server_config
+
+    with ctx.db.tx() as c:
+        q = select(server_config.c.value).where(server_config.c.key == STATE_KEY)
+        if not ctx.db.is_sqlite:
+            q = q.with_for_update()  # SQLite serialises writers with BEGIN IMMEDIATE already
+        row = c.execute(q).first()
+        current = json.loads(row[0]) if row else {}
+        st = {"consecutive_failures": 0, "next_cycle_at": 0.0, "idle_reason": None, "stable_version": None,
+              "last_tick": None, **current, **values}
+        ctx.db.set_config(STATE_KEY, st, conn=c)
     return st
 
 
@@ -144,9 +154,10 @@ def tick(ctx: Ctx) -> dict[str, Any]:
         return {"skipped": "busy"}
     try:
         for _ in range(3):
+            woken = bool(ctx.extras.get("evolution_wake"))
             ctx.extras["evolution_wake"] = False
             try:
-                out = _tick(ctx)
+                out = _tick(ctx, woken=woken)
             except Exception as e:  # noqa: BLE001 — the engine must keep running; the error is recorded
                 log.exception("evolution tick failed")
                 MEM.event(ctx, "engine.error", f"Evolution engine error: {type(e).__name__}: {e}", level="error")
@@ -165,7 +176,7 @@ def wake(ctx: Ctx) -> None:
     kick(ctx)
 
 
-def _tick(ctx: Ctx) -> dict[str, Any]:
+def _tick(ctx: Ctx, woken: bool = False) -> dict[str, Any]:
     settings = S.get(ctx)
     if not ctx.extras.get("evolution_recovered"):
         recover(ctx)
@@ -180,7 +191,7 @@ def _tick(ctx: Ctx) -> dict[str, Any]:
             _pause_running(ctx, cyc, "evolution is paused" if settings["enabled"] else "evolution is turned off")
         return {"state": "paused" if settings["enabled"] else "off"}
     if cyc is None:
-        started = _maybe_start(ctx, settings)
+        started = _maybe_start(ctx, settings, woken=woken)
         if "cycle" not in started:
             return started
         cyc = MEM.active_cycle(ctx)
@@ -196,11 +207,11 @@ def _tick(ctx: Ctx) -> dict[str, Any]:
     return {"cycle": cyc["id"], "status": MEM.cycle(ctx, cyc["id"])["status"]}
 
 
-def _maybe_start(ctx: Ctx, settings: dict) -> dict:
+def _maybe_start(ctx: Ctx, settings: dict, woken: bool = False) -> dict:
     from moth_server import models as M
 
     st = state(ctx)
-    if now() < float(st["next_cycle_at"] or 0):
+    if not woken and now() < float(st["next_cycle_at"] or 0):  # an Owner action checks now
         return {"state": "scheduled", "next_cycle_at": st["next_cycle_at"]}
     base = M.deployed(ctx)
     reason = None

@@ -462,15 +462,15 @@ def test_an_owner_action_during_a_running_check_is_not_lost(client, settings, wo
     real_approved = DSM.approved
     approved = {}
 
-    def slow_check(ctx_, settings_):
+    def slow_check(ctx_, settings_, **kw):
         if approved:
-            return real(ctx_, settings_)
+            return real(ctx_, settings_, **kw)
         approved["done"] = True
         # the approval lands while this check runs; this check already read "no approved data"
         client.post(f"/v1/admin/evolution/datasets/{d['id']}/approve", json={}, headers=o)
         DSM.approved = lambda *a, **k: []
         try:
-            return real(ctx_, settings_)
+            return real(ctx_, settings_, **kw)
         finally:
             DSM.approved = real_approved
 
@@ -478,3 +478,28 @@ def test_an_owner_action_during_a_running_check_is_not_lost(client, settings, wo
     EN.tick(ctx)
     assert MEM.active_cycle(ctx) is not None, [e["message"] for e in MEM.events(ctx, 10)]
 
+
+
+def test_engine_state_updates_never_erase_each_other(client, settings, world):
+    """Regression: the engine's state was a read-merge-write without a transaction, so a tick updating
+    ``last_tick`` could erase an approval's ``next_cycle_at = 0`` (found by the upgrade test in CI)."""
+    import threading
+
+    ctx = world["ctx"]
+    EN._set_state(ctx, next_cycle_at=9e12, last_tick=0)
+    stop = threading.Event()
+
+    def ticker():
+        i = 0
+        while not stop.is_set():
+            i += 1
+            EN._set_state(ctx, last_tick=i)
+
+    t = threading.Thread(target=ticker)
+    t.start()
+    for _ in range(50):
+        EN._set_state(ctx, next_cycle_at=0)
+    stop.set()
+    t.join()
+    st = EN.state(ctx)
+    assert st["next_cycle_at"] == 0 and st["last_tick"] > 0
