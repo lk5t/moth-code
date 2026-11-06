@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from moth_server import compat
 from moth_server import releases as R
 from moth_server.audit import audit
-from moth_server.context import Ctx, client_ip, get_ctx
+from moth_server.context import Ctx, client_ip, get_ctx, request_base
 from moth_server.db import now
 from moth_server.deps import Auth, owner_reauthed, require_owner
 
@@ -52,7 +52,7 @@ def desktop_update(target: str, arch: str, current: str, request: Request, chann
         return Response(status_code=204)  # an update without an updater signature is never offered
     return {"version": rel["version"], "notes": rel["notes"] or "",
             "pub_date": _rfc3339(rel["created_at"]), "signature": f["signature"],
-            "url": f"{ctx.settings.public_url}/v1/updates/files/desktop/{rel['version']}/{f['file']}"}
+            "url": f"{request_base(request, ctx)}/v1/updates/files/desktop/{rel['version']}/{f['file']}"}
 
 
 def _rfc3339(ts: float) -> str:
@@ -100,7 +100,7 @@ def worker_update(request: Request, channel: str = "stable", ctx: Ctx = Depends(
     if not found:
         return {"update": None}
     rel, f = found
-    loaded = R.load_manifest(ctx, rel["version"])
+    loaded = R.load_manifest(ctx, rel["version"], "worker")
     return {"update": {"version": rel["version"], "file": f["file"], "sha256": f["sha256"], "size": f.get("size"),
                        # a path on the server the worker is already connected to (works behind any proxy/domain)
                        "url": f"/v1/updates/files/worker/{rel['version']}/{f['file']}",

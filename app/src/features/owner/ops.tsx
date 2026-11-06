@@ -85,6 +85,7 @@ export function ServerPanel() {
         <span className="text-muted">· inference {s.inference.loaded ? `serving model v${s.inference.model_version}` : "no model loaded"}</span>
         <span className="text-muted">· {s.hardware.cuda ? s.hardware.gpus.map((g: Any) => g.name).join(", ") : `CPU only (${s.hardware.cpu_count} threads)`}</span>
       </div>
+      <PublicAddress />
       <div className="grid grid-cols-3 gap-3">
         <Meter icon={<Cpu />} label="CPU" pct={s.cpu_percent} detail={s.load ? `load ${s.load.map((l: number) => l.toFixed(2)).join(" / ")}` : ""} />
         <Meter icon={<MemoryStick />} label="Memory" pct={s.memory?.percent ?? null}
@@ -107,6 +108,32 @@ export function ServerPanel() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/** The address used in emails, referral links and worker install commands (no restart needed). */
+function PublicAddress() {
+  const { data, load } = usePoll<Any>("/v1/admin/overview", 60000);
+  const [value, setValue] = useState("");
+  const { run, view } = useAction(load);
+  const current = data?.system?.public_url ?? "";
+  useEffect(() => setValue(current), [current]);
+  if (!data) return null;
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-2 text-xs">
+        <div className="text-muted">
+          Public address — used in verification emails, referral links and worker install commands. Desktop updates
+          always use the address the app is connected through.
+          {data.system.public_url_env && data.system.public_url_env !== current ? ` (server setting: ${data.system.public_url_env})` : ""}
+        </div>
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); run(() => serverApi("/v1/admin/config/public-url", { method: "PUT", json: { url: value.trim() } }), "Public address saved."); }}>
+          <Input className="h-8 flex-1 text-xs" value={value} onChange={(e) => setValue(e.target.value)} placeholder="https://moth.example.com" />
+          <Button size="sm" variant="secondary" type="submit">Save</Button>
+        </form>
+        {view}
+      </CardContent>
+    </Card>
   );
 }
 

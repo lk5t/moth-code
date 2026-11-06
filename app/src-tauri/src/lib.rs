@@ -1,7 +1,8 @@
 mod backend;
 mod credentials;
+mod updates;
 
-use backend::{Backend, BackendInfo};
+pub(crate) use backend::{Backend, BackendInfo};
 use credentials::{AccountsFile, AccountsStore, OsVault, SavedAccount};
 use tauri::{Manager, RunEvent};
 
@@ -55,6 +56,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(Backend::new())
+        .manage(updates::PendingUpdate::default())
         .setup(|app| {
             let resource_dir = app.path().resource_dir().ok();
             app.state::<Backend>().start(resource_dir);
@@ -67,7 +69,10 @@ pub fn run() {
             accounts_remember,
             accounts_activate,
             accounts_sign_out,
-            accounts_forget
+            accounts_forget,
+            updates::update_check,
+            updates::update_download,
+            updates::update_install
         ])
         .build(tauri::generate_context!())
         .expect("error while building MOTH Code");

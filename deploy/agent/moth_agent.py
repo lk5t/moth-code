@@ -46,7 +46,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-AGENT_VERSION = "0.3.0"
+AGENT_VERSION = "0.3.1"
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import ed25519_verify  # noqa: E402  (stdlib-only verifier shipped next to this file)
@@ -292,8 +292,20 @@ class Agent:
         return p
 
     # ---- distribution of desktop/worker files through the server --------------------------------------
+    @staticmethod
+    def kind_of(rel: dict) -> str:
+        m = rel["manifest"]
+        if m.get("kind") in ("desktop", "server"):
+            return m["kind"]
+        return "desktop" if set((m.get("components") or {}).keys()) == {"desktop"} else "server"
+
     def publish_to_server(self, rels: list[dict]) -> None:
-        for rel in rels[:2]:
+        """Hand the newest releases of each kind (server, desktop) to the server, which distributes the
+        desktop and worker files to clients. Desktop releases are never installed on this machine."""
+        newest: list[dict] = []
+        for kind in ("server", "desktop"):
+            newest += [r for r in rels if self.kind_of(r) == kind][:2]
+        for rel in newest:
             res = self.api("POST", "/v1/agent/releases", {"manifest": base64.b64encode(rel["raw"]).decode(),
                                                           "signature": rel["sig"]})
             if res is None:

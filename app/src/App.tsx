@@ -17,6 +17,7 @@ import { AccountDialog } from "@/features/account/AccountDialog";
 import { ReauthDialog } from "@/features/account/reauth";
 import { startConnectionMonitor } from "@/lib/connection";
 import { startUpdater } from "@/lib/updater";
+import { UpdateBanner } from "@/components/UpdateBanner";
 import { Welcome, useWelcomeVisible } from "@/features/onboarding/Welcome";
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
   });
 
   useEffect(() => {
+    startUpdater(); // independent of the local backend: an update can fix a broken backend
     const t = setTimeout(() => setMinSplash(false), 900);
     let cancelled = false;
     const poll = async () => {
@@ -45,7 +47,6 @@ export default function App() {
         if (i.status === "ready") {
           startEvents();
           initAccounts().catch(() => {}).finally(() => startConnectionMonitor());
-          startUpdater(); // background checks and downloads; installs on restart or exit
           const projects = await loadProjects().catch(() => [] as Project[]);
           let last: string | null = null;
           try {
@@ -71,11 +72,14 @@ export default function App() {
   if (!info || info.status !== "ready" || minSplash) {
     const failed = info?.status === "failed";
     return (
+      <>
+      <UpdateBanner />
       <Splash
         status={failed ? "The MOTH backend failed to start" : "Starting MOTH…"}
         error={failed ? [info?.error, ...(info?.logs ?? [])].filter(Boolean).join("\n") : null}
         onRetry={() => restartBackend().then(() => location.reload())}
       />
+      </>
     );
   }
 
@@ -96,6 +100,7 @@ export default function App() {
           </main>
         </div>
         <StatusBar />
+        <UpdateBanner />
         <ApprovalDialog />
         <AccountDialog />
         <ReauthDialog />

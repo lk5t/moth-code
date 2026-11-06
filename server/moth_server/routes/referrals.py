@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from moth_server import referrals as R
 from moth_server.audit import audit
+from moth_server.context import public_url
 from moth_server.context import Ctx, get_ctx
 from moth_server.db import now, referral_rewards, referrals, users
 from moth_server.deps import Auth, current_auth, owner_reauthed, require_owner
@@ -56,7 +57,7 @@ class ReasonIn(BaseModel):
 @router.get("/v1/referrals")
 def my_referrals(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     R.process_pending(ctx.db)
-    return R.dashboard(ctx.db, auth.uid, ctx.settings.public_url, auth.user["referral_code"])
+    return R.dashboard(ctx.db, auth.uid, public_url(ctx), auth.user["referral_code"])
 
 
 @router.get("/r/{code}", include_in_schema=False)

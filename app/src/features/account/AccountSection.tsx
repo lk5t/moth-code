@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { KeyRound, Monitor, UserRound } from "lucide-react";
-import { accountStore, refreshMe, serverApi, setServerUrl, useAccount } from "@/lib/account";
+import { accountStore, refreshMe, serverApi, useAccount } from "@/lib/account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -8,14 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 import { openAccountDialog } from "./AccountDialog";
-import { hasOfficialServer } from "@/lib/endpoint";
 
 interface SessionRow { id: number; device_name: string | null; user_agent: string; ip: string; created_at: number; last_used_at: number; current: boolean }
 
 export function AccountSection() {
   const user = useAccount((s) => s.user);
-  const serverUrl = useAccount((s) => s.serverUrl);
-  const [server, setServer] = useState(serverUrl);
   const [displayName, setDisplayName] = useState("");
   const [pw, setPw] = useState({ current: "", next: "" });
   const [sessions, setSessions] = useState<SessionRow[]>([]);
@@ -27,7 +24,6 @@ export function AccountSection() {
     setDisplayName(user?.display_name ?? "");
     if (user) loadSessions();
   }, [user?.id]);
-  useEffect(() => setServer(serverUrl), [serverUrl]);
 
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setMsg(null);
@@ -49,20 +45,6 @@ export function AccountSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {!hasOfficialServer() && (
-          <div className="flex items-end gap-2">
-            <div className="flex-1"><Label>MOTH Cloud address</Label><Input className="mt-1" placeholder="https://moth.example.com" value={server} onChange={(e) => setServer(e.target.value)} /></div>
-            <Button variant="secondary" onClick={() => {
-              try {
-                setServerUrl(server);
-                setServer(accountStore.getState().serverUrl);
-                setMsg({ ok: true, text: "Saved." });
-              } catch (e) {
-                setMsg({ ok: false, text: (e as Error).message });
-              }
-            }}>Save</Button>
-          </div>
-        )}
         {!user ? (
           <div className="flex gap-2">
             <Button onClick={() => openAccountDialog("login")}>Sign in</Button>

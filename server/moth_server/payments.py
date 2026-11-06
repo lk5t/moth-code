@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 from sqlalchemy import select
 
+from moth_server.context import public_url
 from moth_server.audit import audit
 from moth_server.billing import start_new_period
 from moth_server.context import Ctx
@@ -69,7 +70,7 @@ class StripeProvider:
         plan = self.ctx.db.one(select(plans).where(plans.c.code == plan_code))
         if not plan or plan["code"] == "free" or not plan["checkout_enabled"] or not plan["provider_price_id"]:
             raise PaymentsUnavailable("This plan is not available for purchase yet.")
-        base = self.ctx.settings.public_url
+        base = public_url(self.ctx)
         session = self._post("/v1/checkout/sessions", {
             "mode": "subscription",
             "line_items[0][price]": plan["provider_price_id"], "line_items[0][quantity]": "1",
@@ -83,7 +84,7 @@ class StripeProvider:
 
     def portal(self, customer_id: str) -> str:
         return self._post("/v1/billing_portal/sessions", {"customer": customer_id,
-                                                          "return_url": self.ctx.settings.public_url})["url"]
+                                                          "return_url": public_url(self.ctx)})["url"]
 
     def cancel_at_period_end(self, subscription_id: str) -> None:
         self._post(f"/v1/subscriptions/{subscription_id}", {"cancel_at_period_end": "true"})

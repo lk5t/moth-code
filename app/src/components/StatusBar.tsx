@@ -29,7 +29,11 @@ export function StatusBar() {
       : conn === "offline" ? "MOTH Cloud offline · retrying"
         : conn === "reconnecting" || conn === "connecting" ? "MOTH Cloud · connecting…"
           : !signedIn ? "MOTH Cloud · signed out"
-            : cloud?.available ? `MOTH Cloud · ${cloud.model?.name ?? "ready"}` : "MOTH Cloud · model not available yet";
+            : cloud?.available ? `MOTH Cloud · ${cloud.model?.name ?? "ready"}`
+              : cloud?.reason === "inference_disabled" ? "MOTH Cloud · inference turned off"
+                : cloud?.reason === "not_moth" ? "not a MOTH Cloud server"
+                  : cloud?.reason === "unreachable" ? "MOTH Cloud unreachable · retrying"
+                    : "MOTH Cloud · no model deployed yet";
   const dot = conn === "online" ? (signedIn && cloud?.available ? "bg-success" : "bg-warning")
     : conn === "offline" ? "bg-danger" : "bg-warning animate-pulse";
 
@@ -49,7 +53,8 @@ export function StatusBar() {
           Restart to update to {upd.version}
         </button>
       )}
-      <button className="flex cursor-pointer items-center gap-1.5 hover:text-fg" title="Check the connection now" onClick={() => checkNow()}>
+      <button className="flex cursor-pointer items-center gap-1.5 hover:text-fg"
+        title={cloud?.error ? `${cloud.error}\n\nClick to check again.` : "Check the connection now"} onClick={() => checkNow()}>
         <span className={cn("size-1.5 rounded-full", dot)} />
         {cloudLabel}
       </button>

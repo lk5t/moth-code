@@ -14,7 +14,7 @@ from moth_server.accounts import (
     consume_email_token, create_user, find_by_email, find_by_username, issue_email_token,
 )
 from moth_server.audit import audit
-from moth_server.context import Ctx, client_ip, get_ctx
+from moth_server.context import Ctx, client_ip, get_ctx, public_url
 from moth_server.db import now, sessions, users
 from moth_server.deps import Auth, bearer, current_auth
 from moth_server.hooks import run_hook
@@ -88,7 +88,7 @@ def public_user(u: dict, ctx: Ctx) -> dict:
     return {
         "id": u["id"], "username": u["username"], "email": u["email"], "role": u["role"],
         "display_name": u["display_name"] or u["username"], "email_verified": u["email_verified_at"] is not None,
-        "avatar_url": f"{ctx.settings.public_url}/v1/users/{u['id']}/avatar?v={hashlib.sha1(u['avatar']).hexdigest()[:8]}"
+        "avatar_url": f"{public_url(ctx)}/v1/users/{u['id']}/avatar?v={hashlib.sha1(u['avatar']).hexdigest()[:8]}"
         if u.get("avatar") else None,
         "settings": json.loads(u["settings"] or "{}"), "plan": u["plan_code"], "referral_code": u["referral_code"],
         "created_at": u["created_at"],
@@ -96,7 +96,7 @@ def public_user(u: dict, ctx: Ctx) -> dict:
 
 
 def send_verification(ctx: Ctx, user: dict, token: str) -> None:
-    link = f"{ctx.settings.public_url}/verify?token={token}"
+    link = f"{public_url(ctx)}/verify?token={token}"
     ctx.mailer.send(user["email"], "Verify your MOTH Code account",
                     f"Hi {user['username']},\n\nConfirm your email address to activate your MOTH Code account:\n\n"
                     f"{link}\n\nThis link expires in 24 hours. If you did not create an account, ignore this email.\n")
@@ -268,7 +268,7 @@ def forgot_password(body: IdentIn, request: Request, ctx: Ctx = Depends(get_ctx)
             with ctx.db.tx() as c:
                 token = issue_email_token(c, user["id"], "reset", RESET_TTL)
                 audit(ctx.db, "auth.reset_requested", user["id"], f"user:{user['id']}", conn=c)
-            link = f"{ctx.settings.public_url}/reset?token={token}"
+            link = f"{public_url(ctx)}/reset?token={token}"
             ctx.mailer.send(user["email"], "Reset your MOTH Code password",
                             f"Hi {user['username']},\n\nUse this link to choose a new password (valid for 1 hour):\n\n"
                             f"{link}\n\nIf you did not ask for this, ignore this email; your password is unchanged.\n")

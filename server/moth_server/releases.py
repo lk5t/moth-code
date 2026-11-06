@@ -87,8 +87,9 @@ def register(ctx: Ctx, manifest_bytes: bytes, signature_b64: str) -> dict:
     """Store a verified manifest and create one release row per component it contains."""
     m = verify_manifest(ctx, manifest_bytes, signature_b64)
     version = m["version"]
-    (manifest_dir(ctx) / f"{version}.json").write_bytes(manifest_bytes)
-    (manifest_dir(ctx) / f"{version}.json.sig").write_text(signature_b64.strip())
+    stem = _stem(manifest_kind(m), version)
+    (manifest_dir(ctx) / f"{stem}.json").write_bytes(manifest_bytes)
+    (manifest_dir(ctx) / f"{stem}.json.sig").write_text(signature_b64.strip())
     t = now()
     created = []
     with ctx.db.tx() as c:
@@ -112,13 +113,32 @@ def register(ctx: Ctx, manifest_bytes: bytes, signature_b64: str) -> dict:
     return {"version": version, "registered": created}
 
 
-def load_manifest(ctx: Ctx, version: str) -> tuple[dict, bytes, str] | None:
-    p = manifest_dir(ctx) / f"{version}.json"
-    if not p.exists():
-        return None
-    raw = p.read_bytes()
-    sig = (manifest_dir(ctx) / f"{version}.json.sig").read_text()
-    return json.loads(raw), raw, sig
+def manifest_kind(m: dict) -> str:
+    """'desktop' releases carry only the desktop app; everything else is a server release (cloud +
+    worker). Desktop and server releases are published and installed separately, so the same version
+    number may exist once of each kind."""
+    if m.get("kind") in ("desktop", "server"):
+        return m["kind"]
+    comps = set((m.get("components") or {}).keys())
+    return "desktop" if comps == {"desktop"} else "server"
+
+
+def _stem(kind: str, version: str) -> str:
+    return f"desktop-{version}" if kind == "desktop" else version  # server keeps the v0.3.0 file name
+
+
+def load_manifest(ctx: Ctx, version: str, component: str = "server") -> tuple[dict, bytes, str] | None:
+    """The manifest that contains ``component`` at ``version``."""
+    kinds = ("desktop", "server") if component == "desktop" else ("server",)
+    for kind in kinds:
+        p = manifest_dir(ctx) / f"{_stem(kind, version)}.json"
+        if p.exists():
+            raw = p.read_bytes()
+            m = json.loads(raw)
+            if component in (m.get("components") or {}):
+                sig = (manifest_dir(ctx) / f"{_stem(kind, version)}.json.sig").read_text()
+                return m, raw, sig
+    return None
 
 
 def _stages(m: dict, comp: str) -> list[int]:
@@ -138,7 +158,7 @@ def file_dir(ctx: Ctx, component: str, version: str) -> Path:
 
 def accept_file(ctx: Ctx, component: str, version: str, src: Path) -> Path:
     """Verify a downloaded file against the signed manifest and move it into the served area."""
-    loaded = load_manifest(ctx, version)
+    loaded = load_manifest(ctx, version, component)
     if not loaded:
         raise ReleaseError("unknown release")
     spec = (loaded[0].get("components") or {}).get(component)
@@ -166,7 +186,7 @@ def served_file(ctx: Ctx, component: str, version: str, name: str) -> Path | Non
 
 
 def files_ready(ctx: Ctx, component: str, version: str, platform: str | None = None) -> dict | None:
-    loaded = load_manifest(ctx, version)
+    loaded = load_manifest(ctx, version, component)
     if not loaded:
         return None
     spec = (loaded[0].get("components") or {}).get(component) or {}
@@ -229,7 +249,7 @@ def advance_rollouts(ctx: Ctx) -> list[dict]:
     """Move staged rollouts forward, or halt them when failures exceed the manifest's limit."""
     changes = []
     for r in ctx.db.all(select(software_releases).where(software_releases.c.status == "rolling_out")):
-        loaded = load_manifest(ctx, r["version"])
+        loaded = load_manifest(ctx, r["version"], r["component"])
         if not loaded:
             continue
         m = loaded[0]

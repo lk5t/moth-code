@@ -179,3 +179,25 @@ def put_policy(body: dict[str, Any], auth: Auth = Depends(owner_reauthed), ctx: 
     ctx.db.set_config("content_policy", engine.data)
     audit(ctx.db, "admin.policy_updated", auth.uid, "config:content_policy", {"rules": len(engine.rules)})
     return engine.data
+
+
+class PublicUrlIn(BaseModel):
+    url: str = Field(default="", max_length=300)
+
+
+@router.put("/config/public-url")
+def set_public_url(body: PublicUrlIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    """The address used in emails, referral links and worker install commands. Empty = use the
+    MOTH_SERVER_PUBLIC_URL setting. No restart needed."""
+    from urllib.parse import urlparse
+
+    from moth_server.context import public_url
+
+    url = body.url.strip().rstrip("/")
+    if url:
+        u = urlparse(url)
+        if u.scheme != "https" or not u.netloc or u.path not in ("", "/") or u.query:
+            raise HTTPException(422, "Use the server's base address with https://, e.g. https://moth.example.com")
+    ctx.db.set_config("public_url", url or None)
+    audit(ctx.db, "admin.public_url", auth.uid, "server", {"url": url or None})
+    return {"public_url": public_url(ctx), "public_url_env": ctx.settings.public_url}

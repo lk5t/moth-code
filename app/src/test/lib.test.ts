@@ -71,7 +71,7 @@ describe("normalizeServerUrl", () => {
 });
 
 import { backoffMs, versionLess } from "@/lib/connection";
-import { MOTH_ENV, developerOverride, resolveServer, setDeveloperOverride } from "@/lib/endpoint";
+import { MOTH_ENV, resolveServer, setUserServer, userServer } from "@/lib/endpoint";
 
 describe("connection", () => {
   it("backs off exponentially up to a minute", () => {
@@ -85,13 +85,13 @@ describe("connection", () => {
 });
 
 describe("endpoint", () => {
-  it("uses the environment's endpoint and honours a developer override", () => {
+  it("uses the built-in endpoint unless the user chose another address", () => {
     expect(MOTH_ENV).toBe("development"); // vitest runs in dev mode
     expect(resolveServer()).toBe("http://127.0.0.1:8900");
-    setDeveloperOverride("http://127.0.0.1:9999");
-    expect(developerOverride()).toBe("http://127.0.0.1:9999");
-    expect(resolveServer()).toBe("http://127.0.0.1:9999");
-    setDeveloperOverride(null);
+    setUserServer("https://proceed-presently.trycloudflare.com");
+    expect(userServer()).toBe("https://proceed-presently.trycloudflare.com");
+    expect(resolveServer()).toBe("https://proceed-presently.trycloudflare.com");
+    setUserServer(null);
     expect(resolveServer()).toBe("http://127.0.0.1:8900");
   });
 });

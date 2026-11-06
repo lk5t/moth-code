@@ -141,3 +141,32 @@ def test_desktop_api_cloud_only(paths, project):
         st = c.get("/api/cloud/status", headers=H).json()
         assert st["signed_in"] and st["available"] is False
         assert c.get("/api/policy", headers=H).status_code == 404  # policy lives on the MOTH Server
+
+
+def test_cloud_status_explains_why_nothing_is_served():
+    import httpx
+
+    from moth.inference.cloud import MothCloudClient, CloudUnavailable
+
+    def server(health):
+        return httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(200, json=health)))
+
+    new = {"service": "moth-cloud", "protocol": 1, "models": [], "status": "inference_disabled",
+           "message": "A model is deployed, but MOTH Cloud inference is turned off."}
+    try:
+        MothCloudClient("https://moth.test", http=server(new)).health()
+        raise AssertionError("expected CloudUnavailable")
+    except CloudUnavailable as e:
+        assert e.reason == "inference_disabled" and "turned off" in str(e)
+    old = {"service": "moth-cloud", "protocol": 1, "models": []}  # a v0.3.0 server sends no reason
+    try:
+        MothCloudClient("https://moth.test", http=server(old)).health()
+        raise AssertionError("expected CloudUnavailable")
+    except CloudUnavailable as e:
+        assert e.reason == "no_model_deployed" and "Owner Dashboard" in str(e)
+    tunnel_down = httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(530, text="<html>")))
+    try:
+        MothCloudClient("https://x.trycloudflare.com", http=tunnel_down).health()
+        raise AssertionError("expected CloudUnavailable")
+    except CloudUnavailable as e:
+        assert e.reason == "unreachable" and "tunnel" in str(e)

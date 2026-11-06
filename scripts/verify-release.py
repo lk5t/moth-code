@@ -80,6 +80,18 @@ def main() -> int:
         p = d / e["file"]
         check(p.exists() and sha256(p) == e["sha256"] and p.stat().st_size == e["size"],
               f"{comp}: {e['file']} matches SHA-256 {e['sha256'][:16]}… and size {e['size']}")
+    kind = m.get("kind") or ("desktop" if set(comps) == {"desktop"} else "server")
+    print(f"kind: {kind} release")
+    if kind == "desktop":
+        check(set(comps) == {"desktop"}, "desktop release contains only the desktop app")
+        for plat, e in comps["desktop"].items():
+            check(bool(e.get("signature")), f"desktop/{plat}: carries the updater signature")
+            sigf = d / f"{e['file']}.sig"
+            check(sigf.exists() and sigf.read_text().strip() == e["signature"].strip(),
+                  f"desktop/{plat}: {sigf.name} matches the signature in the manifest")
+            check(e.get("version") == v and f"_{v}_" in e["file"], f"desktop/{plat}: installer is version {v}")
+        print("PASS" if not problems else f"FAILED: {len(problems)} problem(s)")
+        return 0 if not problems else 1
     check("server" in comps, "manifest contains the cloud server bundle")
     bundle = d / comps["server"]["file"]
     if bundle.exists():

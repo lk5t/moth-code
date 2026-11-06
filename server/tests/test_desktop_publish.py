@@ -114,3 +114,28 @@ def test_publish_errors_are_clear(client, settings, world):
     with pytest.raises(PublishError) as e:
         p.start(fresh.name)
     assert e.value.status == 428
+
+
+def test_upload_shows_a_retry_notice_during_interruptions(client, settings, world):
+    """Tunnel-style failures (HTTP 524 pages, dropped connections) are retried, and the user sees why."""
+    notices = []
+
+    class Tunnel(Flaky):
+        def request(self, method, url, **kw):
+            if method == "PUT" and "/chunks/" in url:
+                self.puts += 1
+                if self.puts == 2:
+                    return httpx.Response(524, text="<html>Error 524 A timeout occurred | Cloudflare</html>")
+                if self.puts == 4:
+                    raise httpx.RemoteProtocolError("peer closed connection")
+            return self.client.request(method, url, **kw)
+
+    p = Publisher(world["models"], world["cache"], MemDB(), lambda: world["acct"], http=Tunnel(client, None),
+                  sleep=lambda s: notices.append(p.state[world["id"]].get("notice")))
+    p.start(world["id"])
+    p._threads[world["id"]].join(60) if world["id"] in p._threads else None
+    job = next(j for j in p.status() if j["model_id"] == world["id"])
+    assert job["stage"] == "published", job
+    assert any("HTTP 524" in (n or "") and "retrying in" in n for n in notices), notices
+    assert any("connection to MOTH Cloud dropped" in (n or "") for n in notices), notices
+    assert not job.get("notice")  # cleared once the request succeeded

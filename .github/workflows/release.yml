@@ -1,19 +1,18 @@
-name: Release
+name: Desktop release
 
-# One approved release = one signed set of artifacts for every component:
-#   tests (full CI) → Windows desktop installer + signed updater artifacts → cloud bundle + worker bundle →
-#   signed release manifest → GitHub release.
-# MOTH Cloud's update agent picks the release up from here, verifies the signature, updates the
-# server, and distributes the desktop and worker updates to clients in stages. Nothing is deployed
-# from arbitrary commits: only this workflow, started by the Owner, produces signed releases.
+# Publishes MOTH Code for Windows, separately from server releases (server-release.yml):
+#   full CI → Windows auto-update end-to-end test → installer + signed updater artifacts →
+#   signed desktop manifest → GitHub release "desktop-vX.Y.Z".
+# The MOTH Cloud update agent relays the release to the server, which offers it to desktops in stages;
+# desktops download, verify and install it themselves. It never changes the server itself.
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (must match the version in the code, e.g. v0.3.0)"
+        description: "Desktop release tag (must match the app version, e.g. desktop-v0.3.1)"
         required: true
-        default: "v0.3.0"
+        default: "desktop-v0.3.1"
       channel:
         description: "Update channel"
         required: true
@@ -32,8 +31,12 @@ jobs:
   tests:
     uses: ./.github/workflows/ci.yml
 
-  windows:
+  update-test:
     needs: tests
+    uses: ./.github/workflows/desktop-update-test.yml
+
+  windows:
+    needs: update-test
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
@@ -116,24 +119,21 @@ jobs:
         with:
           name: desktop
           path: desktop
-      - name: Build cloud and worker bundles and the signed release manifest
+      - name: Signed desktop release manifest
         env:
           MOTH_RELEASE_SIGNING_KEY: ${{ secrets.MOTH_RELEASE_SIGNING_KEY }}
         run: |
           EXE="$(ls desktop/*-setup.exe | head -1)"
-          ARGS=(--out dist --channel "$RELEASE_CHANNEL" --notes "MOTH ${RELEASE_TAG#v}")
-          if [ -f "$EXE.sig" ]; then ARGS+=(--desktop "$EXE"); else echo "::warning::desktop installer is not signed for updates; it is attached for manual installation only"; fi
-          python scripts/build-release.py "${ARGS[@]}"
-          [ -f "$EXE.sig" ] || cp "$EXE" "dist/$(basename "$EXE" | tr ' ' '.')"  # unsigned: manual install only
-          ls -la dist
-      - name: Publish the GitHub release
+          [ -f "$EXE.sig" ] || { echo "::error::the installer has no updater signature (TAURI_SIGNING_PRIVATE_KEY secret)"; exit 1; }
+          python scripts/build-release.py --kind desktop --desktop "$EXE" --out dist --channel "$RELEASE_CHANNEL" --notes "MOTH Code ${RELEASE_TAG#desktop-v}"
+          python scripts/verify-release.py dist
+          cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - name: Publish the GitHub release (never replaces an existing one)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          sed "s|__REF__|${RELEASE_TAG}|g" .github/release-notes.md > notes.md
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then echo "::error::release $RELEASE_TAG already exists"; exit 1; fi
+          V="${RELEASE_TAG#desktop-v}"
+          sed "s|__REF__|${RELEASE_TAG}|g; s|__VERSION__|${V}|g" .github/desktop-release-notes.md > notes.md
           PRE=""; [ "$RELEASE_CHANNEL" != "stable" ] && PRE="--prerelease"
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" dist/* --clobber
-          else
-            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" $PRE --title "MOTH Code ${RELEASE_TAG}" --notes-file notes.md dist/*
-          fi
+          gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" $PRE --title "MOTH Code ${V} (desktop)" --notes-file notes.md dist/*

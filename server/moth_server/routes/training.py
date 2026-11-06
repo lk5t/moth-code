@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from moth_server import training as T
 from moth_server.audit import audit
+from moth_server.context import public_url
 from moth_server.context import Ctx, get_ctx
 from moth_server.db import now, training_jobs, workers
 from moth_server.deps import Auth, bearer, current_auth
@@ -65,7 +66,7 @@ def worker_release(ctx: Ctx) -> dict | None:
     data = json.loads(m.read_text())
     if not (ctx.settings.storage_dir / "worker" / data["file"]).exists():
         return None
-    return {**data, "url": f"{ctx.settings.public_url}/downloads/worker/{data['file']}"}
+    return {**data, "url": f"{public_url(ctx)}/downloads/worker/{data['file']}"}
 
 
 def install_command(ctx: Ctx, release: dict, token: str) -> str:
@@ -73,7 +74,7 @@ def install_command(ctx: Ctx, release: dict, token: str) -> str:
     d = shlex.quote(release["file"].removesuffix(".tar.gz"))
     return (f"curl -fsSLO {shlex.quote(release['url'])} && "
             f"echo '{release['sha256']}  {release['file']}' | sha256sum -c - && "
-            f"tar xzf {f} && ./{d}/install.sh --server {shlex.quote(ctx.settings.public_url)} --token {shlex.quote(token)}")
+            f"tar xzf {f} && ./{d}/install.sh --server {shlex.quote(public_url(ctx))} --token {shlex.quote(token)}")
 
 
 # ---- users -------------------------------------------------------------------------------------
@@ -92,7 +93,7 @@ def new_enrollment(body: EnrollmentIn, auth: Auth = Depends(current_auth), ctx: 
         "token": token, "expires_at": now() + T.ENROLL_TTL, "single_use": True,
         "release": release,
         "command": install_command(ctx, release, token) if release else None,
-        "manual_command": f"moth-worker enroll --server {ctx.settings.public_url} --token {token}",
+        "manual_command": f"moth-worker enroll --server {public_url(ctx)} --token {token}",
         "note": None if release else "No MOTH Worker release is published on this server yet; install from source "
                                      "(see docs/WORKER.md) and run the manual command.",
     }

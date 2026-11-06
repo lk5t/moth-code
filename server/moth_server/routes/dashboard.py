@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import desc, func, or_, select
 
 from moth_server import billing, models as M, training as T
+from moth_server.context import public_url
 from moth_server.context import Ctx, get_ctx
 from moth_server.db import (
     audit_log, credit_ledger, model_releases, referral_rewards, sessions, subscriptions, training_jobs, usage_events,
@@ -94,7 +95,7 @@ def overview(request: Request, auth: Auth = Depends(require_owner), ctx: Ctx = D
             "storage_bytes": dir_size(ctx.settings.storage_dir),
             "coordinator_bytes": dir_size(T.coordinator_root(ctx)),
             "disk_free_bytes": disk.free, "disk_total_bytes": disk.total,
-            "email": ctx.mailer.mode, "public_url": ctx.settings.public_url,
+            "email": ctx.mailer.mode, "public_url": public_url(ctx), "public_url_env": ctx.settings.public_url,
             "pid": os.getpid(),
         },
         "feature_flags": flags(ctx),

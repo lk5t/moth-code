@@ -72,23 +72,30 @@ class Publisher:
                    **kw.pop("headers", {})}
         return self.http.request(method, acct["server_url"].rstrip("/") + path, headers=headers, **kw)
 
-    def _call(self, method: str, path: str, retries: bool = True, **kw) -> httpx.Response:
-        """Request with retries on network errors and 5xx; 4xx are returned to the caller."""
+    def _call(self, method: str, path: str, retries: bool = True, job: str | None = None, **kw) -> httpx.Response:
+        """Request with retries on network errors and 5xx; 4xx are returned to the caller. With ``job``,
+        the job shows a short "interrupted — retrying" notice while it waits."""
         last: Exception | None = None
         for delay in (*RETRY_DELAYS, None) if retries else (None,):
             try:
                 r = self._req(method, path, **kw)
                 if r.status_code < 500:
+                    if job and self.state.get(job, {}).get("notice"):
+                        self._update(job, notice=None)
                     return r
                 last = PublishError(r.status_code, _detail(r))
             except httpx.HTTPError as e:
-                last = e
+                last = e  # network drop, tunnel reset, timeout: retried with backoff
             if delay is None:
                 break
+            if job:
+                why = str(last) if isinstance(last, PublishError) else "the connection to MOTH Cloud dropped"
+                self._update(job, notice=f"{why.split('. ')[0].rstrip('.')} — retrying in {delay} s")
             self.sleep(delay)
         if isinstance(last, PublishError):
             raise last
-        raise PublishError(503, f"MOTH Cloud could not be reached ({last}). The upload will resume when it is back.")
+        raise PublishError(503, "MOTH Cloud could not be reached after several attempts "
+                                f"({type(last).__name__}). The upload is paused and resumes automatically.")
 
     def _persist(self) -> None:
         keep = {k: {f: v[f] for f in ("model_id", "upload_id", "tar", "sha256", "size", "name", "release_version",
@@ -165,6 +172,20 @@ class Publisher:
         self._spawn(model_id)
         return self.state[model_id]
 
+    def start_auto_resume(self, every_s: float = 60.0) -> None:
+        """Retry paused uploads in the background (e.g. after a tunnel or network outage)."""
+        def loop() -> None:
+            while True:
+                time.sleep(every_s)
+                try:
+                    acct = self.account() or {}
+                    if acct.get("token") and (acct.get("user") or {}).get("role") == "owner":
+                        self.resume_pending()
+                except Exception:  # noqa: BLE001 — never let the loop die
+                    pass
+
+        threading.Thread(target=loop, name="publish-auto-resume", daemon=True).start()
+
     def resume_pending(self) -> list[str]:
         """Continue uploads that were interrupted (e.g. the app was closed)."""
         resumed = []
@@ -200,7 +221,7 @@ class Publisher:
         tar = Path(job["tar"])
         if not tar.exists() or _sha256(tar) != job["sha256"]:
             raise PublishError(409, "The local upload file changed or was removed; start publishing again.")
-        r = self._call("GET", f"/v1/admin/models/uploads/{job['upload_id']}")
+        r = self._call("GET", f"/v1/admin/models/uploads/{job['upload_id']}", job=model_id)
         if r.status_code == 404:
             raise PublishError(404, "The interrupted upload expired on MOTH Cloud; start publishing again.")
         status = r.json()
@@ -211,8 +232,8 @@ class Publisher:
                 f.seek(i * cs)
                 chunk = f.read(cs)
                 r = self._call("PUT", f"/v1/admin/models/uploads/{job['upload_id']}/chunks/{i}", content=chunk,
-                               headers={"X-Chunk-Sha256": hashlib.sha256(chunk).hexdigest(),
-                                        "Content-Type": "application/octet-stream"})
+                               job=model_id, headers={"X-Chunk-Sha256": hashlib.sha256(chunk).hexdigest(),
+                                                      "Content-Type": "application/octet-stream"})
                 if r.status_code == 422:  # damaged in transit: one more try, then give up clearly
                     r = self._call("PUT", f"/v1/admin/models/uploads/{job['upload_id']}/chunks/{i}", content=chunk,
                                    headers={"X-Chunk-Sha256": hashlib.sha256(chunk).hexdigest(),
@@ -222,7 +243,7 @@ class Publisher:
                 done += 1
                 self._update(model_id, progress=done / status["chunks"])
         self._update(model_id, stage="processing", progress=1.0)
-        r = self._call("POST", f"/v1/admin/models/uploads/{job['upload_id']}/complete", timeout=600)
+        r = self._call("POST", f"/v1/admin/models/uploads/{job['upload_id']}/complete", job=model_id, timeout=600)
         if r.status_code >= 400:
             raise PublishError(r.status_code, _detail(r))
         rel = r.json()["release"]
@@ -266,8 +287,18 @@ def _stage_for(server_status: str) -> str:
 
 
 def _detail(r: httpx.Response) -> str:
+    """A readable error, also for responses from a proxy or tunnel in front of MOTH Cloud (HTML pages)."""
+    code = r.status_code
     try:
         d = r.json().get("detail")
-        return d if isinstance(d, str) else json.dumps(d)
+        if d:
+            return d if isinstance(d, str) else json.dumps(d)
     except ValueError:
-        return r.text[:300] or f"HTTP {r.status_code}"
+        pass
+    if code == 413:
+        return ("An upload chunk was rejected as too large (HTTP 413) by a proxy in front of MOTH Cloud. Allow request "
+                "bodies of at least 16 MB there (the MOTH Caddyfile allows 64 MB).")
+    if code in (502, 503, 504, 520, 521, 522, 523, 524, 530):
+        return (f"The connection to MOTH Cloud was interrupted (HTTP {code} from the proxy or tunnel in front of the "
+                "server). The upload resumes automatically from the last completed chunk.")
+    return f"MOTH Cloud answered with HTTP {code}."

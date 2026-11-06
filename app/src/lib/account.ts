@@ -10,7 +10,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri, put } from "./backend";
 import { createStore } from "./store";
-import { CLIENT_HEADER, hasOfficialServer, rememberLegacyServer, resolveServer, setDeveloperOverride } from "./endpoint";
+import { CLIENT_HEADER, officialServer, resolveServer, setUserServer } from "./endpoint";
 
 export interface MothUser {
   id: number;
@@ -221,14 +221,80 @@ export function normalizeServerUrl(input: string): string {
   return u.origin + path;
 }
 
-/** Developer/testing only when the build has an official endpoint; otherwise the address the
- *  user was given. Pass "" to clear a developer override. */
+/** Use another MOTH Cloud address (Settings → Connection or the sign-in screen). Pass "" to return to
+ *  the built-in default. */
 export function setServerUrl(url: string) {
   const clean = url ? normalizeServerUrl(url) : "";
-  if (hasOfficialServer()) setDeveloperOverride(clean || null);
-  else rememberLegacyServer(clean);
+  setUserServer(clean || null);
   accountStore.setState({ serverUrl: clean || normalizeServerUrl(resolveServer()) });
   syncBackend();
+}
+
+export interface ServerProbe {
+  ok: boolean;
+  url: string;
+  version?: string;
+  apiVersion?: number | null;
+  error?: string;
+}
+
+/** Check that an address really is a MOTH Cloud server before using it. */
+export async function probeServer(input: string): Promise<ServerProbe> {
+  let url: string;
+  try {
+    url = normalizeServerUrl(input);
+  } catch (e) {
+    return { ok: false, url: input, error: (e as Error).message };
+  }
+  if (!url) return { ok: false, url, error: "Enter an address, e.g. https://moth.example.com" };
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 12000);
+  try {
+    const r = await fetch(`${url}/v1/health`, { headers: { "X-Moth-Client": CLIENT_HEADER }, signal: ctl.signal });
+    const h = await r.json().catch(() => null);
+    if (!r.ok || !h || h.service !== "moth-server") {
+      return { ok: false, url, error: `${url} answered, but it isn't a MOTH Cloud server (HTTP ${r.status}).` };
+    }
+    return { ok: true, url, version: h.version, apiVersion: h.api_version ?? null };
+  } catch (e) {
+    const aborted = (e as Error).name === "AbortError";
+    return { ok: false, url, error: aborted ? `${url} did not answer within 12 seconds.` :
+      `Can't connect to ${url}. Check the address, that HTTPS works for it, and that the server is running.` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Switch to another address for the same or a different MOTH Cloud. If the current session is valid
+ *  there (same server reached through a different address), the user stays signed in and the saved
+ *  account moves to the new address; otherwise they are asked to sign in on the new server. */
+export async function switchServer(input: string): Promise<{ keptSession: boolean }> {
+  const s = accountStore.getState();
+  const target = input ? normalizeServerUrl(input) : "";
+  const newUrl = target || normalizeServerUrl(officialServer());
+  if (!newUrl) throw new ServerError(0, "This build has no default MOTH Cloud address; enter one.");
+  let keptSession = false;
+  if (s.token) {
+    try {
+      const user = await serverApi<MothUser>("/v1/me", { server: newUrl, token: s.token, retries: 0 });
+      keptSession = true;
+      const old = s.accounts.find((a) => accountKey(a.server, a.username) === s.activeKey);
+      if (old && accountKey(old.server, old.username) !== accountKey(newUrl, old.username)) {
+        await vaultRemember({ ...old, server: newUrl, last_used: Date.now() / 1000 }, s.token);
+        const f = await vaultSignOut(accountKey(old.server, old.username), true);
+        accountStore.setState({ accounts: f.accounts, activeKey: accountKey(newUrl, old.username) });
+        const fresh = await vaultLoad();
+        accountStore.setState({ accounts: fresh.accounts });
+      }
+      accountStore.setState({ user });
+    } catch {
+      keptSession = false;
+    }
+  }
+  setServerUrl(target);
+  if (s.token && !keptSession) accountStore.setState({ user: null, token: null, activeKey: null });
+  await syncBackend();
+  return { keptSession };
 }
 
 const REFRESH_EVERY_MS = 24 * 3600 * 1000;

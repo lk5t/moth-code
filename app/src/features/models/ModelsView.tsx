@@ -35,6 +35,8 @@ interface PublishJob {
   message?: string;
   resumed?: boolean;
   active?: boolean;
+  notice?: string | null;
+  size?: number;
   evaluation?: { passed?: boolean; reason?: string; score?: { metric: string; value: number }; dataset?: { name: string }; guidance?: string; note?: string };
 }
 interface Validation { ok: boolean; problems: string[]; info: Record<string, any> }
@@ -73,7 +75,16 @@ function PublishStatus({ job }: { job?: PublishJob }) {
         {job.release_version && <span className="text-faint">· release v{job.release_version}</span>}
         {job.resumed && job.stage === "uploading" && <span className="text-faint">· resumed</span>}
       </div>
-      {job.stage === "uploading" && <Progress value={(job.progress ?? 0) * 100} />}
+      {job.stage === "uploading" && (
+        <>
+          <Progress value={(job.progress ?? 0) * 100} />
+          <div className="text-muted">
+            {Math.round((job.progress ?? 0) * 100)}%{job.size ? ` of ${formatNumber(job.size, 1)}B` : ""} · interrupted
+            uploads continue from the last completed chunk
+          </div>
+        </>
+      )}
+      {job.notice && <div className="text-warning">{job.notice}</div>}
       {job.evaluation?.score && (
         <div className="text-muted">
           Score {job.evaluation.score.value.toFixed(3)} {job.evaluation.score.metric === "bits_per_byte" ? "bits/byte" : "loss"} on {job.evaluation.dataset?.name}

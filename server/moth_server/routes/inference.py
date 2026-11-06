@@ -47,11 +47,20 @@ def engine_or_503(ctx: Ctx):
 @router.get("/health")
 def health(ctx: Ctx = Depends(get_ctx)):
     engine = ctx.extras.get("inference_engine")
+    enabled = bool(flags(ctx).get("cloud_inference_enabled"))
     models = []
-    if flags(ctx).get("cloud_inference_enabled") and engine is not None and engine.manifest:
+    if engine is None or not engine.manifest:
+        status, message = "no_model_deployed", ("No AI model is deployed on MOTH Cloud yet. The Owner deploys one in "
+                                                 "Owner Dashboard → AI models.")
+    elif not enabled:
+        status, message = "inference_disabled", ("A model is deployed, but MOTH Cloud inference is turned off. The Owner "
+                                                 "turns it on in Owner Dashboard → Policy & flags.")
+    else:
+        status, message = "ready", "ready"
         m = engine.manifest
         models.append({k: m.get(k) for k in ("name", "architecture", "params", "context_length", "sha256")})
-    return {"service": "moth-cloud", "protocol": 1, "models": models, "metered": True}
+    return {"service": "moth-cloud", "protocol": 1, "models": models, "metered": True, "status": status,
+            "message": message}
 
 
 @router.post("/chat")

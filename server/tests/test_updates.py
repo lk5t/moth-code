@@ -175,22 +175,22 @@ def test_worker_update_waits_for_job_and_verifies(client, signed, training_world
                      log=lambda m: None, heartbeat_seconds=3600, update_check_seconds=0)
     r.beat()
     job = client.post("/v1/worker/jobs/claim", headers=H(w["worker_token"])).json()
-    bundle = worker_bundle(tmp_path, "0.3.1")
-    raw, sig = release(tmp_path, s["key"], "0.3.1", worker=bundle, rollout={"worker": {"stages": [100]}})
+    bundle = worker_bundle(tmp_path, "0.3.9")
+    raw, sig = release(tmp_path, s["key"], "0.3.9", worker=bundle, rollout={"worker": {"stages": [100]}})
     register(client, s, raw, sig, [("worker", bundle)])
     # the job in progress completes and is accepted first …
     assert r.run_job(job)["accepted"]
     # … then the verified update is installed side by side
-    assert r.maybe_update() and r.updated_to == "0.3.1"
-    assert (home / "current").resolve() == (home / "versions" / "0.3.1")
-    assert json.loads((home / "update-pending.json").read_text())["version"] == "0.3.1"
+    assert r.maybe_update() and r.updated_to == "0.3.9"
+    assert (home / "current").resolve() == (home / "versions" / "0.3.9")
+    assert json.loads((home / "update-pending.json").read_text())["version"] == "0.3.9"
     # a tampered offer is refused and reported, and the worker keeps running its version
     info = client.get("/v1/worker/update", headers=H(w["worker_token"])).json()["update"]
     info["signature"] = TestKey().sign(base64.b64decode(info["manifest"]))
     with pytest.raises(updater.UpdateError, match="signature"):
         updater.apply(info, tmp_path / "other-home", r.client.download_file)
     # a new version that fails to start three times is reverted automatically
-    (home / "update-pending.json").write_text(json.dumps({"version": "0.3.1", "from": "0.3.0", "attempts": 3}))
+    (home / "update-pending.json").write_text(json.dumps({"version": "0.3.9", "from": "0.3.0", "attempts": 3}))
     (home / "previous").unlink(missing_ok=True)
     reverted = updater.startup_guard(home, log=lambda m: None)
     assert reverted["reverted"] and not (home / "current").exists()
@@ -214,3 +214,61 @@ def test_stdlib_verifier_copies_are_identical_and_correct():
     pubs = {(root / p).read_text().strip() for p in ("deploy/agent/release-signing.pub",
                                                      "worker/moth_worker/release-signing.pub")}
     assert len(pubs) == 1 and len(base64.b64decode(pubs.pop())) == 32
+
+
+def test_desktop_and_server_releases_are_separate(client, signed):
+    """A desktop-only release and a server release may share a version; each serves only its parts."""
+    s = signed
+    out = s["out"]
+    wb = worker_bundle(out, "0.3.1")
+    raw_s, sig_s = release(out, s["key"], "0.3.1", worker=wb, rollout={"worker": {"stages": [100]}})
+    register(client, s, raw_s, sig_s, [("worker", wb)])
+    raw_d, sig_d = release(out, s["key"], "0.3.1", desktop=True, extra={"kind": "desktop"},
+                           rollout={"desktop": {"stages": [100]}})
+    register(client, s, raw_d, sig_d, [("desktop", out / "MOTH.Code_0.3.1_x64-setup.exe")])
+    files = sorted(p.name for p in (s["ctx"].settings.releases_dir / "manifests").iterdir())
+    assert "0.3.1.json" in files and "desktop-0.3.1.json" in files  # the server manifest is not overwritten
+    assert R.load_manifest(s["ctx"], "0.3.1", "worker")[0]["components"]["worker"]
+    assert R.load_manifest(s["ctx"], "0.3.1", "desktop")[0]["kind"] == "desktop"
+    assert R.manifest_kind(json.loads(raw_d)) == "desktop" and R.manifest_kind(json.loads(raw_s)) == "server"
+    d = client.get("/v1/updates/desktop/windows/x86_64/0.3.0", headers={"X-Moth-Install-Id": "a"})
+    assert d.status_code == 200 and d.json()["version"] == "0.3.1"
+    comps = {(r["component"], r["version"]) for r in R.list_releases(s["ctx"])}
+    assert {("worker", "0.3.1"), ("desktop", "0.3.1")} <= comps and ("server", "0.3.1") not in comps
+
+
+def test_update_links_follow_the_address_the_client_used(client, signed):
+    """Behind a tunnel (e.g. *.trycloudflare.com) the configured public URL may not work yet: update
+    downloads must point at the address the request came through."""
+    s = signed
+    raw, sig = release(s["out"], s["key"], "0.3.1", desktop=True, rollout={"desktop": {"stages": [100]}})
+    register(client, s, raw, sig, [("desktop", s["out"] / "MOTH.Code_0.3.1_x64-setup.exe")])
+    url = "/v1/updates/desktop/windows/x86_64/0.3.0"
+    tunnel = {"X-Forwarded-Proto": "https", "Host": "proceed-presently-threshold-relatively.trycloudflare.com"}
+    assert client.get(url, headers=tunnel).json()["url"].startswith("https://moth.test/")  # proxy not trusted
+    s["ctx"].settings.trust_proxy_headers = True
+    body = client.get(url, headers=tunnel).json()
+    assert body["url"].startswith("https://proceed-presently-threshold-relatively.trycloudflare.com/v1/updates/files/")
+    # a loopback Host (proxy that rewrites Host) falls back to the configured address
+    assert client.get(url, headers={"X-Forwarded-Proto": "https", "Host": "127.0.0.1:8900"}).json()["url"].startswith(
+        "https://moth.test/")
+
+
+def test_owner_can_change_the_public_address(client, signed, settings):
+    s = signed
+    user = register_verified(client, settings, "pub_url_user")["token"]
+    assert client.put("/v1/admin/config/public-url", json={"url": "https://x.example"}, headers=H(user)).status_code == 403
+    bad = client.put("/v1/admin/config/public-url", json={"url": "http://insecure.example"}, headers=s["o"])
+    assert bad.status_code == 422
+    r = client.put("/v1/admin/config/public-url", json={"url": "https://mothcloud.example.net/"}, headers=s["o"])
+    assert r.json()["public_url"] == "https://mothcloud.example.net"
+    e = client.post("/v1/training/enrollments", json={"name": "w"}, headers=H(user)).json()
+    assert "https://mothcloud.example.net" in e["manual_command"]
+    assert client.get("/v1/admin/overview", headers=s["o"]).json()["system"]["public_url"] == "https://mothcloud.example.net"
+    client.put("/v1/admin/config/public-url", json={"url": ""}, headers=s["o"])
+    assert client.get("/v1/admin/overview", headers=s["o"]).json()["system"]["public_url"] == "https://moth.test"
+
+
+def test_cloud_health_explains_why_nothing_is_served(client, signed):
+    h = client.get("/cloud/v1/health").json()
+    assert h["models"] == [] and h["status"] == "no_model_deployed" and "Owner Dashboard" in h["message"]

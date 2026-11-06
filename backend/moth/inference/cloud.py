@@ -33,7 +33,24 @@ MOTH_ARCHITECTURES = {"moth-decoder-v1"}
 
 
 class CloudUnavailable(RuntimeError):
-    pass
+    """``reason``: unreachable | not_moth | no_model_deployed | inference_disabled | …"""
+
+    reason = "unreachable"
+
+
+def _explain(e: Exception) -> str:
+    """A readable reason for a failed request (the address, TLS, a proxy or tunnel, or the server)."""
+    if isinstance(e, httpx.HTTPStatusError):
+        code = e.response.status_code
+        if code in (502, 503, 504, 520, 521, 522, 523, 524, 530):
+            return (f"MOTH Cloud's address answered with HTTP {code}: the proxy or tunnel in front of the server "
+                    "can't reach it right now. MOTH Code keeps retrying.")
+        return f"MOTH Cloud answered with HTTP {code}."
+    if isinstance(e, httpx.ConnectError) and "SSL" in str(e).upper():
+        return "MOTH Cloud's HTTPS certificate could not be verified for this address."
+    if isinstance(e, httpx.TimeoutException):
+        return "MOTH Cloud did not answer in time. MOTH Code keeps retrying."
+    return f"MOTH Cloud endpoint unreachable: {e}"
 
 
 class MothCloudClient:
@@ -60,14 +77,22 @@ class MothCloudClient:
             r.raise_for_status()
             data = r.json()
         except (httpx.HTTPError, ValueError) as e:
-            raise CloudUnavailable(f"MOTH Cloud endpoint unreachable: {e}") from None
+            err = CloudUnavailable(_explain(e))
+            err.reason = "unreachable"
+            raise err from None
         if data.get("service") != "moth-cloud" or data.get("protocol") != PROTOCOL:
-            raise CloudUnavailable("endpoint is not a MOTH Cloud server (protocol mismatch)")
+            err = CloudUnavailable("endpoint is not a MOTH Cloud server (protocol mismatch)")
+            err.reason = "not_moth"
+            raise err
         bad = [m.get("name") for m in data.get("models", []) if m.get("architecture") not in MOTH_ARCHITECTURES]
         if bad:
             raise CloudUnavailable(f"server offers non-MOTH models {bad}; refusing to use it")
         if not data.get("models"):
-            raise CloudUnavailable("MOTH Cloud server has no models loaded")
+            err = CloudUnavailable(data.get("message") or (
+                "MOTH Cloud is connected but has no model serving yet: either no model is deployed or inference is "
+                "turned off. The Owner fixes this in Owner Dashboard → AI models and → Policy & flags."))
+            err.reason = data.get("status") or "no_model_deployed"
+            raise err
         self._health = data
         return data
 

@@ -9,6 +9,8 @@ export interface CloudStatus {
   available: boolean;
   model?: { name: string; params?: number; context_length?: number };
   error?: string;
+  /** why it isn't available: unreachable | not_moth | no_model_deployed | inference_disabled */
+  reason?: string;
 }
 
 export function useCloudStatus(pollMs = 60000) {

@@ -1,0 +1,162 @@
+name: Desktop auto-update test (Windows)
+
+# End-to-end proof of the Windows auto-updater with real installers, a real MOTH Server and the real
+# NSIS install: build version A and a newer version B (signed with throw-away test keys), publish B
+# on a MOTH Server the way the cloud update agent does, install A, start it, and verify that A
+# detects, downloads, signature-checks and installs B by itself, that B starts and reports a
+# successful update, and that user data is preserved. Test builds differ from releases only in that
+# they talk to a loopback http:// server and install a downloaded update without waiting for a click.
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  update:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      NEW_VERSION: "0.3.99"
+      SERVER: "http://127.0.0.1:8900"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the MOTH Server (no PyTorch needed for update serving)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy fastapi uvicorn httpx sqlalchemy argon2-cffi cryptography python-multipart websockets
+          python -m pip install --no-deps -e ./backend -e ./server
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - run: npm ci
+        working-directory: app
+
+      - name: Throw-away signing keys (never the production keys)
+        shell: pwsh
+        run: |
+          cd app
+          npx tauri signer generate -w "$env:RUNNER_TEMP\upd.key" -p test-password --ci
+          python -c "import base64;from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey as K;from cryptography.hazmat.primitives import serialization as S;k=K.generate();open(r'$env:RUNNER_TEMP\rel.key','w').write(base64.b64encode(k.private_bytes(S.Encoding.Raw,S.PrivateFormat.Raw,S.NoEncryption())).decode());open(r'$env:RUNNER_TEMP\rel.pub','w').write(base64.b64encode(k.public_key().public_bytes(S.Encoding.Raw,S.PublicFormat.Raw)).decode())"
+
+      - name: Build version A (current)
+        shell: pwsh
+        env:
+          MOTH_UPDATE_TEST_BUILD: "1"
+          MOTH_SKIP_BACKEND_BUNDLE: "1"
+          MOTH_CLOUD_URL: ${{ env.SERVER }}
+          HAS_SIGNING_KEY: "true"
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: test-password
+        run: |
+          $env:TAURI_UPDATER_PUBKEY = Get-Content -Raw "$env:RUNNER_TEMP\upd.key.pub"
+          $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw "$env:RUNNER_TEMP\upd.key"
+          node scripts/prepare-release.mjs
+          cd app
+          npx tauri build --config src-tauri/tauri.release.conf.json
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\A" | Out-Null
+          Copy-Item src-tauri/target/release/bundle/nsis/*-setup.exe "$env:RUNNER_TEMP\A\"
+          Get-ChildItem "$env:RUNNER_TEMP\A"
+
+      - name: Build version B (newer)
+        shell: pwsh
+        env:
+          MOTH_UPDATE_TEST_BUILD: "1"
+          MOTH_SKIP_BACKEND_BUNDLE: "1"
+          MOTH_CLOUD_URL: ${{ env.SERVER }}
+          HAS_SIGNING_KEY: "true"
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: test-password
+        run: |
+          python scripts/desktop-update-harness.py bump $env:NEW_VERSION
+          $env:TAURI_UPDATER_PUBKEY = Get-Content -Raw "$env:RUNNER_TEMP\upd.key.pub"
+          $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw "$env:RUNNER_TEMP\upd.key"
+          node scripts/prepare-release.mjs
+          cd app
+          Remove-Item -Recurse -Force src-tauri/target/release/bundle/nsis -ErrorAction SilentlyContinue
+          npx tauri build --config src-tauri/tauri.release.conf.json
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\B" | Out-Null
+          Copy-Item src-tauri/target/release/bundle/nsis/*-setup.exe* "$env:RUNNER_TEMP\B\"
+          Get-ChildItem "$env:RUNNER_TEMP\B"
+
+      - name: Signed desktop release manifest for B
+        shell: pwsh
+        run: |
+          $env:MOTH_RELEASE_SIGNING_KEY = Get-Content -Raw "$env:RUNNER_TEMP\rel.key"
+          $exe = (Get-ChildItem "$env:RUNNER_TEMP\B\*-setup.exe")[0].FullName
+          python scripts/build-release.py --kind desktop --desktop "$exe" --out "$env:RUNNER_TEMP\B-release" --desktop-stages 100
+          python scripts/verify-release.py "$env:RUNNER_TEMP\B-release" --pubkey-file "$env:RUNNER_TEMP\rel.pub"
+
+      - name: Start a real MOTH Server and publish B on it (as the update agent does)
+        shell: pwsh
+        run: |
+          $data = "$env:RUNNER_TEMP\server-data"
+          New-Item -ItemType Directory -Force $data | Out-Null
+          "agent-token-for-tests" | Set-Content -NoNewline "$env:RUNNER_TEMP\agent.token"
+          $env:MOTH_SERVER_DATA_DIR = $data
+          $env:MOTH_SERVER_PUBLIC_URL = $env:SERVER
+          $env:MOTH_AGENT_TOKEN_FILE = "$env:RUNNER_TEMP\agent.token"
+          $env:MOTH_RELEASE_PUBKEY = Get-Content -Raw "$env:RUNNER_TEMP\rel.pub"
+          Start-Process python -ArgumentList "-m","moth_server.cli","serve","--port","8900" -RedirectStandardOutput "$env:RUNNER_TEMP\server.log" -RedirectStandardError "$env:RUNNER_TEMP\server.err" -WindowStyle Hidden
+          for ($i = 0; $i -lt 60; $i++) { try { Invoke-RestMethod "$env:SERVER/v1/health" | Out-Null; break } catch { Start-Sleep 2 } }
+          python scripts/desktop-update-harness.py register --server $env:SERVER --data-dir $data --agent-token "$env:RUNNER_TEMP\agent.token" --dir "$env:RUNNER_TEMP\B-release"
+          $offer = Invoke-RestMethod "$env:SERVER/v1/updates/desktop/windows/x86_64/0.3.1" -Headers @{"X-Moth-Install-Id"="ci"}
+          "Server offers: $($offer.version) at $($offer.url)"
+          if ($offer.version -ne $env:NEW_VERSION) { throw "the server does not offer $env:NEW_VERSION" }
+
+      - name: Install A, add user data, start A and wait for it to update itself to B
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem "$env:RUNNER_TEMP\A\*-setup.exe")[0].FullName
+          Start-Process $setup -ArgumentList "/S" -Wait
+          $key = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall | Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -eq "MOTH Code" }
+          $before = (Get-ItemProperty $key.PSPath).DisplayVersion
+          "Installed: MOTH Code $before"
+          $dir = Split-Path ((Get-ItemProperty $key.PSPath).UninstallString -replace '"','')
+          $exe = Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notlike "uninstall*" } | Select-Object -First 1
+          "Installed at $($exe.FullName)"
+          # user data that must survive the update
+          $appdata = "$env:APPDATA\MOTH Code"
+          New-Item -ItemType Directory -Force "$appdata\workspaces-marker" | Out-Null
+          "keep me" | Set-Content "$appdata\workspaces-marker\marker.txt"
+          Start-Process $exe.FullName
+          $deadline = (Get-Date).AddMinutes(8)
+          while ((Get-Date) -lt $deadline) {
+            Start-Sleep 5
+            $v = (Get-ItemProperty $key.PSPath -ErrorAction SilentlyContinue).DisplayVersion
+            if ($v -eq $env:NEW_VERSION) { break }
+          }
+          "Registry version now: $v"
+          Select-String -Path "$env:RUNNER_TEMP\server.err","$env:RUNNER_TEMP\server.log" -Pattern "updates" | Select-Object -Last 10 | ForEach-Object { $_.Line }
+          if ($v -ne $env:NEW_VERSION) { throw "MOTH Code did not update itself to $env:NEW_VERSION (still $v)" }
+          "PASS: A updated itself to $v"
+
+      - name: The updated app starts and reports a successful update; user data preserved
+        shell: pwsh
+        run: |
+          Start-Sleep 10
+          $running = Get-Process | Where-Object { $_.Path -like "*MOTH Code*" }
+          if (-not $running) {
+            "The installer did not relaunch MOTH Code; starting it as the user would"
+            $key = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall | Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -eq "MOTH Code" }
+            $dir = Split-Path ((Get-ItemProperty $key.PSPath).UninstallString -replace '"','')
+            $exe = Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notlike "uninstall*" } | Select-Object -First 1
+            Start-Process $exe.FullName
+          } else { "MOTH Code was relaunched automatically after the update" }
+          python scripts/desktop-update-harness.py wait-report --data-dir "$env:RUNNER_TEMP\server-data" --version $env:NEW_VERSION --timeout 240
+          if ($LASTEXITCODE -ne 0) { throw "the updated app did not report a successful update" }
+          if ((Get-Content "$env:APPDATA\MOTH Code\workspaces-marker\marker.txt") -ne "keep me") { throw "user data was not preserved" }
+          "PASS: B started, reported success, user data preserved"
+
+      - name: Logs
+        if: always()
+        shell: pwsh
+        run: |
+          Get-Content "$env:RUNNER_TEMP\server.err" -ErrorAction SilentlyContinue | Select-Object -Last 60
+          Get-ChildItem "$env:LOCALAPPDATA\com.moth.code" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 20 FullName

@@ -63,6 +63,7 @@ def register(app: FastAPI, svc: Services, deps) -> None:
     publisher = Publisher(svc.paths.models, svc.paths.home / "cache" / "publish", svc.db,
                           account=lambda: svc.extras.get("account"))
     svc.extras["publisher"] = publisher
+    publisher.start_auto_resume()
 
     def owner_only() -> None:
         acct = svc.extras.get("account") or {}

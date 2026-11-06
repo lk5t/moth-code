@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (must match the version in the code)"
+        description: "Server release tag (must match the server version, e.g. server-v0.3.1)"
         required: true
-        default: "v0.3.0"
+        default: "server-v0.3.1"
       channel:
         description: "Update channel"
         required: true
@@ -40,7 +40,7 @@ jobs:
       - name: Version check
         run: |
           V=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' server/moth_server/__init__.py)
-          [ "v$V" = "$TAG" ] || { echo "::error::tag $TAG does not match server version $V"; exit 1; }
+          T="${TAG#server-}"; [ "v$V" = "$T" ] || { echo "::error::tag $TAG does not match server version $V"; exit 1; }
       - name: Refuse to replace an existing release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -49,7 +49,7 @@ jobs:
       - name: Build bundles and sign the manifest
         env:
           MOTH_RELEASE_SIGNING_KEY: ${{ secrets.MOTH_RELEASE_SIGNING_KEY }}
-        run: python scripts/build-release.py --out dist --channel "$CHANNEL" --notes "MOTH Cloud ${TAG#v}"
+        run: python scripts/build-release.py --kind server --out dist --channel "$CHANNEL" --notes "MOTH Cloud ${TAG#server-v}"
       - name: Verify signature, checksums and bundle contents
         run: python scripts/verify-release.py dist
       - name: SHA256SUMS
@@ -58,6 +58,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          sed "s|__REF__|${TAG}|g; s|__VERSION__|${TAG#v}|g" .github/server-release-notes.md > notes.md
+          V="${TAG#server-}"; V="${V#v}"
+          sed "s|__REF__|${TAG}|g; s|__VERSION__|${V}|g" .github/server-release-notes.md > notes.md
           PRE=""; [ "$CHANNEL" != "stable" ] && PRE="--prerelease"
-          gh release create "$TAG" --target "$GITHUB_SHA" $PRE --title "MOTH Cloud ${TAG} (server)" --notes-file notes.md dist/*
+          gh release create "$TAG" --target "$GITHUB_SHA" $PRE --title "MOTH Cloud ${V} (server)" --notes-file notes.md dist/*

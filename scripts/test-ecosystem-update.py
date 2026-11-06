@@ -165,6 +165,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--keep", action="store_true")
     args = ap.parse_args()
+    # the code under test is BASE; V1..V4 are newer releases built from modified copies of it
+    BASE = re.search(r'__version__ = "([^"]+)"', (ROOT / "server/moth_server/__init__.py").read_text())[1]
+    major, minor, patch = (int(x) for x in BASE.split("."))
+    V1, V2, V3, V4 = (f"{major}.{minor}.{patch + 90 + i}" for i in range(1, 5))
     base = os.environ.get("MOTH_E2E_DIR")
     if base:
         Path(base).mkdir(parents=True, exist_ok=True)
@@ -197,22 +201,22 @@ def main() -> None:
 
         # ---- 2. install 0.3.0 adopting it -----------------------------------------------------------------
         step("2. one-time installation adopting the running server")
-        build(ROOT, src / "0.3.0", priv)
+        build(ROOT, src / BASE, priv)
         bundle_dir = work / "bundle"
         bundle_dir.mkdir()
-        with tarfile.open(src / "0.3.0" / "moth-cloud-0.3.0.tar.gz") as t:
+        with tarfile.open(src / BASE / f"moth-cloud-{BASE}.tar.gz") as t:
             t.extractall(bundle_dir, filter="data") if hasattr(tarfile, "data_filter") else t.extractall(bundle_dir)
-        out = sh(["bash", str(bundle_dir / "moth-cloud-0.3.0/deploy/install-server.sh"), "--home", str(home),
+        out = sh(["bash", str(bundle_dir / f"moth-cloud-{BASE}/deploy/install-server.sh"), "--home", str(home),
                   "--supervisor", "cron", "--release-source", f"dir:{src}", "--pubkey", pub, "--adopt-data",
                   str(old_data), "--replace-running", "--port", str(port), "--environment", "staging",
                   "--use-system-packages"])
         print("\n".join("    " + line for line in out.strip().splitlines()[-12:]))
-        h = api.wait(lambda h: h.get("version") == "0.3.0", "0.3.0 after install")
+        h = api.wait(lambda h: h.get("version") == BASE, f"{BASE} after install")
         assert h["schema_version"] == 2
-        assert list((home / "backups").glob("*pre-install-0.3.0")), "pre-install backup missing"
+        assert list((home / "backups").glob(f"*pre-install-{BASE}")), "pre-install backup missing"
         cfg = json.loads((home / "config" / "agent.json").read_text())
         (home / "config" / "agent.json").write_text(json.dumps({**cfg, "health_timeout_s": 60}))  # faster failure tests
-        ok("installed 0.3.0; v0.2 database migrated to schema 2 after a verified backup")
+        ok(f"installed {BASE}; v0.2 database migrated to schema 2 after a verified backup")
 
         # ---- 3. accounts preserved -------------------------------------------------------------------------
         step("3. existing Owner account and password preserved")
@@ -222,7 +226,7 @@ def main() -> None:
                  expect=200)
 
         # ---- 4. a worker on 0.3.0 ------------------------------------------------------------------------
-        step("4. MOTH Worker 0.3.0 enrolls and runs over HTTP")
+        step(f"4. MOTH Worker {BASE} enrolls and runs over HTTP")
         _, e = api.call("POST", "/v1/training/enrollments", {"name": "e2e-worker"}, expect=200)
         whome = work / "worker-home"
         wenv = {**os.environ, "PYTHONPATH": f"{ROOT / 'worker'}:{ROOT / 'backend'}", "MOTH_RELEASE_PUBKEY": pub,
@@ -235,80 +239,80 @@ def main() -> None:
         procs.append(worker)
         for _ in range(60):
             _, ws = api.call("GET", "/v1/admin/workers", expect=200)
-            if ws and any(w.get("version") == "0.3.0" for w in (ws.get("workers") if isinstance(ws, dict) else ws)):
+            if ws and any(w.get("version") == BASE for w in (ws.get("workers") if isinstance(ws, dict) else ws)):
                 break
             time.sleep(1)
         else:
-            raise SystemExit("FAILED: worker did not report version 0.3.0")
-        ok("worker connected and reports 0.3.0")
+            raise SystemExit(f"FAILED: worker did not report version {BASE}")
+        ok(f"worker connected and reports {BASE}")
 
         # ---- 5. server update 0.3.1 ------------------------------------------------------------------------
-        step("5. release 0.3.1 → automatic server update (migration 3, new agent)")
-        build(variant(work, "0.3.1", migration=3, agent_version="0.3.1"), src / "0.3.1", priv)
+        step(f"5. release {V1} → automatic server update (migration 3, new agent)")
+        build(variant(work, V1, migration=3, agent_version=V1), src / V1, priv)
         res = sh([str(moth), "check"]).strip().splitlines()[-1]
-        h = api.wait(lambda h: h.get("version") == "0.3.1", "0.3.1")
+        h = api.wait(lambda h: h.get("version") == V1, V1)
         assert h["schema_version"] == 3, h
         assert res == "agent-updated", res
-        assert (home / "agent" / "current").resolve().name == "0.3.1"
+        assert (home / "agent" / "current").resolve().name == V1
         _, upd = api.call("GET", "/v1/admin/updates", expect=200)
         dep = upd["deployments"][0]
-        assert dep["to_version"] == "0.3.1" and dep["status"] == "succeeded", dep
+        assert dep["to_version"] == V1 and dep["status"] == "succeeded", dep
         assert "backup verified" in dep["log"]
-        assert list((home / "backups").glob("*pre-0.3.1"))
+        assert list((home / "backups").glob(f"*pre-{V1}"))
         api.login()
-        ok("0.3.1 healthy, schema 3, deployment recorded with log, backup verified, agent self-updated to 0.3.1")
+        ok(f"{V1} healthy, schema 3, deployment recorded with log, backup verified, agent self-updated to {V1}")
 
         # ---- 6. worker update ------------------------------------------------------------------------------
-        step("6. worker is offered 0.3.1 and updates itself")
-        api.call("POST", "/v1/admin/updates/releases/worker/0.3.1/promote", expect=200)
+        step(f"6. worker is offered {V1} and updates itself")
+        api.call("POST", f"/v1/admin/updates/releases/worker/{V1}/promote", expect=200)
         for _ in range(120):
             _, ws = api.call("GET", "/v1/admin/workers", expect=200)
             ws = ws.get("workers") if isinstance(ws, dict) else ws
-            if any(w.get("version") == "0.3.1" for w in ws):
+            if any(w.get("version") == V1 for w in ws):
                 break
             time.sleep(1)
         else:
             raise SystemExit("FAILED: worker did not update:\n" + (work / "worker.log").read_text()[-3000:])
-        assert (whome / "current").resolve().name == "0.3.1"
+        assert (whome / "current").resolve().name == V1
         assert worker.poll() is None, "worker process should still be running (it re-executed itself)"
         time.sleep(2)
         _, upd = api.call("GET", "/v1/admin/updates", expect=200)
-        wrel = next(r for r in upd["releases"] if r["component"] == "worker" and r["version"] == "0.3.1")
+        wrel = next(r for r in upd["releases"] if r["component"] == "worker" and r["version"] == V1)
         assert wrel["reports"]["succeeded"] >= 1, wrel
-        ok("worker verified, installed, restarted into 0.3.1, reconnected and reported success")
+        ok(f"worker verified, installed, restarted into {V1}, reconnected and reported success")
 
         # ---- 7. broken release → rollback ----------------------------------------------------------------------
-        step("7. broken release 0.3.2 (migrates to schema 4, then crashes) → automatic rollback")
-        build(variant(work, "0.3.2", migration=4, crash=True), src / "0.3.2", priv)
+        step(f"7. broken release {V2} (migrates to schema 4, then crashes) → automatic rollback")
+        build(variant(work, V2, migration=4, crash=True), src / V2, priv)
         res = sh([str(moth), "check"]).strip().splitlines()[-1]
         assert res == "failed", res
-        h = api.wait(lambda h: h.get("version") == "0.3.1", "0.3.1 after rollback")
+        h = api.wait(lambda h: h.get("version") == V1, f"{V1} after rollback")
         assert h["schema_version"] == 3, f"database should be restored to schema 3: {h}"
         st = json.loads((home / "state" / "agent-state.json").read_text())
-        assert "0.3.2" in st["failed"]
+        assert V2 in st["failed"]
         api.login()
         _, upd = api.call("GET", "/v1/admin/updates", expect=200)
         assert upd["deployments"][0]["status"] == "rolled_back", upd["deployments"][0]
-        ok("rolled back to 0.3.1, database restored to schema 3, Owner notified, failure recorded")
+        ok(f"rolled back to {V1}, database restored to schema 3, Owner notified, failure recorded")
 
         # ---- 8. tampered release ignored -------------------------------------------------------------------------
         step("8. tampered release is ignored")
-        t = build(variant(work, "0.3.3"), src / "0.3.3", priv)
-        mf = t / "moth-release-0.3.3.json"
+        t = build(variant(work, V3), src / V3, priv)
+        mf = t / f"moth-release-{V3}.json"
         mf.write_text(mf.read_text().replace('"stable"', '"stable" '))
         res = sh([str(moth), "check"]).strip().splitlines()[-1]
-        assert res == "up-to-date" and api.health()["version"] == "0.3.1", res
+        assert res == "up-to-date" and api.health()["version"] == V1, res
         ok("manifest with an invalid signature was not installed")
 
         # ---- 9. crash in the middle of an update ---------------------------------------------------------------
-        step("9. agent crashes right after switching to 0.3.4 → recovered on the next run")
-        build(variant(work, "0.3.4", migration=3), src / "0.3.4", priv)
+        step(f"9. agent crashes right after switching to {V4} → recovered on the next run")
+        build(variant(work, V4, migration=3), src / V4, priv)
         p = subprocess.run([str(moth), "check"], env={**os.environ, "MOTH_AGENT_TEST_CRASH": "after-switch"},
                            capture_output=True, text=True)
         assert p.returncode == 9, (p.returncode, p.stderr[-500:])
-        assert json.loads((home / "state" / "agent-state.json").read_text()).get("in_progress", {}).get("to") == "0.3.4"
+        assert json.loads((home / "state" / "agent-state.json").read_text()).get("in_progress", {}).get("to") == V4
         sh([str(moth), "check"])
-        h = api.wait(lambda h: h.get("version") == "0.3.4", "0.3.4 after recovery")
+        h = api.wait(lambda h: h.get("version") == V4, f"{V4} after recovery")
         assert "in_progress" not in json.loads((home / "state" / "agent-state.json").read_text())
         ok("interrupted update finished and verified on the next agent run")
 
@@ -325,22 +329,22 @@ def main() -> None:
         assert api.health() is None
         sh([str(moth), "supervise"])  # what @reboot and the per-minute cron run
         try:
-            h = api.wait(lambda h: h.get("version") == "0.3.4", "server after reboot", timeout=120)
+            h = api.wait(lambda h: h.get("version") == V4, "server after reboot", timeout=120)
         except SystemExit:
             print("run/:", {p.name: p.read_text()[:40] for p in (home / "run").iterdir()})
             print("server.log:", (home / "logs" / "server.log").read_text()[-3000:])
             print("agent.log:", (home / "logs" / "agent.log").read_text()[-3000:])
             raise
-        ok("MOTH Cloud 0.3.4 back after a simulated reboot")
+        ok(f"MOTH Cloud {V4} back after a simulated reboot")
 
         # ---- 11. Owner rollback --------------------------------------------------------------------------------------
         step("11. Owner-requested rollback from the dashboard")
         api.login()
         api.call("POST", "/v1/admin/updates/server/rollback", expect=200)
         sh([str(moth), "check"])
-        h = api.wait(lambda h: h.get("version") == "0.3.1", "rollback to 0.3.1")
+        h = api.wait(lambda h: h.get("version") == V1, f"rollback to {V1}")
         api.login()
-        ok("rolled back to 0.3.1 on request; accounts intact")
+        ok(f"rolled back to {V1} on request; accounts intact")
         print("\nPASS: installation, adoption, server/agent/worker updates, rollback, recovery and reboot all verified")
     finally:
         for name in ("server", "agent"):

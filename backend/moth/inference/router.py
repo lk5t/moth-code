@@ -80,8 +80,8 @@ class InferenceRouter:
         except NotSignedIn as e:
             out.update({"reachable": None, "available": False, "error": str(e)})
         except CloudUnavailable as e:
-            msg = str(e)
-            out.update({"reachable": "unreachable" not in msg, "available": False, "error": msg})
+            reason = getattr(e, "reason", "unreachable")
+            out.update({"reachable": reason != "unreachable", "available": False, "error": str(e), "reason": reason})
         return out
 
     @staticmethod
