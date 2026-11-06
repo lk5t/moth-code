@@ -93,7 +93,8 @@ jobs:
           python scripts/build-release.py --kind desktop --desktop "$exe" --out "$env:RUNNER_TEMP\B-release" --desktop-stages 100
           python scripts/verify-release.py "$env:RUNNER_TEMP\B-release" --pubkey-file "$env:RUNNER_TEMP\rel.pub"
 
-      - name: Start a real MOTH Server and publish B on it (as the update agent does)
+      # One step: on Windows, GitHub Actions ends background processes when the step that started them ends.
+      - name: Real MOTH Server publishes B; install A, start it, and verify it updates itself to B
         shell: pwsh
         run: |
           $data = "$env:RUNNER_TEMP\server-data"
@@ -103,29 +104,27 @@ jobs:
           $env:MOTH_SERVER_PUBLIC_URL = $env:SERVER
           $env:MOTH_AGENT_TOKEN_FILE = "$env:RUNNER_TEMP\agent.token"
           $env:MOTH_RELEASE_PUBKEY = Get-Content -Raw "$env:RUNNER_TEMP\rel.pub"
-          Start-Process python -ArgumentList "-m","moth_server.cli","serve","--port","8900" -RedirectStandardOutput "$env:RUNNER_TEMP\server.log" -RedirectStandardError "$env:RUNNER_TEMP\server.err" -WindowStyle Hidden
+          $server = Start-Process python -ArgumentList "-m","moth_server.cli","serve","--port","8900" -RedirectStandardOutput "$env:RUNNER_TEMP\server.log" -RedirectStandardError "$env:RUNNER_TEMP\server.err" -WindowStyle Hidden -PassThru
           for ($i = 0; $i -lt 60; $i++) { try { Invoke-RestMethod "$env:SERVER/v1/health" | Out-Null; break } catch { Start-Sleep 2 } }
+          # publish B exactly as the update agent does (signed manifest + installer, re-verified by the server)
           python scripts/desktop-update-harness.py register --server $env:SERVER --data-dir $data --agent-token "$env:RUNNER_TEMP\agent.token" --dir "$env:RUNNER_TEMP\B-release"
           $offer = Invoke-RestMethod "$env:SERVER/v1/updates/desktop/windows/x86_64/0.3.1" -Headers @{"X-Moth-Install-Id"="ci"}
           "Server offers: $($offer.version) at $($offer.url)"
           if ($offer.version -ne $env:NEW_VERSION) { throw "the server does not offer $env:NEW_VERSION" }
 
-      - name: Install A, add user data, start A and wait for it to update itself to B
-        shell: pwsh
-        run: |
+          # install A, add user data, start A
           $setup = (Get-ChildItem "$env:RUNNER_TEMP\A\*-setup.exe")[0].FullName
           Start-Process $setup -ArgumentList "/S" -Wait
           $key = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall | Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -eq "MOTH Code" }
-          $before = (Get-ItemProperty $key.PSPath).DisplayVersion
-          "Installed: MOTH Code $before"
+          "Installed: MOTH Code $((Get-ItemProperty $key.PSPath).DisplayVersion)"
           $dir = Split-Path ((Get-ItemProperty $key.PSPath).UninstallString -replace '"','')
           $exe = Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notlike "uninstall*" } | Select-Object -First 1
-          "Installed at $($exe.FullName)"
-          # user data that must survive the update
           $appdata = "$env:APPDATA\MOTH Code"
           New-Item -ItemType Directory -Force "$appdata\workspaces-marker" | Out-Null
           "keep me" | Set-Content "$appdata\workspaces-marker\marker.txt"
           Start-Process $exe.FullName
+
+          # A must find, download, verify and install B by itself
           $deadline = (Get-Date).AddMinutes(8)
           while ((Get-Date) -lt $deadline) {
             Start-Sleep 5
@@ -133,33 +132,30 @@ jobs:
             if ($v -eq $env:NEW_VERSION) { break }
           }
           "Registry version now: $v"
+          "--- app update log ---"
+          Get-Content "$env:APPDATA\dev.mothcode.desktop\logs\updates.log" -ErrorAction SilentlyContinue
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
           $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
           $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
           [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-          $bmp.Save("$env:RUNNER_TEMP\screen-after-update-wait.png")
-          "--- app update log ---"
-          Get-Content "$env:APPDATA\dev.mothcode.desktop\logs\updates.log" -ErrorAction SilentlyContinue
-          Select-String -Path "$env:RUNNER_TEMP\server.err","$env:RUNNER_TEMP\server.log" -Pattern "updates" | Select-Object -Last 10 | ForEach-Object { $_.Line }
+          $bmp.Save("$env:RUNNER_TEMP\screen-after-update.png")
           if ($v -ne $env:NEW_VERSION) { throw "MOTH Code did not update itself to $env:NEW_VERSION (still $v)" }
           "PASS: A updated itself to $v"
 
-      - name: The updated app starts and reports a successful update; user data preserved
-        shell: pwsh
-        run: |
+          # B must start and report a successful update; user data must survive
           Start-Sleep 10
-          $running = Get-Process | Where-Object { $_.Path -like "*MOTH Code*" }
+          $running = Get-Process | Where-Object { $_.Path -and $_.Path -like "$dir*" }
           if (-not $running) {
             "The installer did not relaunch MOTH Code; starting it as the user would"
-            $key = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall | Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -eq "MOTH Code" }
-            $dir = Split-Path ((Get-ItemProperty $key.PSPath).UninstallString -replace '"','')
-            $exe = Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notlike "uninstall*" } | Select-Object -First 1
             Start-Process $exe.FullName
           } else { "MOTH Code was relaunched automatically after the update" }
-          python scripts/desktop-update-harness.py wait-report --data-dir "$env:RUNNER_TEMP\server-data" --version $env:NEW_VERSION --timeout 240
+          python scripts/desktop-update-harness.py wait-report --data-dir $data --version $env:NEW_VERSION --timeout 240
           if ($LASTEXITCODE -ne 0) { throw "the updated app did not report a successful update" }
-          if ((Get-Content "$env:APPDATA\MOTH Code\workspaces-marker\marker.txt") -ne "keep me") { throw "user data was not preserved" }
+          if ((Get-Content "$appdata\workspaces-marker\marker.txt") -ne "keep me") { throw "user data was not preserved" }
+          "--- app update log (after) ---"
+          Get-Content "$env:APPDATA\dev.mothcode.desktop\logs\updates.log" -ErrorAction SilentlyContinue
           "PASS: B started, reported success, user data preserved"
+          Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
 
       - uses: actions/upload-artifact@v4
         if: always()
