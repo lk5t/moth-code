@@ -2,6 +2,49 @@
 
 Everything below was actually run. Commands are listed so the results can be reproduced.
 
+# 0.5.0 — ASCENSION milestone 1 (EasyConnect workers, CPU workers, Rewards 2.0)
+
+## Automated suites (Linux x86-64, 4 CPU threads, no GPU)
+
+| Suite | Command | Result |
+| --- | --- | --- |
+| MOTH Server | `cd server && python -m pytest -q` | **88 passed** (adds `test_workers_v05.py`, capability-based assignment, Rewards 2.0 and the default-off payment reward) |
+| Desktop backend | `cd backend && python -m pytest -q` | **106 passed** |
+| Frontend | `cd app && npx tsc -b && npm test && npm run build` | typecheck ok, **19 passed**, build ok |
+| Rust shell | `cargo test` | **6 passed** |
+| Ecosystem end to end | `python scripts/test-ecosystem-update.py` | **PASS, all 11 steps** (v0.2.1 data migrated to schema 4) |
+| Upgrade from production's release | `python scripts/test-upgrade-from-installed.py` | **PASS** (server-v0.4.0 → 0.5.0, see below) |
+| Worker install, Linux | `bash scripts/test-worker-install.sh` | **PASS** (see below) |
+| Worker install, Windows | `scripts/test-worker-install.ps1` (CI, `windows-latest`) | runs in CI |
+
+## Worker installation on Linux (`scripts/test-worker-install.sh`)
+
+The command MOTH Code shows is run unchanged, with no CPU flag on a CPU-only machine. The test checks:
+
+1. The download is verified against the pinned SHA-256. A tampered copy is rejected before anything
+   runs.
+2. The installer sets up the virtual environment and PyTorch (CPU), enrolls the machine, and
+   installs the cron automatic start.
+3. The automatically started worker completes verified jobs (14 in the local run).
+4. After the worker is killed with SIGKILL, two simultaneous cron ticks start **exactly one** new
+   worker.
+5. `moth-worker uninstall` removes the cron entries (the crontab is exactly as before), revokes the
+   worker on the server, and deletes its environment and state. No worker process is left running.
+
+## Upgrade from the release production runs (`scripts/test-upgrade-from-installed.py`, server-v0.4.0)
+
+1. The exact `server-v0.4.0` code (commit `9d0ec47`) is installed with its own installer.
+2. On 0.4.0, a model is deployed and serves chat, and a CPU worker is enrolled.
+3. The 0.4.0 agent installs 0.5.0: it verifies the bundle, backs up, migrates the database to schema
+   4, and updates itself.
+4. After the upgrade:
+   - the Owner signs in with the same password;
+   - the same model (same SHA-256) is still serving chat;
+   - **the worker enrolled on 0.4.0 keeps working with its existing credential**;
+   - with approved data and no GPU, the evolution experiment goes to that CPU worker as a job, and
+     the server itself trains nothing.
+5. Owner rollback to 0.4.0 keeps all data, including what was created on 0.5.0.
+
 # 0.4.0 — EVOLUTION
 
 ## Automated suites (Linux x86-64, 4 CPU threads, no GPU)

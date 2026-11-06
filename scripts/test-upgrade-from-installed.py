@@ -215,15 +215,17 @@ def main() -> None:
         api.call("POST", f"/v1/admin/evolution/datasets/{d['id']}/approve", {}, expect=200)
         for _ in range(90):
             _, st = api.call("GET", "/v1/admin/evolution/status", expect=200)
-            if st["cycle"] and st["cycle"]["status"] == "waiting_for_compute":
+            if st["cycle"] and st["cycle"]["experiments"] and st["cycle"]["experiments"][0]["status"] != "planned":
                 break
             time.sleep(1)
-        assert st["cycle"]["status"] == "waiting_for_compute", st["cycle"]
-        assert st["cycle"]["experiments"] and all(e["status"] in ("waiting", "planned") for e in st["cycle"]["experiments"])
-        assert st["cycle"]["experiments"][0]["status"] == "waiting"  # tried, and waits: nothing is running
-        reason = st["cycle"]["result"]["waiting_reason"]
+        first = st["cycle"]["experiments"][0]
+        # the server has no GPU and CPU training on it is off; the CPU worker enrolled on the old release is
+        # online, so 0.5 sends the experiment to it as a worker job — the server itself trains nothing
+        assert first["backend"] == "worker" and first["job_id"], first
+        assert st["cycle"]["status"] == "waiting_for_compute"  # until the worker claims the job
         assert chat(api) == 200
-        E.ok(f"approved data → cycle planned and waiting for compute (\"{reason}\"); nothing trains; chat still works")
+        E.ok(f"approved data → experiment queued as job {first['job_id']} for the CPU worker; the server trains "
+             "nothing itself; chat still works")
 
         E.step(f"5. Owner-requested rollback to {OLD}")
         api.call("POST", "/v1/admin/updates/server/rollback", expect=200)
