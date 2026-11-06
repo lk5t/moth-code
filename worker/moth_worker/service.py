@@ -312,8 +312,17 @@ def cmd_uninstall(args) -> int:
               "if ($t | Where-Object { Test-Path $_ }) { 'not removed: ' + (($t | Where-Object { Test-Path $_ }) -join ', ') "
               "} else { 'removed' }")
         ps = f"& {{ {ps} }} *> (Join-Path $env:TEMP 'moth-worker-uninstall.log')"
-        subprocess.Popen(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
-                         creationflags=0x08000000 | 0x00000008)  # no window, detached
+        # State files are not in use any more: delete them now (everything except the running environment).
+        for t in targets:
+            for child in (t.iterdir() if t.is_dir() else []):
+                if child != venv and venv not in child.parents and child not in venv.parents:
+                    shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink(missing_ok=True)
+        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps]
+        no_window, detached, breakaway = 0x08000000, 0x00000008, 0x01000000
+        try:  # pip's moth-worker.exe launcher kills its children on exit unless they leave its job object
+            subprocess.Popen(cmd, creationflags=no_window | detached | breakaway)
+        except OSError:
+            subprocess.Popen(cmd, creationflags=no_window | detached)
     else:
         for t in targets:
             shutil.rmtree(t, ignore_errors=True)
