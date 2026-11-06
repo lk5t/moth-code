@@ -90,8 +90,26 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -e ./backend -e ./server
-      - name: Enrollment command → verified download → install → verified training job
+      - name: One command (CPU-only, real PyTorch download) → cron start → verified job → crash recovery → uninstall
         run: bash scripts/test-worker-install.sh
+
+  worker-install-windows:
+    name: MOTH Worker one-command install (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install server dependencies (CPU PyTorch)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ./backend -e ./server
+      - name: PowerShell command → install → scheduled task → verified job → uninstall
+        shell: pwsh
+        run: ./scripts/test-worker-install.ps1
 
   cloud-updates:
     name: MOTH Cloud install, automatic updates, rollback and recovery (Linux, real processes)
@@ -111,7 +129,7 @@ jobs:
           python -m pip install -e ./backend -e ./server httpx
       - name: v0.2.1 adoption → install → server/agent/worker updates → rollback → recovery → reboot
         run: python scripts/test-ecosystem-update.py
-      - name: Upgrade from the installed release (server-v0.3.2) → current, evolution without GPU, rollback
+      - name: Upgrade from the installed release (server-v0.4.0) → current, evolution without GPU, rollback
         run: python scripts/test-upgrade-from-installed.py
 
   frontend:

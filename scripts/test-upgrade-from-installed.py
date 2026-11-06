@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Upgrade test from the MOTH Cloud release the VPS runs today (server-v0.3.2) to the code under test.
+"""Upgrade test from the MOTH Cloud release the VPS runs today (``INSTALLED``) to the code under test.
 
 Real processes, real installer, real update agent, real signed release bundles (throw-away test key):
 
-1. install the exact ``server-v0.3.2`` code (git history) with its own ``install-server.sh``, adopting a
+1. install the exact released code (``INSTALLED``) (git history) with its own ``install-server.sh``, adopting a
    data directory with the Owner account;
-2. on 0.3.2: upload a model, evaluate it, deploy it, enable MOTH Cloud inference, serve a chat request;
-3. publish the release under test → the 0.3.2 agent verifies it, backs up, migrates, switches, and
+2. on that release: upload a model, evaluate it, deploy it, enable MOTH Cloud inference, serve a chat request;
+3. publish the release under test → the old agent verifies it, backs up, migrates, switches, and
    updates itself;
 4. after the upgrade: same Owner password, same deployed model (same SHA-256) serving chat, schema
    migrated, the model's lineage recorded, the Evolution API working, and evolution behaving safely
    without a GPU (training data approved → the cycle waits for compute and says why; nothing trains);
-5. Owner-requested rollback to 0.3.2 → the code switches back after a pre-rollback backup; the data is
-   kept (0.3.2 runs on the additively migrated schema), so nothing created after the upgrade is lost, and
+5. Owner-requested rollback to the old release → the code switches back after a pre-rollback backup; the data is
+   kept (it runs on the additively migrated schema), so nothing created after the upgrade is lost, and
    the Owner and the model are intact. (A *failed* update is rolled back with a database restore; that
    path is covered by test-ecosystem-update.py.)
 
@@ -40,7 +40,19 @@ from importlib import import_module  # noqa: E402
 
 E = import_module("test-ecosystem-update")
 ROOT = E.ROOT
-INSTALLED = "5808bc6"  # the commit tagged server-v0.3.2 (what the VPS runs)
+INSTALLED = "9d0ec47"  # the commit tagged server-v0.4.0 (what the production VPS runs)
+
+
+def _installed(path: str, pattern: str) -> str:
+    import subprocess as sp
+
+    src = sp.run(["git", "-C", str(ROOT), "show", f"{INSTALLED}:{path}"], capture_output=True, text=True,
+                 check=True).stdout
+    return re.search(pattern, src)[1]
+
+
+OLD = _installed("server/moth_server/__init__.py", r'__version__ = "([^"]+)"')
+OLD_SCHEMA = int(_installed("server/moth_server/db.py", r"SCHEMA_VERSION = (\d+)"))
 
 
 def multipart(fields: dict, files: dict) -> tuple[bytes, str]:
@@ -117,10 +129,10 @@ def main() -> None:
     src = work / "releases"
     target = re.search(r'__version__ = "([^"]+)"', (ROOT / "server/moth_server/__init__.py").read_text())[1]
     schema = int(re.search(r"SCHEMA_VERSION = (\d+)", (ROOT / "server/moth_server/db.py").read_text())[1])
-    print(f"work dir {work}, port {port}; upgrading 0.3.2 → {target}")
+    print(f"work dir {work}, port {port}; upgrading {OLD} → {target}")
     old = work / "v032"
     try:
-        E.step("1. install server-v0.3.2 (the release the VPS runs) with its own installer")
+        E.step(f"1. install server-v{OLD} (the release the VPS runs) with its own installer")
         E.sh(["git", "-C", str(ROOT), "worktree", "add", "--detach", str(old), INSTALLED])
         data = work / "data"
         env = {**os.environ, "PYTHONPATH": f"{old / 'server'}:{old / 'backend'}", "MOTH_SERVER_DATA_DIR": str(data)}
@@ -128,21 +140,21 @@ def main() -> None:
                             "--password-stdin"], input=E.PASSWORD + "\n", text=True, env=env, capture_output=True,
                            cwd=work)
         assert p.returncode == 0, p.stderr
-        E.build(old, src / "0.3.2", priv)
+        E.build(old, src / OLD, priv)
         bundle = work / "bundle"
         bundle.mkdir()
-        with tarfile.open(src / "0.3.2" / "moth-cloud-0.3.2.tar.gz") as t:
+        with tarfile.open(src / OLD / f"moth-cloud-{OLD}.tar.gz") as t:
             t.extractall(bundle, filter="data") if hasattr(tarfile, "data_filter") else t.extractall(bundle)
-        E.sh(["bash", str(bundle / "moth-cloud-0.3.2/deploy/install-server.sh"), "--home", str(home), "--supervisor",
+        E.sh(["bash", str(bundle / f"moth-cloud-{OLD}/deploy/install-server.sh"), "--home", str(home), "--supervisor",
               "cron", "--release-source", f"dir:{src}", "--pubkey", pub, "--adopt-data", str(data), "--port", str(port),
               "--environment", "staging", "--use-system-packages"])
-        h = api.wait(lambda h: h.get("version") == "0.3.2", "0.3.2 after install")
-        assert h["schema_version"] == 2
+        h = api.wait(lambda h: h.get("version") == OLD, f"{OLD} after install")
+        assert h["schema_version"] == OLD_SCHEMA
         cfg = json.loads((home / "config" / "agent.json").read_text())
         (home / "config" / "agent.json").write_text(json.dumps({**cfg, "health_timeout_s": 90}))
-        E.ok("MOTH Cloud 0.3.2 installed by its own installer (schema 2)")
+        E.ok(f"MOTH Cloud {OLD} installed by its own installer (schema {OLD_SCHEMA})")
 
-        E.step("2. on 0.3.2: a deployed model serving chat")
+        E.step(f"2. on {OLD}: a deployed model serving chat")
         api.login()
         rel = upload(api, "/v1/admin/models/upload", {"name": "moth-vps-model"},
                      {"file": ("model.tar.gz", tiny_model_tarball(work))})
@@ -159,9 +171,13 @@ def main() -> None:
         api.call("PUT", "/v1/admin/config/flags", {"cloud_inference_enabled": True}, expect=200)
         sha_before = r["sha256"]
         assert chat(api) == 200
-        E.ok(f"model v{v} deployed on 0.3.2 and serving chat (sha {sha_before[:12]})")
+        _, en = api.call("POST", "/v1/training/enrollments", {"name": "existing-worker"}, expect=200)
+        _, wk = api.call("POST", "/v1/worker/enroll", {"token": en["token"], "version": OLD,
+                                                       "hardware": {"gpus": [], "cpu_count": 4, "ram_gb": 8}}, expect=200)
+        worker_token = wk["worker_token"]
+        E.ok(f"model v{v} deployed on {OLD} and serving chat (sha {sha_before[:12]})")
 
-        E.step(f"3. release {target} published → the 0.3.2 agent installs it")
+        E.step(f"3. release {target} published → the {OLD} agent installs it")
         E.build(ROOT, src / target, priv)
         E.sh([str(moth), "check"])
         h = api.wait(lambda h: h.get("version") == target, f"{target} after the update", timeout=300)
@@ -178,6 +194,11 @@ def main() -> None:
         api.wait(lambda h: h.get("model_version") == v, "the model to be restored after the restart", timeout=120)
         assert chat(api) == 200
         E.ok(f"Owner signs in with the same password; model v{v} (same SHA-256) is deployed and serving chat")
+        saved, api.token = api.token, worker_token
+        api.call("POST", "/v1/worker/heartbeat", {"hardware": {"gpus": [], "cpu_count": 4, "ram_gb": 8}},
+                 client="worker/" + OLD, expect=200)
+        api.token = saved
+        E.ok(f"the worker enrolled on {OLD} keeps working with its existing credential")
         _, st = api.call("GET", "/v1/admin/evolution/status", expect=200)
         assert st["active_model"]["version"] == v and st["active_model"]["method"] == "upload", st["active_model"]
         _, res = api.call("GET", "/v1/admin/evolution/resources", expect=200)
@@ -204,12 +225,12 @@ def main() -> None:
         assert chat(api) == 200
         E.ok(f"approved data → cycle planned and waiting for compute (\"{reason}\"); nothing trains; chat still works")
 
-        E.step("5. Owner-requested rollback to 0.3.2")
+        E.step(f"5. Owner-requested rollback to {OLD}")
         api.call("POST", "/v1/admin/updates/server/rollback", expect=200)
         E.sh([str(moth), "check"])
-        h = api.wait(lambda h: h.get("version") == "0.3.2", "rollback to 0.3.2", timeout=300)
-        assert h["schema_version"] == schema, h  # data kept: 0.3.2 runs on the additive schema
-        assert list((home / "backups").glob("*pre-rollback-0.3.2*")), "no pre-rollback backup"
+        h = api.wait(lambda h: h.get("version") == OLD, f"rollback to {OLD}", timeout=300)
+        assert h["schema_version"] == schema, h  # data kept: the old release runs on the additive schema
+        assert list((home / "backups").glob(f"*pre-rollback-{OLD}*")), "no pre-rollback backup"
         api.login()
         _, models = api.call("GET", "/v1/admin/models", expect=200)
         r = next(x for x in models["releases"] if x["version"] == v)
@@ -223,9 +244,9 @@ def main() -> None:
         kept = con.execute("SELECT name, status FROM training_datasets").fetchall()
         con.close()
         assert kept and kept[0][1] == "approved", kept
-        E.ok(f"back on 0.3.2 after a pre-rollback backup: Owner, model v{v} and data intact (schema {schema} kept, "
+        E.ok(f"back on {OLD} after a pre-rollback backup: Owner, model v{v} and data intact (schema {schema} kept, "
              f"the evolution data created on {target} too: {kept[0][0]!r})")
-        print(f"\nPASS: 0.3.2 → {target} upgrade, preservation, safe evolution without GPU, and rollback verified")
+        print(f"\nPASS: {OLD} → {target} upgrade, preservation, safe evolution without GPU, and rollback verified")
     finally:
         import signal
 

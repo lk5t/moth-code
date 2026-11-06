@@ -206,28 +206,42 @@ function Referrals() {
     <div key={k}><Label>{label}</Label><Input className="mt-1" type="number" value={rules[k]} onChange={(e) => setRules({ ...rules, [k]: Number(e.target.value) })} /></div>
   );
   const review = data.referrals.filter((r: Any) => r.status === "review");
+  const heldRewards = data.rewards.filter((r: Any) => r.status === "review" && r.kind === "gpu");
   return (
     <div className="flex flex-col gap-4">
       <Card>
-        <CardHeader><CardTitle>Reward rules</CardTitle><CardDescription>Usage credits only. Rewards require a verified paid invoice or verified training work.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Reward rules</CardTitle><CardDescription>Usage credits only. Rewards come from verified training work, in proportion to the tokens trained (and optionally a referred user's first payment).</CardDescription></CardHeader>
         <CardContent className="grid grid-cols-4 gap-3 text-xs">
           {num("user_reward_tokens", "Referral reward (tokens)")}
           {num("qualifying_min_amount_cents", "Minimum payment (cents)")}
-          {num("gpu_reward_tokens_per_job", "GPU reward per verified job")}
-          {num("gpu_min_verified_jobs", "GPU: min verified jobs")}
+          {num("contribution_reward_per_1k_tokens", "Credits per 1,000 trained tokens")}
+          {num("max_reward_per_job", "Max credits per job")}
+          {num("contributor_min_verified_jobs", "Worker: jobs before rewards")}
+          {num("min_reputation", "Min reliability (0–1)")}
           {num("pending_days", "Pending period (days)")}
           {num("max_user_rewards_per_month", "Max referral rewards / month")}
-          {num("max_gpu_reward_tokens_per_month", "Max GPU tokens / month")}
+          {num("max_gpu_reward_tokens_per_month", "Max worker credits / month")}
           {num("lifetime_cap_tokens", "Lifetime cap (tokens)")}
           <label className="flex items-center gap-2"><Switch checked={rules.enabled} onCheckedChange={(v) => setRules({ ...rules, enabled: v })} />Referrals enabled</label>
           <label className="col-span-2 flex items-center gap-2"><Switch checked={rules.hold_same_ip_for_review} onCheckedChange={(v) => setRules({ ...rules, hold_same_ip_for_review: v })} />Hold same-IP referrals for review</label>
+          <label className="col-span-2 flex items-center gap-2"><Switch checked={rules.hold_duplicate_machines} onCheckedChange={(v) => setRules({ ...rules, hold_duplicate_machines: v })} />Hold rewards when a computer is enrolled under two accounts</label>
+          <label className="col-span-2 flex items-center gap-2"><Switch checked={rules.user_payment_rewards} onCheckedChange={(v) => setRules({ ...rules, user_payment_rewards: v })} />Also reward a referred user's first payment</label>
           <Button size="sm" onClick={() => run(() => serverApi("/v1/admin/referral-rules", { method: "PUT", json: rules }), "Rules saved.", load)}>Save rules</Button>
         </CardContent>
       </Card>
       <Card>
-        <CardHeader><CardTitle>Review queue ({review.length})</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Review queue ({review.length + heldRewards.length})</CardTitle></CardHeader>
         <CardContent className="space-y-1 text-xs">
-          {!review.length && <div className="text-muted">Nothing to review.</div>}
+          {!review.length && !heldRewards.length && <div className="text-muted">Nothing to review.</div>}
+          {heldRewards.map((r: Any) => (
+            <div key={`rw${r.id}`} className="flex items-center justify-between rounded border border-border px-2.5 py-1.5">
+              <span>Worker #{r.worker_id} · {formatNumber(r.amount, 1)} credits <span className="text-faint">{r.reason}</span></span>
+              <span className="flex gap-1">
+                <Button size="sm" variant="secondary" onClick={() => run(() => serverApi(`/v1/admin/rewards/${r.id}/approve`, { method: "POST" }), "Released.", load)}>Approve</Button>
+                <Button size="sm" variant="danger" onClick={() => run(() => serverApi(`/v1/admin/rewards/${r.id}/reverse`, { method: "POST", json: { reason: "rejected after review" } }), "Rejected.", load)}>Reject</Button>
+              </span>
+            </div>
+          ))}
           {review.map((r: Any) => (
             <div key={r.id} className="flex items-center justify-between rounded border border-border px-2.5 py-1.5">
               <span>@{r.referrer} → @{r.referred} <span className="text-faint">{JSON.parse(r.flags).join(", ")}</span></span>

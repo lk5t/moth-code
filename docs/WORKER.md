@@ -1,46 +1,69 @@
-# MOTH Worker — contributing GPU training compute
+# MOTH Worker — contributing training compute (CPU or GPU)
 
-MOTH Worker is a small, separate Linux program that trains rounds of the official MOTH
-model for the MOTH training network. It is **not** an AI assistant. It never reads files
-on the machine other than its own state, and it uploads only weight updates.
+MOTH Worker is a small, separate program that trains the official MOTH model for the MOTH training
+network and for model evolution. It is **not** an AI assistant. It never reads files on the machine
+other than its own state, trains only on public, licensed data it downloads, and uploads only weight
+updates.
+
+Since 0.5, **CPU-only computers are full production workers**: MOTH gives every worker only jobs
+that fit its memory, and prefers a GPU worker briefly for jobs that benefit from one.
 
 ## Requirements
 
 | Requirement | Detail |
 | --- | --- |
-| OS | Linux x86-64 |
-| Python | 3.10+ with `venv` (on Debian/Ubuntu: `apt install python3-venv`) |
-| GPU | NVIDIA, 8 GB+ VRAM (an RTX 3060 12 GB is the reference worker), with a working driver (`nvidia-smi`) |
-| Disk | About 10 GB free (PyTorch plus the model) |
+| OS | Linux (x86-64), Windows 10/11, macOS (best effort, see Limitations) |
+| Python | 3.10+ with `venv`. On Windows it is installed for you with `winget` if it's missing; on Debian/Ubuntu: `sudo apt install python3-venv` |
+| CPU / memory | 2+ cores, 3 GB+ RAM |
+| GPU | Optional. An NVIDIA GPU with 8 GB+ VRAM is used when present (CUDA PyTorch is installed automatically) |
+| Disk | 5 GB+ free (PyTorch plus the model) |
+| Administrator rights | **Not needed** |
 
-It works on rented GPU servers from any provider. No provider-specific integration is needed.
+## One-command installation (EasyConnect)
 
-## One-command enrollment
+1. In MOTH Code, open **Training & Referrals → Add a computer** and click **Get the command**.
+2. Pick **Linux / macOS** or **Windows** and paste the command into a terminal (PowerShell on
+   Windows) on that computer. It:
+   - downloads the MOTH Worker release **from your MOTH Cloud** (relayed there from the signed
+     GitHub release by the update agent);
+   - verifies it against the SHA-256 pinned in the command, so nothing runs if the file differs;
+   - creates a Python virtual environment (Linux/macOS: `~/.local/share/moth-worker/venv`, or
+     `/opt/moth-worker` as root; Windows: `%LOCALAPPDATA%\MOTH\worker\venv`), installs the
+     right PyTorch (CUDA for NVIDIA GPUs, CPU otherwise) and MOTH Worker;
+   - enrolls the computer with a **single-use** token (valid 15 minutes) and stores the worker
+     credential (file mode 600);
+   - sets up an **automatic start** that survives reboots and restarts the worker if it stops:
 
-1. In MOTH Code, open **Training & Referrals → Add a GPU server** and click **Generate command**.
-2. Paste the command into the server's terminal. It does four things:
-   - downloads the versioned MOTH Worker release from the MOTH Server;
-   - verifies it with `sha256sum -c` against the SHA-256 pinned in the command, so nothing
-     runs if the file differs;
-   - extracts the release and runs `install.sh`, which creates a Python virtual environment
-     (`/opt/moth-worker` as root, otherwise `~/.local/share/moth-worker/venv`), installs a
-     CUDA build of PyTorch matching the driver, and installs MOTH Worker;
-   - enrolls the machine with a **single-use** token that expires after 15 minutes, saves a
-     worker credential (file mode 600), and installs a systemd service that restarts
-     automatically.
-3. The worker appears under **Your workers**. Pause it, set GPU-memory and compute limits, or
-   revoke it from there. A revoked worker stops at its next heartbeat and cannot reconnect.
+     | Machine | Mechanism (chosen automatically) |
+     | --- | --- |
+     | Linux as root | systemd system service |
+     | Linux, user with systemd lingering | systemd user service (lingering is enabled automatically where allowed) |
+     | Linux, any other user (e.g. no sudo) | cron: `@reboot` plus a check every minute; the worker keeps exactly one copy running |
+     | Windows | Scheduled task at logon (at startup when installed as administrator), restarting the worker if it stops |
+     | macOS | LaunchAgent (`KeepAlive`) |
+3. The worker appears under **Your workers** with its hardware, measured speed (GFLOP/s), verified
+   jobs, tokens trained and reliability. Pause it, limit CPU cores, GPU memory and compute, or remove
+   it from there.
 
-`install.sh` options:
+Running the command again on the same computer (with a new token) **replaces** its old registration
+instead of adding a second worker.
+
+### Removing a worker
+
+On the computer: `moth-worker uninstall` (Windows:
+`& "$env:LOCALAPPDATA\MOTH\worker\venv\Scripts\moth-worker.exe" uninstall`). It stops the worker,
+removes the automatic start (cron entries, systemd unit, scheduled task or LaunchAgent), revokes the
+worker on MOTH Cloud and deletes its files. **Remove** in MOTH Code revokes it from the server side.
+
+`install.sh` / `install.ps1` options:
 
 | Option | Effect |
 | --- | --- |
-| `--name` | Name shown under **Your workers** |
-| `--use-system-torch` | Reuse an already-installed PyTorch |
-| `--torch-index URL` | Install PyTorch from a different wheel index |
-| `--no-service` | Don't install the systemd service; run the worker manually with `moth-worker run` |
-
-Without systemd (some containers), run `moth-worker run` inside `tmux` or `screen`.
+| `--name` / `-Name` | Name shown under **Your workers** |
+| `--use-system-torch` / `-UseSystemTorch` | Reuse an already-installed PyTorch |
+| `--torch-index URL` / `-TorchIndex URL` | Install PyTorch from a different wheel index |
+| `--service auto\|systemd\|cron\|launchd` | Force an automatic-start mechanism (Linux/macOS) |
+| `--no-service` / `-NoService` | No automatic start; run `moth-worker run` yourself |
 
 ## What a worker does
 
@@ -90,7 +113,9 @@ command; from then on they update themselves.
 | `moth-worker enroll --server URL --token TOKEN` | Manual enrollment |
 | `moth-worker run [--max-jobs N]` | Run the worker loop |
 | `moth-worker status` | Show enrollment status |
-| `moth-worker install-service` | Install the systemd service |
+| `moth-worker run --log-file F` | Run with a rotating log file (what the automatic start uses) |
+| `moth-worker install-service [--mode …]` | Set up the automatic start (systemd, cron, launchd or a scheduled task) |
+| `moth-worker uninstall [--keep-files] [--yes]` | Stop, remove the automatic start, revoke on MOTH Cloud, delete files |
 
 ## Status of distributed training (honest summary)
 

@@ -103,6 +103,11 @@ def test_rewards_2_proportional_held_for_duplicates_and_unreliable_workers(clien
     _contribute(client, u["worker_id"], 5, 10_000)
     bad = ctx.db.one(select(referral_rewards).where(referral_rewards.c.source_ref == "job:5"))
     assert bad["status"] == "review" and "reliability" in bad["reason"]
+    # the Owner releases a held reward after reviewing it (others stay held)
+    o = H(owner["token"])
+    assert client.post(f"/v1/admin/rewards/{held['id']}/approve", headers=o).json()["ok"]
+    assert ctx.db.one(select(referral_rewards).where(referral_rewards.c.id == held["id"]))["status"] == "pending"
+    assert client.post(f"/v1/admin/rewards/{held['id']}/approve", headers=o).status_code == 409
     # dashboard: contributions per referred worker and the rules in plain words
     d = client.get("/v1/referrals", headers=H(ref["token"])).json()
     assert {x["name"][:2] for x in d["referred_workers"]} and any(x["verified_jobs"] >= 3 for x in d["referred_workers"])

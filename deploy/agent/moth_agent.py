@@ -46,7 +46,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-AGENT_VERSION = "0.4.0"
+AGENT_VERSION = "0.5.0"
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import ed25519_verify  # noqa: E402  (stdlib-only verifier shipped next to this file)

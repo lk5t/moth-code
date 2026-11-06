@@ -132,6 +132,19 @@ def reject(rid: int, body: ReasonIn, auth: Auth = Depends(owner_reauthed), ctx: 
     return {"ok": True}
 
 
+@router.post("/v1/admin/rewards/{reward_id}/approve")
+def approve_reward(reward_id: int, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    """Release a compute reward that was held for review (it then waits out the pending period)."""
+    with ctx.db.tx() as c:
+        rw = c.execute(select(referral_rewards).where(referral_rewards.c.id == reward_id)).mappings().first()
+        if not rw or rw["status"] != "review":
+            raise HTTPException(409, "Only rewards held for review can be approved.")
+        c.execute(referral_rewards.update().where(referral_rewards.c.id == reward_id)
+                  .values(status="pending", reason=f"approved by the Owner ({rw['reason']})"[:500], updated_at=now()))
+        audit(ctx.db, "admin.reward_approved", auth.uid, f"reward:{reward_id}", conn=c)
+    return {"ok": True}
+
+
 @router.post("/v1/admin/rewards/{reward_id}/reverse")
 def reverse(reward_id: int, body: ReasonIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
     with ctx.db.tx() as c:

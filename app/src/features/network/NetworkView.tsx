@@ -14,8 +14,11 @@ interface Worker {
   name: string;
   status: "online" | "offline" | "paused" | "revoked";
   paused: boolean;
-  hardware: { gpus?: { name: string; memory_gb: number }[]; cuda?: string; os?: string };
-  limits: { gpu_memory_fraction?: number; duty_cycle?: number };
+  hardware: { gpus?: { name: string; memory_gb: number }[]; cuda?: string; os?: string; compute?: "cpu" | "gpu";
+    cpu_model?: string; cpu_count?: number; ram_gb?: number; benchmark?: { gflops?: number } | null };
+  limits: { gpu_memory_fraction?: number; duty_cycle?: number; cpu_threads?: number };
+  trained_tokens?: number;
+  reputation?: number;
   version: string | null;
   verified_jobs: number;
   failed_jobs: number;
@@ -25,7 +28,7 @@ interface Worker {
 }
 interface Job { id: number; status: string; worker_id: number; progress: number | null; error: string | null; updated_at: number }
 interface Listing { workers: Worker[]; jobs: Job[]; network: { configured: boolean; round: number | null; checkpoint_version: number | null } }
-interface Enrollment { token: string; expires_at: number; command: string | null; manual_command: string; note: string | null; release: { version: string; sha256: string } | null }
+interface Enrollment { token: string; expires_at: number; command: string | null; windows_command: string | null; manual_command: string; note: string | null; release: { version: string; sha256: string } | null }
 
 const statusTone: Record<string, "success" | "warning" | "danger" | "default"> = { online: "success", paused: "warning", offline: "default", revoked: "danger" };
 
@@ -49,6 +52,7 @@ export function NetworkView() {
   const [name, setName] = useState("");
   const [referral, setReferral] = useState("");
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  const [os, setOs] = useState<"unix" | "windows">(navigator.userAgent.includes("Windows") ? "windows" : "unix");
   const [error, setError] = useState<string | null>(null);
   const [, tick] = useState(0);
 
@@ -63,7 +67,7 @@ export function NetworkView() {
   if (!user) {
     return (
       <EmptyState icon={<Server />} title="Training & Referrals">
-        Sign in to contribute GPU training compute to MOTH and earn rewards.
+        Sign in to contribute training compute (CPU or GPU) to MOTH and earn rewards.
         <div className="mt-3"><Button onClick={() => openAccountDialog("login")}>Sign in</Button></div>
       </EmptyState>
     );
@@ -86,8 +90,8 @@ export function NetworkView() {
         <div>
           <h1 className="text-lg font-semibold">Training & Referrals</h1>
           <p className="mt-1 text-xs text-muted">
-            Help train the official MOTH model by contributing GPU compute. MOTH Worker is a separate program for Linux GPU
-            servers (for example a rented RTX 3060 12 GB). It is not an AI assistant and never sees your projects.
+            Help train MOTH with any computer you have: a server, a desktop or a laptop, with or without a GPU. MOTH Worker is
+            a small separate program; it trains only on public, licensed data and never sees your projects.
           </p>
         </div>
         {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
@@ -96,9 +100,9 @@ export function NetworkView() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4 text-accent" />How it works</CardTitle>
             <CardDescription>
-              Workers download the current training checkpoint and a public, licensed data shard, train within the limits you
+              Workers download the current model and a public, licensed data shard, train within the limits you
               set, and upload a weight update. Every update is verified before it counts. Verified work can earn MOTH usage
-              credits for whoever referred the server; idle or failing servers earn nothing. Pause, limit or revoke a
+              credits for whoever referred the computer; idle or failing workers earn nothing. Pause, limit or revoke a
               worker here at any time. Participation is optional.
             </CardDescription>
           </CardHeader>
@@ -111,29 +115,44 @@ export function NetworkView() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Server className="size-4 text-accent" />Add a GPU server</CardTitle>
-            <CardDescription>Generates a one-time command (valid 15 minutes). Run it in the server's terminal. The download is checked against a pinned SHA-256 before anything runs.</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Server className="size-4 text-accent" />Add a computer</CardTitle>
+            <CardDescription>
+              One command installs, connects and starts MOTH Worker, and keeps it running after restarts. It works on CPU-only
+              computers and uses an NVIDIA GPU when there is one. No administrator rights are needed. The download is checked
+              against a pinned SHA-256 before anything runs.
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <div className="grid grid-cols-[1fr_200px_auto] items-end gap-2">
-              <div><Label>Server name</Label><Input className="mt-1" placeholder="rtx3060-rental" value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div><Label>Name</Label><Input className="mt-1" placeholder="home-server" value={name} onChange={(e) => setName(e.target.value)} /></div>
               <div><Label>Referral code (optional)</Label><Input className="mt-1 uppercase" placeholder="someone else's code" value={referral} onChange={(e) => setReferral(e.target.value.toUpperCase())} /></div>
               <Button onClick={act(async () => setEnrollment(await serverApi<Enrollment>("/v1/training/enrollments", { method: "POST", json: { name: name || null, referral_code: referral || null } })))}>
-                Generate command
+                Get the command
               </Button>
             </div>
             {enrollment && (
               <div className="flex flex-col gap-2">
-                {enrollment.command ? <Copyable text={enrollment.command} label="Copy" /> : (
+                {enrollment.command ? (
+                  <>
+                    <div className="flex gap-1 text-xs">
+                      {(["unix", "windows"] as const).map((o) => (
+                        <Button key={o} size="sm" variant={os === o ? "secondary" : "ghost"} onClick={() => setOs(o)}>
+                          {o === "unix" ? "Linux / macOS (terminal)" : "Windows (PowerShell)"}
+                        </Button>
+                      ))}
+                    </div>
+                    <Copyable text={(os === "windows" ? enrollment.windows_command : enrollment.command) ?? enrollment.command} label="Copy" />
+                  </>
+                ) : (
                   <>
                     <div className="text-xs text-warning">{enrollment.note}</div>
                     <Copyable text={enrollment.manual_command} label="Copy" />
                   </>
                 )}
                 <div className="text-[11px] text-faint">
-                  {expiresIn > 0 ? `Expires in ${Math.floor(expiresIn / 60)}:${String(expiresIn % 60).padStart(2, "0")} · single use` : "Expired — generate a new command."}
+                  {expiresIn > 0 ? `Expires in ${Math.floor(expiresIn / 60)}:${String(expiresIn % 60).padStart(2, "0")} · works once` : "Expired — get a new command."}
                   {enrollment.release && ` · MOTH Worker ${enrollment.release.version}`}
-                  {" · Requires Linux, Python 3.10+, and an NVIDIA GPU with 8 GB+ VRAM."}
+                  {" · Needs Python 3.10+ (installed automatically on Windows), 2+ CPU cores, 3 GB memory, 5 GB disk."}
                 </div>
               </div>
             )}
@@ -153,9 +172,17 @@ export function NetworkView() {
                       {w.referred && <Badge>referred</Badge>}
                     </div>
                     <div className="mt-0.5 truncate text-[11px] text-muted">
-                      {w.hardware.gpus?.length ? w.hardware.gpus.map((g) => `${g.name} (${g.memory_gb} GB)`).join(", ") : "no GPU detected"}
-                      {w.hardware.cuda && ` · CUDA ${w.hardware.cuda}`} · {w.verified_jobs} verified / {w.failed_jobs} failed jobs
+                      {w.hardware.compute === "gpu" && w.hardware.gpus?.length
+                        ? "GPU · " + w.hardware.gpus.map((g) => `${g.name} (${g.memory_gb} GB)`).join(", ")
+                        : `CPU · ${w.hardware.cpu_model ?? "processor"}${w.hardware.cpu_count ? ` · ${w.hardware.cpu_count} cores` : ""}${w.hardware.ram_gb ? ` · ${w.hardware.ram_gb} GB` : ""}`}
+                      {w.hardware.benchmark?.gflops ? ` · ${Math.round(w.hardware.benchmark.gflops)} GFLOP/s` : ""}
                       {w.last_heartbeat_at && ` · seen ${timeAgo(w.last_heartbeat_at)}`}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-faint">
+                      {w.verified_jobs} verified jobs{w.failed_jobs ? ` · ${w.failed_jobs} failed` : ""}
+                      {w.trained_tokens ? ` · ${(w.trained_tokens / 1e6).toFixed(w.trained_tokens < 1e7 ? 2 : 1)}M tokens trained` : ""}
+                      {w.reputation != null && w.verified_jobs + w.failed_jobs > 0 ? ` · reliability ${Math.round(w.reputation * 100)}%` : ""}
+                      {w.version ? ` · v${w.version}` : ""}
                     </div>
                   </div>
                   {w.status !== "revoked" && (
@@ -163,8 +190,8 @@ export function NetworkView() {
                       {w.paused
                         ? <Button size="sm" variant="secondary" onClick={act(() => serverApi(`/v1/training/workers/${w.id}/resume`, { method: "POST" }))}><Play /> Resume</Button>
                         : <Button size="sm" variant="secondary" onClick={act(() => serverApi(`/v1/training/workers/${w.id}/pause`, { method: "POST" }))}><Pause /> Pause</Button>}
-                      <Button size="icon-sm" variant="ghost" title="Revoke (disconnect permanently)"
-                        onClick={() => confirm(`Revoke ${w.name}? It will stop and can't reconnect.`) && act(() => serverApi(`/v1/training/workers/${w.id}/revoke`, { method: "POST" }))()}>
+                      <Button size="icon-sm" variant="ghost" title="Remove this worker"
+                        onClick={() => confirm(`Remove ${w.name}? It stops and can't reconnect. To also delete it from that computer, run there:  moth-worker uninstall`) && act(() => serverApi(`/v1/training/workers/${w.id}/revoke`, { method: "POST" }))()}>
                         <Trash2 />
                       </Button>
                     </div>
@@ -172,11 +199,20 @@ export function NetworkView() {
                 </div>
                 {w.status !== "revoked" && (
                   <div className="mt-2 flex items-center gap-4 text-[11px] text-muted">
-                    <label className="flex items-center gap-2">GPU memory
-                      <input type="range" min={0.1} max={0.95} step={0.05} className="w-28 accent-[#C1121F]" defaultValue={w.limits.gpu_memory_fraction ?? 0.9}
-                        onMouseUp={(e) => act(() => serverApi(`/v1/training/workers/${w.id}/limits`, { method: "PUT", json: { gpu_memory_fraction: Number((e.target as HTMLInputElement).value) } }))()} />
-                      {Math.round((w.limits.gpu_memory_fraction ?? 0.9) * 100)}%
-                    </label>
+                    {w.hardware.compute === "gpu" ? (
+                      <label className="flex items-center gap-2">GPU memory
+                        <input type="range" min={0.1} max={0.95} step={0.05} className="w-28 accent-[#C1121F]" defaultValue={w.limits.gpu_memory_fraction ?? 0.9}
+                          onMouseUp={(e) => act(() => serverApi(`/v1/training/workers/${w.id}/limits`, { method: "PUT", json: { gpu_memory_fraction: Number((e.target as HTMLInputElement).value) } }))()} />
+                        {Math.round((w.limits.gpu_memory_fraction ?? 0.9) * 100)}%
+                      </label>
+                    ) : (
+                      <label className="flex items-center gap-2">CPU cores
+                        <input type="range" min={1} max={Math.max(1, w.hardware.cpu_count ?? 1)} step={1} className="w-28 accent-[#C1121F]"
+                          defaultValue={w.limits.cpu_threads ?? Math.max(1, (w.hardware.cpu_count ?? 2) - 1)}
+                          onMouseUp={(e) => act(() => serverApi(`/v1/training/workers/${w.id}/limits`, { method: "PUT", json: { cpu_threads: Number((e.target as HTMLInputElement).value) } }))()} />
+                        {w.limits.cpu_threads ?? Math.max(1, (w.hardware.cpu_count ?? 2) - 1)} of {w.hardware.cpu_count ?? "?"}
+                      </label>
+                    )}
                     <label className="flex items-center gap-2">Compute
                       <input type="range" min={0.1} max={1} step={0.05} className="w-28 accent-[#C1121F]" defaultValue={w.limits.duty_cycle ?? 1}
                         onMouseUp={(e) => act(() => serverApi(`/v1/training/workers/${w.id}/limits`, { method: "PUT", json: { duty_cycle: Number((e.target as HTMLInputElement).value) } }))()} />

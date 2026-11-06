@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.0 — ASCENSION, milestone 1: EasyConnect workers, CPU workers, Rewards 2.0
+
+MOTH Cloud, MOTH Code and MOTH Worker 0.5.0 are released together. This is the first of the staged
+ASCENSION releases (see [docs/ASCENSION.md](docs/ASCENSION.md)).
+
+- **EasyConnect worker installation:**
+  - MOTH Code → Training & Referrals → **Add a computer** gives one command for Linux/macOS and one
+    for Windows (PowerShell)
+  - it downloads MOTH Worker from your MOTH Cloud, verifies the pinned SHA-256, installs Python
+    packages and the right PyTorch (CUDA or CPU), enrolls with a single-use 15-minute token, and
+    starts the worker automatically: systemd, cron without sudo, a Windows scheduled task, or launchd
+  - crash restarts, a single running instance and a rotating log
+  - re-running the command on the same computer replaces its old registration
+  - `moth-worker uninstall` removes everything and revokes the worker
+  - Windows needs no administrator rights; Python is installed with winget if it is missing
+- **Fix:** MOTH Cloud now serves the worker bundle that its update agent relays from signed releases
+  (`/downloads/worker/…` returned 404 on 0.4.0 servers).
+- **CPU workers are production workers:**
+  - no experimental flag (the old "Allow CPU workers" setting is retired)
+  - workers report a measured benchmark (GFLOP/s), their CPU and memory
+  - jobs are assigned by capability: a worker only gets jobs that fit its memory, and jobs that
+    benefit from a GPU wait briefly for an online GPU worker
+  - CPU workers use all but one core by default, adjustable per worker in MOTH Code
+- **Referral Rewards 2.0:**
+  - compute rewards are proportional to the tokens a referred worker actually trained, per verified
+    job, after a minimum number of verified jobs
+  - signing up, idle workers, failed jobs and repeated claims earn nothing
+  - rewards are held for Owner review when a worker is unreliable or its computer is enrolled under
+    another account (privacy-preserving machine ids)
+  - rewards for a referred user's payment are off by default
+  - users see the rules in plain words and each referred worker's contribution and earnings; the
+    Owner can approve or reject held rewards
+- **Database:** migration 4 (additive): `workers.machine_id`, `workers.trained_tokens`.
+- **Tests:** end-to-end worker installation on Linux (CPU-only, cron start, crash recovery, uninstall)
+  and on Windows (CI), Rewards 2.0 rules, and an upgrade test from the release production runs
+  (server-v0.4.0), including existing worker credentials.
+
 ## 0.4.0 — EVOLUTION
 
 MOTH Cloud can now improve its own model, safely and unattended. See [docs/EVOLUTION.md](docs/EVOLUTION.md).

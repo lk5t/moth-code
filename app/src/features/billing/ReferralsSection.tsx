@@ -10,7 +10,9 @@ import { formatNumber, timeAgo } from "@/lib/utils";
 interface Dashboard {
   code: string;
   link: string;
-  rules: { enabled: boolean; user_reward_tokens: number; gpu_reward_tokens_per_job: number; gpu_min_verified_jobs: number; pending_days: number };
+  rules: { enabled: boolean; user_reward_tokens: number; pending_days: number; user_payment_rewards?: boolean };
+  rules_text?: string[];
+  referred_workers?: { name: string; compute: string; status: string; verified_jobs: number; trained_tokens: number; reputation: number; last_seen: number | null; earned: number }[];
   stats: { referred: number; qualified: number; pending_tokens: number; earned_tokens: number };
   referrals: { user: string; status: string; created_at: number }[];
   rewards: { id: number; kind: string; amount: number; status: string; available_at: number; reason: string | null; created_at: number }[];
@@ -41,10 +43,8 @@ export function ReferralsSection() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Gift className="size-4 text-accent" />Referrals</CardTitle>
         <CardDescription>
-          Earn {formatNumber(d.rules.user_reward_tokens, 1)} MOTH Cloud tokens when someone you invite starts a paid plan, and{" "}
-          {formatNumber(d.rules.gpu_reward_tokens_per_job, 1)} per verified training job from GPU servers enrolled with your code
-          (after {d.rules.gpu_min_verified_jobs} verified jobs). Rewards are usage credits, not cash, and are credited after a{" "}
-          {d.rules.pending_days}-day pending period. Sign-ups or idle servers alone earn nothing.
+          Invite people to contribute a computer (CPU or GPU) to MOTH. You earn MOTH usage credits for the verified training
+          work their workers do. Signing up alone earns nothing.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -57,7 +57,7 @@ export function ReferralsSection() {
         <div className="grid grid-cols-4 gap-2">
           {[
             ["Invited", d.stats.referred],
-            ["Paid", d.stats.qualified],
+            ["Workers", d.referred_workers?.length ?? 0],
             ["Pending", `${formatNumber(d.stats.pending_tokens, 1)}`],
             ["Earned", `${formatNumber(d.stats.earned_tokens, 1)}`],
           ].map(([k, v]) => (
@@ -77,13 +77,30 @@ export function ReferralsSection() {
             ))}
           </div>
         )}
+        {!!d.referred_workers?.length && (
+          <div className="space-y-1 text-xs">
+            <div className="text-[10.5px] uppercase tracking-wider text-faint">Workers you referred</div>
+            {d.referred_workers.map((w, i) => (
+              <div key={i} className="flex justify-between rounded border border-border px-2.5 py-1.5">
+                <span>{w.name} <span className="text-faint">· {w.compute.toUpperCase()} · {w.verified_jobs} verified jobs · {(w.trained_tokens / 1e6).toFixed(2)}M tokens · reliability {Math.round(w.reputation * 100)}%{w.last_seen ? ` · seen ${timeAgo(w.last_seen)}` : ""}</span></span>
+                <span className="flex items-center gap-2"><span className="font-mono">{formatNumber(w.earned, 1)}</span><Badge variant={w.status === "online" ? "success" : "default"}>{w.status}</Badge></span>
+              </div>
+            ))}
+          </div>
+        )}
+        {!!d.rules_text?.length && (
+          <details className="text-xs text-muted">
+            <summary className="cursor-pointer">How rewards work</summary>
+            <ul className="mt-1.5 list-disc space-y-1 pl-4">{d.rules_text.map((t, i) => <li key={i}>{t}</li>)}</ul>
+          </details>
+        )}
         {d.rewards.length > 0 && (
           <details open>
             <summary className="cursor-pointer text-xs text-muted">Reward history</summary>
             <div className="mt-2 space-y-1 text-xs">
               {d.rewards.map((r) => (
                 <div key={r.id} className="flex justify-between rounded border border-border px-2.5 py-1.5">
-                  <span>{r.kind === "gpu" ? "GPU training contribution" : "Referral"} · {formatNumber(r.amount, 1)} tokens
+                  <span>{r.kind === "gpu" ? "Training contribution" : "Referral payment"} · {formatNumber(r.amount, 1)} tokens
                     {r.status === "pending" && <span className="text-faint"> · available {new Date(r.available_at * 1000).toLocaleDateString()}</span>}
                     {r.reason && r.status !== "pending" && <span className="text-faint"> · {r.reason}</span>}
                   </span>
