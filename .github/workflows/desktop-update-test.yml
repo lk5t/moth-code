@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 90
     env:
-      NEW_VERSION: "0.3.99"
+      NEW_VERSION: "99.0.0"  # version B: always newer than the app version under test
       SERVER: "http://127.0.0.1:8900"
     steps:
       - uses: actions/checkout@v4
