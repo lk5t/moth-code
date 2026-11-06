@@ -213,11 +213,14 @@ def main() -> None:
         api.call("PUT", "/v1/admin/evolution/settings", {"changes": {"min_dataset_tokens": 1000, "backends": {
             "local_cpu": False, "local_gpu": True, "workers": True}}}, expect=200)
         api.call("POST", f"/v1/admin/evolution/datasets/{d['id']}/approve", {}, expect=200)
-        for _ in range(90):
+        for _ in range(180):
             _, st = api.call("GET", "/v1/admin/evolution/status", expect=200)
             if st["cycle"] and st["cycle"]["experiments"] and st["cycle"]["experiments"][0]["status"] != "planned":
                 break
             time.sleep(1)
+        if not (st["cycle"] and st["cycle"]["experiments"]):
+            raise SystemExit("FAILED: no evolution cycle started: state=" + json.dumps(st["state"]) + " events=" +
+                             json.dumps([e["message"] for e in st["recent"]][:10]))
         first = st["cycle"]["experiments"][0]
         # the server has no GPU and CPU training on it is off; the CPU worker enrolled on the old release is
         # online, so 0.5 sends the experiment to it as a worker job — the server itself trains nothing

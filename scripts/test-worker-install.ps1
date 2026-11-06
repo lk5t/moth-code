@@ -63,7 +63,9 @@ try {
   if ($w.status -ne "revoked") { throw "the worker was not revoked (status $($w.status))" }
   if (Test-Path $wHome) { throw "files were left in $wHome" }
   Write-Host "PASS: Windows one-command worker install, scheduled-task start, verified job and uninstall"
+  $global:LASTEXITCODE = 0  # the expected-to-fail schtasks query above must not become the step's result
 } finally {
   Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
   Get-Content "$Work\server.err" -ErrorAction SilentlyContinue | Select-Object -Last 20
 }
+exit 0
