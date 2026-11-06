@@ -28,7 +28,7 @@ export function formatBytes(n?: number | null): string {
   return `${v.toFixed(v < 10 && i ? 1 : 0)} ${u[i]}`;
 }
 
-function usePoll<T>(path: string, ms = 15000) {
+export function usePoll<T>(path: string, ms = 15000) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = () => serverApi<T>(path).then((d) => { setData(d); setError(null); }).catch((e) => setError(e.message));
@@ -40,7 +40,7 @@ function usePoll<T>(path: string, ms = 15000) {
   return { data, error, load };
 }
 
-function useAction(after?: () => void) {
+export function useAction(after?: () => void) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     setMsg(null);

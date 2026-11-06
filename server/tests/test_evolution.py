@@ -338,6 +338,8 @@ def test_failing_deployment_is_rolled_back_automatically(client, settings, world
     assert ctx.extras["deployed_version"] == cand
     EN.tick(ctx)
     assert MEM.cycle(ctx, cyc["id"])["status"] == "monitoring"  # healthy so far
+    st = client.get("/v1/admin/evolution/status", headers=o).json()
+    assert st["active_model"]["version"] == cand and st["stable_model"]["version"] == world["base"]  # not yet stable
     # SIMULATED production failures of the new model: 6 of 8 requests fail
     act = C.activity(ctx)
     for ok in (False, False, True, False, False, True, False, False):

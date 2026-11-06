@@ -114,7 +114,10 @@ def resources(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     return {"local": hw, "workers": C.worker_capacity(ctx, bool(flags(ctx).get("allow_cpu_workers"))),
             "inference": {"active_requests": act.active, "requests_per_minute": round(act.per_minute(), 2)},
             "training": {"running": [_exp_summary(ctx, e) for e in running],
-                         "compute_hours_24h": round(MEM.compute_seconds_since(ctx, time.time() - 86400) / 3600, 3)}}
+                         # finished/paused work plus the time the running experiments have been training so far
+                         "compute_hours_24h": round((MEM.compute_seconds_since(ctx, time.time() - 86400) + sum(
+                             max(0.0, time.time() - float((e["resources"] or {}).get("started") or time.time()))
+                             for e in running if e.get("backend") == "local")) / 3600, 3)}}
 
 
 class SettingsIn(BaseModel):

@@ -164,10 +164,19 @@ def _tick(ctx: Ctx) -> dict[str, Any]:
             _pause_running(ctx, cyc, "evolution is paused" if settings["enabled"] else "evolution is turned off")
         return {"state": "paused" if settings["enabled"] else "off"}
     if cyc is None:
-        return _maybe_start(ctx, settings)
-    handler = {"planning": _planning, "waiting_for_compute": _training, "training": _training,
-               "evaluating": _evaluating, "deploying": _deploying, "monitoring": _monitoring}[cyc["status"]]
-    handler(ctx, cyc, settings)
+        started = _maybe_start(ctx, settings)
+        if "cycle" not in started:
+            return started
+        cyc = MEM.active_cycle(ctx)
+    # Advance through quick transitions in one tick (planning → trying to start, trained → evaluating …),
+    # so the dashboard never shows a state the engine has not actually checked yet. Bounded.
+    for _ in range(MAX_STEPS_PER_TICK):
+        before = cyc["status"]
+        HANDLERS[before](ctx, cyc, settings)
+        after = MEM.cycle(ctx, cyc["id"])
+        if after["status"] == before or after["status"] in MEM.TERMINAL_CYCLE:
+            break
+        cyc = after
     return {"cycle": cyc["id"], "status": MEM.cycle(ctx, cyc["id"])["status"]}
 
 
@@ -469,6 +478,8 @@ def _deploying(ctx: Ctx, cyc: dict, settings: dict) -> None:
     from moth_server import models as M
 
     previous = M.deployed(ctx)
+    if previous and not state(ctx).get("stable_version"):
+        _set_state(ctx, stable_version=previous["version"])  # the candidate becomes stable only after monitoring
     try:
         M.deploy(ctx, cyc["candidate_version"])
     except M.ReleaseError as e:
@@ -596,6 +607,11 @@ def start_background(ctx: Ctx) -> None:
             tick(ctx)
 
     threading.Thread(target=loop, daemon=True, name="evolution").start()
+
+
+HANDLERS = {"planning": _planning, "waiting_for_compute": _training, "training": _training,
+            "evaluating": _evaluating, "deploying": _deploying, "monitoring": _monitoring}
+MAX_STEPS_PER_TICK = 5
 
 
 def kick(ctx: Ctx) -> None:
