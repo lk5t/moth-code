@@ -61,7 +61,13 @@ try {
   if ($LASTEXITCODE -eq 0) { throw "the scheduled task is still there" }
   $w = (Invoke-RestMethod "$Base/v1/training/workers" -Headers $auth).workers | Select-Object -Last 1
   if ($w.status -ne "revoked") { throw "the worker was not revoked (status $($w.status))" }
-  if (Test-Path $wHome) { throw "files were left in $wHome" }
+  if (Test-Path $wHome) {
+    Write-Host "--- left behind:"; Get-ChildItem -Recurse $wHome -ErrorAction SilentlyContinue | Select-Object -First 15 | ForEach-Object { $_.FullName }
+    Write-Host "--- processes running from it:"; Get-Process | Where-Object { $_.Path -like "$wHome*" } | Format-Table Id, Path -AutoSize | Out-String | Write-Host
+    Write-Host "--- cleanup log:"; Get-Content (Join-Path $env:TEMP "moth-worker-uninstall.log") -ErrorAction SilentlyContinue
+    schtasks /Query /TN "MOTH Worker" 2>&1 | Out-Host
+    throw "files were left in $wHome"
+  }
   Write-Host "PASS: Windows one-command worker install, scheduled-task start, verified job and uninstall"
   $global:LASTEXITCODE = 0  # the expected-to-fail schtasks query above must not become the step's result
 } finally {

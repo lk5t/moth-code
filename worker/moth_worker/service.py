@@ -308,7 +308,10 @@ def cmd_uninstall(args) -> int:
               "-ErrorAction SilentlyContinue } } } }; "
               f"Wait-Process -Id {os.getpid()} -ErrorAction SilentlyContinue; "
               "for ($i = 0; $i -lt 30; $i++) { foreach ($d in $t) { Remove-Item -Recurse -Force $d "
-              "-ErrorAction SilentlyContinue }; if (-not ($t | Where-Object { Test-Path $_ })) { break }; Start-Sleep 1 }")
+              "-ErrorAction SilentlyContinue }; if (-not ($t | Where-Object { Test-Path $_ })) { break }; Start-Sleep 1 }; "
+              "if ($t | Where-Object { Test-Path $_ }) { 'not removed: ' + (($t | Where-Object { Test-Path $_ }) -join ', ') "
+              "} else { 'removed' }")
+        ps = f"& {{ {ps} }} *> (Join-Path $env:TEMP 'moth-worker-uninstall.log')"
         subprocess.Popen(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
                          creationflags=0x08000000 | 0x00000008)  # no window, detached
     else:
