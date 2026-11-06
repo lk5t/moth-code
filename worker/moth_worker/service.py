@@ -274,6 +274,43 @@ def _stop_running(home: Path) -> None:
         pass
 
 
+CLEANUP = """import os, shutil, sys, time
+log = os.path.join(os.environ.get("TEMP", "."), "moth-worker-uninstall.log")
+targets = sys.argv[1:]
+for _ in range(90):  # the uninstalling process (and pip's launcher) must exit first
+    for t in targets:
+        shutil.rmtree(t, ignore_errors=True)
+    if not any(os.path.exists(t) for t in targets):
+        break
+    time.sleep(1)
+left = [t for t in targets if os.path.exists(t)]
+with open(log, "w") as f:
+    f.write(("not removed: " + ", ".join(left)) if left else "removed")
+"""
+
+
+def _windows_delete_after_exit(targets: list[Path]) -> None:
+    """Delete the worker's environment once this process has exited (its files are in use until then),
+    with the base Python interpreter (outside the environment) in a process that leaves pip's launcher
+    job object — that job kills the launcher's children when it exits."""
+    import tempfile
+
+    script = Path(tempfile.gettempdir()) / "moth-worker-cleanup.py"
+    script.write_text(CLEANUP)
+    base = getattr(sys, "_base_executable", None) or sys.executable
+    pyw = Path(base).with_name("pythonw.exe")
+    exe = str(pyw if pyw.exists() else base)
+    cmd = [exe, str(script), *map(str, targets)]
+    no_window, detached, breakaway, new_group = 0x08000000, 0x00000008, 0x01000000, 0x00000200
+    for flags in (no_window | detached | breakaway | new_group, no_window | detached | new_group):
+        try:
+            subprocess.Popen(cmd, creationflags=flags, close_fds=True, cwd=tempfile.gettempdir(),
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+        except OSError:
+            continue
+
+
 def cmd_uninstall(args) -> int:
     home = Path(args.home or default_dir())
     if not args.yes:
@@ -300,29 +337,12 @@ def cmd_uninstall(args) -> int:
     ours = (venv.name == "venv" and venv.parent.name in ("moth-worker", "worker")) or str(venv) == "/opt/moth-worker"
     targets = [home] + ([venv] if ours and venv.exists() and home not in venv.parents and venv != home else [])
     if os.name == "nt":
-        # Files of running programs cannot be deleted on Windows: stop every other process started from the
-        # worker's environment (e.g. the scheduled task's supervisor), then delete — retrying — after exit.
-        paths = ", ".join("'" + str(t).replace("'", "''") + "'" for t in targets)
-        ps = (f"$t = @({paths}); foreach ($p in Get-Process) {{ if ($p.Id -ne {os.getpid()} -and $p.Path) {{ "
-              "foreach ($d in $t) { if ($p.Path -like ($d + '*')) { Stop-Process -Id $p.Id -Force "
-              "-ErrorAction SilentlyContinue } } } }; "
-              f"Wait-Process -Id {os.getpid()} -ErrorAction SilentlyContinue; "
-              "for ($i = 0; $i -lt 30; $i++) { foreach ($d in $t) { Remove-Item -Recurse -Force $d "
-              "-ErrorAction SilentlyContinue }; if (-not ($t | Where-Object { Test-Path $_ })) { break }; Start-Sleep 1 }; "
-              "if ($t | Where-Object { Test-Path $_ }) { 'not removed: ' + (($t | Where-Object { Test-Path $_ }) -join ', ') "
-              "} else { 'removed' }")
-        ps = f"& {{ {ps} }} *> (Join-Path $env:TEMP 'moth-worker-uninstall.log')"
         # State files are not in use any more: delete them now (everything except the running environment).
         for t in targets:
             for child in (t.iterdir() if t.is_dir() else []):
                 if child != venv and venv not in child.parents and child not in venv.parents:
                     shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink(missing_ok=True)
-        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps]
-        no_window, detached, breakaway = 0x08000000, 0x00000008, 0x01000000
-        try:  # pip's moth-worker.exe launcher kills its children on exit unless they leave its job object
-            subprocess.Popen(cmd, creationflags=no_window | detached | breakaway)
-        except OSError:
-            subprocess.Popen(cmd, creationflags=no_window | detached)
+        _windows_delete_after_exit(targets)
     else:
         for t in targets:
             shutil.rmtree(t, ignore_errors=True)
