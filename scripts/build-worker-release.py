@@ -50,10 +50,12 @@ def main() -> None:
     with tarfile.open(fileobj=buf, mode="w:gz", format=tarfile.PAX_FORMAT) as tar:
         add_tree(tar, ROOT / "worker", f"{name}/worker")
         add_tree(tar, ROOT / "backend", f"{name}/backend")
-        info = tar.gettarinfo(str(ROOT / "worker/install.sh"), f"{name}/install.sh")
-        info.mtime = 0
-        with open(ROOT / "worker/install.sh", "rb") as f:
-            tar.addfile(info, f)
+        for script in ("install.sh", "install.ps1"):
+            info = tar.gettarinfo(str(ROOT / "worker" / script), f"{name}/{script}")
+            info.mtime = 0
+            info.mode = 0o755
+            with open(ROOT / "worker" / script, "rb") as f:
+                tar.addfile(info, f)
     path = out / f"{name}.tar.gz"
     path.write_bytes(buf.getvalue())
     digest = hashlib.sha256(path.read_bytes()).hexdigest()

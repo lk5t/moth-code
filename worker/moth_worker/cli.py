@@ -1,4 +1,4 @@
-"""``moth-worker`` command line: detect, enroll, run, status, install-service."""
+"""``moth-worker`` command line: detect, enroll, run, status, install-service, uninstall."""
 
 from __future__ import annotations
 
@@ -14,22 +14,6 @@ from moth_worker import __version__
 from moth_worker.config import WorkerConfig, default_dir
 from moth_worker.hardware import detect, requirement_problem
 
-SERVICE = """[Unit]
-Description=MOTH Worker (MOTH training network)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-Environment=MOTH_WORKER_HOME={home}
-ExecStart={exe} run
-Restart=always
-RestartSec=15
-Nice=10
-{user_line}
-[Install]
-WantedBy={wanted}
-"""
 
 
 def cmd_detect(args) -> int:
@@ -66,10 +50,19 @@ def cmd_enroll(args) -> int:
 def cmd_run(args) -> int:
     from moth_worker.client import WorkerClient
     from moth_worker.runner import WorkerRunner
+    from moth_worker.service import log_to_file, single_instance, supervise
 
     from moth_worker import updater
 
     home = Path(args.home or default_dir())
+    if args.supervise:  # Windows scheduled task: restart the worker if it ever stops
+        return supervise(home, [a for a in sys.argv[1:] if a != "--supervise"])
+    lock = single_instance(home)
+    if lock is None:
+        return 0  # already running (cron starts it every minute; this keeps exactly one)
+    if args.log_file:
+        log_to_file(Path(args.log_file))
+    (home / "worker.pid").write_text(str(os.getpid()))
     cfg = WorkerConfig.load(home)
     guard = updater.startup_guard(home, log=lambda m: print(m, flush=True))
     if guard and guard.get("reverted"):
@@ -96,31 +89,7 @@ def cmd_status(args) -> int:
     return 0
 
 
-def cmd_install_service(args) -> int:
-    if not shutil.which("systemctl"):
-        print("systemd not found; start the worker with:  moth-worker run   (e.g. inside tmux or screen)")
-        return 0
-    home = Path(args.home or default_dir())
-    exe = shutil.which("moth-worker") or f"{sys.executable} -m moth_worker.cli"
-    root = os.geteuid() == 0
-    unit = SERVICE.format(home=home, exe=exe, user_line="", wanted="multi-user.target" if root else "default.target")
-    if root:
-        path = Path("/etc/systemd/system/moth-worker.service")
-        cmd = ["systemctl"]
-    else:
-        path = Path.home() / ".config/systemd/user/moth-worker.service"
-        cmd = ["systemctl", "--user"]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(unit)
-    if args.no_start:
-        print(f"Wrote {path}")
-        return 0
-    for c in (["daemon-reload"], ["enable", "--now", "moth-worker"]):
-        subprocess.run(cmd + c, check=False)
-    print(f"Installed and started {path}. Logs: journalctl {'-u' if root else '--user -u'} moth-worker -f")
-    if not root:
-        print("To keep the worker running after you log out:  loginctl enable-linger $USER")
-    return 0
+from moth_worker.service import cmd_install_service, cmd_uninstall  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -130,7 +99,8 @@ def main(argv: list[str] | None = None) -> int:
     home_arg = raw[raw.index("--home") + 1] if "--home" in raw[:-1] else None
     updater.reexec_into_current(Path(home_arg or default_dir()), raw)  # newest installed version runs
     p = argparse.ArgumentParser(prog="moth-worker")
-    p.add_argument("--home", help="state directory (default: /var/lib/moth-worker as root, else ~/.local/share/moth-worker)")
+    p.add_argument("--home", help="state directory (default: /var/lib/moth-worker as root, %%LOCALAPPDATA%%\\MOTH\\worker on "
+                                  "Windows, else ~/.local/share/moth-worker)")
     sub = p.add_subparsers(dest="cmd", required=True)
     d = sub.add_parser("detect", help="show detected hardware and whether it is supported")
     d.add_argument("--min-vram", type=float, default=8.0)
@@ -146,12 +116,19 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("run", help="run the worker loop")
     r.add_argument("--max-jobs", type=int)
     r.add_argument("--no-auto-update", action="store_true", help="don't install updates offered by MOTH Cloud")
+    r.add_argument("--log-file", help="write the log to this file (rotated at 5 MB)")
+    r.add_argument("--supervise", action="store_true", help="keep restarting the worker if it stops (Windows task)")
     r.set_defaults(fn=cmd_run)
     s = sub.add_parser("status")
     s.set_defaults(fn=cmd_status)
-    i = sub.add_parser("install-service", help="install and start the systemd service")
+    i = sub.add_parser("install-service", help="start the worker automatically at boot and after crashes")
+    i.add_argument("--mode", default="auto", choices=["auto", "systemd", "cron", "launchd", "task"])
     i.add_argument("--no-start", action="store_true")
     i.set_defaults(fn=cmd_install_service)
+    u = sub.add_parser("uninstall", help="stop the worker, remove its automatic start, revoke it and delete its files")
+    u.add_argument("--keep-files", action="store_true", help="keep the worker's files (only stop and revoke)")
+    u.add_argument("--yes", action="store_true", help="don't ask for confirmation")
+    u.set_defaults(fn=cmd_uninstall)
     args = p.parse_args(argv)
     return args.fn(args)
 

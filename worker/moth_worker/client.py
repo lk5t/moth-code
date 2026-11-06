@@ -86,5 +86,9 @@ class WorkerClient:
         headers = {**self._headers(), "x-moth-contribution": json.dumps(meta), "content-type": "application/octet-stream"}
         return self._check(self.http.post(f"/v1/worker/jobs/{job_id}/result", headers=headers, content=payload)).json()
 
+    def leave(self) -> None:
+        """Revoke this worker's own credential (used by ``moth-worker uninstall``)."""
+        self._check(self.http.post("/v1/worker/leave", headers=self._headers()))
+
     def fail(self, job_id: int, error: str) -> None:
         self._check(self.http.post(f"/v1/worker/jobs/{job_id}/fail", headers=self._headers(), json={"error": error[:2000]}))

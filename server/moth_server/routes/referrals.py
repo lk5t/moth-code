@@ -48,6 +48,13 @@ class RulesIn(BaseModel):
     max_gpu_reward_tokens_per_month: int | None = Field(default=None, ge=0)
     lifetime_cap_tokens: int | None = Field(default=None, ge=0)
     hold_same_ip_for_review: bool | None = None
+    contribution_reward_per_1k_tokens: float | None = Field(default=None, ge=0, le=10**6)
+    max_reward_per_job: int | None = Field(default=None, ge=0, le=10**10)
+    contributor_min_verified_jobs: int | None = Field(default=None, ge=0, le=10_000)
+    min_reputation: float | None = Field(default=None, ge=0, le=1)
+    reputation_min_jobs: int | None = Field(default=None, ge=0, le=10_000)
+    hold_duplicate_machines: bool | None = None
+    user_payment_rewards: bool | None = None
 
 
 class ReasonIn(BaseModel):

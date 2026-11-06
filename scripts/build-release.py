@@ -193,6 +193,7 @@ def build_server_bundles(out: Path, v: str) -> dict:
         add_tree(tar, ROOT / "worker", f"{wname}/worker")
         add_tree(tar, ROOT / "backend", f"{wname}/backend")
         add_file(tar, ROOT / "worker/install.sh", f"{wname}/install.sh", mode=0o755)
+        add_file(tar, ROOT / "worker/install.ps1", f"{wname}/install.ps1", mode=0o755)
 
     wpath = out / f"{wname}.tar.gz"
     wpath.write_bytes(tar_gz(worker))

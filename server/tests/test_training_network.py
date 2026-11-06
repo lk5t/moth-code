@@ -56,8 +56,11 @@ def test_install_command_pins_release_checksum(client, settings, tmp_path):
     sha = hashlib.sha256(b"release-bytes").hexdigest()
     (d / "manifest.json").write_text(json.dumps({"version": "0.2.0", "file": "moth-worker-0.2.0.tar.gz", "sha256": sha}))
     e = client.post("/v1/training/enrollments", json={}, headers=H(t)).json()
-    assert f"echo '{sha}  moth-worker-0.2.0.tar.gz' | sha256sum -c -" in e["command"]
-    assert e["token"] in e["command"] and e["command"].startswith("curl -fsSLO https://moth.test/downloads/worker/")
+    assert f"echo '{sha}  moth-worker-0.2.0.tar.gz' | sha256sum -c -" in e["command"]  # Linux
+    assert f"echo '{sha}  moth-worker-0.2.0.tar.gz' | shasum -a 256 -c -" in e["command"]  # macOS
+    assert e["token"] in e["command"] and "curl -fsSLO https://moth.test/downloads/worker/" in e["command"]
+    assert sha.upper() in e["windows_command"] and e["token"] in e["windows_command"]  # Windows
+    assert "Get-FileHash" in e["windows_command"] and "install.ps1" in e["windows_command"]
     assert client.get("/downloads/worker/moth-worker-0.2.0.tar.gz").content == b"release-bytes"
     assert client.get("/downloads/worker/other.tar.gz").status_code == 404
 
@@ -161,7 +164,7 @@ def test_tampered_results_are_rejected_without_credit(client, settings, training
 def test_gpu_server_referral_rewards_after_verified_jobs(client, settings, training_world, tmp_path):
     referrer = register_verified(client, settings, "refgpu")
     code = referrer["user"]["referral_code"]
-    client.put("/v1/admin/referral-rules", json={"gpu_min_verified_jobs": 1},
+    client.put("/v1/admin/referral-rules", json={"contributor_min_verified_jobs": 1},
                headers=H(training_world["owner"]["token"]))
     t = register_verified(client, settings, "renter")["token"]
     _, w = enroll(client, t, referral=code)
@@ -174,6 +177,8 @@ def test_gpu_server_referral_rewards_after_verified_jobs(client, settings, train
     assert res["accepted"]
     rewards = db.all(select(referral_rewards))
     assert len(rewards) == 1 and rewards[0]["kind"] == "gpu" and rewards[0]["status"] == "pending"
+    tokens = db.one(select(workers.c.trained_tokens).where(workers.c.id == w["worker_id"]))["trained_tokens"]
+    assert tokens > 0 and rewards[0]["amount"] == min(100_000, round(tokens / 1000 * 400))  # proportional to work
     # idle enrolled servers earn nothing
     assert all(rw["worker_id"] == w["worker_id"] for rw in rewards)
 

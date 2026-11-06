@@ -61,21 +61,55 @@ class FailIn(BaseModel):
 
 
 def worker_release(ctx: Ctx) -> dict | None:
+    """The newest MOTH Worker bundle this server can hand out: one relayed by the update agent from a
+    signed server release (``releases``), else one published by hand with ``moth-server worker-release``."""
+    from moth.model.registry import sha256_file
+
+    from moth_server import compat
+    from moth_server import releases as R
+    from moth_server.db import software_releases
+
+    rows = ctx.db.all(select(software_releases).where(software_releases.c.component == "worker",
+                                                      software_releases.c.channel == "stable"))
+    rows.sort(key=lambda r: compat.parse_version(r["version"]), reverse=True)
+    for r in rows:
+        f = R.files_ready(ctx, "worker", r["version"])
+        if f:
+            return {"version": r["version"], "file": f["file"], "sha256": f["sha256"], "source": "release",
+                    "url": f"{public_url(ctx)}/downloads/worker/{f['file']}"}
     m = ctx.settings.storage_dir / "worker" / "manifest.json"
     if not m.exists():
         return None
     data = json.loads(m.read_text())
-    if not (ctx.settings.storage_dir / "worker" / data["file"]).exists():
+    path = ctx.settings.storage_dir / "worker" / data["file"]
+    if not path.exists():
         return None
-    return {**data, "url": f"{public_url(ctx)}/downloads/worker/{data['file']}"}
+    return {**data, "sha256": data.get("sha256") or sha256_file(path), "source": "manual",
+            "url": f"{public_url(ctx)}/downloads/worker/{data['file']}"}
 
 
 def install_command(ctx: Ctx, release: dict, token: str) -> str:
+    """Linux and macOS: download, verify the pinned SHA-256, unpack, install (one command)."""
     f = shlex.quote(release["file"])
     d = shlex.quote(release["file"].removesuffix(".tar.gz"))
-    return (f"curl -fsSLO {shlex.quote(release['url'])} && "
-            f"echo '{release['sha256']}  {release['file']}' | sha256sum -c - && "
+    check = f"'{release['sha256']}  {release['file']}'"
+    return (f"cd \"$(mktemp -d)\" && curl -fsSLO {shlex.quote(release['url'])} && "
+            f"{{ echo {check} | sha256sum -c - 2>/dev/null || echo {check} | shasum -a 256 -c -; }} && "
             f"tar xzf {f} && ./{d}/install.sh --server {shlex.quote(public_url(ctx))} --token {shlex.quote(token)}")
+
+
+def windows_command(ctx: Ctx, release: dict, token: str) -> str:
+    """Windows 10/11 PowerShell: the same verified download, then install.ps1 (no administrator needed)."""
+    def q(v: str) -> str:
+        return "'" + v.replace("'", "''") + "'"
+    d = release["file"].removesuffix(".tar.gz")
+    return ("$ErrorActionPreference='Stop'; $d=Join-Path $env:TEMP ('moth-worker-'+[guid]::NewGuid()); "
+            "New-Item -ItemType Directory $d | Out-Null; Set-Location $d; "
+            f"Invoke-WebRequest -UseBasicParsing {q(release['url'])} -OutFile {q(release['file'])}; "
+            f"if ((Get-FileHash {q(release['file'])} -Algorithm SHA256).Hash -ne {q(release['sha256'].upper())}) "
+            "{ throw 'The MOTH Worker download failed verification. Nothing was installed.' }; "
+            f"tar -xzf {q(release['file'])}; "
+            f"& (Join-Path $d {q(d + '/install.ps1')}) -Server {q(public_url(ctx))} -Token {q(token)}")
 
 
 # ---- users -------------------------------------------------------------------------------------
@@ -94,6 +128,7 @@ def new_enrollment(body: EnrollmentIn, auth: Auth = Depends(current_auth), ctx: 
         "token": token, "expires_at": now() + T.ENROLL_TTL, "single_use": True,
         "release": release,
         "command": install_command(ctx, release, token) if release else None,
+        "windows_command": windows_command(ctx, release, token) if release else None,
         "manual_command": f"moth-worker enroll --server {public_url(ctx)} --token {token}",
         "note": None if release else "No MOTH Worker release is published on this server yet; install from source "
                                      "(see docs/WORKER.md) and run the manual command.",
@@ -148,10 +183,16 @@ def set_limits(wid: int, body: LimitsIn, auth: Auth = Depends(current_auth), ctx
 
 @router.get("/downloads/worker/{name}", include_in_schema=False)
 def download_worker(name: str, ctx: Ctx = Depends(get_ctx)):
+    from moth_server import releases as R
+
     rel = worker_release(ctx)
     if not rel or name != rel["file"]:
         raise HTTPException(404, "Not found.")
-    return FileResponse(ctx.settings.storage_dir / "worker" / rel["file"], media_type="application/gzip")
+    path = (R.served_file(ctx, "worker", rel["version"], name) if rel["source"] == "release"
+            else ctx.settings.storage_dir / "worker" / name)
+    if not path or not path.exists():
+        raise HTTPException(404, "Not found.")
+    return FileResponse(path, media_type="application/gzip", filename=name)
 
 
 # ---- workers (worker credentials only) ---------------------------------------------------------
@@ -173,6 +214,12 @@ def worker_enroll(body: WorkerEnrollIn, request: Request, ctx: Ctx = Depends(get
     except T.TrainingError as e:
         raise HTTPException(400, str(e)) from None
     return {"worker_id": wid, "worker_token": secret, "heartbeat_seconds": 30}
+
+
+@router.post("/v1/worker/leave")
+def worker_leave(w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
+    T.leave(ctx, w)
+    return {"ok": True}
 
 
 @router.post("/v1/worker/heartbeat")

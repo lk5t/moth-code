@@ -20,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Connection, Engine
 
 metadata = MetaData()
-SCHEMA_VERSION = 3  # see MIGRATIONS below
+SCHEMA_VERSION = 4  # see MIGRATIONS below
 
 
 def now() -> float:
@@ -254,6 +254,9 @@ workers = Table(
     Column("last_heartbeat_at", Float),
     Column("revoked_at", Float),
     Column("update_status", String(64)),
+    # 0.5: the computer's anonymised id (duplicate detection) and the total useful work it did
+    Column("machine_id", String(64), index=True),
+    Column("trained_tokens", BigInteger, nullable=False, default=0),
 )
 
 training_jobs = Table(
@@ -515,10 +518,18 @@ def _m3_evolution(c: Connection) -> None:
                        "VALUES (:v, NULL, :m, '[]', :t)"), {"v": version, "m": method, "t": created or now()})
 
 
+def _m4_workers(c: Connection) -> None:
+    """0.5 workers: anonymised machine id and the amount of verified work (tokens trained)."""
+    _add_column(c, "workers", "machine_id", "VARCHAR(64)")
+    _add_column(c, "workers", "trained_tokens", "BIGINT NOT NULL DEFAULT 0")
+    c.execute(text("CREATE INDEX IF NOT EXISTS ix_workers_machine_id ON workers (machine_id)"))
+
+
 MIGRATIONS: list[tuple[int, str, bool, Any]] = [
     (2, "v0.3: model lifecycle states, resumable uploads, software releases, deployments", False, _m2_lifecycle),
     (3, "v0.4: model evolution (training datasets, cycles, experiments, evaluation reports, lineage)", False,
      _m3_evolution),
+    (4, "v0.5: worker machine id and contribution totals", False, _m4_workers),
 ]
 
 

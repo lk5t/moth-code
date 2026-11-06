@@ -442,7 +442,9 @@ def test_migration_from_schema_2_keeps_everything_and_records_lineage(settings, 
     db.engine.dispose()
     with TestClient(create_app(settings, extras={"synchronous_jobs": True, "disable_background": True})) as c:
         ctx = c.app.state.ctx
-        assert ctx.db.schema_version() == 3
+        from moth_server.db import SCHEMA_VERSION
+
+        assert ctx.db.schema_version() == SCHEMA_VERSION
         kept = M.release(ctx, rel["version"])
         assert kept["sha256"] == rel["sha256"] and kept["status"] == rel["status"]
         lin = ctx.db.one(select(model_lineage).where(model_lineage.c.version == rel["version"]))

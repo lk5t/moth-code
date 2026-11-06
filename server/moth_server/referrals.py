@@ -1,11 +1,14 @@
-"""Referral attribution, qualifying events, pending rewards, caps and reversals.
+"""Referral attribution, qualifying events, pending rewards, caps and reversals (Rewards 2.0).
 
-Rewards are MOTH usage credits (never cash) and are only created by *verified qualifying
-events*:
+Rewards are MOTH usage credits (never cash) and are only created by *verified useful work*:
 
-* user referral — the referred user's first successful paid invoice (verified webhook);
-* GPU server referral — a referred training server's verified training contributions,
-  after a minimum number of verified jobs (idle or failing servers earn nothing).
+* **compute referral** — a worker (CPU or GPU) enrolled with a referral code earns its referrer
+  credits for each verified training contribution, in proportion to the tokens it actually trained,
+  after a minimum number of verified jobs. Registration alone never earns anything; idle, failing or
+  stopped workers earn nothing. Rewards are held for Owner review when the worker is unreliable
+  (reputation below the minimum) or its computer is also enrolled under another account.
+* user referral — the referred user's first paid invoice; **off by default** since 0.5
+  (``user_payment_rewards``), because rewards should come from contributions.
 
 Each reward waits ``pending_days`` (refunds/chargebacks in that window reverse it), then is
 credited through the ledger, subject to monthly and lifetime caps. Suspicious referrals
@@ -29,6 +32,14 @@ from moth_server.hooks import register_hook
 
 DEFAULT_RULES: dict[str, Any] = {
     "enabled": True,
+    # 0.5 compute rewards: credits per 1,000 verified trained tokens, capped per job
+    "contribution_reward_per_1k_tokens": 400,
+    "max_reward_per_job": 100_000,
+    "contributor_min_verified_jobs": 3,
+    "min_reputation": 0.6,            # verified / (verified + failed), after reputation_min_jobs
+    "reputation_min_jobs": 5,
+    "hold_duplicate_machines": True,  # same computer under another account → review
+    "user_payment_rewards": False,    # rewards for a referred user's payment (not compute) are off
     "user_reward_tokens": 500_000,
     "qualifying_min_amount_cents": 100,
     "gpu_reward_tokens_per_job": 50_000,
@@ -42,7 +53,10 @@ DEFAULT_RULES: dict[str, Any] = {
 
 
 def rules(db: Database) -> dict[str, Any]:
-    return {**DEFAULT_RULES, **(db.get_config("referral_rules", {}) or {})}
+    stored = db.get_config("referral_rules", {}) or {}
+    if "gpu_min_verified_jobs" in stored and "contributor_min_verified_jobs" not in stored:
+        stored = {**stored, "contributor_min_verified_jobs": stored["gpu_min_verified_jobs"]}  # rule set before 0.5
+    return {**DEFAULT_RULES, **stored}
 
 
 def find_referrer(conn: Connection, code: str | None) -> dict | None:
@@ -82,6 +96,8 @@ def on_registered(ctx: Ctx, conn: Connection, user: dict, referral_code: str | N
 
 def on_payment(ctx: Ctx, conn: Connection, user_id: int, amount: int, reference: str, plan_code: str) -> None:
     r = rules(ctx.db)
+    if not r.get("user_payment_rewards"):
+        return
     ref = conn.execute(select(referrals).where(referrals.c.referred_id == user_id)).mappings().first()
     if not ref or ref["status"] in ("rewarded", "reversed", "rejected", "qualified"):
         return  # only the first qualifying payment counts
@@ -104,21 +120,47 @@ def on_payment_reversed(ctx: Ctx, conn: Connection, reference: str | None, event
         reverse_reward(ctx.db, conn, dict(rw), f"payment {event_type}")
 
 
-def on_contribution_verified(ctx: Ctx, conn: Connection, worker: dict, job_id: int) -> None:
+def reputation(verified: int, failed: int) -> float:
+    """Reliability of a worker: share of its jobs that were verified (smoothed for new workers)."""
+    return (verified + 1) / (verified + failed + 2)
+
+
+def _review_reasons(conn: Connection, r: dict, worker: dict) -> list[str]:
+    reasons = []
+    v, f = int(worker.get("verified_jobs") or 0), int(worker.get("failed_jobs") or 0)
+    if v + f >= r["reputation_min_jobs"] and reputation(v, f) < r["min_reputation"]:
+        reasons.append(f"low reliability ({reputation(v, f):.0%} of jobs verified)")
+    mid = worker.get("machine_id")
+    if mid and r["hold_duplicate_machines"]:
+        others = conn.execute(select(workers.c.user_id).where(workers.c.machine_id == mid,
+                                                              workers.c.id != worker["id"])).all()
+        if any(o[0] != worker["user_id"] for o in others):
+            reasons.append("this computer is also enrolled under another account")
+        if any(o[0] == worker["referrer_id"] for o in others):
+            reasons.append("this computer is also enrolled by the referrer")
+    return reasons
+
+
+def on_contribution_verified(ctx: Ctx, conn: Connection, worker: dict, job_id: int, tokens: int = 0) -> None:
     r = rules(ctx.db)
     if not r["enabled"] or not worker.get("referrer_id") or worker["referrer_id"] == worker["user_id"]:
         return
     verified = conn.execute(select(workers.c.verified_jobs).where(workers.c.id == worker["id"])).scalar_one()
-    if verified < r["gpu_min_verified_jobs"]:
+    if verified < r.get("contributor_min_verified_jobs", r.get("gpu_min_verified_jobs", 3)):
         return
-    t = now()
-    key = f"gpu:{worker['id']}:{job_id}"
+    amount = min(int(r["max_reward_per_job"]), int(round(max(0, tokens) / 1000 * float(r["contribution_reward_per_1k_tokens"]))))
+    if amount <= 0:
+        return  # no measured useful work, no reward
+    key = f"gpu:{worker['id']}:{job_id}"  # one reward per verified job, ever
     if conn.execute(select(referral_rewards.c.id).where(referral_rewards.c.qualifying_ref == key)).first():
         return
+    held = _review_reasons(conn, r, worker)
+    t = now()
     conn.execute(referral_rewards.insert().values(
         referrer_id=worker["referrer_id"], kind="gpu", worker_id=worker["id"], qualifying_ref=key,
-        source_ref=f"job:{job_id}", amount=r["gpu_reward_tokens_per_job"], status="pending",
-        available_at=t + r["pending_days"] * 86400, reason="verified training contribution",
+        source_ref=f"job:{job_id}", amount=amount, status="review" if held else "pending",
+        available_at=t + r["pending_days"] * 86400,
+        reason=("held for review: " + "; ".join(held)) if held else f"verified contribution ({tokens:,} tokens trained)",
         created_at=t, updated_at=t))
 
 
@@ -217,7 +259,10 @@ def dashboard(db: Database, user_id: int, public_url: str, code: str) -> dict[st
     return {
         "code": code, "link": f"{public_url}/r/{code}",
         "rules": {k: r[k] for k in ("enabled", "user_reward_tokens", "gpu_reward_tokens_per_job", "gpu_min_verified_jobs",
-                                    "pending_days")},
+                                    "pending_days", "contribution_reward_per_1k_tokens", "max_reward_per_job",
+                                    "contributor_min_verified_jobs", "min_reputation", "user_payment_rewards",
+                                    "max_gpu_reward_tokens_per_month", "lifetime_cap_tokens")},
+        "rules_text": rules_text(r),
         "stats": {
             "referred": len(refs),
             "qualified": sum(1 for x in refs if x["status"] in ("qualified", "rewarded")),
@@ -227,4 +272,28 @@ def dashboard(db: Database, user_id: int, public_url: str, code: str) -> dict[st
         "referrals": [{"user": mask(x["username"]), "status": x["status"], "created_at": x["created_at"]} for x in refs],
         "rewards": [{k: x[k] for k in ("id", "kind", "amount", "status", "available_at", "reason", "created_at",
                                        "worker_id")} for x in rewards],
+        "referred_workers": [
+            {"name": mask(w["name"]), "compute": json.loads(w["hardware"] or "{}").get("compute", "cpu"),
+             "status": "removed" if w["revoked_at"] else w["status"], "verified_jobs": w["verified_jobs"],
+             "trained_tokens": int(w["trained_tokens"] or 0),
+             "reputation": round(reputation(w["verified_jobs"], w["failed_jobs"]), 2),
+             "last_seen": w["last_heartbeat_at"],
+             "earned": sum(x["amount"] for x in rewards if x["worker_id"] == w["id"] and x["status"] == "credited")}
+            for w in db.all(select(workers).where(workers.c.referrer_id == user_id).order_by(workers.c.id))],
     }
+
+
+def rules_text(r: dict[str, Any]) -> list[str]:
+    """The reward rules in plain words (shown to every user; the numbers are the live settings)."""
+    out = [f"You earn {r['contribution_reward_per_1k_tokens']} MOTH credits per 1,000 tokens trained by a worker that "
+           f"joined with your referral code (at most {r['max_reward_per_job']:,} per job).",
+           f"A worker's first {r['contributor_min_verified_jobs']} verified jobs don't earn rewards; only verified, useful "
+           "work counts. Signing up alone, idle workers and failed jobs earn nothing.",
+           f"Rewards wait {r['pending_days']} days before they are credited, and are held for review if the worker is "
+           f"unreliable (fewer than {r['min_reputation']:.0%} of its jobs verified) or its computer is also enrolled "
+           "under another account.",
+           f"Limits: {r['max_gpu_reward_tokens_per_month']:,} credits per month from workers and "
+           f"{r['lifetime_cap_tokens']:,} in total. Credits are for MOTH usage only, never cash."]
+    if r.get("user_payment_rewards"):
+        out.append(f"You also earn {r['user_reward_tokens']:,} credits when someone you referred makes their first payment.")
+    return out

@@ -54,7 +54,9 @@ def world(paid_settings, client, owner):
         c.execute(plans.update().where(plans.c.code == "pro").values(provider_price_id="price_pro"))
     alice = register_verified(client, paid_settings, "alice")
     # the test client always uses one IP; disable the same-IP hold except where tested
-    client.put("/v1/admin/referral-rules", json={"hold_same_ip_for_review": False}, headers=H(owner["token"]))
+    # these tests cover rewards for a referred user's payment, which are off by default since 0.5
+    client.put("/v1/admin/referral-rules", json={"hold_same_ip_for_review": False, "user_payment_rewards": True},
+               headers=H(owner["token"]))
     return {"alice": alice, "code": alice["user"]["referral_code"], "owner": owner, "settings": paid_settings}
 
 
@@ -66,6 +68,16 @@ def test_no_reward_for_registration_only(client, world):
     assert db.one(select(users.c.referred_by).where(users.c.id == uid_of(client, "bob")))["referred_by"] == ref["referrer_id"]
     R.process_pending(db, time.time() + 365 * 86400)
     assert credits(client, "alice") == 0 and db.all(select(referral_rewards)) == []
+
+
+def test_payment_alone_earns_nothing_by_default(client, world):
+    """Rewards 2.0: a referred user paying earns the referrer nothing unless the Owner turns it on."""
+    client.put("/v1/admin/referral-rules", json={"user_payment_rewards": False}, headers=H(world["owner"]["token"]))
+    register_verified(client, world["settings"], "bob", referral_code=world["code"])
+    db = client.app.state.ctx.db
+    R.on_payment(client.app.state.ctx, None, uid_of(client, "bob"), 2000, "inv_x", "pro")
+    assert db.all(select(referral_rewards)) == []
+    assert any("never cash" in t for t in R.rules_text(R.rules(db)))
 
 
 def test_paid_referral_reward_pending_then_credited_once(client, world):

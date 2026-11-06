@@ -79,15 +79,29 @@ def enroll_worker(ctx: Ctx, token: str, hardware: dict[str, Any], version: str |
             raise TrainingError("This enrollment command was already used.")
         referrer = find_referrer(c, row["referral_code"])
         referrer_id = referrer["id"] if referrer and referrer["id"] != row["user_id"] else None  # no self-referral
+        hw = _clean_hw(hardware)
+        mid = hw.get("machine_id")
+        replaced = []
+        if mid:  # the same computer enrolled again by the same account replaces its old registration
+            for old in c.execute(select(workers.c.id).where(workers.c.machine_id == mid, workers.c.user_id == row["user_id"],
+                                                            workers.c.revoked_at.is_(None))).all():
+                c.execute(workers.update().where(workers.c.id == old[0]).values(
+                    revoked_at=t, status="revoked", token_hash=f"replaced-{old[0]}-{t}"))
+                c.execute(training_jobs.update().where(training_jobs.c.worker_id == old[0],
+                                                       training_jobs.c.status == "leased")
+                          .values(status="queued", worker_id=None, lease_expires_at=None, updated_at=t))
+                replaced.append(old[0])
         secret = WORKER_TOKEN_PREFIX + new_token(32)
         count = c.execute(select(func.count()).where(workers.c.user_id == row["user_id"])).scalar()
+        default_name = f"{'gpu' if hw.get('compute') == 'gpu' else 'cpu'}-worker-{count + 1}"
         wid = c.execute(workers.insert().values(
-            user_id=row["user_id"], name=row["worker_name"] or f"gpu-server-{count + 1}", token_hash=token_hash(secret),
-            status="online", paused=False, hardware=json.dumps(_clean_hw(hardware)), limits=json.dumps({}),
+            user_id=row["user_id"], name=row["worker_name"] or default_name, token_hash=token_hash(secret),
+            status="online", paused=False, hardware=json.dumps(hw), limits=json.dumps({}),
             version=(version or "")[:32], referrer_id=referrer_id, verified_jobs=0, failed_jobs=0, enrolled_at=t,
-            last_heartbeat_at=t)).inserted_primary_key[0]
+            last_heartbeat_at=t, machine_id=mid, trained_tokens=0)).inserted_primary_key[0]
         audit(ctx.db, "training.worker_enrolled", row["user_id"], f"worker:{wid}",
-              {"gpus": [g.get("name") for g in _clean_hw(hardware).get("gpus", [])], "referrer": referrer_id}, conn=c)
+              {"gpus": [g.get("name") for g in hw.get("gpus", [])], "compute": hw.get("compute"),
+               "referrer": referrer_id, "replaced": replaced}, conn=c)
     return int(wid), secret
 
 
@@ -277,10 +291,12 @@ def submit_result(ctx: Ctx, worker: dict, job_id: int, meta: dict, payload: byte
             c.execute(training_jobs.update().where(training_jobs.c.id == job_id).values(
                 status="completed", progress=1.0, result=json.dumps({k: v for k, v in result.items() if k != "aggregated"}),
                 lease_expires_at=None, updated_at=t))
+            tokens = max(0, int(meta.get("tokens") or 0))
             c.execute(workers.update().where(workers.c.id == worker["id"])
-                      .values(verified_jobs=workers.c.verified_jobs + 1))
+                      .values(verified_jobs=workers.c.verified_jobs + 1,
+                              trained_tokens=workers.c.trained_tokens + tokens))
             fresh = dict(c.execute(select(workers).where(workers.c.id == worker["id"])).mappings().first())
-            run_hook(ctx, "worker_contribution_verified", conn=c, worker=fresh, job_id=job_id)
+            run_hook(ctx, "worker_contribution_verified", conn=c, worker=fresh, job_id=job_id, tokens=tokens)
             if result.get("aggregated"):
                 run_hook(ctx, "checkpoint_aggregated", conn=c, info=result["aggregated"])
         else:
@@ -311,7 +327,10 @@ def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None,
     if version:
         values["version"] = version[:32]
     if hardware:
-        values["hardware"] = json.dumps(_clean_hw(hardware))
+        hw = _clean_hw(hardware)
+        values["hardware"] = json.dumps(hw)
+        if hw.get("machine_id"):
+            values["machine_id"] = hw["machine_id"]
     with ctx.db.tx() as c:
         c.execute(workers.update().where(workers.c.id == worker["id"]).values(**values))
     if job_id and not worker["paused"]:
@@ -320,13 +339,26 @@ def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None,
             "limits": json.loads(worker["limits"] or "{}"), "server_time": t}
 
 
+def leave(ctx: Ctx, worker: dict) -> None:
+    """The worker removes itself (``moth-worker uninstall``): its credential stops working at once."""
+    t = now()
+    with ctx.db.tx() as c:
+        c.execute(workers.update().where(workers.c.id == worker["id"]).values(
+            revoked_at=t, status="revoked", token_hash=f"left-{worker['id']}-{t}"))
+        c.execute(training_jobs.update().where(training_jobs.c.worker_id == worker["id"],
+                                               training_jobs.c.status == "leased")
+                  .values(status="queued", worker_id=None, lease_expires_at=None, updated_at=t))
+        audit(ctx.db, "training.worker_left", worker["user_id"], f"worker:{worker['id']}", conn=c)
+
+
 def public_worker(w: dict) -> dict:
     return {"id": w["id"], "name": w["name"], "status": "revoked" if w["revoked_at"] else
             ("paused" if w["paused"] else w["status"]), "paused": bool(w["paused"]),
             "hardware": json.loads(w["hardware"] or "{}"), "limits": json.loads(w["limits"] or "{}"),
             "version": w["version"], "verified_jobs": w["verified_jobs"], "failed_jobs": w["failed_jobs"],
             "enrolled_at": w["enrolled_at"], "last_heartbeat_at": w["last_heartbeat_at"],
-            "referred": w["referrer_id"] is not None}
+            "referred": w["referrer_id"] is not None, "trained_tokens": int(w.get("trained_tokens") or 0),
+            "reputation": round((w["verified_jobs"] + 1) / (w["verified_jobs"] + w["failed_jobs"] + 2), 2)}
 
 
 def worker_jobs(ctx: Ctx, worker_ids: list[int], limit: int = 50) -> list[dict]:

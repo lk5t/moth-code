@@ -12,7 +12,9 @@ def default_dir() -> Path:
     env = os.environ.get("MOTH_WORKER_HOME")
     if env:
         return Path(env)
-    if os.name != "nt" and os.geteuid() == 0:
+    if os.name == "nt":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "MOTH" / "worker"
+    if os.geteuid() == 0:
         return Path("/var/lib/moth-worker")
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "moth-worker"
 
