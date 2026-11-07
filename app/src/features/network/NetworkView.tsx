@@ -1,3 +1,4 @@
+import { ParticipantSwitch } from "@/features/training/NetworkTraining";
 import { useEffect, useState } from "react";
 import { Copy, Cpu, Pause, Play, Server, ShieldCheck, Trash2 } from "lucide-react";
 import { serverApi, useAccount } from "@/lib/account";
@@ -96,6 +97,9 @@ export function NetworkView() {
         </div>
         {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
 
+        <Card>
+          <CardContent><ParticipantSwitch /></CardContent>
+        </Card>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><ShieldCheck className="size-4 text-accent" />How it works</CardTitle>

@@ -10,6 +10,7 @@ sys.path.insert(0, BACKEND)
 
 hiddenimports = (
     collect_submodules("moth")
+    + collect_submodules("moth_worker")  # MOTH Code contributes its computer with the MOTH Worker loop
     + collect_submodules("uvicorn")
     + ["websockets", "websockets.legacy", "httpx"]
 )

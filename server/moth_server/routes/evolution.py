@@ -213,6 +213,52 @@ def approve_experiment(eid: int, auth: Auth = Depends(owner_reauthed), ctx: Ctx 
     return {"ok": True}
 
 
+@router.get("/contributions")
+def contributions(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """Who is training the current (or latest) distributed experiment, and what each participant did."""
+    import json as _json
+
+    from sqlalchemy import select
+
+    from moth_server.db import training_jobs, workers
+
+    ws = {w["id"]: w for w in ctx.db.all(select(workers))}
+
+    def who(wid):
+        w = ws.get(int(wid)) if wid not in (None, "None") else None
+        if not w:
+            return {"worker_id": wid, "name": "unknown"}
+        hw = _json.loads(w["hardware"] or "{}")
+        return {"worker_id": w["id"], "name": w["name"], "compute": hw.get("compute"),
+                "this_app": hw.get("client") == "moth-code", "online": w["status"] == "online",
+                "gflops": (hw.get("benchmark") or {}).get("gflops")}
+
+    exp = next((e for e in MEM.experiments(ctx, limit=50) if e.get("backend") == "distributed"), None)
+    out = {"experiment": None, "workers": [{**who(w["id"]), "verified_jobs": w["verified_jobs"],
+                                            "trained_tokens": w["trained_tokens"], "failed_jobs": w["failed_jobs"],
+                                            "revoked": w["revoked_at"] is not None} for w in ws.values()]}
+    if exp is None:
+        return out
+    st = (exp["resources"] or {}).get("distributed") or {}
+    per: dict[str, dict] = {}
+    for h in st.get("history", []):
+        for wid, tok in (h.get("contributors") or {}).items():
+            p = per.setdefault(str(wid), {**who(wid), "tokens": 0, "rounds": 0})
+            p["tokens"] += tok
+            p["rounds"] += 1
+    jobs = []
+    for i, jid in ((st.get("jobs") or {}).get(str(st.get("round")), {}) or {}).items():
+        j = ctx.db.one(select(training_jobs).where(training_jobs.c.id == jid))
+        if j:
+            jobs.append({"shard": int(i), "status": j["status"], "progress": j["progress"],
+                         "worker": who(j["worker_id"]) if j["worker_id"] else None})
+    out["experiment"] = {"id": exp["id"], "cycle_id": exp["cycle_id"], "status": exp["status"],
+                         "round": st.get("round"), "rounds": st.get("rounds"), "shards": st.get("shards"),
+                         "local_steps": st.get("local_steps"), "history": st.get("history", []),
+                         "contributors": sorted(per.values(), key=lambda p: -p["tokens"]), "current_jobs": jobs}
+    return out
+
+
 @router.get("/experiments/{eid}/log")
 def experiment_log(eid: int, lines: int = 300, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     e = MEM.experiment(ctx, eid)

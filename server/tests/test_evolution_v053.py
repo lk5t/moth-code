@@ -193,3 +193,66 @@ def json_spec(job):
     import json
 
     return json.loads(job["spec"])
+
+
+def test_moth_code_contributes_its_computer_to_the_same_experiment(client, owner, tmp_path, monkeypatch):
+    """MOTH Code enrolls its own computer with the signed-in account and trains a shard of the same
+    distributed experiment as a standalone MOTH worker; the Owner sees both contributions."""
+    import time as _time
+
+    from moth.community.participant import Participant
+    from moth_worker.client import WorkerClient
+    from moth_worker.runner import WorkerRunner
+
+    ctx, base_v = _world(client, owner, tmp_path, monkeypatch)
+    S.update(ctx, {"backends": {"local_cpu": False, "local_gpu": False, "workers": True},
+                   "training": {"steps": 10, "lr": 3e-3}, "distributed": {"min_participants": 2, "rounds": 1}})
+    o = H(owner["token"])
+    settings_store: dict = {}
+
+    class Http:  # the participant's HTTP client: the test server
+        def __init__(self, base):
+            pass
+
+        def __enter__(self):
+            return client
+
+        def __exit__(self, *a):
+            return False
+
+    import moth_worker.client as wc
+
+    real_init = wc.WorkerClient.__init__
+    monkeypatch.setattr(wc.WorkerClient, "__init__", lambda self, server, token=None, http=None, timeout=120:
+                        real_init(self, server, token, http=client, timeout=timeout))
+    p = Participant(tmp_path / "app", account=lambda: {"server_url": "http://testserver", "token": owner["token"]},
+                    get_setting=settings_store.get, set_setting=settings_store.__setitem__,
+                    publish=lambda *a: None, http_factory=Http)
+    st = p.enable()
+    assert st["enabled"] and st["worker_id"]
+    # a standalone MOTH worker joins too
+    e = client.post("/v1/training/enrollments", json={"name": "ubuntu-cpu"}, headers=o).json()
+    w = client.post("/v1/worker/enroll", json={"token": e["token"], "version": "0.5.3", "hardware": {
+        "gpus": [], "cpu_count": 4, "ram_gb": 16.0, "compute": "cpu", "machine_id": "ubuntu"}}).json()
+    worker = WorkerRunner(WorkerClient("http://t", w["worker_token"], http=client), tmp_path / "w",
+                          log=lambda m: None, heartbeat_seconds=3600, update_check_seconds=None)
+    worker.beat()
+    deadline = _time.time() + 120
+    while _time.time() < deadline and not any(x.get("backend") == "distributed" for x in MEM.experiments(ctx)):
+        EN.tick(ctx)
+        _time.sleep(0.5)
+    job = client.post("/v1/worker/jobs/claim", headers=H(w["worker_token"])).json()
+    assert job["kind"] == "dist_shard" and worker.run_job(job)["accepted"]
+    deadline = _time.time() + 300  # MOTH Code's own loop picks up the other shard by itself
+    while _time.time() < deadline:
+        c = client.get("/v1/admin/evolution/contributions", headers=o).json()["experiment"]
+        if c and c["round"] == 1:
+            break
+        EN.tick(ctx)
+        _time.sleep(1)
+    p.stop()
+    c = client.get("/v1/admin/evolution/contributions", headers=o).json()["experiment"]
+    assert c["round"] == 1, c
+    names = {x["name"]: x for x in c["contributors"]}
+    assert set(names) == {"MOTH Code on this computer", "ubuntu-cpu"} and names["MOTH Code on this computer"]["this_app"]
+    assert all(x["tokens"] > 0 for x in c["contributors"])

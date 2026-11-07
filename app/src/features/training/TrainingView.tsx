@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { LossChart, type MetricPoint } from "@/components/LossChart";
 import { cn, formatNumber, timeAgo } from "@/lib/utils";
 import { SourcePicker, type SourceSel } from "./SourcePicker";
+import { NetworkTraining } from "./NetworkTraining";
 
 interface Job { id: string; kind: string; title: string; status: string; progress: number | null; message: string; error: string | null; created: number }
 interface TokenizerInfo { name: string; vocab_size: number; fingerprint: string }
@@ -53,10 +54,11 @@ export function TrainingView() {
         <div className="flex items-end justify-between">
           <div>
             <h1 className="text-lg font-semibold">Model training</h1>
-            <p className="mt-1 text-xs text-muted">Train MOTH from random weights on data you are licensed to use. Everything runs on this PC.</p>
+            <p className="mt-1 text-xs text-muted">Improve MOTH together with MOTH Cloud and its workers, or run your own local experiments on this PC.</p>
           </div>
         </div>
         {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
+        <NetworkTraining />
 
         {activeJobs.length > 0 && (
           <Card>

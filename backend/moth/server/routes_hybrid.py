@@ -38,6 +38,31 @@ def register(app: FastAPI, svc: Services, deps) -> None:
     router = InferenceRouter(inference_settings, account=lambda: svc.extras.get("account"), consent=consented)
     svc.extras["inference_router"] = router
 
+    # ---- this computer in the MOTH training network (0.5.3 unified training) ------------------------------
+    from moth.community.participant import Participant, ParticipantError
+
+    participant = Participant(svc.paths.home, account=lambda: svc.extras.get("account"),
+                              get_setting=svc.db.get_setting, set_setting=svc.db.set_setting, publish=svc.bus.publish)
+    svc.extras["participant"] = participant
+    try:
+        participant.start()  # resumes contributing if it was switched on (checkpointed job continues)
+    except Exception:  # noqa: BLE001 - never blocks the app from starting
+        pass
+
+    class ParticipantIn(BaseModel):
+        enabled: bool
+
+    @app.get("/api/participant", dependencies=deps)
+    def participant_status():
+        return participant.status()
+
+    @app.put("/api/participant", dependencies=deps)
+    def participant_set(body: ParticipantIn):
+        try:
+            return participant.enable() if body.enabled else participant.disable()
+        except ParticipantError as e:
+            raise HTTPException(409, str(e)) from None
+
     # ---- MOTH on this computer (0.5.2) ----------------------------------------------------------------
     from moth.inference.ondevice import OnDevice, OnDeviceError
 

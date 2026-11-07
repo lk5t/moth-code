@@ -17,7 +17,7 @@ import { formatNumber, timeAgo } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 type Any = Record<string, any>;
-const secure = <T,>(fn: () => Promise<T>) => withReauth(fn, askPassword);
+export const secure = <T,>(fn: () => Promise<T>) => withReauth(fn, askPassword);
 
 export function formatBytes(n?: number | null): string {
   if (n == null) return "—";

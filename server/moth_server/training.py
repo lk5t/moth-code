@@ -120,6 +120,7 @@ def _clean_hw(hw: dict[str, Any]) -> dict[str, Any]:
             "cpu_model": s(hw.get("cpu_model"), 80), "compute": hw["compute"] if hw.get("compute") in ("gpu", "cpu") else ("gpu" if gpus else "cpu"),  # 0.4 workers
 
             "machine_id": s(hw.get("machine_id"), 64),
+            "client": s(hw.get("client"), 24),  # "moth-code" when MOTH Code contributes its own computer
             "benchmark": {"device": s(bench.get("device"), 8), "gflops": num(bench.get("gflops"))} if bench else None}
 
 
