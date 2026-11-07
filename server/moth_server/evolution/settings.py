@@ -46,6 +46,8 @@ DEFAULTS: dict[str, Any] = {
     "growth": {"enabled": True, "approval_ratio": 1.25, "max_ratio": 1.5, "max_params": 400_000_000,
                "plateau_threshold": 0.01, "steps_multiplier": 2},
     "distributed": {"enabled": True, "min_participants": 2, "max_participants": 8, "rounds": 3},
+    # staged rollout: a promoted candidate first serves this share of users while it is monitored
+    "rollout": {"canary_percent": 20.0},
 }
 
 _BOUNDS = {

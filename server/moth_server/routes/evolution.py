@@ -90,6 +90,8 @@ def status(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
                   "next_cycle_at": st.get("next_cycle_at") or None, "idle_reason": st.get("idle_reason"),
                   "consecutive_failures": st.get("consecutive_failures"), "last_tick": st.get("last_tick")},
         "active_model": _model(ctx, deployed["version"] if deployed else None),
+        "rollout": [{**v, "model": _model(ctx, v["version"])} for v in __import__("moth_server.serving",
+                                                                                 fromlist=["x"]).loaded_versions(ctx)],
         "stable_model": _model(ctx, st.get("stable_version") or (deployed["version"] if deployed else None)),
         "cycle": _cycle_summary(ctx, last),
         "comparison": {"experiment_id": latest_eval["id"], "candidate_version": latest_eval.get("candidate_version"),

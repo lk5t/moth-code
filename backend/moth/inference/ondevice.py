@@ -106,6 +106,16 @@ class OnDevice:
             r.raise_for_status()
             info = r.json()
             official = False
+            signed_by_server = False
+            if info.get("server_manifest") and not info.get("release_manifest"):
+                # a model this MOTH Cloud produced itself: signed with the server's model key, pinned here
+                raw = base64.b64decode(info["server_manifest"])
+                key = self._trusted_key(base, info.get("server_key", ""))
+                if not _verify_ed25519(key, raw, info.get("server_signature", "")):
+                    raise OnDeviceError("The model's manifest is not signed by this MOTH Cloud's model key.")
+                if json.loads(raw).get("weights_sha256") != info["weights_sha256"]:
+                    raise OnDeviceError("The model on MOTH Cloud does not match its signed manifest.")
+                signed_by_server = True
             if info.get("release_manifest"):
                 raw = base64.b64decode(info["release_manifest"])
                 if not _verify_ed25519(self.pubkey, raw, info.get("release_signature", "")):
@@ -163,12 +173,28 @@ class OnDevice:
         old = self.installed()
         cur = {"dir": dest.name, "version": info["version"], "display_name": info.get("display_name"),
                "model_version": info.get("model_version"), "params": info.get("params"),
-               "weights_sha256": info["weights_sha256"], "official": official, "installed_at": time.time()}
+               "weights_sha256": info["weights_sha256"], "official": official, "signed_by_server": signed_by_server,
+               "installed_at": time.time()}
         (self.root / "current.json").write_text(json.dumps(cur, indent=1))
         if old and old["dir"] != dest.name:
             shutil.rmtree(self.root / old["dir"], ignore_errors=True)
         self.unload()
         return cur
+
+    def _trusted_key(self, server: str, offered: str) -> str:
+        """Trust on first use: the first key a server presents is pinned; a different key later is refused."""
+        f = self.root / "trusted-server-keys.json"
+        try:
+            keys = json.loads(f.read_text())
+        except (OSError, ValueError):
+            keys = {}
+        if server not in keys and offered:
+            keys[server] = offered
+            f.write_text(json.dumps(keys, indent=1))
+        if keys.get(server) != offered:
+            raise OnDeviceError("This MOTH Cloud now presents a different model-signing key than before; the "
+                                "download was refused. Ask the Owner whether the server was reinstalled.")
+        return keys[server]
 
     # ---- inference -------------------------------------------------------------------------------------
     def ensure_loaded(self):

@@ -101,11 +101,11 @@ def native_scores(ctx: Ctx, version: int | None) -> dict[str, float]:
     return out
 
 
-def _native(ctx: Ctx) -> Provider:
+def _native(ctx: Ctx, user: dict | None = None) -> Provider:
+    from moth_server import serving
     from moth_server.routes.admin import flags
 
-    eng = ctx.extras.get("inference_engine")
-    version = ctx.extras.get("deployed_version")
+    eng, version, why = serving.engine_for(ctx, user)
     if eng is None or not getattr(eng, "manifest", None):
         return Provider("moth", "native", "MOTH", False, "No MOTH model is deployed on this server yet.")
     m = eng.manifest
@@ -115,9 +115,17 @@ def _native(ctx: Ctx) -> Provider:
                         params=m.get("params"), model_version=version)
 
     def gen(messages, params, on_text, cancel):
-        st = eng.chat(messages, params, on_text, cancel)
+        from moth_server.evolution.compute import activity
+
+        act, t0, ok, st = activity(ctx), time.time(), False, None
+        act.start()
+        try:
+            st = eng.chat(messages, params, on_text, cancel)
+            ok = True
+        finally:  # the evolution monitor judges each served version by its own traffic
+            act.finish(version, ok, time.time() - t0, st.generated_tokens if st else 0)
         return {"prompt_tokens": st.prompt_tokens, "generated_tokens": st.generated_tokens, "seconds": st.seconds,
-                "stop_reason": st.stop_reason}
+                "stop_reason": st.stop_reason, "served_as": why}
 
     return Provider("moth", "native", name, True, scores=native_scores(ctx, version), params=m.get("params"),
                     context_length=m.get("context_length"), model_version=version,
@@ -174,7 +182,7 @@ def _external(ctx: Ctx, user: dict | None) -> Provider | None:
 
 
 def providers(ctx: Ctx, user: dict | None = None) -> list[Provider]:
-    out = [_native(ctx)]
+    out = [_native(ctx, user)]
     ext = _external(ctx, user)
     if ext:
         out.append(ext)

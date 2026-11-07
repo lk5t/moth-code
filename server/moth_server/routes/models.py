@@ -202,11 +202,49 @@ def deployed_package_info(auth: Auth = Depends(current_auth), ctx: Ctx = Depends
            "display_name": d["info"].get("display_name") or d["name"], "params": d["info"].get("params"),
            "weights_sha256": d["sha256"], "package_sha256": sha, "size": path.stat().st_size,
            "context_length": d["info"].get("context_length")}
+    sm = Path(d["path"]) / "model-manifest.json"
+    if sm.exists():  # promoted by this server: signed with its model key (MOTH Code pins the key)
+        from moth_server import serving
+
+        out["server_manifest"] = base64.b64encode(sm.read_bytes()).decode()
+        out["server_signature"] = (Path(d["path"]) / "model-manifest.json.sig").read_text().strip()
+        out["server_key"] = serving.public_key_b64(ctx)
     mf = Path(d["path"]) / "release-manifest.json"
     if mf.exists():
         out["release_manifest"] = base64.b64encode(mf.read_bytes()).decode()
         out["release_signature"] = (Path(d["path"]) / "release-manifest.json.sig").read_text().strip()
     return out
+
+
+@router.get("/v1/models/signing-key")
+def model_signing_key(ctx: Ctx = Depends(get_ctx)):
+    from moth_server import serving
+
+    return {"key": serving.public_key_b64(ctx), "algorithm": "ed25519"}
+
+
+class ModelPinIn(BaseModel):
+    version: int | None = None
+
+
+@router.put("/v1/me/model-pin")
+def pin_model(body: ModelPinIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """Pin a model version (or ``null`` to follow the stable model). Honoured while that version is served."""
+    import json as _json
+
+    from sqlalchemy import select
+
+    from moth_server import serving
+    from moth_server.db import users
+
+    if body.version is not None and body.version not in [v["version"] for v in serving.loaded_versions(ctx)]:
+        raise HTTPException(409, "That model version is not being served right now.")
+    with ctx.db.tx() as c:
+        row = c.execute(select(users.c.settings).where(users.c.id == auth.uid)).first()
+        s = _json.loads(row[0] or "{}")
+        s["pinned_model_version"] = body.version
+        c.execute(users.update().where(users.c.id == auth.uid).values(settings=_json.dumps(s)))
+    return {"pinned_model_version": body.version, "served": serving.loaded_versions(ctx)}
 
 
 @router.get("/v1/models/deployed/package")

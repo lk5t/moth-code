@@ -565,8 +565,15 @@ def _deploying(ctx: Ctx, cyc: dict, settings: dict) -> None:
     previous = M.deployed(ctx)
     if previous and not state(ctx).get("stable_version"):
         _set_state(ctx, stable_version=previous["version"])  # the candidate becomes stable only after monitoring
+    from moth_server import serving
+
+    pct = float((settings.get("rollout") or {}).get("canary_percent") or 0)
+    staged = bool(previous) and pct > 0
     try:
-        M.deploy(ctx, cyc["candidate_version"])
+        if staged:  # the stable model keeps serving; the candidate answers a share of users while monitored
+            serving.start_canary(ctx, cyc["candidate_version"], pct)
+        else:
+            M.deploy(ctx, cyc["candidate_version"])
     except M.ReleaseError as e:
         MEM.update_cycle(ctx, cyc["id"], status="failed", finished_at=now(), error=str(e))
         MEM.event(ctx, "deploy.failed", f"Deploying v{cyc['candidate_version']} failed; v"
@@ -578,18 +585,21 @@ def _deploying(ctx: Ctx, cyc: dict, settings: dict) -> None:
     window = max(60.0, float(settings["monitoring"]["minutes"]) * 60)
     baseline = act.stats(previous["version"], t - window, t) if previous else {}
     MEM.update_cycle(ctx, cyc["id"], status="monitoring",
-                     result={**(cyc["result"] or {}), "deployed_at": t,
+                     result={**(cyc["result"] or {}), "deployed_at": t, "staged": staged, "canary_percent": pct,
                              "previous_version": previous["version"] if previous else None, "baseline": baseline})
-    MEM.event(ctx, "deploy.done", f"v{cyc['candidate_version']} is now serving (previous: "
-              f"v{previous['version'] if previous else 'none'}); monitoring for "
-              f"{settings['monitoring']['minutes']:g} min", cycle_id=cyc["id"])
+    MEM.event(ctx, "deploy.done", (f"v{cyc['candidate_version']} serves {pct:g}% of users (staged rollout; "
+                                   f"v{previous['version']} serves the rest)" if staged else
+                                   f"v{cyc['candidate_version']} is now serving (previous: "
+                                   f"v{previous['version'] if previous else 'none'})")
+              + f"; monitoring for {settings['monitoring']['minutes']:g} min", cycle_id=cyc["id"])
 
 
-def _probe(ctx: Ctx) -> str | None:
+def _probe(ctx: Ctx, version: int | None = None) -> str | None:
     """A real inference request against the serving engine. Returns an error, or None if healthy."""
     from moth.model.generation import GenerationParams
 
-    eng = ctx.extras.get("inference_engine")
+    c = ctx.extras.get("canary")
+    eng = c["engine"] if c and version is not None and c["version"] == version else ctx.extras.get("inference_engine")
     if eng is None:
         return "no model is loaded"
     try:
@@ -606,10 +616,21 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
     mon = settings["monitoring"]
     started = float(res.get("deployed_at") or now())
     problem = None
-    if ctx.extras.get("deployed_version") != cyc["candidate_version"]:
+    from moth_server import serving
+
+    staged = bool(res.get("staged"))
+    if staged and not serving.canary(ctx) and ctx.extras.get("deployed_version") != cyc["candidate_version"]:
+        try:  # after a restart: the staged rollout continues
+            serving.start_canary(ctx, cyc["candidate_version"], float(res.get("canary_percent") or 20))
+        except M.ReleaseError as e:
+            problem = f"the candidate could not be served again after a restart: {e}"
+    live = (serving.canary(ctx) or {}).get("version") if staged else ctx.extras.get("deployed_version")
+    if problem:
+        pass
+    elif live != cyc["candidate_version"]:
         problem = "another model was deployed during monitoring"
     else:
-        problem = _probe(ctx)
+        problem = _probe(ctx, cyc["candidate_version"])
         stats = C.activity(ctx).stats(cyc["candidate_version"], started)
         if problem is None and stats["requests"] >= int(mon["min_requests"]):
             if stats["error_rate"] > float(mon["max_error_rate"]):
@@ -623,7 +644,10 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
     if problem and problem != "another model was deployed during monitoring":
         prev = res.get("previous_version")
         rolled = None
-        if prev:
+        if staged:  # the stable model never stopped serving: just drop the candidate
+            serving.end_canary(ctx, problem)
+            rolled = prev
+        elif prev:
             try:
                 M.deploy(ctx, int(prev))
                 rolled = prev
@@ -637,16 +661,28 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
         _schedule_next(ctx, failed=True)
         return
     if problem:  # the Owner switched models: monitoring of this candidate ends
+        serving.end_canary(ctx, problem)
         MEM.update_cycle(ctx, cyc["id"], status="completed", finished_at=now(),
                          result={**res, "outcome": "superseded"})
         _schedule_next(ctx, failed=False)
         return
     if now() - started >= float(mon["minutes"]) * 60:
+        if staged:
+            try:
+                serving.promote_canary(ctx)  # everyone now gets the candidate
+            except M.ReleaseError as e:
+                MEM.update_cycle(ctx, cyc["id"], status="failed", finished_at=now(), error=str(e))
+                _schedule_next(ctx, failed=True)
+                return
         MEM.update_cycle(ctx, cyc["id"], status="completed", finished_at=now(), result={**res, "outcome": "deployed"})
         _set_state(ctx, stable_version=cyc["candidate_version"])
         from moth_server.evolution import v2 as V2
 
         mv = V2.assign_model_version(ctx, cyc["candidate_version"])
+        try:
+            serving.sign_release(ctx, cyc["candidate_version"])  # signed model manifest for every promoted version
+        except Exception:  # noqa: BLE001
+            log.exception("signing the model manifest failed")
         try:
             from moth_server.intelligence import curriculum
 

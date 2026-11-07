@@ -335,11 +335,15 @@ def test_failing_deployment_is_rolled_back_automatically(client, settings, world
     cyc = drive(ctx, lambda c: c["status"] == "monitoring" or c["status"] in MEM.TERMINAL_CYCLE)
     assert cyc["status"] == "monitoring", [e["message"] for e in MEM.events(ctx, 20)]
     cand = cyc["candidate_version"]
-    assert ctx.extras["deployed_version"] == cand
+    # staged rollout: the candidate serves a share of users, the previous model serves the rest
+    from moth_server import serving
+
+    assert serving.canary(ctx)["version"] == cand and ctx.extras["deployed_version"] == world["base"]
     EN.tick(ctx)
     assert MEM.cycle(ctx, cyc["id"])["status"] == "monitoring"  # healthy so far
     st = client.get("/v1/admin/evolution/status", headers=o).json()
-    assert st["active_model"]["version"] == cand and st["stable_model"]["version"] == world["base"]  # not yet stable
+    assert {r["role"]: r["version"] for r in st["rollout"]} == {"stable": world["base"], "canary": cand}
+    assert st["stable_model"]["version"] == world["base"]  # not yet stable
     # SIMULATED production failures of the new model: 6 of 8 requests fail
     act = C.activity(ctx)
     for ok in (False, False, True, False, False, True, False, False):
@@ -348,7 +352,7 @@ def test_failing_deployment_is_rolled_back_automatically(client, settings, world
     EN.tick(ctx)
     cyc = MEM.cycle(ctx, cyc["id"])
     assert cyc["status"] == "rolled_back" and "error rate" in cyc["error"]
-    assert ctx.extras["deployed_version"] == world["base"]  # the previous stable model serves again
+    assert ctx.extras["deployed_version"] == world["base"] and serving.canary(ctx) is None  # stable never stopped
     assert M.release(ctx, cand)["status"] == "failed"
     assert chat(client, settings)["stats"]["generated_tokens"] > 0
     assert EN.state(ctx)["consecutive_failures"] == 1

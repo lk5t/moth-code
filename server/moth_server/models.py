@@ -412,13 +412,43 @@ def resource_problems(rel: dict, device: str) -> list[str]:
     return problems
 
 
-def deploy(ctx: Ctx, version: int, actor_id: int | None = None, device: str = "auto") -> dict:
-    """Load + health-check the release in a fresh engine, then swap it in. Failure keeps the current model."""
+def load_checked(ctx: Ctx, version: int, device: str = "auto"):
+    """A fresh engine with the release loaded, its weights hash verified and a generation health check
+    passed (used by staged rollouts, which keep the stable model serving meanwhile)."""
     from moth.inference.local import LocalInference
     from moth.model.generation import GenerationParams
     from moth.training.trainer import pick_device
 
     rel = release(ctx, version)
+    if rel["status"] not in ("published", "deployed"):
+        raise ReleaseError("only published releases (evaluated and passed) can be served")
+    dev = pick_device(device)
+    problems = resource_problems(rel, "cuda" if dev.startswith("cuda") else "cpu")
+    if problems:
+        raise ReleaseError("not enough resources to serve it: " + "; ".join(problems))
+    path = Path(rel["path"])
+    engine = LocalInference(path.parent)
+    engine.load(path.name, dev)
+    if engine.manifest["sha256"] != rel["sha256"]:
+        raise ReleaseError("served weights do not match the release checksum")
+    out, stats = engine.complete("def ", GenerationParams(max_new_tokens=8, temperature=0.0, top_k=1))
+    if stats.generated_tokens < 1:
+        raise ReleaseError("health check failed: the model produced no tokens")
+    return engine, {"device": dev, "health_check": out[:120], "tokens_per_second": round(stats.tokens_per_sec, 1)}
+
+
+def deploy(ctx: Ctx, version: int, actor_id: int | None = None, device: str = "auto", engine=None) -> dict:
+    """Load + health-check the release in a fresh engine, then swap it in. Failure keeps the current model.
+
+    ``engine``: an engine already loaded and checked (a staged rollout being promoted)."""
+    from moth.inference.local import LocalInference
+    from moth.model.generation import GenerationParams
+    from moth.training.trainer import pick_device
+
+    rel = release(ctx, version)
+    if engine is not None:
+        return _swap_in(ctx, version, rel, engine, actor_id, {"device": getattr(engine, "device", "cpu"),
+                                                              "promoted_from": "staged rollout"})
     if rel["status"] not in ("published", "deployed"):
         raise ReleaseError("only published releases (evaluated and passed) can be deployed"
                            if rel["status"] != "deploying" else "this release is already being deployed")
@@ -445,20 +475,29 @@ def deploy(ctx: Ctx, version: int, actor_id: int | None = None, device: str = "a
             _set(ctx, version, "failed" if corrupted else prior_status, error=f"Deployment failed: {e}")
             audit(ctx.db, "models.deploy_failed", actor_id, f"release:{version}", {"error": str(e)})
             raise ReleaseError(f"deployment failed, previous model still serving: {e}") from None
-        previous = ctx.extras.get("inference_engine")
-        ctx.extras["inference_engine"] = engine  # atomic swap for new requests
-        ctx.extras["deployed_version"] = version
-        t = now()
-        with ctx.db.tx() as c:
-            c.execute(model_releases.update().where(model_releases.c.status == "deployed",
-                                                    model_releases.c.version != version)
-                      .values(status="published", previously_deployed=True, state_changed_at=t))
-            _set(ctx, version, "deployed", conn=c, deployed_at=t, published_by=actor_id, error=None,
-                 info=json.dumps({**rel["info"], "serving": {"device": dev, "health_check": out[:120],
-                                                             "tokens_per_second": round(stats.tokens_per_sec, 1)}}))
-            ctx.db.set_config("deployed_release", version, conn=c)
-            audit(ctx.db, "models.deployed", actor_id, f"release:{version}",
-                  {"previous": getattr(previous, "model_id", None), "device": dev}, conn=c)
+        return _swap_in(ctx, version, rel, engine, actor_id, {"device": dev, "health_check": out[:120],
+                                                              "tokens_per_second": round(stats.tokens_per_sec, 1)},
+                        locked=True)
+
+
+def _swap_in(ctx: Ctx, version: int, rel: dict, engine, actor_id: int | None, serving: dict,
+             locked: bool = False) -> dict:
+    if not locked:
+        with _deploy_lock:
+            return _swap_in(ctx, version, rel, engine, actor_id, serving, locked=True)
+    previous = ctx.extras.get("inference_engine")
+    ctx.extras["inference_engine"] = engine  # atomic swap for new requests
+    ctx.extras["deployed_version"] = version
+    t = now()
+    with ctx.db.tx() as c:
+        c.execute(model_releases.update().where(model_releases.c.status == "deployed",
+                                                model_releases.c.version != version)
+                  .values(status="published", previously_deployed=True, state_changed_at=t))
+        _set(ctx, version, "deployed", conn=c, deployed_at=t, published_by=actor_id, error=None,
+             info=json.dumps({**release(ctx, version)["info"], "serving": serving}))
+        ctx.db.set_config("deployed_release", version, conn=c)
+        audit(ctx.db, "models.deployed", actor_id, f"release:{version}",
+              {"previous": getattr(previous, "model_id", None), "device": serving.get("device")}, conn=c)
     return release(ctx, version)
 
 
