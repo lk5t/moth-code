@@ -172,3 +172,63 @@ tokens at MOTH 0.02 and cumulative 32 steps/16,384 tokens at MOTH 0.03, each wit
 Unchanged parameter count demonstrates that version increments are independent of growth. Dedicated
 growth tests verify real expansion separately. Final focused server/frontend checks are recorded below
 once complete.
+
+## Files changed in Phase 5 only
+
+No dependency, database-schema, GitHub workflow, software updater or production-infrastructure file was changed.
+
+| File | Necessary Phase 5 change |
+| --- | --- |
+| `app/src/features/owner/ModelOverview.tsx` | Expose explicit untrained-baseline activation and accurate last-activation wording. |
+| `backend/moth/datafactory/build.py` | Exclude configured general-evaluation files from automatic standard-library corpora. |
+| `backend/moth/datafactory/catalog.py` | Allow update checks to target only approved catalog sources. |
+| `backend/moth/datafactory/fetch.py` | Bound streamed downloads by their pinned size. |
+| `backend/moth/model/registry.py` | Export measured training tokens. |
+| `backend/moth/training/continue_run.py` | Lock initialization/export, reject damaged development state, verify grown initialization and return actual tokens. |
+| `backend/moth/training/trainer.py` | Preserve unknown historical totals instead of fabricating cumulative counts. |
+| `backend/tests/test_continue_v053.py` | Require corrupted development state to fail closed. |
+| `backend/tests/test_datafactory.py` | Verify oversized responses cannot exhaust the download budget. |
+| `docs/AUTONOMOUS_UPDATE.md` | Record recovery, the precise regression, validation, limitations and changed-file reasons. |
+| `server/moth_server/evolution/backends.py` | Carry measured worker steps/loss and preserve unknown imported-history totals. |
+| `server/moth_server/evolution/bootstrap.py` | Activate only an explicitly evaluated initial baseline; recover interrupted registration without new weights. |
+| `server/moth_server/evolution/compute.py` | Respect owner GPU-memory limits when calculating usable worker capacity. |
+| `server/moth_server/evolution/distributed.py` | Apply the same admission policy and report measured local steps/loss across rounds. |
+| `server/moth_server/evolution/engine.py` | Keep stable ancestry coherent, stop stale-parent promotion and restore metadata after signing failure. |
+| `server/moth_server/evolution/v2.py` | Advance model versions from accepted history and parent identity. |
+| `server/moth_server/intelligence/discovery.py` | Bound approved-source revision checks and use held-out-safe automatic preparation. |
+| `server/moth_server/intelligence/library.py` | Recover interrupted builds and wake evolution when approved automatic preparation finishes. |
+| `server/moth_server/models.py` | Record native initialization provenance and enforce parent identity inside the deployment lock. |
+| `server/moth_server/routes/dashboard.py` | Expose baseline origin and retain accepted descendant history after rollback. |
+| `server/moth_server/routes/evolution.py` | Add owner-authenticated baseline activation and respect worker memory limits on start. |
+| `server/moth_server/routes/intelligence.py` | Recover library work once during server startup. |
+| `server/moth_server/serving.py` | Forward the expected parent when promoting a loaded canary. |
+| `server/moth_server/training.py` | Account for available RAM, occupied GPU memory and owner GPU fraction in job admission. |
+| `server/tests/test_ascension_gaps.py` | Verify worker candidates cannot inherit their parent accepted model label. |
+| `server/tests/test_autonomous_lifecycle.py` | Exercise genuine PSF CPU preparation/training, two promotions, signatures, rollback and recovery. |
+| `server/tests/test_discovery.py` | Check every existing trusted catalog license remains approvable. |
+| `server/tests/test_evolution.py` | Isolate the legacy manual-data fixture from automatic preparation without weakening its assertions. |
+| `server/tests/test_evolution_v053.py` | Assert known imported steps and unavailable historical token totals accurately. |
+| `server/tests/test_native_lineage.py` | Verify native origin and recovery of interrupted registration without replacing seed weights. |
+| `server/tests/test_training_controls.py` | Verify resource admission and refusal to reset quarantined worker progress. |
+| `worker/moth_worker/hardware.py` | Report available RAM within the effective memory budget. |
+| `worker/moth_worker/runner.py` | Refuse a silent reset after worker-checkpoint quarantine. |
+
+## Operating and validation limits
+
+For an empty installation, use Intelligence → MOTH AI → Initialize MOTH 0.01, then explicitly evaluate
+and activate the untrained baseline. Start server CPU training or compatible workers from Network.
+An existing lineage is reused; initialization never shrinks or replaces it. Data source approvals,
+resource limits, growth approvals and all evaluation/monitoring gates continue to apply.
+
+Recovery verification used a CPU-only Linux environment. Actual CUDA execution and native Windows
+packaging could not run here; GPU admission arithmetic is tested with reported hardware fixtures.
+Live Hugging Face downloads were not performed (the environment does not allow that host); real local
+PSF preparation and checksum/resume/download-budget regression fixtures were exercised. Production
+Desktop/Cloud update installation was not attempted. Existing updater source, signing configuration,
+release workflows and infrastructure are unchanged. No trained Foundation checkpoint was verified,
+and these small-model tests do not establish Foundation training completion or useful AI quality.
+
+GitHub delivery: recovery checkpoint `595df9b` and completed implementation `455dc47` were pushed to
+`codex/autonomous-moth-evolution`. Draft pull-request creation was attempted with `gh pr create` against
+`claude/jolly-darwin-2qeihd`, but `https://api.github.com/graphql` returned Forbidden. Git transport still
+works; no merge, production deployment or GitHub Release was attempted.
