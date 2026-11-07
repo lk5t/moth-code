@@ -6,6 +6,9 @@ import { TrainingView } from "@/features/training/TrainingView";
 import { ModelsView } from "@/features/models/ModelsView";
 import { NetworkView } from "@/features/network/NetworkView";
 import { OwnerDashboard } from "@/features/owner/OwnerDashboard";
+import { ChatView } from "@/features/chat/ChatView";
+import { IntelligenceView } from "@/features/intelligence/IntelligenceView";
+import { EvolutionView } from "@/features/evolution/EvolutionView";
 
 const OWNER_TABS: [View, string][] = [["owner", "Dashboard"], ["training", "Model training"], ["models", "Model packages"]];
 
@@ -38,6 +41,9 @@ function ownerOnly(C: React.ComponentType): React.ComponentType {
 
 /** Top-level views other than workspace/settings. */
 export const views: Partial<Record<View, React.ComponentType>> = {
+  chat: ChatView,
+  intelligence: IntelligenceView,
+  evolution: EvolutionView,
   network: NetworkView,
   owner: ownerOnly(OwnerDashboard),
   training: ownerOnly(TrainingView),

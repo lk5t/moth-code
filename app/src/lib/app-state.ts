@@ -14,7 +14,7 @@ export interface OpenFile {
   language: string;
 }
 
-export type View = "workspace" | "network" | "owner" | "training" | "models" | "settings";
+export type View = "chat" | "workspace" | "intelligence" | "evolution" | "network" | "owner" | "training" | "models" | "settings";
 
 export interface AppState {
   view: View;
@@ -31,7 +31,7 @@ export interface AppState {
 }
 
 export const appStore = createStore<AppState>({
-  view: "workspace",
+  view: "chat",
   project: null,
   projects: [],
   openFiles: [],

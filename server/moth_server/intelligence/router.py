@@ -109,7 +109,10 @@ def _native(ctx: Ctx, user: dict | None = None) -> Provider:
     if eng is None or not getattr(eng, "manifest", None):
         return Provider("moth", "native", "MOTH", False, "No MOTH model is deployed on this server yet.")
     m = eng.manifest
-    name = (m.get("display_name") or m.get("name") or "MOTH")
+    from moth_server import models as M
+
+    rel = M.release(ctx, version) if version is not None else None
+    name = ((rel or {}).get("info") or {}).get("display_name") or m.get("display_name") or m.get("name") or "MOTH"
     if not flags(ctx).get("cloud_inference_enabled"):
         return Provider("moth", "native", name, False, "MOTH Cloud inference is turned off by the Owner.",
                         params=m.get("params"), model_version=version)

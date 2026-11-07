@@ -309,3 +309,18 @@ def test_cpu_workers_evaluate_candidates_with_two_independent_results(client, ow
     assert sorted(m["computed_by"]) == sorted(w["worker_id"] for w, _ in runners)
     assert exp["metrics"]["remote_eval"]["accepted"] == ["capability:holdout:language"]
     assert any(g["gate"] == "capability:holdout:language" for g in exp["metrics"]["gates"])
+
+
+def test_progress_dashboard_and_timeline_from_measurements(client, settings, owner, tmp_path, monkeypatch):
+    ctx, base_v = _world(client, owner, tmp_path, monkeypatch)
+    cyc = drive(ctx, lambda c: c["status"] in MEM.TERMINAL_CYCLE, timeout=600)
+    from conftest import register_verified
+
+    t = register_verified(client, settings, "viewer")["token"]
+    p = client.get("/v1/intelligence/progress", headers=H(t)).json()
+    assert [v["version"] for v in p["timeline"]] == [base_v, cyc["candidate_version"]]
+    cur = p["current"]
+    assert cur["model_version"] == "0.1" and cur["stable"] and cur["has_dev_checkpoint"]
+    assert "capability:holdout:language" not in cur["benchmarks"] and "holdout_language" in cur["benchmarks"]
+    assert p["development"]["version"] == cyc["candidate_version"]
+    assert p["datasets"]["sources"][0]["license"] == "MIT" and p["timeline"][1]["datasets"][0]["build"]

@@ -1,4 +1,4 @@
-import { Crown, Network, Settings, SquareTerminal } from "lucide-react";
+import { Brain, Crown, MessageSquare, Network, Settings, Sparkles, SquareTerminal } from "lucide-react";
 import { useAccount } from "@/lib/account";
 import { appStore, useApp, type View } from "@/lib/app-state";
 import { Tip } from "@/components/ui/tooltip";
@@ -6,10 +6,14 @@ import { cn } from "@/lib/utils";
 import { MothEmblem } from "./MothEmblem";
 import { AccountMenu } from "@/features/account/AccountMenu";
 
+// One navigation for everything: Chat, Code, Intelligence, Evolution, Network, (Owner tools), Settings.
 const items: { view: View; label: string; icon: React.ReactNode; owner?: boolean }[] = [
-  { view: "workspace", label: "Workspace", icon: <SquareTerminal /> },
-  { view: "network", label: "Training & Referrals", icon: <Network /> },
-  { view: "owner", label: "Owner", icon: <Crown />, owner: true },
+  { view: "chat", label: "Chat", icon: <MessageSquare /> },
+  { view: "workspace", label: "Code", icon: <SquareTerminal /> },
+  { view: "intelligence", label: "Intelligence", icon: <Brain /> },
+  { view: "evolution", label: "Evolution", icon: <Sparkles /> },
+  { view: "network", label: "Network", icon: <Network /> },
+  { view: "owner", label: "Owner tools", icon: <Crown />, owner: true },
 ];
 const OWNER_VIEWS: View[] = ["owner", "training", "models"];
 

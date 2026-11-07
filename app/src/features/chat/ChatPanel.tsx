@@ -30,8 +30,10 @@ interface Conversation {
 }
 
 
-export function ChatPanel() {
-  const project = useApp((s) => s.project);
+/** ``general``: the full-page Chat (everyday questions, writing, explanations) — not tied to a project. */
+export function ChatPanel({ general = false }: { general?: boolean } = {}) {
+  const workspaceProject = useApp((s) => s.project);
+  const project = general ? null : workspaceProject;
   const [mode, setMode] = useState<"chat" | "agent">("chat");
   const { status: cloud, reload: reloadCloud } = useCloudStatus();
   const { data: conversations, reload: reloadConversations } = useResource<Conversation[]>(
@@ -138,7 +140,7 @@ export function ChatPanel() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
-        {(
+        {!general && (
           <div className="flex rounded-md border border-border p-0.5">
             {(["chat", "agent"] as const).map((m) => (
               <button

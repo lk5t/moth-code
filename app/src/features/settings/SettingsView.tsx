@@ -5,7 +5,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { settingsSections } from "./sections";
+import { AccountSection } from "@/features/account/AccountSection";
+import { UsageSection } from "@/features/billing/UsageSection";
+import { ReferralsSection } from "@/features/billing/ReferralsSection";
+import { IntelligenceSection } from "@/features/intelligence/IntelligenceSection";
+import { OnDeviceSection } from "@/features/intelligence/OnDeviceSection";
+import { UpdatesSection } from "./UpdatesSection";
+import { ConnectionSection } from "./ConnectionSection";
+import { cn } from "@/lib/utils";
+
+/** Settings in a few plain groups instead of one long page (0.5.4). */
+const TABS = ["Account", "Privacy & AI", "Plan & referrals", "Code agent", "Updates & about"] as const;
+type Tab = (typeof TABS)[number];
 
 interface Permissions {
   auto_write: boolean;
@@ -30,6 +41,7 @@ export function SettingsView() {
   const [perms, setPerms] = useState<Permissions>(DEFAULT_PERMS);
   const [system, setSystem] = useState<any>(null);
   const [version, setVersion] = useState("");
+  const [tab, setTab] = useState<Tab>("Account");
 
   useEffect(() => {
     get<Record<string, any>>("/api/settings").then((s) => setPerms({ ...DEFAULT_PERMS, ...(s.permissions ?? {}) }));
@@ -47,8 +59,18 @@ export function SettingsView() {
     <div className="h-full overflow-auto">
       <div className="mx-auto flex max-w-3xl flex-col gap-5 p-8 animate-rise">
         <h1 className="text-lg font-semibold">Settings</h1>
+        <div className="flex flex-wrap gap-1" role="tablist">
+          {TABS.map((t) => (
+            <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
+              className={cn("cursor-pointer rounded-md px-3 py-1 text-xs", tab === t ? "bg-surface-2 text-fg" : "text-muted hover:text-fg")}>{t}</button>
+          ))}
+        </div>
+        {tab === "Account" && <><AccountSection /><ConnectionSection /></>}
+        {tab === "Privacy & AI" && <><IntelligenceSection /><OnDeviceSection /></>}
+        {tab === "Plan & referrals" && <><UsageSection /><ReferralsSection /></>}
+        {tab === "Updates & about" && <UpdatesSection />}
 
-        <Card>
+        {tab === "Code agent" && <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Shield className="size-4 text-accent" />Agent permissions</CardTitle>
             <CardDescription>
@@ -67,11 +89,9 @@ export function SettingsView() {
               <Switch checked={perms.auto_git_commit} onCheckedChange={(v) => setPerm("auto_git_commit", v)} />
             </Row>
           </CardContent>
-        </Card>
+        </Card>}
 
-        {settingsSections.map((S, i) => <S key={i} />)}
-
-        <Card>
+        {tab === "Updates & about" && <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Info className="size-4 text-accent" />About</CardTitle>
           </CardHeader>
@@ -94,7 +114,7 @@ export function SettingsView() {
               </div>
             )}
           </CardContent>
-        </Card>
+        </Card>}
       </div>
     </div>
   );

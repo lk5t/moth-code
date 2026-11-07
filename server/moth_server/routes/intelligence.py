@@ -415,3 +415,88 @@ def get_curriculum(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ct
     analysis = weakness.analyse(ctx, v, parent, FB.summary(ctx, since=time.time() - 30 * 86400))
     return {"progress": curriculum.progress(ctx, chain),
             "next_mixture": curriculum.plan(ctx, 20_000_000, analysis)}
+
+
+# ---- 0.5.4: progress dashboard and timeline (every signed-in user; measurements only) ------------------------
+@router.get("/v1/intelligence/progress")
+def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """MOTH's lineage, benchmarks per version, training state, datasets and contributions.
+
+    Every number is a stored measurement; the only estimate (time to the next cycle) is labelled."""
+    import json as _json
+
+    from sqlalchemy import func, select as _select
+
+    from moth_server import models as M
+    from moth_server import serving
+    from moth_server.db import workers
+    from moth_server.evolution import engine as EN
+    from moth_server.evolution import memory as MEM
+    from moth_server.evolution import settings as ES
+    from moth_server.intelligence import curriculum as CU
+    from moth_server.intelligence.weakness import capability_reports
+
+    rels = {r["version"]: r for r in M.list_releases(ctx)}
+    lineage = MEM.lineage(ctx)
+    deployed = ctx.extras.get("deployed_version")
+    st = EN.state(ctx)
+    stable = st.get("stable_version") or deployed
+    builds = {}
+    for b in library.status(ctx)["builds"]:
+        if b["status"] == "ready" and b["content_sha256"]:
+            builds[b["content_sha256"]] = b
+
+    def ds_names(shas):
+        out = []
+        for s in shas or []:
+            b = builds.get(s)
+            out.append({"build": b["id"], "sources": [x["id"] for x in b["sources"]]} if b else {"sha256": s[:12]})
+        return out
+
+    versions = []
+    for row in lineage:
+        r = rels.get(row["version"])
+        if not r:
+            continue
+        info = r["info"] or {}
+        reps = capability_reports(ctx, row["version"])
+        versions.append({
+            "version": row["version"], "model_version": info.get("model_version"),
+            "name": info.get("display_name") or r["name"], "params": info.get("params"), "method": row["method"],
+            "parent": row["parent_version"], "created_at": row["created_at"], "status": r["status"],
+            "deployed": row["version"] == deployed, "stable": row["version"] == stable,
+            "has_dev_checkpoint": bool((info.get("dev_checkpoint") or {}).get("path")),
+            "growth": info.get("growth"), "lineage_totals": info.get("lineage_totals"),
+            "datasets": ds_names(_json.loads(row["datasets"]) if isinstance(row["datasets"], str) else row["datasets"]),
+            "benchmarks": {k: {"value": v["value"], "metric": v.get("metric"), "higher_is_better": v.get("higher_is_better")}
+                           for k, v in reps.items()}})
+    dev = next((v for v in reversed(versions) if v["has_dev_checkpoint"]), None)
+    cyc = MEM.active_cycle(ctx) or (MEM.cycles(ctx, 1) or [None])[0]
+    s = ES.get(ctx)
+    online = [w for w in ctx.db.all(_select(workers).where(workers.c.revoked_at.is_(None)))]
+    t = __import__("time").time()
+    on = [w for w in online if (w["last_heartbeat_at"] or 0) >= t - 180]
+    gpu = sum(1 for w in on if _json.loads(w["hardware"] or "{}").get("compute") == "gpu")
+    latest = library.latest_ready(ctx)
+    lib = None
+    if latest:
+        m = _json.loads(latest["manifest"] or "{}")
+        lib = {"build": latest["id"], "domains": m.get("domains"),
+               "sources": [{"id": x["id"], "name": x["name"], "license": x["license"], "records": (x.get("stats") or {}).get("kept")}
+                           for x in m.get("sources", [])]}
+    exp = next((e for e in MEM.experiments(ctx, cyc["id"])), None) if cyc else None
+    return {
+        "current": next((v for v in versions if v["deployed"]), None), "stable": next((v for v in versions if v["stable"]), None),
+        "development": dev, "rollout": serving.loaded_versions(ctx), "timeline": versions,
+        "training": {"enabled": s["enabled"], "paused": s["paused"], "cycle": {
+            "id": cyc["id"], "status": cyc["status"], "waiting_reason": (cyc.get("result") or {}).get("waiting_reason")}
+            if cyc else None, "experiment_progress": exp.get("progress") if exp else None,
+            "next_cycle_at_estimate": st.get("next_cycle_at") or None, "curriculum": CU.state(ctx).get("stage")},
+        "datasets": lib,
+        "network": {"workers_online": len(on), "gpu_online": gpu, "cpu_online": len(on) - gpu,
+                    "verified_tokens": int(ctx.db.one(_select(func.coalesce(func.sum(workers.c.trained_tokens), 0)
+                                                              .label("t")))["t"]),
+                    "verified_jobs": int(ctx.db.one(_select(func.coalesce(func.sum(workers.c.verified_jobs), 0)
+                                                            .label("t")))["t"])},
+        "measured": "every value is a measurement on held-out data or a recorded count, except fields named *_estimate",
+    }
