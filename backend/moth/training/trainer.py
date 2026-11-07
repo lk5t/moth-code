@@ -296,8 +296,10 @@ class Trainer:
                 "scaler": scaler.state_dict() if use_scaler else None,
                 "step": self.step, "best_val": self.best_val, "tokens_seen": self.tokens_seen,
                 "lineage": {**cfg.lineage,
-                            "total_tokens": int(cfg.lineage.get("base_tokens", 0)) + self.tokens_seen,
-                            "total_steps": int(cfg.lineage.get("base_steps", 0)) + self.step},
+                            "total_tokens": int(cfg.lineage.get("base_tokens", 0)) + self.tokens_seen
+                            if cfg.lineage.get('base_tokens', 0) is not None else None,
+                            "total_steps": int(cfg.lineage.get("base_steps", 0)) + self.step
+                            if cfg.lineage.get('base_steps', 0) is not None else None},
                 "dataset_build": self.dataset_meta.get("build_sha256"),
                 "model_config": self.model_cfg.to_dict(), "train_config": cfg.to_dict(),
                 "tokenizer_fingerprint": self.tokenizer.fingerprint(),

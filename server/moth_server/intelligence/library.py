@@ -32,6 +32,13 @@ def root(ctx: Ctx) -> Path:
     return p
 
 
+def recover(ctx: Ctx) -> None:
+    """Called once at server startup, before accepting requests. Keep reusable downloads."""
+    with ctx.db.tx() as c:
+        c.execute(library_builds.update().where(library_builds.c.status.in_(('queued', 'running')))
+                  .values(status='failed', error='Preparation interrupted by server restart; verified downloads retained', finished_at=now()))
+
+
 def _fetch_json(url: str) -> Any:
     req = urllib.request.Request(url, headers={"User-Agent": "moth-server"})
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -180,17 +187,20 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
         progress("Prepared and approved")
         upd(status="ready", path=str(out), content_sha256=manifest["content_sha256"],
             tokenizer_fingerprint=tok.fingerprint(), manifest=json.dumps(manifest), finished_at=now())
+        if config.get('automatic'):
+            from moth_server.evolution import engine as EN
+            EN.wake(ctx)  # new data is ready now; do not wait for the next daily cycle
     except Exception as e:  # noqa: BLE001
         upd(status="failed", error=f"{type(e).__name__}: {e}"[:2000], finished_at=now())
         traceback.print_exc()
 
 
-def check_updates(ctx: Ctx, fetch_json=_fetch_json) -> list[dict[str, Any]]:
+def check_updates(ctx: Ctx, fetch_json=_fetch_json, sources=None) -> list[dict[str, Any]]:
     from moth.datafactory import catalog
 
     p = pins(ctx)
     res = []
-    for r in catalog.check_updates(fetch_json):
+    for r in catalog.check_updates(fetch_json, sources=sources):
         cur = (p.get(r["id"]) or {}).get("revision") or r["pinned"]
         r["pinned"] = cur
         r["update_available"] = bool(r.get("latest") and r["latest"] != cur)

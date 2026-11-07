@@ -71,14 +71,18 @@ def model_overview(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_c
                 'model_version': info.get('model_version'), 'params': info.get('params'),
                 'architecture': info.get('architecture'), 'config': info.get('config'),
                 'training': info.get('training') or {}, 'totals': info.get('lineage_totals'),
+                'source_type': info.get('source', {}).get('type'),
                 'status': r['status'], 'created_at': r['created_at'], 'deployed_at': r.get('deployed_at'),
                 'growth': info.get('growth'), 'evaluation': r.get('evaluation')}
 
     accepted = []
     if current:
-        for a in reversed(MEM.ancestors(ctx, current['version'])):
-            r = M.release(ctx, a['version'])
-            if r['status'] == 'deployed' or r.get('previously_deployed'):
+        chain = MEM.ancestors(ctx, current['version'])
+        root_version = chain[-1]['version'] if chain else current['version']
+        for r in sorted(M.list_releases(ctx), key=lambda r: r['version']):
+            ancestry = MEM.ancestors(ctx, r['version'])
+            if (r['status'] == 'deployed' or r.get('previously_deployed')) and any(a['version'] == root_version for a in ancestry):
+                a = ancestry[0]
                 accepted.append({**summary(r), 'parent': a['parent_version'], 'method': a['method']})
     cyc = MEM.active_cycle(ctx)
     settings = ES.get(ctx)

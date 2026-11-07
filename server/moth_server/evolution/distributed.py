@@ -49,7 +49,7 @@ def participants(ctx: Ctx, need_bytes: int, worker_ids: list[int] | None = None)
         if (w.get("last_heartbeat_at") or 0) < t - ONLINE_SECONDS or w.get("paused"):
             continue
         hw = json.loads(w["hardware"] or "{}")
-        if fits(hw, {"requirements": {"memory_bytes": need_bytes}}):
+        if fits(hw, {"requirements": {"memory_bytes": need_bytes}}, json.loads(w['limits'] or '{}')):
             out.append({**w, "hw": hw})
     return out
 
@@ -236,6 +236,7 @@ def accept_shard(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) -> dict:
         return {"accepted": False, "reasons": report.reasons}
     tmp = dest.with_suffix(".tmp")
     torch.save({"delta": delta, "tokens": int(meta.get("tokens") or 0), "worker_id": job_row["worker_id"],
+                "steps": meta.get('steps'), "train_loss": meta.get('train_loss'),
                 "batch_tuning": meta.get("batch_tuning"),
                 "loss_before": meta.get("loss_before"), "loss_after": meta.get("loss_after")}, tmp)
     tmp.replace(dest)
@@ -300,6 +301,9 @@ def advance(ctx: Ctx, exp: dict, settings: dict) -> dict[str, Any]:
         w = str(it.get("worker_id"))
         contributors[w] = contributors.get(w, 0) + int(it["tokens"])
     st["history"].append({"round": r, "participants": len(items), "tokens": total, "probe_before": round(before, 5),
+                          "steps": sum(it['steps'] for it in items) if all(it.get('steps') is not None for it in items) else None,
+                          "train_loss": sum(it['train_loss'] * it['tokens'] for it in items) / total
+                          if all(it.get('train_loss') is not None for it in items) else None,
                           "probe_after": round(after, 5), "accepted": accepted, "contributors": contributors,
                           "batch_tuning": {str(it["worker_id"]): it.get("batch_tuning") for it in items},
                           "at": now()})
@@ -342,14 +346,16 @@ def _package(ctx: Ctx, exp: dict, base: dict, st: dict, rd: Path) -> dict[str, A
     for key in ("model_version", "display_name", "initialization"):
         manifest.pop(key, None)
     tokens = sum(h["tokens"] for h in st["history"])
+    steps = sum(h['steps'] for h in st['history']) if all(h.get('steps') is not None for h in st['history']) else None
     manifest.update(name=f"moth-evolution-e{exp['id']}", created=now(), sha256=sha256_file(pkg / "model.pt"),
                     training={"method": "continued", "backend": "distributed", "rounds": st["rounds"],
+                              "steps": steps, "train_loss": st['history'][-1].get('train_loss') if st['history'] else None,
                               "participants": max((h["participants"] for h in st["history"]), default=0),
                               "tokens": tokens, "history": st["history"]},
                     lineage={"base_sha256": base["sha256"], "base_name": base["name"], "method": "continued"})
     (pkg / "manifest.json").write_text(json.dumps(manifest, indent=2))
     result = {"ok": True, "reason": "completed", "package": str(pkg), "sha256": manifest["sha256"],
-              "backend": "distributed", "tokens": tokens, "step": st["rounds"] * st["local_steps"],
+              "backend": "distributed", "tokens": tokens, "step": steps,
               "max_steps": st["rounds"] * st["local_steps"], "rounds": st["history"],
               "seconds": round(time.time() - float((exp["resources"] or {}).get("started") or time.time()), 1)}
     (rd / "result.json").write_text(json.dumps(result))

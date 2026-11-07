@@ -62,6 +62,7 @@ def export_model(checkpoint: Path | str, models_dir: Path | str, name: str, dtyp
         "sha256": sha256_file(tmp / "model.pt"),
         "training": {"run": train_cfg.get("run_name"), "step": ck.get("step"), "val_loss": ck.get("val_loss"),
                      "train_loss": ck.get("train_loss"),
+                     "tokens": ck.get('tokens_seen'),
                      "best_val": ck.get("best_val"), "dataset": train_cfg.get("dataset")},
         **(extra or {}),
     }

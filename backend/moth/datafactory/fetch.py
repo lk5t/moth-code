@@ -80,11 +80,13 @@ def _download(url: str, dest: Path, size: int, timeout: float = 120.0,
                     have = 0
                 with open(part, mode) as out:
                     while True:
-                        block = r.read(CHUNK)
+                        block = r.read(min(CHUNK, size - have + 1))
                         if not block:
                             break
                         out.write(block)
                         have += len(block)
+                        if have > size:
+                            raise FetchError(f"download exceeds its pinned size: {url}")
                         if progress:
                             progress(have, size)
         except (urllib.error.URLError, OSError, TimeoutError) as e:

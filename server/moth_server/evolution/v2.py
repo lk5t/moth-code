@@ -336,7 +336,8 @@ def assign_model_version(ctx: Ctx, version: int) -> str | None:
     rel = M.release(ctx, version)
     if not rel or rel["info"].get("model_version"):
         return rel["info"].get("model_version") if rel else None
-    used = [_parse((r["info"] or {}).get("model_version")) for r in M.list_releases(ctx)]
+    used = [_parse((r["info"] or {}).get("model_version")) for r in M.list_releases(ctx)
+            if r['status'] == 'deployed' or r.get('previously_deployed')]
     used = [u for u in used if u]
     anc = MEM.ancestors(ctx, version)
     parent_mv = None
@@ -346,7 +347,7 @@ def assign_model_version(ctx: Ctx, version: int) -> str | None:
             parent_mv = _parse(pr["info"]["model_version"])
             break
     major = parent_mv[0] if parent_mv else 0
-    minor = max([u[1] for u in used if u[0] == major] or [0]) + 1
+    minor = max([u[1] for u in used if u[0] == major] + [parent_mv[1] if parent_mv else 0]) + 1
     mv = f"{major}.{minor:02d}"
     info = {**rel["info"], "model_version": mv, "display_name": f"MOTH {mv}",
             "family": rel["info"].get("family") or "MOTH"}

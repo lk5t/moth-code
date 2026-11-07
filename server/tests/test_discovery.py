@@ -33,8 +33,10 @@ def test_discovery_requires_trusted_license_owner_and_budget(client, owner, monk
     assert discovery.ensure_data(ctx)['status'] == 'storage_budget'
     assert not library.latest_ready(ctx)
     from moth.datafactory import catalog
+    assert discovery.update(ctx, {'approved_sources': [s['id'] for s in catalog.SOURCES]})['approved_sources']
     monkeypatch.setitem(catalog.source('gsm8k'), 'license', 'unknown')
     import pytest
     with pytest.raises(ValueError, match='license'):
         discovery.update(ctx, {'approved_sources': ['gsm8k']})
+    discovery.update(ctx, {'approved_sources': []})
     assert discovery.ensure_data(ctx)['status'] == 'awaiting_source_approval'

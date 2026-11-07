@@ -63,7 +63,8 @@ def test_mixture_dev_checkpoint_and_growth(tmp_path):
     assert grown["reason"] == "completed" and grown["params"] > first["params"]
     man = json.loads((tmp_path / "g1" / "export").glob("*/manifest.json").__next__().read_text())
     assert man["lineage"]["method"] == "expansion" and man["lineage_id"] == "moth-t"
-    # a development checkpoint that does not match its hash is ignored (never trained on blindly)
-    third = run(_spec(tmp_path, "c3", mix, first["package"], init_checkpoint=first["dev_checkpoint"],
-                      init_checkpoint_sha256="0" * 64))
-    assert third["reason"] == "completed"
+    # Corruption must not silently discard optimizer/RNG progress and fall back to package weights.
+    import pytest
+    with pytest.raises(ValueError, match='missing or corrupted'):
+        run(_spec(tmp_path, "c3", mix, first["package"], init_checkpoint=first["dev_checkpoint"],
+                  init_checkpoint_sha256="0" * 64))

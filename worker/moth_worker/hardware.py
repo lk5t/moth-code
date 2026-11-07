@@ -67,10 +67,17 @@ def detect() -> dict[str, Any]:
     except (ValueError, OSError, AttributeError):
         ram_gb = _windows_ram_gb()
     disk = shutil.disk_usage(Path.home())
+    ram_available_gb = None
     if ram_gb is not None:
-        ram_gb = round(memory_budget(int(ram_gb * 2**30), int(ram_gb * 2**30))[0] / 2**30, 1)
+        try:
+            available = os.sysconf('SC_AVPHYS_PAGES') * os.sysconf('SC_PAGE_SIZE')
+        except (OSError, ValueError, AttributeError):
+            available = int(ram_gb * 2**30)
+        total, available = memory_budget(int(ram_gb * 2**30), available)
+        ram_gb, ram_available_gb = round(total / 2**30, 1), round(available / 2**30, 1)
     hw = {"gpus": gpus, "cuda": cuda, "torch": torch_version, "torch_cuda": torch_cuda,
           "cpu_count": cpu_count(), "cpu_model": cpu_model(), "ram_gb": ram_gb,
+          "ram_available_gb": ram_available_gb,
           "disk_free_gb": round(disk.free / 2**30, 1), "os": f"{platform.system()} {platform.release()}",
           "machine_id": machine_id()}
     hw["compute"] = compute_kind(hw)

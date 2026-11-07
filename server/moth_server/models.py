@@ -146,7 +146,8 @@ def finalize(ctx: Ctx, version: int, model_dir: Path, actor_id: int | None) -> d
     if src_type != "evolution":  # evolution records its own lineage (parent, cycle, experiment, data)
         from moth_server.evolution.memory import record_lineage
 
-        method = {"training-network": "network", "official": (info["source"] or {}).get("method") or "foundation"}
+        method = {"training-network": "network", "native-initialization": "initialization",
+                  "official": (info["source"] or {}).get("method") or "foundation"}
         record_lineage(ctx, version, None, method.get(src_type or "", "upload"))
     audit(ctx.db, "models.uploaded", actor_id, f"release:{version}", {"sha256": check["info"]["sha256"]})
     return release(ctx, version)

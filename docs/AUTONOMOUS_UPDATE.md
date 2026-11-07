@@ -113,3 +113,22 @@ Verification: 7 focused server tests passed, covering owner authorization, initi
 exact metrics, checkpoint corruption and discovery. Five focused UI tests passed, covering the five
 sections, preserved panel navigation, missing metrics, worker controls and evolution/parameter charts;
 TypeScript checks passed. Browser/native desktop visual testing is deferred to final verification.
+
+## Phase 5 recovery checkpoint
+
+The cloud disconnection left Phase 5 uncommitted after Phase 4 (`e196ada`). Its working files
+survived and are being preserved before further validation. Prior successful checks included a real
+PSF CPU lifecycle (MOTH 0.01 → 0.02 → 0.03, 32 steps/16,384 tokens, original-weight rollback), 140
+backend tests, 25 frontend tests, a frontend build and Chromium checks against that test database.
+These are historical results; final recovery verification is pending.
+
+The full server run reported 130 passed and one failure:
+`tests/test_evolution.py::test_full_cycle_continued_training_to_deployment` at its repeat-planning
+assertion. Its fixture assumes manual datasets only; newly enabled automatic preparation can introduce
+another dataset asynchronously. The recovered fixture explicitly disables discovery for these legacy
+manual-data cases; automatic preparation is exercised separately in `test_autonomous_lifecycle.py`.
+This change still needs its recovery test run. The interrupted final deployment-lock patch did not
+reach `models.py`; its necessity and minimal completion will be checked before final delivery.
+
+No trained Foundation model is claimed. No production release, deployment, updater or release-workflow
+change is authorized by this phase.

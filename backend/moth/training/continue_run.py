@@ -27,6 +27,14 @@ from typing import Any
 
 
 def run(spec: dict[str, Any]) -> dict[str, Any]:
+    from moth.training.checkpoint import RunLock
+
+    # Initialization and export also need a single writer, outside Trainer's run lock.
+    with RunLock(Path(spec['run_dir']) / 'continuation', 'continued training and export'):
+        return _run(spec)
+
+
+def _run(spec: dict[str, Any]) -> dict[str, Any]:
     import torch
 
     from moth.model.config import MothConfig
@@ -61,8 +69,9 @@ def run(spec: dict[str, Any]) -> dict[str, Any]:
         want = spec.get("init_checkpoint_sha256")
         from moth.training.checkpoint import file_sha256
 
-        if ip.exists() and (not want or file_sha256(ip) == want):
-            init_path = ip  # the lineage's development checkpoint: weights *and* optimizer state
+        if not ip.is_file() or (want and file_sha256(ip) != want):
+            raise ValueError("development checkpoint is missing or corrupted; refusing to discard training progress")
+        init_path = ip  # the lineage's development checkpoint: weights *and* optimizer state
     if spec.get("grow"):
         from moth.model.growth import grow_checkpoint
 
@@ -73,8 +82,11 @@ def run(spec: dict[str, Any]) -> dict[str, Any]:
         g = spec["grow"]
         grown = grow_checkpoint(ck, int(g.get("add_layers", 0)), g.get("ffn_hidden"), seed=int(spec.get("seed", 0)))
         grown_path = run_dir / "grown-init.pt"
+        from moth.training.checkpoint import atomic_torch_save, verify
         if not grown_path.exists():
-            torch.save(grown, grown_path)
+            atomic_torch_save(grown, grown_path)
+        elif not verify(grown_path):
+            raise ValueError("grown initialization checkpoint failed integrity verification")
         init_path = grown_path
         base_cfg = MothConfig.from_dict(grown["model_config"])
     seq_len = min(int(spec.get("seq_len", 256)), base_cfg.max_seq_len)
@@ -107,6 +119,7 @@ def run(spec: dict[str, Any]) -> dict[str, Any]:
                            "resumed": resumed, "seconds": round(time.time() - t0, 2), "device": trainer.device,
                            "batch_size": cfg.batch_size, "grad_accum": cfg.grad_accum,
                            "batch_tuning": res.get("batch_tuning")}
+    out['tokens'] = trainer.tokens_seen
     try:
         import resource
 

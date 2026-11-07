@@ -116,8 +116,8 @@ def _v2_spec(base: dict, cfg: dict, exp: dict) -> dict:
         out["grow"] = {"add_layers": cfg["grow"]["add_layers"], "ffn_hidden": cfg["grow"]["ffn_hidden"]}
     tr = base["info"].get("training") or {}
     out["lineage"] = {"lineage_id": base["info"].get("lineage_id"), "parent_version": base["version"],
-                      "base_tokens": int((base["info"].get("lineage_totals") or {}).get("tokens", 0)),
-                      "base_steps": int((base["info"].get("lineage_totals") or {}).get("steps", tr.get("step") or 0))}
+                      "base_tokens": (base["info"].get("lineage_totals") or {}).get("tokens", tr.get('tokens')),
+                      "base_steps": (base["info"].get("lineage_totals") or {}).get("steps", tr.get("step"))}
     return out
 
 
@@ -235,9 +235,13 @@ def register_candidate(ctx: Ctx, exp: dict, package: Path, result: dict | None =
         if base["info"].get(k) and not info.get(k):
             info[k] = base["info"][k]
     prev = base["info"].get("lineage_totals") or {}
-    tokens = int((result or {}).get("tokens") or int(cfg["steps"]) * int(cfg["batch_size"]) * int(cfg["seq_len"]))
-    info["lineage_totals"] = {"tokens": int(prev.get("tokens", 0)) + tokens,
-                              "steps": int(prev.get("steps", 0)) + int((result or {}).get("step") or cfg["steps"]),
+    tr = base['info'].get('training') or {}
+    tokens = (result or {}).get('tokens')
+    steps = (result or {}).get('step')
+    base_steps = prev.get('steps', tr.get('step', tr.get('steps')))
+    base_tokens = prev.get('tokens', tr.get('tokens', 0 if base_steps == 0 else None))
+    info["lineage_totals"] = {"tokens": int(base_tokens) + int(tokens) if base_tokens is not None and tokens is not None else None,
+                              "steps": int(base_steps) + int(steps) if base_steps is not None and steps is not None else None,
                               "cycles": int(prev.get("cycles", 0)) + 1}
     if cfg.get("grow"):
         info["growth"] = cfg["grow"]
@@ -410,6 +414,7 @@ def accept_worker_result(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) ->
     (rd / "result.json").write_text(json.dumps({"ok": True, "reason": "completed", "package": str(pkg),
                                                 "sha256": manifest["sha256"], "backend": "worker",
                                                 "loss_before": meta.get("loss_before"),
+                                                "step": meta.get('steps'), "train_loss": meta.get('train_loss'),
                                                 "loss_after": meta.get("loss_after"), "tokens": meta.get("tokens"),
                                                 "batch_tuning": meta.get("batch_tuning")}))
     return {"accepted": True, **report.stats}

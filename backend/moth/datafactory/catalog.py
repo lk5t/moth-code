@@ -143,10 +143,10 @@ def public(src: dict[str, Any]) -> dict[str, Any]:
                   for f in src["files"]]}
 
 
-def check_updates(fetch_json) -> list[dict[str, Any]]:
+def check_updates(fetch_json, sources=None) -> list[dict[str, Any]]:
     """Compare pinned revisions with upstream. ``fetch_json(url)`` returns parsed JSON (injectable for tests)."""
     out = []
-    for s in SOURCES:
+    for s in SOURCES if sources is None else sources:
         if not s["repo"]:
             continue
         try:

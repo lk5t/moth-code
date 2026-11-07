@@ -72,6 +72,10 @@ def code_corpus(n=160) -> bytes:
 @pytest.fixture
 def world(client, settings, owner, tmp_path):
     ctx = client.app.state.ctx
+    from moth_server.intelligence import discovery
+    # These legacy cases isolate manual data approval/planning. Automatic discovery has
+    # its own real lifecycle coverage and would introduce a second dataset asynchronously.
+    discovery.update(ctx, {'enabled': False})
     o = H(owner["token"])
     pkg = make_tiny_model(tmp_path, 0, "moth-base")
     rel = M._register(ctx, pkg, "moth-base", {"type": "upload"}, None)

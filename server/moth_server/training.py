@@ -116,7 +116,8 @@ def _clean_hw(hw: dict[str, Any]) -> dict[str, Any]:
     def num(v):
         return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
     return {"gpus": gpus, "cuda": s(hw.get("cuda"), 32), "torch": s(hw.get("torch"), 32), "cpu_count": hw.get("cpu_count"),
-            "ram_gb": num(hw.get("ram_gb")), "os": s(hw.get("os"), 128), "disk_free_gb": num(hw.get("disk_free_gb")),
+            "ram_gb": num(hw.get("ram_gb")), "ram_available_gb": num(hw.get('ram_available_gb')),
+            "os": s(hw.get("os"), 128), "disk_free_gb": num(hw.get("disk_free_gb")),
             "cpu_model": s(hw.get("cpu_model"), 80), "compute": hw["compute"] if hw.get("compute") in ("gpu", "cpu") else ("gpu" if gpus else "cpu"),  # 0.4 workers
 
             "machine_id": s(hw.get("machine_id"), 64),
@@ -130,17 +131,23 @@ GPU_PREFERENCE_SECONDS = 300
 MIN_ROUND_BYTES = 1 * GB  # a training-network round needs at least this much memory  # a job that would run much faster on a GPU waits this long for one
 
 
-def capacity_bytes(hw: dict[str, Any]) -> int:
+def capacity_bytes(hw: dict[str, Any], limits: dict | None = None) -> int:
     """Memory a worker can give one training job: most of a usable GPU's memory, else most of its RAM."""
     if hw.get("compute") == "gpu" and hw.get("gpus"):
-        return int(max(float(g.get("memory_gb") or 0) for g in hw["gpus"]) * 0.9 * GB)
+        fraction = float((limits or {}).get('gpu_memory_fraction') or 0.9)
+        return int(max(max(0, min(float(g.get('memory_gb') or 0) * fraction,
+                                 float(g.get('memory_gb') or 0) - float(g.get('memory_used_gb') or 0)))
+                       for g in hw['gpus']) * GB)
     ram = hw.get("ram_gb")
-    return int((float(ram) * 0.7 if ram else 2.0) * GB)
+    available = float(ram) * 0.7 if ram else 2.0
+    if hw.get('ram_available_gb') is not None:
+        available = min(available, float(hw['ram_available_gb']) * 0.8)
+    return int(max(0, available) * GB)
 
 
-def fits(hw: dict[str, Any], spec: dict[str, Any]) -> bool:
+def fits(hw: dict[str, Any], spec: dict[str, Any], limits: dict | None = None) -> bool:
     need = int((spec.get("requirements") or {}).get("memory_bytes") or 0)
-    return need <= capacity_bytes(hw)
+    return need <= capacity_bytes(hw, limits)
 
 
 def gpu_worker_online(conn) -> bool:
@@ -243,7 +250,7 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
                 spec = json.loads(cand["spec"])
                 if spec.get("worker_ids") is not None and worker['id'] not in spec['worker_ids']:
                     continue
-                if not fits(hw, spec):
+                if not fits(hw, spec, json.loads(worker['limits'] or '{}')):
                     continue
                 if hw.get("compute") != "gpu" and spec.get("prefer_gpu") and t - cand["created_at"] < GPU_PREFERENCE_SECONDS:
                     gpu_online = gpu_worker_online(c) if gpu_online is None else gpu_online
@@ -251,7 +258,7 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
                         continue
                 job = cand
                 break
-            if not job and coord is not None and capacity_bytes(hw) >= MIN_ROUND_BYTES:
+            if not job and coord is not None and capacity_bytes(hw, json.loads(worker['limits'] or '{}')) >= MIN_ROUND_BYTES:
                 job = c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
                                                             training_jobs.c.kind == "train_round")
                                 .order_by(training_jobs.c.id)).mappings().first()

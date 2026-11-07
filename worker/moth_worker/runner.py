@@ -218,6 +218,8 @@ class WorkerRunner:
             opt = model.configure_optimizer(train["lr"], train.get("weight_decay", 0.0), device_type=device)
             gen = torch.Generator().manual_seed(jid)
             ckpt_path = self.state_dir / "jobs" / f"{jid}.pt"
+            if not ckpt_path.exists() and ckpt_path.with_name(ckpt_path.name + '.corrupt').exists():
+                raise RuntimeError('no valid worker checkpoint remains; refusing to reset existing training progress')
             start_step, n_tokens = 0, 0
             tuning = None
             saved_rng = None

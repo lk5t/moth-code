@@ -152,7 +152,8 @@ def start_training(body: TrainingStartIn, auth: Auth = Depends(owner_reauthed), 
         rows = ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
         selected = [w['id'] for w in rows if (body.worker_id is None or w['id'] == body.worker_id)
                     and (w.get('last_heartbeat_at') or 0) >= now() - 180
-                    and T.fits(json.loads(w['hardware'] or '{}'), {'requirements': {'memory_bytes': need}})]
+                    and T.fits(json.loads(w['hardware'] or '{}'), {'requirements': {'memory_bytes': need}},
+                               json.loads(w['limits'] or '{}'))]
         if not selected:
             raise HTTPException(409, "No selected online worker has enough memory for the configured workload")
         with ctx.db.tx() as c:
@@ -171,6 +172,15 @@ def initialize(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)
 
     try:
         return init(ctx, auth.uid)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(409, str(e)) from None
+
+
+@router.post("/initialize/activate")
+def activate_initial(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.evolution.bootstrap import activate_initial as activate
+    try:
+        return activate(ctx, auth.uid)
     except (ValueError, RuntimeError) as e:
         raise HTTPException(409, str(e)) from None
 

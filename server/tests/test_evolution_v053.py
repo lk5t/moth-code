@@ -69,7 +69,8 @@ def test_curriculum_cycle_dev_checkpoint_and_model_version(client, owner, tmp_pa
     cand = M.release(ctx, cyc["candidate_version"])
     assert ctx.extras["deployed_version"] == cand["version"]
     assert cand["info"]["dev_checkpoint"]["sha256"] and cand["info"]["model_version"] == "0.01"
-    assert cand["info"]["lineage_totals"]["steps"] == FAST["training"]["steps"]
+    assert cand["info"]["lineage_totals"]["steps"] == FAST["training"]["steps"] + M.release(ctx, base_v)['info']['training']['step']
+    assert cand['info']['lineage_totals']['tokens'] is None  # imported historical token count is unknown
     # the next cycle continues from the development checkpoint (weights + optimizer), not from scratch
     from moth_server.evolution.backends import _v2_spec
 

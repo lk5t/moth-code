@@ -216,6 +216,8 @@ def _maybe_start(ctx: Ctx, settings: dict, woken: bool = False) -> dict:
         return {"state": "scheduled", "next_cycle_at": st["next_cycle_at"]}
     base = M.deployed(ctx)
     reason = None
+    if base and st.get('stable_version') != base['version']:
+        _set_state(ctx, stable_version=base['version'])
     if not base:
         reason = "No model is deployed yet. Evolution continues training the deployed model."
     elif not DS.approved(ctx):
@@ -590,6 +592,12 @@ def _deploying(ctx: Ctx, cyc: dict, settings: dict) -> None:
     from moth_server import models as M
 
     previous = M.deployed(ctx)
+    if not previous or previous['version'] != cyc['base_version'] or previous['sha256'] != cyc['base_sha256']:
+        MEM.update_cycle(ctx, cyc['id'], status='cancelled', finished_at=now(),
+                         error='The stable checkpoint changed; this candidate must not replace a different parent')
+        MEM.event(ctx, 'cycle.superseded', 'Stable checkpoint changed before promotion; candidate retained for review', cycle_id=cyc['id'])
+        _schedule_next(ctx, failed=False)
+        return
     if previous and not state(ctx).get("stable_version"):
         _set_state(ctx, stable_version=previous["version"])  # the candidate becomes stable only after monitoring
     from moth_server import serving
@@ -646,6 +654,11 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
     from moth_server import serving
 
     staged = bool(res.get("staged"))
+    if staged and (not M.deployed(ctx) or M.deployed(ctx)['version'] != cyc['base_version']):
+        serving.end_canary(ctx, 'another model was deployed during monitoring')
+        MEM.update_cycle(ctx, cyc['id'], status='completed', finished_at=now(), result={**res, 'outcome': 'superseded'})
+        _schedule_next(ctx, failed=False)
+        return
     if staged and not serving.canary(ctx) and ctx.extras.get("deployed_version") != cyc["candidate_version"]:
         try:  # after a restart: the staged rollout continues
             serving.start_canary(ctx, cyc["candidate_version"], float(res.get("canary_percent") or 20))
@@ -701,9 +714,12 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
         try:
             from moth_server.evolution import v2 as V2
 
+            prior_info = M.release(ctx, cyc['candidate_version'])['info']
             mv = V2.assign_model_version(ctx, cyc["candidate_version"])
             serving.sign_release(ctx, cyc["candidate_version"])
         except Exception as e:  # retain the stable model and retry; never promote unsigned artifacts
+            if not prior_info.get('model_version'):
+                M._set(ctx, cyc['candidate_version'], info=json.dumps(prior_info))
             MEM.update_cycle(ctx, cyc["id"], error=f"model manifest signing failed: {e}")
             return
         if staged:

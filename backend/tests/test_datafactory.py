@@ -81,6 +81,15 @@ def test_download_once_resume_and_reject_tampering(tmp_path):
     assert not fetch.local_path(tmp_path, src, bad).exists()
 
 
+def test_oversized_response_cannot_exceed_download_budget(tmp_path):
+    http = FakeHTTP({'https://example.test/data': b'x' * 100000})
+    target = tmp_path / 'download'
+    with pytest.raises(fetch.FetchError, match='exceeds its pinned size'):
+        fetch._download('https://example.test/data', target, 64, opener=http)
+    assert target.with_name('download.part').stat().st_size == 65
+    assert not target.exists()
+
+
 def test_cleaning_quality_and_pii():
     code, count = build._clean_record({"domain": "code", "text": 'token = "ghp_' + 'A' * 32 + '"\n# email a@example.com'})
     assert count == 2 and 'ghp_' not in code['text'] and 'a@example.com' not in code['text']

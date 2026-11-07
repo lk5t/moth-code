@@ -113,7 +113,7 @@ def worker_capacity(ctx: Ctx, need_bytes: int = 0, worker_ids: list[int] | None 
     online = [w for w in rows if w["status"] == "online" and not w["paused"]]
     hws = [json.loads(w["hardware"] or "{}") for w in online]
     gpu = [h for h in hws if h.get("compute") == "gpu" or (h.get("compute") is None and h.get("gpus"))]
-    fitting = [h for h in hws if capacity_bytes(h) >= need_bytes]
+    fitting = [h for h, w in zip(hws, online) if capacity_bytes(h, json.loads(w['limits'] or '{}')) >= need_bytes]
     return {"total": len(rows), "online": len(online), "online_gpu": len(gpu), "online_cpu": len(hws) - len(gpu),
             "usable": len(fitting), "gpus": [g.get("name") for h in gpu for g in h.get("gpus", [])],
             "gflops": round(sum(((h.get("benchmark") or {}).get("gflops") or 0) for h in hws), 1)}

@@ -26,6 +26,9 @@ def test_real_worker_expands_then_trains_without_touching_base(client, owner, tm
     EN._planning(ctx, cyc, S.get(ctx))
     exp = MEM.experiments(ctx, cyc['id'])[0]
     base = M.release(ctx, base_v)
+    manifest_path = Path(base['path']) / 'manifest.json'
+    manifest_path.write_text(json.dumps({**json.loads(manifest_path.read_text()), 'model_version': '0.01',
+                                         'display_name': 'MOTH 0.01'}))
     before = Path(base['path'], 'model.pt').read_bytes()
     cfg = {**exp['config'], 'steps': 3, 'method': 'expansion',
            'grow': {'add_layers': 1, 'ffn_hidden': 256}}
@@ -55,6 +58,7 @@ def test_real_worker_expands_then_trains_without_touching_base(client, owner, tm
     assert model.cfg.n_layers == 3 and model.cfg.ffn_hidden == 256
     assert model.num_params() > base['info']['params']
     assert manifest['lineage']['method'] == 'expansion'
+    assert 'model_version' not in manifest and 'display_name' not in manifest
     assert any(not torch.equal(original[k], v.float()) for k,v in model.state_dict().items())
     assert Path(base['path'], 'model.pt').read_bytes() == before
 

@@ -94,7 +94,10 @@ def build(cache: Path, out: Path, config: dict[str, Any] | None = None,
             yield from src["records"]
             return
         if src["format"] == "stdlib":
-            yield from parse.train_records(src, {"path": ""}, Path("."))
+            excluded = set(cfg.get('excluded_stdlib_files') or [])
+            for rec in parse.train_records(src, {"path": ""}, Path(".")):
+                if rec['uid'].split(':', 1)[-1] not in excluded:
+                    yield rec
             return
         for f, path in files[src["id"]]:
             if f["role"] == "train":

@@ -18,6 +18,7 @@ def test_initialization_is_real_near_100k_and_idempotent(client, owner):
     model, tok, manifest = load_model(rel['path'])
     assert sum(p.numel() for p in model.parameters()) == rel['info']['params'] == 99648
     assert manifest['model_version'] == '0.01' and tok.vocab_size == 272
+    assert MEM.ancestors(client.app.state.ctx, rel['version'])[0]['method'] == 'initialization'
     assert rel['status'] == 'uploaded' and not M.deployed(client.app.state.ctx)
     digest = sha256_file(Path(rel['path']) / 'model.pt')
     again = initialize(client.app.state.ctx)
@@ -50,3 +51,21 @@ def test_unregistered_weights_prevent_random_reset(client, tmp_path):
     with pytest.raises(ValueError, match='unregistered'):
         initialize(ctx)
     assert torch.load(existing, weights_only=True)['progress'] == 'preserve'
+
+
+def test_initialization_recovers_interrupted_registration_without_new_weights(client, monkeypatch):
+    import pytest
+    from moth.training.checkpoint import file_sha256
+    ctx = client.app.state.ctx
+    with monkeypatch.context() as patch:
+        def interrupted(*args, **kwargs):
+            raise RuntimeError('interrupted registration')
+        patch.setattr(M, 'finalize', interrupted)
+        with pytest.raises(RuntimeError, match='interrupted'):
+            initialize(ctx)
+    version = M.list_releases(ctx)[0]['version']
+    seed = Path(ctx.settings.data_dir) / 'lineage' / 'initial' / 'seed.pt'
+    digest = file_sha256(seed)
+    recovered = initialize(ctx)
+    assert recovered['recovered'] and recovered['model']['version'] == version
+    assert file_sha256(seed) == digest and len(M.list_releases(ctx)) == 1

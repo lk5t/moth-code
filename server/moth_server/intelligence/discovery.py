@@ -9,13 +9,15 @@ import hashlib
 import json
 import shutil
 import time
+import threading
 
 from moth_server.context import Ctx
 
 KEY = "library_discovery"
 DEFAULTS = {"enabled": True, "approved_sources": ["python-stdlib"],
-            "max_download_bytes": 256_000_000, "max_source_chars": 500_000, "retry_seconds": 3600}
-LICENSES = {"PSF-2.0", "MIT", "Apache-2.0", "CC-BY-SA-3.0", "CC-BY-SA-4.0", "CDLA-Sharing-1.0"}
+            "max_download_bytes": 256_000_000, "max_source_chars": 500_000, "retry_seconds": 3600,
+            "check_updates_seconds": 86400}
+LICENSES = {"PSF-2.0", "MIT", "Apache-2.0", "CC-BY-4.0", "CC-BY-SA-3.0", "CC-BY-SA-4.0", "CDLA-Sharing-1.0"}
 
 
 def policy(ctx: Ctx) -> dict:
@@ -38,7 +40,7 @@ def update(ctx: Ctx, changes: dict) -> dict:
         if src['license'] not in LICENSES or not src.get('attribution'):
             raise ValueError(f"Unverified training license or attribution for {sid}")
     for key, lo, hi in (("max_download_bytes", 0, 10**11), ("max_source_chars", 10000, 10**8),
-                        ("retry_seconds", 60, 86400 * 30)):
+                        ("retry_seconds", 60, 86400 * 30), ('check_updates_seconds', 3600, 86400 * 30)):
         if type(p[key]) is not int or not lo <= p[key] <= hi:
             raise ValueError(f"{key} must be an integer between {lo} and {hi}")
     ctx.db.set_config(KEY, p)
@@ -81,8 +83,25 @@ def ensure_data(ctx: Ctx, wait: bool = False) -> dict:
         approved = [s for s in approved if f"factory:{s['id']}" not in revoked_sources]
         if not approved:
             return {"status": "awaiting_source_approval"}
+        required = sum(f['size'] for s in approved for f in catalog.with_pin(s, library.pins(ctx).get(s['id']))['files'])
+        from moth_server.evolution import settings as S
+
+        reserve = S.get(ctx)['limits']['min_free_disk_gb'] * 1024**3
+        if required > p['max_download_bytes'] or shutil.disk_usage(library.root(ctx)).free < reserve + required * 3 + len(approved) * p['max_source_chars'] * 8:
+            return {"status": "storage_budget", "download_bytes": required}
+        remote = [s for s in approved if s.get('repo')]
+        checked = ctx.db.get_config(KEY + '_scan_at', 0) or 0
+        if remote and time.time() - checked > p['check_updates_seconds'] and not ctx.extras.get('discovery_scan'):
+            ctx.db.set_config(KEY + '_scan_at', time.time())
+            ctx.extras['discovery_scan'] = True
+            def scan():
+                try:
+                    library.check_updates(ctx, sources=remote)
+                finally:
+                    ctx.extras['discovery_scan'] = False
+            threading.Thread(target=scan, name='trusted-dataset-discovery', daemon=True).start()
         sig = hashlib.sha256(json.dumps({"sources": approved, "pins": library.pins(ctx),
-                                        "policy": p, "tokenizer": str(library._lineage_tokenizer(ctx))},
+                                        "factory_policy": 2, "policy": p, "tokenizer": str(library._lineage_tokenizer(ctx))},
                                        sort_keys=True).encode()).hexdigest()
         if st.get('signature') == sig:
             if st.get('build'):
@@ -94,13 +113,9 @@ def ensure_data(ctx: Ctx, wait: bool = False) -> dict:
                     return {**st, 'status': b['status']}
             if time.time() < st.get('retry_at', 0):
                 return {**st, 'status': 'backoff'}
-        required = sum(f['size'] for s in approved for f in catalog.with_pin(s, library.pins(ctx).get(s['id']))['files'])
-        from moth_server.evolution import settings as S
-
-        reserve = S.get(ctx)['limits']['min_free_disk_gb'] * 1024**3
-        if required > p['max_download_bytes'] or shutil.disk_usage(library.root(ctx)).free < reserve + required * 3 + len(approved) * p['max_source_chars'] * 8:
-            return {"status": "storage_budget", "download_bytes": required}
-        bid = library.start_build(ctx, None, {"automatic": True, "sources": [s['id'] for s in approved],
+        from moth_server.evalsets import BUILTIN_FILES
+        bid = library.start_build(ctx, None, {"automatic": True, "excluded_stdlib_files": list(BUILTIN_FILES),
+                                            "sources": [s['id'] for s in approved],
                                             "max_chars": {s['id']: p['max_source_chars'] for s in approved}}, wait=wait)
         st = {"signature": sig, "build": bid, "requested_at": time.time(),
               "retry_at": time.time() + p['retry_seconds'], "status": "preparing"}

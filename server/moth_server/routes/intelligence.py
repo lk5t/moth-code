@@ -27,6 +27,10 @@ MAX_NEW_TOKENS = 1024
 HISTORY_MESSAGES = 16
 
 
+def setup(ctx: Ctx) -> None:
+    library.recover(ctx)
+
+
 def _policy(ctx: Ctx):
     from moth.policy.engine import PolicyEngine, with_safety_baseline
 
