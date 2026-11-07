@@ -438,10 +438,12 @@ def load_checked(ctx: Ctx, version: int, device: str = "auto"):
     return engine, {"device": dev, "health_check": out[:120], "tokens_per_second": round(stats.tokens_per_sec, 1)}
 
 
-def deploy(ctx: Ctx, version: int, actor_id: int | None = None, device: str = "auto", engine=None) -> dict:
+def deploy(ctx: Ctx, version: int, actor_id: int | None = None, device: str = "auto", engine=None,
+           expected_parent: int | None = None) -> dict:
     """Load + health-check the release in a fresh engine, then swap it in. Failure keeps the current model.
 
-    ``engine``: an engine already loaded and checked (a staged rollout being promoted)."""
+    ``engine``: an engine already loaded and checked (a staged rollout being promoted).
+    ``expected_parent``: optional atomic guard against replacing a newer stable checkpoint."""
     from moth.inference.local import LocalInference
     from moth.model.generation import GenerationParams
     from moth.training.trainer import pick_device
@@ -449,11 +451,15 @@ def deploy(ctx: Ctx, version: int, actor_id: int | None = None, device: str = "a
     rel = release(ctx, version)
     if engine is not None:
         return _swap_in(ctx, version, rel, engine, actor_id, {"device": getattr(engine, "device", "cpu"),
-                                                              "promoted_from": "staged rollout"})
+                                                              "promoted_from": "staged rollout"}, expected_parent=expected_parent)
     if rel["status"] not in ("published", "deployed"):
         raise ReleaseError("only published releases (evaluated and passed) can be deployed"
                            if rel["status"] != "deploying" else "this release is already being deployed")
     with _deploy_lock:
+        if expected_parent is not None:
+            current = deployed(ctx)
+            if not current or current['version'] != expected_parent:
+                raise ReleaseError('The stable parent changed before deployment')
         dev = pick_device(device)
         problems = resource_problems(rel, "cuda" if dev.startswith("cuda") else "cpu")
         if problems:
@@ -478,14 +484,18 @@ def deploy(ctx: Ctx, version: int, actor_id: int | None = None, device: str = "a
             raise ReleaseError(f"deployment failed, previous model still serving: {e}") from None
         return _swap_in(ctx, version, rel, engine, actor_id, {"device": dev, "health_check": out[:120],
                                                               "tokens_per_second": round(stats.tokens_per_sec, 1)},
-                        locked=True)
+                        locked=True, expected_parent=expected_parent)
 
 
 def _swap_in(ctx: Ctx, version: int, rel: dict, engine, actor_id: int | None, serving: dict,
-             locked: bool = False) -> dict:
+             locked: bool = False, expected_parent: int | None = None) -> dict:
     if not locked:
         with _deploy_lock:
-            return _swap_in(ctx, version, rel, engine, actor_id, serving, locked=True)
+            return _swap_in(ctx, version, rel, engine, actor_id, serving, locked=True, expected_parent=expected_parent)
+    if expected_parent is not None:
+        current = deployed(ctx)
+        if not current or current['version'] != expected_parent:
+            raise ReleaseError('The stable parent changed before the atomic model swap')
     previous = ctx.extras.get("inference_engine")
     ctx.extras["inference_engine"] = engine  # atomic swap for new requests
     ctx.extras["deployed_version"] = version

@@ -58,14 +58,14 @@ def end_canary(ctx: Ctx, reason: str = "") -> None:
             pass
 
 
-def promote_canary(ctx: Ctx, actor_id: int | None = None) -> dict:
+def promote_canary(ctx: Ctx, actor_id: int | None = None, expected_parent: int | None = None) -> dict:
     """The canary becomes the stable model for everyone (its loaded engine is swapped in)."""
     from moth_server import models as M
 
     c = ctx.extras.get("canary")
     if not c:
         raise M.ReleaseError("no staged rollout is running")
-    out = M.deploy(ctx, c["version"], actor_id, engine=c["engine"])
+    out = M.deploy(ctx, c["version"], actor_id, engine=c["engine"], expected_parent=expected_parent)
     ctx.extras.pop("canary", None)
     return out
 

@@ -608,7 +608,7 @@ def _deploying(ctx: Ctx, cyc: dict, settings: dict) -> None:
         if staged:  # the stable model keeps serving; the candidate answers a share of users while monitored
             serving.start_canary(ctx, cyc["candidate_version"], pct)
         else:
-            M.deploy(ctx, cyc["candidate_version"])
+            M.deploy(ctx, cyc["candidate_version"], expected_parent=cyc['base_version'])
     except M.ReleaseError as e:
         MEM.update_cycle(ctx, cyc["id"], status="failed", finished_at=now(), error=str(e))
         MEM.event(ctx, "deploy.failed", f"Deploying v{cyc['candidate_version']} failed; v"
@@ -724,7 +724,7 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
             return
         if staged:
             try:
-                serving.promote_canary(ctx)  # everyone now gets the candidate
+                serving.promote_canary(ctx, expected_parent=cyc['base_version'])
             except M.ReleaseError as e:
                 MEM.update_cycle(ctx, cyc["id"], status="failed", finished_at=now(), error=str(e))
                 _schedule_next(ctx, failed=True)

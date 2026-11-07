@@ -80,6 +80,11 @@ def test_stable_parent_change_blocks_automatic_promotion(client, owner, tmp_path
         cid = c.execute(evolution_cycles.insert().values(status='deploying', trigger='manual', base_version=base,
             base_sha256=M.release(ctx, base)['sha256'], candidate_version=candidate, created_at=now(), updated_at=now())).inserted_primary_key[0]
     M.deploy(ctx, candidate)  # an explicit owner selection while this cycle was in progress
+    import pytest
+    with pytest.raises(M.ReleaseError, match='stable parent changed'):
+        M.deploy(ctx, base, engine=ctx.extras['inference_engine'], expected_parent=base)
+    with pytest.raises(M.ReleaseError, match='stable parent changed'):
+        M.deploy(ctx, base, expected_parent=base)
     EN._deploying(ctx, MEM.cycle(ctx, cid), S.get(ctx))
     assert MEM.cycle(ctx, cid)['status'] == 'cancelled'
     assert M.deployed(ctx)['version'] == candidate

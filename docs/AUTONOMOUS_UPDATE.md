@@ -132,3 +132,43 @@ reach `models.py`; its necessity and minimal completion will be checked before f
 
 No trained Foundation model is claimed. No production release, deployment, updater or release-workflow
 change is authorized by this phase.
+
+## Phase 5 implementation
+
+Recovered progress is saved remotely as `595df9b`. The existing engine, Data Factory, growth functions,
+worker protocol and deployment mechanism remain in use. Phase 5 closes their integration gaps:
+
+- An explicit, recently authenticated owner action evaluates and activates the untrained initial
+  baseline. It never replaces an existing deployed lineage or calls an initialized model trained.
+  Interrupted registration reuses the original checkpoint and release row; missing/corrupt progress
+  blocks initialization rather than generating replacement weights.
+- Data starvation starts approved preparation; completion wakes the scheduler immediately. Interrupted
+  builds become retryable failures while verified downloads remain intact. Automatic standard-library
+  builds exclude the server's fixed general evaluation files. Trusted remote revision checks run with
+  bounded frequency, and changed revisions still require the existing approval gate.
+- Download streams are bounded by pinned size. CPU/GPU job admission respects reported available
+  memory, GPU usage and owner GPU-memory fractions. Existing CUDA execution is preserved.
+- Continuation locks cover initialization and export as well as training. Development-checkpoint
+  corruption cannot silently discard optimizer/RNG state; grown checkpoints are atomic and verified.
+  Quarantined worker progress cannot silently restart from the base weights.
+- Training tokens, distributed local steps and losses come from recorded work. Unknown historical
+  totals remain unknown. Accepted ancestry remains visible after rollback. Rejected or unsigned
+  candidates do not consume the next accepted version number.
+- Parent checks prevent a candidate replacing a manually selected model. The final parent comparison
+  occurs inside the existing deployment lock, including promotion of an already loaded canary.
+  Existing retention, improvement, signing, health and monitored-traffic gates remain required.
+
+The remaining regression was a fixture isolation issue in
+`test_full_cycle_continued_training_to_deployment`: automatic preparation could add a curriculum build
+while this manual-dataset test was running, so replanning did not necessarily enumerate the original
+manual experiment among skipped configurations. The legacy manual-data fixture now explicitly turns
+off discovery; its assertions are preserved. The separate real automatic lifecycle test starts with
+no approved data and verifies preparation, two evaluated promotions, real monitored requests,
+signatures, parent ancestry, cumulative counts and rollback. Both tests passed after recovery.
+
+Fresh recovery verification so far: all 140 backend tests passed; the corrected server regression
+and three autonomous lifecycle/recovery cases passed. The PSF CPU lifecycle recorded 20 steps/10,240
+tokens at MOTH 0.02 and cumulative 32 steps/16,384 tokens at MOTH 0.03, each with 99,648 parameters.
+Unchanged parameter count demonstrates that version increments are independent of growth. Dedicated
+growth tests verify real expansion separately. Final focused server/frontend checks are recorded below
+once complete.
