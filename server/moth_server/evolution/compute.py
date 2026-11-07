@@ -76,9 +76,14 @@ def activity(ctx: Ctx) -> Activity:
 # ---- local hardware ------------------------------------------------------------------------------------
 def local(ctx: Ctx) -> dict[str, Any]:
     from moth_server.routes.system import memory
+    from moth.training.resources import cpu_count, memory_budget
 
-    out: dict[str, Any] = {"cpu_count": os.cpu_count(), "load_average": None, "memory": memory(), "gpus": [],
+    out: dict[str, Any] = {"cpu_count": cpu_count(), "load_average": None, "memory": memory(), "gpus": [],
                            "backends": ["cpu"]}
+    if out['memory']:
+        total, avail = memory_budget(out['memory']['total'], out['memory']['available'])
+        out['memory'] = {'total': total, 'available': avail, 'used': total - avail,
+                         'percent': round(100 * (total - avail) / max(1, total), 1)}
     try:
         out["load_average"] = [round(x, 2) for x in os.getloadavg()]
     except OSError:
@@ -98,11 +103,13 @@ def local(ctx: Ctx) -> dict[str, Any]:
     return out
 
 
-def worker_capacity(ctx: Ctx, need_bytes: int = 0) -> dict[str, Any]:
+def worker_capacity(ctx: Ctx, need_bytes: int = 0, worker_ids: list[int] | None = None) -> dict[str, Any]:
     """Online MOTH workers (CPU and GPU) and how many can take a job needing ``need_bytes``."""
     from moth_server.training import capacity_bytes
 
     rows = ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
+    if worker_ids is not None:
+        rows = [w for w in rows if w['id'] in worker_ids]
     online = [w for w in rows if w["status"] == "online" and not w["paused"]]
     hws = [json.loads(w["hardware"] or "{}") for w in online]
     gpu = [h for h in hws if h.get("compute") == "gpu" or (h.get("compute") is None and h.get("gpus"))]
@@ -141,7 +148,7 @@ def choose_backend(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[dict | No
     elif be.get("local_gpu"):
         reasons.append("this server has no GPU")
     if be.get("workers"):
-        cap = worker_capacity(ctx, need_bytes)
+        cap = worker_capacity(ctx, need_bytes, settings.get("worker_ids"))
         if cap["usable"]:
             return {"backend": "worker", "device": "worker"}, []
         if not cap["total"]:

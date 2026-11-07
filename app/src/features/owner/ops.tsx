@@ -409,12 +409,24 @@ export function WorkersPanel() {
       </span>
       <span className="flex items-center gap-1">
         <Badge variant={w.status === "online" ? "success" : w.status === "revoked" ? "danger" : "default"}>{w.status}</Badge>
+        {w.status !== "revoked" && <>
+          <Button size="sm" variant="ghost" onClick={() => run(() => post("/v1/admin/evolution/training/start", { worker_id: w.id }), "Training requested; prerequisites and resource limits apply.")}>Start Training</Button>
+          <Button size="sm" variant="ghost" onClick={() => run(() => post(`/v1/training/workers/${w.id}/${w.paused ? "resume" : "pause"}`), w.paused ? "Worker resumed." : "Worker paused; checkpoint and lease retained.")}>{w.paused ? "Resume" : "Pause"}</Button>
+          <Button size="sm" variant="ghost" onClick={() => run(() => post(`/v1/training/workers/${w.id}/stop`), "Worker stopped; job released and progress retained locally.")}>Stop</Button>
+        </>}
         {w.status !== "revoked" && <Button size="sm" variant="ghost" onClick={() => confirm(`Revoke worker #${w.id}?`) && run(() => post(`/v1/training/workers/${w.id}/revoke`), "Worker revoked.")}>Revoke</Button>}
       </span>
     </div>
   );
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => run(() => post("/v1/admin/evolution/training/start", {}), "Compatible workers requested; training starts when prerequisites are ready.")}>Start All Compatible Workers</Button>
+        <Button variant="outline" onClick={() => run(() => post("/v1/admin/evolution/training/start", { server_cpu: true }), "Server CPU training requested within configured limits.")}>Start Server CPU Training</Button>
+        <Button variant="outline" onClick={() => run(() => post("/v1/admin/evolution/pause"), "Evolution paused.")}>Pause Training</Button>
+        <Button variant="outline" onClick={() => run(() => post("/v1/admin/evolution/resume"), "Evolution resumed.")}>Resume Training</Button>
+        <Button variant="outline" onClick={() => run(() => post("/v1/admin/evolution/cancel"), "Training cycle stopped; stable model retained.")}>Stop Training Cycle</Button>
+      </div>
       <Card>
         <CardHeader><CardTitle>GPU workers ({gpu.filter((w) => w.status === "online").length} online / {gpu.length})</CardTitle></CardHeader>
         <CardContent className="space-y-1 text-xs">{gpu.length ? gpu.map(row) : <span className="text-muted">None enrolled.</span>}</CardContent>
@@ -429,7 +441,9 @@ export function WorkersPanel() {
           {!jobs?.length && <span className="text-muted">No training run is active.</span>}
           {jobs?.map((j) => (
             <div key={j.id} className="flex items-center justify-between gap-2 border-b border-border py-1 last:border-0">
-              <span className="min-w-0 truncate">#{j.id} round {j.spec.round} {j.error && <span className="text-danger">· {String(j.error).slice(0, 90)}</span>}</span>
+              <span className="min-w-0 truncate">#{j.id} round {j.spec.round} {j.error && <span className="text-danger">· {String(j.error).slice(0, 90)}</span>}
+                {(j.metrics?.progress || j.metrics?.training) && <span className="text-muted"> · {j.metrics.progress?.step ?? j.metrics.training?.steps ?? "Unavailable"} steps · {j.metrics.progress?.tokens ?? j.metrics.training?.tokens ?? "Unavailable"} tokens · loss {j.metrics.progress?.train_loss ?? j.metrics.training?.train_loss ?? "Unavailable"} · checkpoint step {j.metrics.progress?.checkpoint_step ?? "Unavailable"}</span>}
+              </span>
               <span className="flex shrink-0 items-center gap-2 text-muted">
                 {j.status === "leased" && j.progress != null && <Progress value={j.progress * 100} className="w-24" />}
                 {j.status} · worker {j.worker_id ?? "—"} · {timeAgo(j.updated_at)}

@@ -125,6 +125,46 @@ class SettingsIn(BaseModel):
     changes: dict[str, Any]
 
 
+class TrainingStartIn(BaseModel):
+    worker_id: int | None = None
+    server_cpu: bool = False
+
+
+@router.post("/training/start")
+def start_training(body: TrainingStartIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    import json
+    from sqlalchemy import select
+    from moth_server.db import workers, now
+    from moth_server import training as T
+
+    if MEM.active_cycle(ctx):
+        raise HTTPException(409, "A cycle is already active; use Pause/Resume or finish it before changing participants")
+    base = M.deployed(ctx)
+    if not base:
+        raise HTTPException(409, "Initialize or import MOTH, then evaluate and deploy its first checkpoint")
+    settings = S.get(ctx)
+    selected = None
+    if not body.server_cpu:
+        cfg = base['info'].get('config') or {}
+        need = C.estimate_training_memory(int(base['info']['params']), settings['training']['batch_size'],
+                                         min(settings['training']['seq_len'], cfg.get('max_seq_len', 256)),
+                                         cfg.get('d_model', 512), cfg.get('n_layers', 12))
+        rows = ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
+        selected = [w['id'] for w in rows if (body.worker_id is None or w['id'] == body.worker_id)
+                    and (w.get('last_heartbeat_at') or 0) >= now() - 180
+                    and T.fits(json.loads(w['hardware'] or '{}'), {'requirements': {'memory_bytes': need}})]
+        if not selected:
+            raise HTTPException(409, "No selected online worker has enough memory for the configured workload")
+        with ctx.db.tx() as c:
+            c.execute(workers.update().where(workers.c.id.in_(selected)).values(paused=False))
+    S.update(ctx, {'enabled': True, 'paused': False, 'worker_ids': selected,
+                   'backends': {'local_cpu': body.server_cpu, 'local_gpu': False, 'workers': not body.server_cpu}})
+    EN._set_state(ctx, consecutive_failures=0)
+    MEM.event(ctx, 'training.start', 'Owner requested training on ' + ('server CPU' if body.server_cpu else str(selected)), actor=auth.uid)
+    EN.wake(ctx)
+    return {'requested': True, 'worker_ids': selected, 'server_cpu': body.server_cpu}
+
+
 @router.post("/initialize")
 def initialize(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
     from moth_server.evolution.bootstrap import initialize as init

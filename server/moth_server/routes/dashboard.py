@@ -149,6 +149,7 @@ def all_jobs(limit: int = 100, auth: Auth = Depends(require_owner), ctx: Ctx = D
     rows = ctx.db.all(select(training_jobs).order_by(desc(training_jobs.c.id)).limit(min(max(limit, 1), 500)))
     for r in rows:
         r["spec"] = {k: v for k, v in json.loads(r["spec"]).items() if k in ("round", "shard_id", "model_version")}
+        r["metrics"] = json.loads(r.get("result") or "{}")
     return rows
 
 

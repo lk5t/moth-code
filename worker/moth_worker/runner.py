@@ -37,7 +37,9 @@ class WorkerRunner:
         self.heartbeat_seconds = heartbeat_seconds
         self.current_job: int | None = None
         self.progress: float | None = None
+        self.training_metrics: dict | None = None
         self.paused = False
+        self.cancelled_job: int | None = None
         self.revoked = False
         self.limits: dict[str, Any] = {}
         self.stop_event = threading.Event()
@@ -57,8 +59,10 @@ class WorkerRunner:
 
     # ---- heartbeat -----------------------------------------------------------------------
     def beat(self) -> None:
-        resp = self.client.heartbeat(self.hardware(), self.current_job, self.progress)
+        resp = self.client.heartbeat(self.hardware(), self.current_job, self.progress, self.training_metrics)
         self.paused, self.revoked, self.limits = resp["paused"], resp["revoked"], resp.get("limits") or {}
+        if resp.get("job_cancelled"):
+            self.cancelled_job = self.current_job
         from moth_worker import updater
 
         done = updater.confirm_healthy(self.state_dir)
@@ -129,6 +133,8 @@ class WorkerRunner:
                 done += 1
                 if max_jobs and done >= max_jobs:
                     break
+            except Stop:
+                continue  # checkpoint saved; normal loop checks pause/exit
             except ServerError as e:
                 if e.status == 401:
                     self.log("Worker credential is invalid or revoked; stopping.")
@@ -148,6 +154,8 @@ class WorkerRunner:
         import json as _json
 
         jid, spec = job["id"], job["spec"]
+        self.cancelled_job = None
+        self.training_metrics = None
         self.current_job, self.progress = jid, 0.0
         self.log(f"job {jid}: evaluating {spec['eval']['suite_id']} of model v{spec['eval']['version']}")
         try:
@@ -176,6 +184,7 @@ class WorkerRunner:
             return {"accepted": False, "error": str(e)}
         finally:
             self.current_job, self.progress = None, None
+            self.training_metrics = None
 
     # ---- one training round ------------------------------------------------------------------
     def run_job(self, job: dict) -> dict:
@@ -187,6 +196,8 @@ class WorkerRunner:
         if job.get("kind") == "eval_loss":
             return self.run_eval(job)
         jid, spec = job["id"], job["spec"]
+        self.cancelled_job = None
+        self.training_metrics = None
         self.current_job, self.progress = jid, 0.0
         self.log(f"job {jid}: round {spec['round']}, shard {spec['shard_id']}")
         try:
@@ -196,7 +207,8 @@ class WorkerRunner:
             device = self.device or ("cuda" if compute_kind(detect()) == "gpu" else "cpu")
             limits = {**job.get("limits", {}), **self.limits}
             if device == "cpu":  # leave a core for the system unless the owner set a limit
-                torch.set_num_threads(max(1, int(limits.get("cpu_threads") or max(1, (os.cpu_count() or 2) - 1))))
+                from moth.training.resources import cpu_count
+                torch.set_num_threads(min(cpu_count(), max(1, int(limits.get("cpu_threads") or max(1, cpu_count() - 1)))))
             if device == "cuda" and limits.get("gpu_memory_fraction"):
                 torch.cuda.set_per_process_memory_fraction(float(limits["gpu_memory_fraction"]))
             base = torch.load(io.BytesIO(weights), map_location="cpu", weights_only=True)
@@ -258,36 +270,45 @@ class WorkerRunner:
                                   "rng": {"torch": torch.get_rng_state(),
                                           "cuda": torch.cuda.get_rng_state_all() if device == "cuda" else None},
                                   "base_sha256": spec["base_sha256"]}, ckpt_path)
+                self.training_metrics = {**(self.training_metrics or {}), 'step': completed_steps, 'tokens': n_tokens,
+                                         'checkpoint_step': completed_steps}
 
             for step in range(start_step, train["steps"]):
-                if self.stop_event.is_set() or self.revoked:
+                if self.stop_event.is_set() or self.revoked or self.cancelled_job == jid:
                     if completed_steps > 0:
                         checkpoint()
                     raise Stop()
-                while self.paused and not self.stop_event.is_set():
+                if self.paused and completed_steps > 0:
+                    checkpoint()
+                while self.paused and not self.stop_event.is_set() and self.cancelled_job != jid:
                     time.sleep(1)
-                if self.stop_event.is_set() or self.revoked:
+                if self.stop_event.is_set() or self.revoked or self.cancelled_job == jid:
                     if completed_steps > 0:
                         checkpoint()
                     raise Stop()
                 t0 = time.time()
+                train_loss = 0.0
                 for _ in range(accumulation):
                     x, y, _ = sample(micro)
                     _, loss = model(x, y)
                     if not torch.isfinite(loss):
                         raise RuntimeError("training diverged (non-finite loss)")
                     (loss / accumulation).backward()
+                    train_loss += loss.detach().item() / accumulation
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 opt.step()
                 opt.zero_grad(set_to_none=True)
                 n_tokens += micro * seq * accumulation
                 completed_steps = step + 1
+                self.training_metrics = {**(self.training_metrics or {}), 'step': completed_steps, 'tokens': n_tokens,
+                                         'train_loss': train_loss}
                 self.progress = (step + 1) / train["steps"]
                 if (step + 1) % CHECKPOINT_EVERY == 0 and step + 1 < train["steps"]:
                     checkpoint()
                     self.client.progress(jid, self.progress)
                 if duty < 1.0:
                     time.sleep((time.time() - t0) * (1 / duty - 1))
+            checkpoint()  # an upload failure must not discard completed optimization steps
             loss_after = batch_loss(model, held, device)
             if not (math.isfinite(loss_before) and math.isfinite(loss_after)):
                 raise RuntimeError("non-finite evaluation loss")
@@ -299,6 +320,7 @@ class WorkerRunner:
                     "loss_before": loss_before, "loss_after": loss_after, "protocol": spec["protocol"],
                     "worker_version": __version__}
             meta["batch_tuning"] = tuning
+            meta["train_loss"] = (self.training_metrics or {}).get('train_loss')
             result = self.client.result(jid, meta, payload)
             ckpt_path.unlink(missing_ok=True)
             ckpt_path.with_name(ckpt_path.name + ".sha256").unlink(missing_ok=True)
@@ -319,6 +341,7 @@ class WorkerRunner:
             return {"accepted": False, "error": str(e)}
         finally:
             self.current_job, self.progress = None, None
+            self.training_metrics = None
 
 
 def _eval_loss(weights: bytes, data: bytes, model_config: dict, progress=None) -> tuple[float, int]:

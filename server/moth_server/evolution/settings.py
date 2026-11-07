@@ -31,6 +31,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "monitoring": {"minutes": 30.0, "max_error_rate": 0.05, "max_latency_factor": 2.0, "min_requests": 5},
     "backends": {"local_gpu": True, "local_cpu": False, "workers": True},
+    "worker_ids": None,             # optional owner-selected training participants; null = all
     "limits": {"cpu_threads": max(1, (os.cpu_count() or 2) // 2), "min_free_memory_gb": 1.0,
                "min_free_disk_gb": 5.0, "gpu_memory_fraction": 0.8, "duty_cycle": 1.0},
     # Train during low activity: local training waits (or pauses with a checkpoint) while MOTH Cloud
@@ -98,6 +99,9 @@ def validate(s: dict[str, Any]) -> None:
     for b in ("enabled", "paused", "auto_deploy", "allow_from_scratch"):
         if not isinstance(s.get(b), bool):
             raise SettingsError(f"{b} must be true or false")
+    ids = s.get("worker_ids")
+    if ids is not None and not (isinstance(ids, list) and ids and all(type(i) is int and i > 0 for i in ids)):
+        raise SettingsError("worker_ids must be null or a nonempty list of positive worker ids")
     for b, v in (s.get("backends") or {}).items():
         if b not in DEFAULTS["backends"] or not isinstance(v, bool):
             raise SettingsError(f"backends.{b} is not a known backend switch")

@@ -44,11 +44,19 @@ class WorkerEnrollIn(BaseModel):
     version: str | None = None
 
 
+class TrainingMetrics(BaseModel):
+    step: int = Field(ge=0)
+    tokens: int = Field(ge=0)
+    train_loss: float | None = Field(default=None, allow_inf_nan=False)
+    checkpoint_step: int | None = Field(default=None, ge=0)
+
+
 class HeartbeatIn(BaseModel):
     hardware: dict | None = None
     job_id: int | None = None
     progress: float | None = None
     version: str | None = Field(default=None, max_length=32)
+    metrics: TrainingMetrics | None = None
 
 
 class ProgressIn(BaseModel):
@@ -159,13 +167,13 @@ def control_worker(wid: int, action: str, auth: Auth = Depends(current_auth), ct
     w = own_worker(ctx, auth, wid)
     if w["revoked_at"]:
         raise HTTPException(409, "This worker was revoked.")
-    values = {"pause": {"paused": True}, "resume": {"paused": False},
+    values = {"pause": {"paused": True}, "resume": {"paused": False}, "stop": {"paused": True},
               "revoke": {"revoked_at": now(), "status": "revoked", "token_hash": f"revoked-{wid}-{now()}"}}.get(action)
     if values is None:
         raise HTTPException(404, "Unknown action.")
     with ctx.db.tx() as c:
         c.execute(workers.update().where(workers.c.id == wid).values(**values))
-        if action == "revoke":  # release its jobs back to the queue
+        if action in ("revoke", "stop"):  # release its jobs back to the queue
             c.execute(training_jobs.update().where(training_jobs.c.worker_id == wid, training_jobs.c.status == "leased")
                       .values(status="queued", worker_id=None, lease_expires_at=None, updated_at=now()))
         audit(ctx.db, f"training.worker_{action}", auth.uid, f"worker:{wid}", conn=c)
@@ -224,7 +232,8 @@ def worker_leave(w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx))
 
 @router.post("/v1/worker/heartbeat")
 def worker_heartbeat(body: HeartbeatIn, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
-    return T.heartbeat(ctx, w, body.hardware, body.job_id, body.progress, body.version)
+    return T.heartbeat(ctx, w, body.hardware, body.job_id, body.progress, body.version,
+                       body.metrics.model_dump() if body.metrics else None)
 
 
 @router.post("/v1/worker/jobs/claim")

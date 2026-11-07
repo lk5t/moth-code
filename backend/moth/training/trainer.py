@@ -207,7 +207,8 @@ class Trainer:
         if self.device == "cuda" and cfg.gpu_memory_fraction:
             torch.cuda.set_per_process_memory_fraction(float(cfg.gpu_memory_fraction))
         if self.device == "cpu":
-            torch.set_num_threads(max(1, int(cfg.threads or max(1, (os.cpu_count() or 2) - 1))))
+            from moth.training.resources import cpu_count
+            torch.set_num_threads(min(cpu_count(), max(1, int(cfg.threads or max(1, cpu_count() - 1)))))
         if self.device == "cuda":
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True

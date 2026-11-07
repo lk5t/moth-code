@@ -270,7 +270,7 @@ def worker_training_supported(ctx: Ctx, exp: dict) -> bool:
     return True
 
 
-def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0) -> int:
+def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0, worker_ids: list[int] | None = None) -> int:
     from moth.community.protocol import PROTOCOL
     from moth.model.registry import sha256_file
 
@@ -314,6 +314,7 @@ def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0) -> int:
     else:
         shard_sha = DS.write_shard(ds, rd / "shard.bin")
     spec = {"evolution_experiment": exp["id"], "round": -exp["id"], "model_version": base["version"],
+            "worker_ids": worker_ids,
             "base_sha256": sha256_file(weights),
             "model_config": model_config, "expanded": bool(cfg.get("grow")),
             "tokenizer_fingerprint": base["info"].get("tokenizer_fingerprint"),
@@ -396,10 +397,13 @@ def accept_worker_result(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) ->
     shutil.copy2(bdir / "tokenizer.json", pkg / "tokenizer.json")
     (pkg / "config.json").write_text(json.dumps(spec["model_config"]))
     manifest = json.loads((bdir / "manifest.json").read_text())
+    for key in ("model_version", "display_name", "initialization"):
+        manifest.pop(key, None)  # a candidate receives its own version only after acceptance
     manifest.update(name=f"moth-evolution-e{exp['id']}", created=now(), sha256=sha256_file(pkg / "model.pt"),
                     params=MothConfig.from_dict(spec["model_config"]).num_params(),
                     training={"method": exp["config"].get("method", "continued"), "backend": "worker", "steps": meta.get("steps"),
                               "tokens": meta.get("tokens"), "loss_before": meta.get("loss_before"),
+                              "train_loss": meta.get("train_loss"),
                               "loss_after": meta.get("loss_after")},
                     lineage={"base_sha256": base["sha256"], "base_name": base["name"], "method": exp["config"].get("method", "continued")})
     (pkg / "manifest.json").write_text(json.dumps(manifest, indent=2))

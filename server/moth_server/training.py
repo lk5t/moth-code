@@ -241,6 +241,8 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
                     training_jobs.c.status == "queued", training_jobs.c.kind.in_(("evolve_train", "dist_shard")))
                     .order_by(training_jobs.c.id)).mappings().all()):
                 spec = json.loads(cand["spec"])
+                if spec.get("worker_ids") is not None and worker['id'] not in spec['worker_ids']:
+                    continue
                 if not fits(hw, spec):
                     continue
                 if hw.get("compute") != "gpu" and spec.get("prefer_gpu") and t - cand["created_at"] < GPU_PREFERENCE_SECONDS:
@@ -322,7 +324,8 @@ def submit_result(ctx: Ctx, worker: dict, job_id: int, meta: dict, payload: byte
     with ctx.db.tx() as c:
         if result.get("accepted"):
             c.execute(training_jobs.update().where(training_jobs.c.id == job_id).values(
-                status="completed", progress=1.0, result=json.dumps({k: v for k, v in result.items() if k != "aggregated"}),
+                status="completed", progress=1.0, result=json.dumps({**{k: v for k, v in result.items() if k != "aggregated"},
+                    "training": {k: meta.get(k) for k in ('steps', 'tokens', 'train_loss', 'loss_before', 'loss_after')}}),
                 lease_expires_at=None, updated_at=t))
             tokens = max(0, int(meta.get("tokens") or 0))
             c.execute(workers.update().where(workers.c.id == worker["id"])
@@ -354,7 +357,7 @@ def fail_job(ctx: Ctx, worker: dict, job_id: int, error: str) -> None:
 
 
 def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None, progress: float | None,
-              version: str | None = None) -> dict:
+              version: str | None = None, metrics: dict | None = None) -> dict:
     t = now()
     values: dict[str, Any] = {"last_heartbeat_at": t, "status": "online"}
     if version:
@@ -366,9 +369,20 @@ def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None,
             values["machine_id"] = hw["machine_id"]
     with ctx.db.tx() as c:
         c.execute(workers.update().where(workers.c.id == worker["id"]).values(**values))
-    if job_id and not worker["paused"]:
-        extend_lease(ctx, worker, job_id, progress)
+    job_cancelled = False
+    if job_id:
+        j = ctx.db.one(select(training_jobs).where(training_jobs.c.id == job_id))
+        job_cancelled = not j or j['status'] != 'leased' or j['worker_id'] != worker['id']
+        if not job_cancelled:
+            extend_lease(ctx, worker, job_id, progress)  # pause retains its recoverable lease
+            if metrics is not None:
+                with ctx.db.tx() as c:
+                    c.execute(training_jobs.update().where(training_jobs.c.id == job_id,
+                                                           training_jobs.c.status == 'leased',
+                                                           training_jobs.c.worker_id == worker['id'])
+                              .values(result=json.dumps({'progress': metrics})))
     return {"paused": bool(worker["paused"]), "revoked": worker["revoked_at"] is not None,
+            "job_cancelled": job_cancelled,
             "limits": json.loads(worker["limits"] or "{}"), "server_time": t}
 
 

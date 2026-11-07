@@ -46,6 +46,7 @@ def _nvidia_smi() -> tuple[list[dict[str, Any]], str | None]:
 
 
 def detect() -> dict[str, Any]:
+    from moth.training.resources import cpu_count, memory_budget
     gpus, cuda = _nvidia_smi()
     torch_version = None
     torch_cuda = False
@@ -66,8 +67,10 @@ def detect() -> dict[str, Any]:
     except (ValueError, OSError, AttributeError):
         ram_gb = _windows_ram_gb()
     disk = shutil.disk_usage(Path.home())
+    if ram_gb is not None:
+        ram_gb = round(memory_budget(int(ram_gb * 2**30), int(ram_gb * 2**30))[0] / 2**30, 1)
     hw = {"gpus": gpus, "cuda": cuda, "torch": torch_version, "torch_cuda": torch_cuda,
-          "cpu_count": os.cpu_count(), "cpu_model": cpu_model(), "ram_gb": ram_gb,
+          "cpu_count": cpu_count(), "cpu_model": cpu_model(), "ram_gb": ram_gb,
           "disk_free_gb": round(disk.free / 2**30, 1), "os": f"{platform.system()} {platform.release()}",
           "machine_id": machine_id()}
     hw["compute"] = compute_kind(hw)

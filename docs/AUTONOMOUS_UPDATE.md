@@ -60,3 +60,33 @@ Verification: a real PSF standard-library build was cleaned, tokenized and regis
 passed (3 server tests); all 6 Data Factory tests passed, including resumed downloads, checksum
 rejection, deduplication, provenance, and actual mixture training. Remote catalog bytes in regression
 tests are served by deterministic HTTP fixtures; a live full remote-corpus download was not performed.
+
+## Phase 3
+
+Owner worker controls now start a selected worker, start all compatible online workers, or enable
+server-only CPU training using the existing evolution engine. Starts validate memory capacity and
+select the current deployed checkpoint; if data is insufficient, Phase 2 prepares approved sources.
+Participant selection is enforced at capacity selection, distributed shard creation and job claiming.
+Starting a different participant set while a cycle is active is rejected rather than changing a run.
+Existing worker Pause/Resume remains available; Stop releases its job without revoking its credential.
+Global pause/resume/cancel controls are exposed next to the worker controls.
+
+Paused workers now save a checkpoint and heartbeat their lease. Stop/cancel notifications make current
+workers save progress and release their in-memory job. Completed training is checkpointed before result
+upload; network failure no longer loses the last optimization steps. Old worker clients remain API
+compatible, but need this updated worker code for prompt stop notifications. Existing stale-result
+lease validation protects the stable model regardless.
+
+Worker heartbeats report measured steps, tokens, loss and checkpoint step, and completed job history
+retains actual training measurements. Container CPU and RAM quotas now bound hardware reporting and
+CPU thread selection. Existing GPU execution/resource limits are preserved. Worker/distributed export
+no longer copies its parent's accepted model label into an unaccepted candidate.
+
+Verification: 14 server tests passed, including selected-worker exclusion, pause/lease retention,
+stop and real checkpoint resume, Start All, genuine server CPU training, existing training-network
+regressions, actual expanded-worker training and two-worker distributed recovery. Two worker UI tests
+and TypeScript checks passed. Container quota and deterministic trainer resume checks passed.
+CUDA/Windows hardware is absent; native GPU execution and Windows packaging were not run. Distributed
+training remains the existing synchronized, token-weighted local-update algorithm, not shared AdamW
+state across machines. Full optimizer continuity is supported by local development checkpoints;
+worker jobs retain AdamW within a resumable job but start fresh moments on a new assignment.

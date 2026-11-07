@@ -38,12 +38,14 @@ PROBE_TOLERANCE = 0.05
 ONLINE_SECONDS = 180
 
 
-def participants(ctx: Ctx, need_bytes: int) -> list[dict]:
+def participants(ctx: Ctx, need_bytes: int, worker_ids: list[int] | None = None) -> list[dict]:
     from moth_server.training import fits
 
     t = now()
     out = []
     for w in ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None))):
+        if worker_ids is not None and w['id'] not in worker_ids:
+            continue
         if (w.get("last_heartbeat_at") or 0) < t - ONLINE_SECONDS or w.get("paused"):
             continue
         hw = json.loads(w["hardware"] or "{}")
@@ -56,7 +58,7 @@ def available(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[bool, int]:
     d = settings.get("distributed") or {}
     if not d.get("enabled", True) or not (settings.get("backends") or {}).get("workers", True):
         return False, 0
-    n = len(participants(ctx, need_bytes))
+    n = len(participants(ctx, need_bytes, settings.get("worker_ids")))
     return n >= int(d.get("min_participants", 2)), n
 
 
@@ -85,7 +87,7 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     rd = run_dir(ctx, exp)
     rd.mkdir(parents=True, exist_ok=True)
     d = settings.get("distributed") or {}
-    people = participants(ctx, need_bytes)
+    people = participants(ctx, need_bytes, settings.get("worker_ids"))
     n = max(int(d.get("min_participants", 2)), min(int(d.get("max_participants", 8)), len(people)))
     rounds = max(1, int(d.get("rounds", 3)))
     local_steps = max(1, math.ceil(int(cfg["steps"]) / rounds))
@@ -119,6 +121,7 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
         val = np.fromfile(Path(ds["path"]) / "val.bin", dtype=np.dtype(DS.meta(ds).get("dtype", "uint32")))
         val[:64 * 1024].astype(np.uint32).tofile(rd / "probe.bin")
     state_info = {"round": 0, "rounds": rounds, "shards": n, "local_steps": local_steps, "history": [],
+                  "worker_ids": settings.get("worker_ids"),
                   "weights_sha256": _sha(_round_weights(rd, 0)), "started_from": "dev_checkpoint" if dev else "weights",
                   "jobs": {}}
     _create_round_jobs(ctx, exp, base, state_info, need_bytes)
@@ -153,6 +156,7 @@ def _create_round_jobs(ctx: Ctx, exp: dict, base: dict, st: dict, need_bytes: in
     with ctx.db.tx() as c:
         for i in (only if only is not None else range(st["shards"])):
             spec = {"evolution_experiment": exp["id"], "round": r, "dist": {"round": r, "shard": i},
+                    "worker_ids": st.get("worker_ids"),
                     "model_version": base["version"], "base_sha256": st["weights_sha256"],
                     "model_config": json.loads((Path(base["path"]) / "config.json").read_text()),
                     "tokenizer_fingerprint": base["info"].get("tokenizer_fingerprint"),
@@ -335,6 +339,8 @@ def _package(ctx: Ctx, exp: dict, base: dict, st: dict, rd: Path) -> dict[str, A
     for f in ("config.json", "tokenizer.json"):
         shutil.copy2(bdir / f, pkg / f)
     manifest = json.loads((bdir / "manifest.json").read_text())
+    for key in ("model_version", "display_name", "initialization"):
+        manifest.pop(key, None)
     tokens = sum(h["tokens"] for h in st["history"])
     manifest.update(name=f"moth-evolution-e{exp['id']}", created=now(), sha256=sha256_file(pkg / "model.pt"),
                     training={"method": "continued", "backend": "distributed", "rounds": st["rounds"],
