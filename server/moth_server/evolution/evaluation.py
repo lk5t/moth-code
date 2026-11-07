@@ -192,7 +192,8 @@ def _better(c: float, b: float, higher: bool) -> float:
     return (c - b) / abs(b) if higher else (b - c) / abs(b)
 
 
-def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: dict) -> dict[str, Any]:
+def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: dict,
+         mixture: dict | None = None) -> dict[str, Any]:
     from moth_server import models as M
 
     g = settings["gates"]
@@ -256,6 +257,16 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
             entry.update(passed=drop <= float(g["task_tolerance"]),
                          detail=f"accuracy {float(b['value']):.0%} → {float(c['value']):.0%}")
         gates.append(entry)
+    if mixture:  # curriculum runs: the improvement is the weighted held-out gain over all trained domains
+        from moth_server.evolution.v2 import mixture_improvement
+
+        mi = mixture_improvement(cand_scores["suites"], base_scores["suites"], mixture.get("weights") or {})
+        gates = [g for g in gates if g["gate"] != "target_improvement"]
+        improvement = mi
+        gates.append({"gate": "target_improvement", "passed": mi is not None and mi >= float(g["min_improvement"]),
+                      "change": mi, "detail": "the curriculum's held-out loss (weighted over its domains) must "
+                                              f"improve by ≥ {float(g['min_improvement']):.1%}"
+                                              + (f" (changed {mi:+.2%})" if mi is not None else " (not measurable)")})
     if improvement is None:
         gates.append({"gate": "target_improvement", "passed": False,
                       "detail": "the training data's validation split could not be scored"})

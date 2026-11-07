@@ -86,6 +86,7 @@ def start_local(ctx: Ctx, exp: dict, device: str, settings: dict) -> dict:
             "device": device, "threads": int(lim["cpu_threads"]), "nice": 10, "duty_cycle": float(lim["duty_cycle"]),
             "gpu_memory_fraction": float(lim["gpu_memory_fraction"]) if device == "cuda" else None,
             "from_scratch": cfg.get("method") == "from_scratch"}
+    spec.update(_v2_spec(base, cfg, exp))
     spec_path = rd / "spec.json"
     spec_path.write_text(json.dumps(spec, indent=2))
     env = dict(os.environ)
@@ -99,6 +100,24 @@ def start_local(ctx: Ctx, exp: dict, device: str, settings: dict) -> dict:
     log.close()
     ctx.extras.setdefault("evolution_procs", {})[exp["id"]] = proc
     return {"pid": proc.pid, "device": device, "spec": str(spec_path), "started": now()}
+
+
+def _v2_spec(base: dict, cfg: dict, exp: dict) -> dict:
+    """Evolution 2.0 additions: curriculum mixture, development checkpoint, growth, lineage counters."""
+    out: dict = {}
+    if cfg.get("mixture"):
+        out["dataset"] = cfg["mixture"]["path"]
+        out["mixture"] = cfg["mixture"]["weights"]
+    dev = base["info"].get("dev_checkpoint") or {}
+    if dev.get("path"):
+        out["init_checkpoint"], out["init_checkpoint_sha256"] = dev["path"], dev.get("sha256")
+    if cfg.get("grow"):
+        out["grow"] = {"add_layers": cfg["grow"]["add_layers"], "ffn_hidden": cfg["grow"]["ffn_hidden"]}
+    tr = base["info"].get("training") or {}
+    out["lineage"] = {"lineage_id": base["info"].get("lineage_id"), "parent_version": base["version"],
+                      "base_tokens": int((base["info"].get("lineage_totals") or {}).get("tokens", 0)),
+                      "base_steps": int((base["info"].get("lineage_totals") or {}).get("steps", tr.get("step") or 0))}
+    return out
 
 
 def local_state(ctx: Ctx, exp: dict) -> str:
@@ -194,7 +213,7 @@ def cleanup_run(ctx: Ctx, exp: dict) -> None:
 
 
 # ---- candidate registration ---------------------------------------------------------------------------
-def register_candidate(ctx: Ctx, exp: dict, package: Path) -> dict:
+def register_candidate(ctx: Ctx, exp: dict, package: Path, result: dict | None = None) -> dict:
     from moth_server import models as M
 
     cfg = exp["config"]
@@ -204,9 +223,31 @@ def register_candidate(ctx: Ctx, exp: dict, package: Path) -> dict:
     name = f"moth-evolution-v{exp['base_version']}-e{exp['id']}"
     version = M.reserve(ctx, name, source, None)
     rel = M.finalize(ctx, version, package, None)
+    datasets = [cfg["mixture"]["build_sha256"]] if cfg.get("mixture") else [ds["sha256"]]
     MEM.record_lineage(ctx, version, exp["base_version"], cfg.get("method", "continued"), exp["cycle_id"], exp["id"],
-                       [ds["sha256"]])
-    return rel
+                       datasets)
+    # Evolution 2.0: keep the full training checkpoint (weights + optimizer) so a promoted candidate's
+    # successors continue exactly where it stopped; carry the lineage identity and its cumulative totals
+    base = M.release(ctx, exp["base_version"])
+    info = dict(rel["info"])
+    for k in ("family", "lineage_id"):
+        if base["info"].get(k) and not info.get(k):
+            info[k] = base["info"][k]
+    prev = base["info"].get("lineage_totals") or {}
+    tokens = int((result or {}).get("tokens") or int(cfg["steps"]) * int(cfg["batch_size"]) * int(cfg["seq_len"]))
+    info["lineage_totals"] = {"tokens": int(prev.get("tokens", 0)) + tokens,
+                              "steps": int(prev.get("steps", 0)) + int((result or {}).get("step") or cfg["steps"]),
+                              "cycles": int(prev.get("cycles", 0)) + 1}
+    if cfg.get("grow"):
+        info["growth"] = cfg["grow"]
+    if (result or {}).get("dev_checkpoint"):
+        from moth_server.evolution.v2 import store_dev_checkpoint
+
+        dev = store_dev_checkpoint(ctx, version, result["dev_checkpoint"], result["dev_checkpoint_sha256"])
+        if dev:
+            info["dev_checkpoint"] = dev
+    M._set(ctx, version, None, info=json.dumps(info))
+    return M.release(ctx, version)
 
 
 # ---- worker backend -----------------------------------------------------------------------------------
@@ -220,7 +261,14 @@ def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0) -> int:
     base = M.release(ctx, exp["base_version"])
     ds = DS.get(ctx, exp["dataset_id"])
     rd = run_dir(ctx, exp)
-    shard_sha = DS.write_shard(ds, rd / "shard.bin")
+    if cfg.get("mixture"):  # a curriculum shard: tokens sampled from every domain by weight
+        from moth_server.evolution.v2 import write_mixture_shard
+
+        need = int(cfg["steps"]) * int(cfg["batch_size"]) * int(cfg["seq_len"]) * 2
+        shard_sha = write_mixture_shard(cfg["mixture"]["path"], cfg["mixture"]["weights"], need, int(cfg["seed"]),
+                                        rd / "shard.bin")
+    else:
+        shard_sha = DS.write_shard(ds, rd / "shard.bin")
     weights = Path(base["path"]) / "model.pt"
     spec = {"evolution_experiment": exp["id"], "round": -exp["id"], "model_version": base["version"],
             "base_sha256": sha256_file(weights),

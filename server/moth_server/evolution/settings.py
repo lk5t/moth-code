@@ -40,6 +40,12 @@ DEFAULTS: dict[str, Any] = {
     "max_consecutive_failures": 3,
     "allow_from_scratch": False,     # an incompatible architecture/tokenizer is never loaded blindly
     "retention_days": 180,           # evolution events and experiment logs (model versions are kept)
+    # 0.5.3 Evolution 2.0
+    "use_curriculum": True,          # train on the dataset library's curriculum mixture when one exists
+    "early_stopping": {"enabled": True, "min_evals": 3, "patience": 3},
+    "growth": {"enabled": True, "approval_ratio": 1.25, "max_ratio": 1.5, "max_params": 400_000_000,
+               "plateau_threshold": 0.01, "steps_multiplier": 2},
+    "distributed": {"enabled": True, "min_participants": 2, "max_participants": 8, "rounds": 3},
 }
 
 _BOUNDS = {

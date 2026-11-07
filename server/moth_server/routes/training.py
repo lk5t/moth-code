@@ -244,6 +244,10 @@ def _job(ctx: Ctx, w: dict, job_id: int) -> dict:
 def job_weights(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
     j = _job(ctx, w, job_id)
     spec = json.loads(j["spec"])
+    if j["kind"] == "dist_shard":
+        from moth_server.evolution.distributed import job_files as dist_files
+
+        return FileResponse(dist_files(ctx, spec)[0], media_type="application/octet-stream")
     if j["kind"] == "evolve_train":
         from moth_server.evolution.backends import job_files
 
@@ -256,6 +260,10 @@ def job_weights(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depen
 def job_shard(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
     j = _job(ctx, w, job_id)
     spec = json.loads(j["spec"])
+    if j["kind"] == "dist_shard":
+        from moth_server.evolution.distributed import job_files as dist_files
+
+        return FileResponse(dist_files(ctx, spec)[1], media_type="application/octet-stream")
     if j["kind"] == "evolve_train":
         from moth_server.evolution.backends import job_files
 

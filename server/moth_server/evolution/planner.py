@@ -71,6 +71,18 @@ def _lr_ranking(ctx: Ctx, arch_key: str, default_lr: float) -> list[float]:
 
 
 def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any]:
+    from moth_server.evolution import v2
+
+    curriculum = v2.plan(ctx, base, settings, cycle_seed)
+    if curriculum["experiments"]:
+        return curriculum
+    legacy = _plan_datasets(ctx, base, settings, cycle_seed)
+    legacy["notes"] = curriculum["notes"] + legacy["notes"]
+    legacy["growth"] = curriculum.get("growth")
+    return legacy
+
+
+def _plan_datasets(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any]:
     tok_fp = base["info"].get("tokenizer_fingerprint")
     all_approved = DS.approved(ctx)
     compatible = [d for d in all_approved if d["tokenizer_fingerprint"] == tok_fp]

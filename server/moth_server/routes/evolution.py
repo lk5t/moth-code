@@ -192,6 +192,25 @@ def experiment(eid: int, auth: Auth = Depends(require_owner), ctx: Ctx = Depends
             "events": MEM.events(ctx, 100, experiment_id=eid)}
 
 
+@router.post("/experiments/{eid}/approve")
+def approve_experiment(eid: int, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    """Approve a parameter expansion that is above the automatic threshold (a major architecture change)."""
+    e = MEM.experiment(ctx, eid)
+    if not e:
+        raise HTTPException(404, "unknown experiment")
+    cfg = e["config"] or {}
+    if not cfg.get("requires_approval") or e["status"] != "planned":
+        raise HTTPException(409, "this experiment does not wait for approval")
+    cfg["approved_by"] = auth.uid
+    MEM.update_experiment(ctx, eid, config=cfg)
+    g = cfg.get("grow") or {}
+    MEM.event(ctx, "experiment.approved", f"The Owner approved expansion experiment #{eid} "
+              f"({g.get('params_before', 0) / 1e6:.1f}M → {g.get('params_after', 0) / 1e6:.1f}M parameters)",
+              cycle_id=e["cycle_id"], experiment_id=eid, actor=auth.uid)
+    EN.wake(ctx)
+    return {"ok": True}
+
+
 @router.get("/experiments/{eid}/log")
 def experiment_log(eid: int, lines: int = 300, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     e = MEM.experiment(ctx, eid)

@@ -48,10 +48,35 @@ def run(spec: dict[str, Any]) -> dict[str, Any]:
     manifest = json.loads((base / "manifest.json").read_text())
     if sha256_file(base / "model.pt") != manifest["sha256"]:
         raise ValueError("the base model's weights do not match its manifest (corrupted)")
-    meta = json.loads((Path(spec["dataset"]) / "meta.json").read_text())
+    from moth.training.data import dataset_meta
+
+    meta = dataset_meta(spec["dataset"])  # a prepared dataset or a Data Factory mixture
     if meta["tokenizer_fingerprint"] != manifest["tokenizer_fingerprint"] and not spec.get("from_scratch"):
         raise ValueError("the dataset was tokenized with a different tokenizer than the base model "
                          "(an architecture/tokenizer migration is required, not continued training)")
+    # Adaptive Parameter Growth: the base (or its development checkpoint) is grown before training
+    init_path = None
+    if spec.get("init_checkpoint"):
+        ip = Path(spec["init_checkpoint"])
+        want = spec.get("init_checkpoint_sha256")
+        from moth.training.checkpoint import file_sha256
+
+        if ip.exists() and (not want or file_sha256(ip) == want):
+            init_path = ip  # the lineage's development checkpoint: weights *and* optimizer state
+    if spec.get("grow"):
+        from moth.model.growth import grow_checkpoint
+
+        src = torch.load(init_path or (base / "model.pt"), map_location="cpu", weights_only=False)
+        ck = src if "model" in src else {"model": {k: v.float() for k, v in src.items()}}
+        ck.setdefault("model_config", base_cfg.to_dict())
+        ck["model"] = {k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()}
+        g = spec["grow"]
+        grown = grow_checkpoint(ck, int(g.get("add_layers", 0)), g.get("ffn_hidden"), seed=int(spec.get("seed", 0)))
+        grown_path = run_dir / "grown-init.pt"
+        if not grown_path.exists():
+            torch.save(grown, grown_path)
+        init_path = grown_path
+        base_cfg = MothConfig.from_dict(grown["model_config"])
     seq_len = min(int(spec.get("seq_len", 256)), base_cfg.max_seq_len)
     cfg = TrainConfig(
         run_name=spec.get("name", "evolution"), dataset=str(spec["dataset"]), out_dir=str(run_dir),
@@ -64,7 +89,9 @@ def run(spec: dict[str, Any]) -> dict[str, Any]:
         checkpoint_interval=int(spec.get("checkpoint_interval", 50)), keep_checkpoints=2,
         device=spec.get("device", "auto"), seed=int(spec.get("seed", 1337)),
         duty_cycle=float(spec.get("duty_cycle", 1.0)), gpu_memory_fraction=spec.get("gpu_memory_fraction"),
-        init_from=None if spec.get("from_scratch") else str(base / "model.pt"),
+        init_from=None if spec.get("from_scratch") else str(init_path or (base / "model.pt")),
+        init_optimizer=True, mixture=spec.get("mixture"), keep_every=0,
+        lineage=dict(spec.get("lineage") or {}),
     )
     trainer = Trainer(cfg)
     # continued training keeps the base architecture exactly (vocabulary padding included)
@@ -88,12 +115,21 @@ def run(spec: dict[str, Any]) -> dict[str, Any]:
         ckpt = best if best.exists() else latest_checkpoint(run_dir)
         pkg_parent = run_dir / "export"
         shutil.rmtree(pkg_parent, ignore_errors=True)
+        method = "from_scratch" if spec.get("from_scratch") else ("expansion" if spec.get("grow") else "continued")
+        keep = {k: manifest[k] for k in ("family", "lineage_id") if manifest.get(k)}
         exported = export_model(ckpt, pkg_parent, spec.get("name", "evolution-candidate"),
-                                extra={"lineage": {"base_sha256": manifest["sha256"], "base_name": manifest["name"],
-                                                   "method": "from_scratch" if spec.get("from_scratch") else
-                                                   "continued"}})
+                                extra={**keep, "lineage": {"base_sha256": manifest["sha256"], "base_name": manifest["name"],
+                                                            "method": method}})
         out["package"] = exported["path"]
         out["sha256"] = exported["sha256"]
+        out["params"] = exported["params"]
+        # the newest full checkpoint (weights + optimizer) continues the lineage if this candidate is promoted
+        full = latest_checkpoint(run_dir)
+        if full is not None:
+            from moth.training.checkpoint import file_sha256
+
+            out["dev_checkpoint"] = str(full)
+            out["dev_checkpoint_sha256"] = file_sha256(full)
     return out
 
 

@@ -219,7 +219,7 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
             job = None
             gpu_online = None
             for cand in c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
-                                                              training_jobs.c.kind == "evolve_train")
+                                                              training_jobs.c.kind.in_(("evolve_train", "dist_shard")))
                                   .order_by(training_jobs.c.id)).mappings().all():
                 spec = json.loads(cand["spec"])
                 if not fits(hw, spec):
@@ -278,6 +278,10 @@ def submit_result(ctx: Ctx, worker: dict, job_id: int, meta: dict, payload: byte
         from moth_server.evolution.backends import accept_worker_result
 
         result = accept_worker_result(ctx, job, meta, payload)
+    elif job["kind"] == "dist_shard":
+        from moth_server.evolution.distributed import accept_shard
+
+        result = accept_shard(ctx, job, meta, payload)
     else:
         coord = coordinator(ctx)
         if coord is None:

@@ -281,7 +281,16 @@ def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
         MEM.update_cycle(ctx, cyc["id"], status="evaluating")
         return
     active = next((e for e in exps if e["status"] == "running"), None) or \
-        next((e for e in exps if e["status"] in ("planned", "waiting", "paused")), None)
+        next((e for e in exps if e["status"] in ("planned", "waiting", "paused")
+              and not ((e["config"] or {}).get("requires_approval") and not (e["config"] or {}).get("approved_by"))),
+             None)
+    awaiting = [e for e in exps if e["status"] == "planned" and (e["config"] or {}).get("requires_approval")
+                and not (e["config"] or {}).get("approved_by")]
+    if active is None and awaiting:
+        # the Owner has until the cycle's time budget ends to approve; then it is cancelled (budget check above)
+        MEM.update_cycle(ctx, cyc["id"], status="waiting_for_compute", result={
+            **(cyc["result"] or {}), "waiting_reason": "waiting for the Owner to approve a parameter expansion"})
+        return
     if active is None:
         MEM.update_cycle(ctx, cyc["id"], status="evaluating")
         return
@@ -305,7 +314,23 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
     if exp.get("job_id"):  # a worker job exists already (e.g. requeued after a lease expiry)
         MEM.update_experiment(ctx, exp["id"], status="running")
         return
-    choice, reasons = C.choose_backend(ctx, settings, _need_bytes(ctx, exp))
+    from moth_server.evolution import distributed as D
+
+    need = _need_bytes(ctx, exp)
+    ok, n = D.available(ctx, settings, need)
+    if ok and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
+        st = D.start(ctx, exp, settings, need)
+        MEM.update_experiment(ctx, exp["id"], status="running", backend="distributed", error=None, started_at=now(),
+                              run_dir=str(B.run_dir(ctx, exp)),
+                              resources={**(exp["resources"] or {}), "distributed": st, "need_bytes": need,
+                                         "started": now()})
+        MEM.update_cycle(ctx, cyc["id"], status="training", result={**(cyc["result"] or {}), "waiting_reason": None})
+        MEM.event(ctx, "experiment.distributed", f"Experiment #{exp['id']} is training on {st['shards']} participants "
+                  f"({st['rounds']} rounds of {st['local_steps']} steps, from the "
+                  f"{'development checkpoint' if st['started_from'] == 'dev_checkpoint' else 'model weights'})",
+                  cycle_id=cyc["id"], experiment_id=exp["id"], participants=n)
+        return
+    choice, reasons = C.choose_backend(ctx, settings, need)
     if choice is None:  # a paused experiment keeps its checkpoint and stays "paused"
         _waiting(ctx, cyc, exp, reasons, "paused" if exp["status"] == "paused" else "waiting")
         return
@@ -351,7 +376,7 @@ def _finish_training(ctx: Ctx, cyc: dict, exp: dict, result: dict, seconds: floa
     from pathlib import Path
 
     try:
-        rel = B.register_candidate(ctx, exp, Path(result["package"]))
+        rel = B.register_candidate(ctx, exp, Path(result["package"]), result)
     except Exception as e:  # noqa: BLE001 — e.g. invalid package: the experiment failed, nothing else changes
         MEM.update_experiment(ctx, exp["id"], status="failed", error=f"candidate rejected: {e}",
                               compute_seconds=total, finished_at=now())
@@ -372,6 +397,15 @@ def _finish_training(ctx: Ctx, cyc: dict, exp: dict, result: dict, seconds: floa
 
 def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
     rd = B.run_dir(ctx, exp)
+    if exp["backend"] == "distributed":
+        from moth_server.evolution import distributed as D
+
+        res = D.advance(ctx, exp, settings)
+        if res["state"] == "finished":
+            _finish_training(ctx, cyc, exp, res["result"], float(res["result"].get("seconds") or 0))
+        else:
+            MEM.update_cycle(ctx, cyc["id"], status="training")
+        return
     if exp["backend"] == "worker":
         j = B.job(ctx, exp["job_id"])
         if j is None:
@@ -407,6 +441,18 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
                              result={**(cyc["result"] or {}), "waiting_reason": "; ".join(blockers)})
             return
         prog = B.progress(ctx, exp)
+        from moth_server.evolution import v2 as V2
+
+        stop = V2.early_stop_reason(V2.val_history(rd / "events.jsonl"), settings)
+        if stop:  # research lab: a run that stopped improving is not worth more compute
+            B.kill_local(ctx, exp)
+            MEM.update_experiment(ctx, exp["id"], status="rejected", error=f"stopped early: {stop}", finished_at=now(),
+                                  compute_seconds=float(exp["compute_seconds"] or 0) + elapsed,
+                                  metrics={**(exp["metrics"] or {}), "progress": prog, "early_stopped": stop})
+            MEM.event(ctx, "experiment.early_stopped", f"Experiment #{exp['id']} stopped early: {stop}",
+                      level="warning", cycle_id=cyc["id"], experiment_id=exp["id"])
+            B.cleanup_run(ctx, exp)
+            return
         MEM.update_experiment(ctx, exp["id"], progress=prog.get("fraction"),
                               metrics={**(exp["metrics"] or {}), "progress": prog})
         MEM.update_cycle(ctx, cyc["id"], status="training")
@@ -431,6 +477,15 @@ def _stop_experiment(ctx: Ctx, exp: dict, reason: str) -> None:
     if exp["status"] == "running" and exp["backend"] == "local":
         if not B.pause_local(ctx, exp, wait_s=30):
             B.kill_local(ctx, exp)
+    dist_jobs = [j for r in (((exp["resources"] or {}).get("distributed") or {}).get("jobs") or {}).values()
+                 for j in r.values()]
+    if dist_jobs:
+        from moth_server.db import training_jobs
+
+        with ctx.db.tx() as c:
+            c.execute(training_jobs.update().where(training_jobs.c.id.in_(dist_jobs),
+                                                   training_jobs.c.status.in_(("queued", "leased")))
+                      .values(status="cancelled", error=reason, updated_at=now()))
     if exp.get("job_id"):
         from moth_server.db import training_jobs
 
@@ -461,7 +516,8 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
         MEM.update_experiment(ctx, e["id"], status="evaluating")
         cand = M.release(ctx, e["candidate_version"])
         try:
-            verdict = EV.gate(ctx, cand, base, DS.get(ctx, e["dataset_id"]), settings)
+            verdict = EV.gate(ctx, cand, base, DS.get(ctx, e["dataset_id"]), settings,
+                              mixture=(e["config"] or {}).get("mixture"))
         except Exception as ex:  # noqa: BLE001
             MEM.update_experiment(ctx, e["id"], status="failed", error=f"evaluation failed: {ex}", finished_at=now())
             MEM.event(ctx, "experiment.failed", f"Experiment #{e['id']}: evaluation failed: {ex}", level="error",
@@ -588,8 +644,23 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
     if now() - started >= float(mon["minutes"]) * 60:
         MEM.update_cycle(ctx, cyc["id"], status="completed", finished_at=now(), result={**res, "outcome": "deployed"})
         _set_state(ctx, stable_version=cyc["candidate_version"])
-        MEM.event(ctx, "cycle.completed", f"v{cyc['candidate_version']} passed monitoring and is the new stable model",
-                  cycle_id=cyc["id"])
+        from moth_server.evolution import v2 as V2
+
+        mv = V2.assign_model_version(ctx, cyc["candidate_version"])
+        try:
+            from moth_server.intelligence import curriculum
+
+            best = max((e for e in MEM.experiments(ctx, cyc["id"]) if e["candidate_version"] == cyc["candidate_version"]),
+                       key=lambda e: e["id"], default=None)
+            tr = ((best or {}).get("metrics") or {}).get("training") or {}
+            curriculum.record_training(ctx, int((best or {}).get("config", {}).get("steps", 0)) *
+                                       int((best or {}).get("config", {}).get("batch_size", 0)) *
+                                       int((best or {}).get("config", {}).get("seq_len", 0)),
+                                       tr.get("best_val"), cyc["candidate_version"])
+        except Exception:  # noqa: BLE001 - bookkeeping never blocks a promotion
+            pass
+        MEM.event(ctx, "cycle.completed", f"v{cyc['candidate_version']} passed monitoring and is the new stable model"
+                  + (f" (MOTH {mv})" if mv else ""), cycle_id=cyc["id"])
         _schedule_next(ctx, failed=False)
 
 
