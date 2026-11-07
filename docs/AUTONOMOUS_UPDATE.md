@@ -38,3 +38,25 @@ optimizer preservation, exports); 7 server checks passed across initialization, 
 protection, migration, expanded-worker training, replay, promotion safeguards and actual deployment
 rollback. The curriculum promotion integration also passed. Initial API testing caught and fixed a
 preset argument collision before commit.
+
+## Phase 2
+
+`intelligence/discovery.py` adds automatic, bounded preparation from the trusted pinned catalog.
+Only the locally available PSF-licensed Python standard library is enabled by default; owners select
+additional catalog sources through the recently authenticated discovery policy API. Unknown sources,
+unknown licenses and missing attribution are rejected. New upstream revisions still require the
+existing explicit pin approval. Download/working-space budgets, retry backoff and build reuse bound
+unattended work. Revoking a dataset blocks automatic preparation of its sources, including during a
+build; changing preparation limits cannot silently reapprove revoked data.
+
+The engine requests preparation when it cannot plan training. The existing Data Factory performs
+verified resumable downloads, normalization, secret/personal-data scrubbing (now also for code), exact
+and near deduplication, held-out decontamination and tokenization with the existing lineage tokenizer.
+Build status now includes real progress messages and token counts. Pending/revoked duplicates are not
+approved and active prepared files are not recopied on a duplicate build.
+
+Verification: a real PSF standard-library build was cleaned, tokenized and registered against MOTH
+0.01's tokenizer. Discovery/permission/license/budget/revocation and existing library integration tests
+passed (3 server tests); all 6 Data Factory tests passed, including resumed downloads, checksum
+rejection, deduplication, provenance, and actual mixture training. Remote catalog bytes in regression
+tests are served by deterministic HTTP fixtures; a live full remote-corpus download was not performed.

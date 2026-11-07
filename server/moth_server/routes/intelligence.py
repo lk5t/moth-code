@@ -343,6 +343,34 @@ class BuildIn(BaseModel):
     sources: list[str] | None = None
 
 
+class DiscoveryIn(BaseModel):
+    changes: dict[str, Any]
+
+
+@router.get("/v1/admin/library/discovery")
+def discovery_status(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.intelligence import discovery
+    return discovery.status(ctx)
+
+
+@router.put("/v1/admin/library/discovery")
+def discovery_policy(body: DiscoveryIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.intelligence import discovery
+    try:
+        result = discovery.update(ctx, body.changes)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+    from moth_server.audit import audit
+    audit(ctx.db, "library.discovery_policy", auth.uid, "library", body.changes)
+    return result
+
+
+@router.post("/v1/admin/library/discovery/prepare")
+def discovery_prepare(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.intelligence import discovery
+    return discovery.ensure_data(ctx)
+
+
 @router.post("/v1/admin/library/build")
 def build_library(body: BuildIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
     cfg = {"sources": body.sources} if body.sources else {}

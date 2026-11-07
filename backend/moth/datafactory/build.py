@@ -56,8 +56,7 @@ def _clean_record(rec: dict[str, Any]) -> tuple[dict[str, Any], int]:
             msgs.append({"role": m["role"], "content": text})
         return {**rec, "messages": msgs}, n
     text = clean.normalize(rec["text"])
-    if rec["domain"] != "code":  # code keeps literal e-mail-like strings (they are rarely personal)
-        text, n = clean.scrub(text)
+    text, n = clean.scrub(text)  # credentials and personal data must be filtered in code too
     return {**rec, "text": text}, n
 
 

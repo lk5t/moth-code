@@ -58,7 +58,8 @@ def status(ctx: Ctx) -> dict[str, Any]:
         pub["downloaded"] = all(f["verified"] for f in pub["files"]) if pub["files"] else True
         pub["pinned_update"] = s["id"] in p
         out.append(pub)
-    builds = [_public_build(b) for b in ctx.db.all(select(library_builds).order_by(library_builds.c.id.desc())
+    builds = [{**_public_build(b), "progress": ctx.db.get_config(f"library_progress_{b['id']}", None)}
+              for b in ctx.db.all(select(library_builds).order_by(library_builds.c.id.desc())
                                                    .limit(10))]
     return {"datasets": out, "builds": builds, "updates": ctx.db.get_config("library_updates", None)}
 
@@ -68,6 +69,7 @@ def _public_build(b: dict) -> dict:
     return {"id": b["id"], "status": b["status"], "content_sha256": b["content_sha256"], "error": b["error"],
             "created_at": b["created_at"], "finished_at": b["finished_at"],
             "tokenizer_fingerprint": b["tokenizer_fingerprint"], "domains": m.get("domains"),
+            "token_counts": m.get("token_counts"),
             "sources": [{"id": s["id"], "license": s["license"], "stats": s.get("stats")} for s in m.get("sources", [])],
             "eval_items": m.get("eval_items")}
 
@@ -88,7 +90,7 @@ def _lineage_tokenizer(ctx: Ctx) -> Path | None:
     """The tokenizer of the deployed model (one lineage keeps one tokenizer)."""
     from moth_server import models as M
 
-    d = M.deployed(ctx)
+    d = M.deployed(ctx) or next((r for r in M.list_releases(ctx) if r.get("path")), None)
     if not d:
         return None
     for cand in (Path(d["path"]) / "tokenizer.json",) if d.get("path") else ():
@@ -126,6 +128,9 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
             c.execute(library_builds.update().where(library_builds.c.id == bid).values(**v))
 
     upd(status="running")
+    def progress(message):
+        ctx.db.set_config(f"library_progress_{bid}", {"message": message, "updated_at": time.time()})
+
     try:
         out = root(ctx) / "builds" / f"build-{bid}"
         extra = []
@@ -134,7 +139,7 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
             extra.append({"id": "feedback", "name": "Approved user feedback (with consent)", "license": "user-consented",
                           "attribution": "MOTH users who opted in to training use", "records": fb})
         cfg = {**config, "pins": pins(ctx)}
-        manifest = factory.build(root(ctx) / "cache", out, cfg, log=lambda m: None, extra_sources=extra)
+        manifest = factory.build(root(ctx) / "cache", out, cfg, log=progress, extra_sources=extra)
         tok_path = _lineage_tokenizer(ctx)
         if tok_path is None:  # a new lineage: train its tokenizer once from the corpus
             tok_path = out / "tokenizer.json"
@@ -142,16 +147,33 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
             train_bpe(factory.iter_texts(out, per_domain_chars=int(config.get("tokenizer_chars", 4_000_000))),
                       vocab).save(tok_path)
         tok = Tokenizer.load(tok_path)
-        mix = factory.tokenize_build(out, tok, tok_path, log=lambda m: None)
+        mix = factory.tokenize_build(out, tok, tok_path, log=progress)
+        registered = 0
         for d, info in mix["domains"].items():
             ddir = out / "tokens" / info["dir"]
             user_data = bool(fb) and any(r["domain"] == d for r in fb)
             try:
+                info = DS.inspect(ddir)
+                rows = DS.all_(ctx)
+                if config.get("automatic"):
+                    revoked = {s.get("spec") for row in rows if row["status"] == "revoked"
+                               for s in json.loads(row.get("sources") or "[]")}
+                    if any(s.get("spec") in revoked for s in info["meta"].get("sources", [])):
+                        continue
+                matches = [row for row in rows if row["sha256"] == info["sha256"]]
+                if matches:
+                    registered += int(any(row["status"] == "approved" for row in matches))
+                    continue  # preserve pending/revoked approvals and active dataset files
                 row = DS.register_prepared(ctx, ddir, f"Library: {d} (build {bid})", [d, "library"], user_data, None)
                 # catalog data is pre-approved; feedback is included only with each user's consent
                 DS.approve(ctx, row["id"], None, user_data_permission=user_data)
+                registered += 1
             except Exception:  # noqa: BLE001 - registration problems never lose the build
                 pass
+        if not registered:
+            raise ValueError("No prepared domain could be registered and approved")
+        manifest["token_counts"] = {d: i["tokens"] for d, i in mix["domains"].items()}
+        progress("Prepared and approved")
         upd(status="ready", path=str(out), content_sha256=manifest["content_sha256"],
             tokenizer_fingerprint=tok.fingerprint(), manifest=json.dumps(manifest), finished_at=now())
     except Exception as e:  # noqa: BLE001

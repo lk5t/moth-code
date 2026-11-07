@@ -82,6 +82,8 @@ def test_download_once_resume_and_reject_tampering(tmp_path):
 
 
 def test_cleaning_quality_and_pii():
+    code, count = build._clean_record({"domain": "code", "text": 'token = "ghp_' + 'A' * 32 + '"\n# email a@example.com'})
+    assert count == 2 and 'ghp_' not in code['text'] and 'a@example.com' not in code['text']
     text, n = clean.scrub("Mail me at jane.doe@example.com or call 555-123-4567. Key sk-abcdefghijklmnop1234")
     assert "[email]" in text and "[phone]" in text and "[secret]" in text and n == 3
     assert clean.normalize("a\x00b  \n\n\n\nc\r\n") == "ab\n\nc"

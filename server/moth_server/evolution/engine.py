@@ -225,6 +225,14 @@ def _maybe_start(ctx: Ctx, settings: dict, woken: bool = False) -> dict:
         if not preview["experiments"]:
             reason = " ".join(preview["notes"]) or "Nothing new to train on."
     if reason:
+        if base:
+            from moth_server.intelligence import discovery
+
+            try:
+                preparation = discovery.ensure_data(ctx)
+                reason += f" Dataset preparation: {preparation['status']}."
+            except Exception as e:
+                reason += f" Dataset preparation unavailable: {str(e)[:200]}."
         if reason != st.get("idle_reason"):
             MEM.event(ctx, "engine.idle", reason)
         # check again in a while (approving data or deploying a model starts a cycle sooner)
