@@ -26,6 +26,8 @@ Sources, in the order they are chosen for a model (unless the Owner pins one):
 from __future__ import annotations
 
 import hashlib
+import threading
+import os
 import json
 import re
 import shutil
@@ -180,7 +182,10 @@ def builtin(ctx: Ctx) -> dict | None:
             return None
         out.parent.mkdir(parents=True, exist_ok=True)
         data = "\n".join(parts).encode()[:BUILTIN_MAX_BYTES].decode("utf-8", errors="ignore")
-        out.write_text(data, encoding="utf-8")
+        # atomic: a concurrent evaluation must never read a half-written file (it would look too short)
+        tmp = out.with_name(f"{out.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp.write_text(data, encoding="utf-8")
+        os.replace(tmp, out)
     return {"id": BUILTIN_ID, "name": "Built-in: Python standard library sample", "kind": "text", "source": "builtin",
             "path": str(out), "sha256": _sha(out), "bytes": out.stat().st_size, "license": "PSF-2.0",
             "valid": not validate_text(out.read_bytes()),
