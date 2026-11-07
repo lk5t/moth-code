@@ -232,3 +232,36 @@ GitHub delivery: recovery checkpoint `595df9b` and completed implementation `455
 `codex/autonomous-moth-evolution`. Draft pull-request creation was attempted with `gh pr create` against
 `claude/jolly-darwin-2qeihd`, but `https://api.github.com/graphql` returned Forbidden. Git transport still
 works; no merge, production deployment or GitHub Release was attempted.
+
+## Final Phase 5 recovery verification
+
+All checks below were rerun successfully after recovery and the atomic-parent guard was completed:
+
+| Check | Result |
+| --- | --- |
+| Full backend suite, with the project virtualenv on PATH | 140 passed |
+| Previously failing server regression plus autonomous lifecycle/recovery cases | 4 passed |
+| Focused server growth, distributed recovery, worker controls, lineage, discovery, deployment, migration and updater suites | 64 passed |
+| Frontend unit/component tests | 25 passed |
+| TypeScript check | Passed |
+| Frontend production build | Passed |
+| Changed-file whitespace/error check | Passed |
+
+The 64-test server run included `test_evolution_v053.py`, `test_evolution_integrity.py`,
+`test_ascension_gaps.py`, `test_training_controls.py`, `test_training_network.py`,
+`test_native_lineage.py`, `test_discovery.py`, `test_model_overview.py`, `test_dashboard.py`,
+`test_serving_v053.py`, `test_models_deploy.py`, `test_updates.py`, `test_agent_download.py`, and the
+legacy resource-shortage/crash-resume, forgetting, rejection, automatic rollback, data-approval and
+schema-upgrade cases in `test_evolution.py`. The separate four-test run covered the corrected
+`test_full_cycle_continued_training_to_deployment` and all of `test_autonomous_lifecycle.py`.
+
+The genuine local PSF lifecycle again verified MOTH 0.01 → 0.02 → 0.03, recorded 32 cumulative
+training steps and 16,384 tokens, required actual monitored requests and signatures, and restored the
+original seed bytes on rollback. Learned candidate versions and ancestry were retained. Real dynamic
+expansion and weight/optimizer preservation passed their dedicated server/backend tests; this CPU
+lifecycle deliberately keeps the parameter count constant to test independent version progression.
+
+The initial server regression is resolved without weakening its assertions or changing automatic
+preparation policy in production. No Phase 1–4 redesign or dependency/schema change was necessary.
+Known nonfatal warnings come from the existing Starlette test-client interface, the test key class,
+and tar extraction compatibility; the suites passed.
