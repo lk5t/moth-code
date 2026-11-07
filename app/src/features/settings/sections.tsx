@@ -4,6 +4,7 @@ import { ReferralsSection } from "@/features/billing/ReferralsSection";
 import { UpdatesSection } from "./UpdatesSection";
 import { ConnectionSection } from "./ConnectionSection";
 import { IntelligenceSection } from "@/features/intelligence/IntelligenceSection";
+import { OnDeviceSection } from "@/features/intelligence/OnDeviceSection";
 
 /** Additional settings cards contributed by subsystems. */
-export const settingsSections: React.ComponentType[] = [ConnectionSection, AccountSection, IntelligenceSection, UsageSection, ReferralsSection, UpdatesSection];
+export const settingsSections: React.ComponentType[] = [ConnectionSection, AccountSection, IntelligenceSection, OnDeviceSection, UsageSection, ReferralsSection, UpdatesSection];

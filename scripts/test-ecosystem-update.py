@@ -346,7 +346,49 @@ def main() -> None:
         h = api.wait(lambda h: h.get("version") == V1, f"rollback to {V1}")
         api.login()
         ok(f"rolled back to {V1} on request; accounts intact")
-        print("\nPASS: installation, adoption, server/agent/worker updates, rollback, recovery and reboot all verified")
+
+        step("12. signed official model release (MOTH 0.1) → agent imports it, server evaluates and deploys it")
+        mdir = src / "model-0.1"
+        mdir.mkdir(parents=True, exist_ok=True)
+        make = (
+            "import json, sys, torch\n"
+            "from pathlib import Path\n"
+            "from moth.model.config import preset\n"
+            "from moth.model.registry import export_model\n"
+            "from moth.model.tokenizer import train_bpe\n"
+            "from moth.model.transformer import MothModel\n"
+            "w = Path(sys.argv[1]); tok = train_bpe(['def add(a, b):\\n    return a + b\\n'] * 20, vocab_size=300)\n"
+            "tok.save(w / 'tok.json'); torch.manual_seed(7); cfg = preset('moth-tiny', vocab_size=320)\n"
+            "torch.save({'model': MothModel(cfg).state_dict(), 'model_config': cfg.to_dict(), 'tokenizer_path': str(w / 'tok.json'),\n"
+            "            'tokenizer_fingerprint': tok.fingerprint(), 'step': 1}, w / 'ck.pt')\n"
+            "i = export_model(w / 'ck.pt', w / 'pkg', 'moth-0.1', dtype='float32', extra={'model_version': '0.1',\n"
+            "    'display_name': 'MOTH 0.1 — Foundation', 'family': 'MOTH', 'lineage_id': 'moth-e2e', 'method': 'foundation'})\n"
+            "(w / 'ev.json').write_text(json.dumps({'criteria': {'passed': True, 'criteria': []}})); print(i['path'])\n")
+        env = {**os.environ, "PYTHONPATH": str(ROOT / "backend")}
+        pkg = sh([sys.executable, "-c", make, str(work)], env=env).strip().splitlines()[-1]
+        sh([sys.executable, str(ROOT / "scripts/build-model-release.py"), "--package", pkg, "--evaluation",
+            str(work / "ev.json"), "--version", "0.1", "--out", str(mdir)], env={**env, "MOTH_RELEASE_SIGNING_KEY": priv})
+        sh([str(moth), "check"])
+        api.login()
+
+        def deployed_model():
+            _, body = api.call("GET", "/v1/admin/models", expect=200)
+            rel = next((r for r in body.get("releases", []) if r.get("version") == body.get("deployed")), None)
+            return rel if rel and (rel.get("info") or {}).get("model_version") == "0.1" else None
+
+        for _ in range(240):
+            rel = deployed_model()
+            if rel:
+                break
+            time.sleep(1)
+        else:
+            raise SystemExit("FAILED: MOTH 0.1 was not imported and deployed")
+        sh([str(moth), "check"])  # a second check never imports the same model again
+        _, body = api.call("GET", "/v1/admin/models", expect=200)
+        assert sum((r.get("info") or {}).get("model_version") == "0.1" for r in body["releases"]) == 1
+        ok(f"MOTH 0.1 imported (signature and SHA-256 re-verified), evaluated and deployed as release v{rel['version']}")
+        print("\nPASS: installation, adoption, server/agent/worker updates, rollback, recovery, reboot and signed "
+              "model delivery all verified")
     finally:
         for name in ("server", "agent"):
             pf = home / "run" / f"{name}.pid"

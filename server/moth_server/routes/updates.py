@@ -151,6 +151,38 @@ class AgentFileIn(BaseModel):
     path: str = Field(max_length=1024)  # a file the agent downloaded into the incoming area
 
 
+class AgentModelIn(BaseModel):
+    manifest: str  # base64 of the signed model release manifest
+    signature: str
+    path: str  # the verified package in the incoming area
+
+
+@router.post("/v1/agent/models", dependencies=[Depends(require_agent)])
+def agent_model(body: AgentModelIn, ctx: Ctx = Depends(get_ctx)):
+    """Import a signed official MOTH model release (0.5.2). The server re-verifies the signature and the
+    package checksum; the model is then evaluated and, if it passes, deployed (Owner flag)."""
+    import base64
+    import threading
+
+    from moth_server import models as M
+
+    incoming = (ctx.settings.releases_dir / "incoming").resolve()
+    src = Path(body.path).resolve()
+    if incoming not in src.parents or not src.is_file():
+        raise HTTPException(422, "files must be placed in the incoming area first")
+    try:
+        rel = M.import_official(ctx, base64.b64decode(body.manifest), body.signature, src)
+    except (M.ReleaseError, R.ReleaseError, ValueError) as e:
+        raise HTTPException(422, str(e)) from None
+    finally:
+        src.unlink(missing_ok=True)
+    if ctx.extras.get("synchronous_jobs"):  # tests: evaluate and deploy before answering
+        M.auto_pipeline(ctx)
+    else:
+        threading.Thread(target=M.auto_pipeline, args=(ctx,), daemon=True, name="official-model").start()
+    return {"ok": True, "version": rel["version"], "status": M.release(ctx, rel["version"])["status"]}
+
+
 @router.post("/v1/agent/files", dependencies=[Depends(require_agent)])
 def agent_file(body: AgentFileIn, ctx: Ctx = Depends(get_ctx)):
     incoming = (ctx.settings.releases_dir / "incoming").resolve()

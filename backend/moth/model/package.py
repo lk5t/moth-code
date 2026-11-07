@@ -41,7 +41,8 @@ def inspect_package(model_dir: Path | str, deep: bool = True) -> dict[str, Any]:
     except (OSError, ValueError) as e:
         return {"ok": False, "problems": [f"manifest.json is not valid JSON: {e}"], "info": info}
     info.update({k: manifest.get(k) for k in ("name", "architecture", "params", "dtype", "context_length",
-                                              "tokenizer_fingerprint", "format", "sha256")})
+                                              "tokenizer_fingerprint", "format", "sha256", "model_version",
+                                              "display_name", "lineage_id", "family")})
     info["size"] = (d / "model.pt").stat().st_size
     info["training"] = manifest.get("training")
     for key in ("format", "architecture", "params", "dtype", "tokenizer_fingerprint", "sha256"):

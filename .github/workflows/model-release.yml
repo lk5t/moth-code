@@ -1,0 +1,95 @@
+name: Model release
+
+# Publishes an official MOTH model release (kind: model) — e.g. MOTH 0.1 — Foundation.
+#
+# The package is committed under models/moth-<version>/ (weights split into parts below GitHub's file
+# size limit, with the held-out evaluation files it was measured on). This workflow reassembles it,
+# checks every SHA-256, re-runs the capability benchmarks and the release criteria itself, and only if
+# they pass signs the manifest with MOTH_RELEASE_SIGNING_KEY, verifies the release and publishes it.
+# MOTH Cloud's update agent then imports it; the server re-verifies it, evaluates it and deploys it.
+# An existing release is never overwritten.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Model version (e.g. 0.1)"
+        required: true
+        default: "0.1"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      MV: ${{ inputs.version }}
+      TAG: model-v${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ./backend cryptography
+      - name: Refuse to replace an existing release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "::error::release $TAG already exists"; exit 1; fi
+      - name: Reassemble the package and verify its checksums
+        run: |
+          D="models/moth-$MV"
+          test -f "$D/package/manifest.json" || { echo "::error::$D/package is missing"; exit 1; }
+          mkdir -p pkg && cp "$D"/package/{manifest.json,config.json,tokenizer.json,ATTRIBUTION.md} pkg/
+          cat $(ls "$D"/package/model.pt.part-* | sort) > pkg/model.pt
+          (cd "$D" && sha256sum -c package.sha256)
+          python - <<'EOF'
+          import hashlib, json
+          m = json.load(open("pkg/manifest.json"))
+          h = hashlib.sha256(open("pkg/model.pt", "rb").read()).hexdigest()
+          assert h == m["sha256"], f"weights {h} do not match the manifest {m['sha256']}"
+          print("weights verified:", h, m["params"], "parameters")
+          EOF
+      - name: Re-run the capability benchmarks and release criteria
+        run: |
+          python scripts/evaluate-model.py --package pkg --eval-dir "models/moth-$MV/eval" --out evaluation.json
+          python -c "import json,sys; r=json.load(open('evaluation.json')); sys.exit(0 if r['criteria']['passed'] else 1)" \
+            || { echo "::error::MOTH $MV does not meet its release criteria; nothing is published"; exit 1; }
+      - name: Build and sign the model release
+        env:
+          MOTH_RELEASE_SIGNING_KEY: ${{ secrets.MOTH_RELEASE_SIGNING_KEY }}
+        run: python scripts/build-model-release.py --package pkg --evaluation evaluation.json --version "$MV" --out dist
+      - name: Verify signature and package
+        run: python scripts/verify-release.py dist
+      - name: SHA256SUMS
+        run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'EOF' > notes.md
+          import json
+          r = json.load(open("evaluation.json"))
+          m = r["model"]
+          print(f"# {m.get('display_name') or 'MOTH ' + m['model_version']}\n")
+          print(f"{m['params']:,} parameters · context {m['context_length']} tokens · weights SHA-256 `{m['sha256']}`\n")
+          print("## Measured on held-out data (never trained on)\n")
+          print("| Benchmark | Metric | Result |\n| --- | --- | --- |")
+          for k, v in r["suites"].items():
+              val = f"{v['value']:.1%}" if v.get("higher_is_better") else f"{v['value']:.3f}"
+              print(f"| {k} | {v.get('metric')} | {val} |")
+          print(f"| speed | tokens/s, 1 CPU thread | {r['performance']['tokens_per_second']} |\n")
+          print("## Release criteria\n")
+          for c in r["criteria"]["criteria"]:
+              print(f"- {'✅' if c['passed'] else '❌'} {c['why']}: {c['measured']} ({c['op']} {c['value']})")
+          print("\nThis is a small model trained on CPU. It writes simple English and follows the chat format; it is not a "
+                "general-purpose assistant and its maths, reasoning and coding scores are low. MOTH Cloud imports "
+                "this release automatically (signature and SHA-256 are verified twice).")
+          EOF
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "MOTH $MV (model)" --notes-file notes.md dist/*

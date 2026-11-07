@@ -341,7 +341,7 @@ class Agent:
     @staticmethod
     def kind_of(rel: dict) -> str:
         m = rel["manifest"]
-        if m.get("kind") in ("desktop", "server"):
+        if m.get("kind") in ("desktop", "server", "model"):
             return m["kind"]
         return "desktop" if set((m.get("components") or {}).keys()) == {"desktop"} else "server"
 
@@ -351,6 +351,7 @@ class Agent:
         newest: list[dict] = []
         for kind in ("server", "desktop"):
             newest += [r for r in rels if self.kind_of(r) == kind][:2]
+        self.publish_models([r for r in rels if self.kind_of(r) == "model"][:3])
         for rel in newest:
             res = self.api("POST", "/v1/agent/releases", {"manifest": base64.b64encode(rel["raw"]).decode(),
                                                           "signature": rel["sig"]})
@@ -376,6 +377,34 @@ class Agent:
                         self.log(f"{comp} {rel['version']} is now available to clients")
                 except AgentError as e:
                     self.log(f"could not fetch {comp} {rel['version']}: {e}")
+
+    def publish_models(self, rels: list[dict]) -> None:
+        """Official MOTH model releases (0.5.2): download once, verify, and hand to the server, which
+        re-verifies the signature and checksum, evaluates the model and deploys it if it passes."""
+        st = self.i.state()
+        done = st.setdefault("models_imported", {})
+        for rel in rels:
+            if rel["manifest"].get("channel", "stable") != "stable" or done.get(rel["version"]):
+                continue
+            entry = (rel["manifest"].get("components") or {}).get("model")
+            if not entry:
+                continue
+            try:
+                p = self.fetch_verified(rel, entry)
+                incoming = self.i.data_dir / "storage" / "software" / "incoming" / entry["file"]
+                incoming.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(p), incoming)
+                res = self.api("POST", "/v1/agent/models", {"manifest": base64.b64encode(rel["raw"]).decode(),
+                                                            "signature": rel["sig"], "path": str(incoming)},
+                               timeout=1800)
+                if res is None:
+                    self.log(f"the server did not import model {rel['version']} (is it 0.5.2 or newer?)")
+                    continue
+                done[rel["version"]] = time.time()
+                self.i.save_state(st)
+                self.log(f"model {rel['version']} imported as release v{res.get('version')} ({res.get('status')})")
+            except AgentError as e:
+                self.log(f"could not fetch model {rel['version']}: {e}")
 
     # ---- runtime, backups, process control ------------------------------------------------------------------
     def runtime_for(self, release_dir: Path) -> Path:

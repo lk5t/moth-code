@@ -74,10 +74,16 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         from moth.inference.router import NotSignedIn
 
         router = svc.extras["inference_router"]
-        try:
-            router.endpoint()
-        except NotSignedIn as e:
-            raise HTTPException(401, str(e)) from None
+        ondevice = svc.extras.get("ondevice")
+        on_device = bool(ondevice and ondevice.installed() and
+                         (svc.db.get_setting("ondevice") or {}).get("answer_on_device"))
+        if not on_device:
+            try:
+                router.endpoint()
+            except NotSignedIn as e:
+                if not (ondevice and ondevice.installed()):
+                    raise HTTPException(401, str(e)) from None
+                on_device = True  # signed out but MOTH is on this computer: answer locally
         cid = body.conversation_id
         now = time.time()
         if cid is None:
@@ -98,11 +104,26 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         active[cid] = cancel
         msg_key = uuid.uuid4().hex[:10]
 
+        def local_answer(on_text):
+            from moth.policy.engine import PolicyEngine
+
+            eng = ondevice.ensure_loaded()
+            inst = ondevice.installed() or {}
+            policy = PolicyEngine({})
+            local_msgs = [Message("system", policy.system_prompt)] + msgs
+            st = eng.chat(local_msgs, params, on_text, cancel)
+            return st, (inst.get("display_name") or "MOTH") + " (on this computer)"
+
         def work() -> None:
             text = ""
             model_name = "MOTH Cloud"
+            via = "cloud"
             try:
-                model_name = router.describe()
+                if on_device:
+                    inst = ondevice.installed() or {}
+                    model_name, via = (inst.get("display_name") or "MOTH") + " (on this computer)", "computer"
+                else:
+                    model_name = router.describe()
                 svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "start",
                                          "model": model_name})
 
@@ -112,11 +133,23 @@ def register(app: FastAPI, svc: Services, deps) -> None:
                     svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "token",
                                              "text": piece})
 
-                stats = router.chat(msgs, params, on_text, cancel)
+                from moth.inference.cloud import CloudUnavailable
+
+                if via == "computer":
+                    stats, model_name = local_answer(on_text)
+                else:
+                    try:
+                        stats = router.chat(msgs, params, on_text, cancel)
+                    except CloudUnavailable:
+                        # MOTH Cloud failed before any text: answer on this computer if MOTH is installed there
+                        if text or not (ondevice and ondevice.installed()):
+                            raise
+                        stats, model_name = local_answer(on_text)
+                        via = "computer"
                 extra = getattr(stats, "extra", None) or {}
                 if extra.get("replaced_text") is not None:  # MOTH Cloud's content policy edited the answer
                     text = extra["replaced_text"]
-                meta = {"model": extra.get("model") or model_name, "via": "cloud", "tokens": stats.generated_tokens,
+                meta = {"model": extra.get("model") or model_name, "via": via, "tokens": stats.generated_tokens,
                         "tokens_per_sec": round(stats.tokens_per_sec, 1), "stop_reason": stats.stop_reason,
                         "sources": extra.get("sources") or [], "capability": extra.get("capability"),
                         "model_version": extra.get("model_version"), "provider": extra.get("provider"),

@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from moth_server import evalsets as E
 from moth_server import models as M
 from moth_server.context import Ctx, get_ctx
-from moth_server.deps import Auth, owner_reauthed, require_owner
+from moth_server.deps import Auth, current_auth, owner_reauthed, require_owner
 
 router = APIRouter(tags=["models"])
 PIPELINE_INTERVAL = 120.0
@@ -186,3 +186,36 @@ def delete_eval_dataset(did: str, auth: Auth = Depends(owner_reauthed), ctx: Ctx
     except E.EvalSetError as e:
         raise HTTPException(422, str(e)) from None
     return {"ok": True}
+
+
+@router.get("/v1/models/deployed/package-info")
+def deployed_package_info(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """What MOTH Code needs to download the deployed model for on-computer inference (0.5.2): the release,
+    the package's SHA-256 and, for official releases, the signed release manifest."""
+    import base64
+
+    d = M.deployed(ctx)
+    if not d:
+        raise HTTPException(404, "No model is deployed on MOTH Cloud yet.")
+    path, sha = M.package_archive(ctx, d["version"])
+    out = {"version": d["version"], "name": d["name"], "model_version": d["info"].get("model_version"),
+           "display_name": d["info"].get("display_name") or d["name"], "params": d["info"].get("params"),
+           "weights_sha256": d["sha256"], "package_sha256": sha, "size": path.stat().st_size,
+           "context_length": d["info"].get("context_length")}
+    mf = Path(d["path"]) / "release-manifest.json"
+    if mf.exists():
+        out["release_manifest"] = base64.b64encode(mf.read_bytes()).decode()
+        out["release_signature"] = (Path(d["path"]) / "release-manifest.json.sig").read_text().strip()
+    return out
+
+
+@router.get("/v1/models/deployed/package")
+def deployed_package(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    from fastapi.responses import FileResponse
+
+    d = M.deployed(ctx)
+    if not d:
+        raise HTTPException(404, "No model is deployed on MOTH Cloud yet.")
+    path, sha = M.package_archive(ctx, d["version"])
+    return FileResponse(path, media_type="application/x-tar", filename=f"moth-model-v{d['version']}.tar",
+                        headers={"X-Moth-Package-Sha256": sha})

@@ -130,8 +130,10 @@ export function ChatPanel() {
     }
   };
 
-  const signedOut = cloud ? !cloud.signed_in : false;
-  const noModel = !!cloud && (!cloud.signed_in || !cloud.available);
+  const { data: onDevice } = useResource<{ installed: unknown; answer_on_device: boolean } | null>("/api/ondevice", ["ondevice"], null);
+  const local = !!onDevice?.installed;
+  const signedOut = cloud && !local ? !cloud.signed_in : false;
+  const noModel = !!cloud && (!cloud.signed_in || !cloud.available) && !local;
 
   return (
     <div className="flex h-full flex-col">

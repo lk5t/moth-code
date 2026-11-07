@@ -27,6 +27,7 @@ failed only because no evaluation dataset was available are re-evaluated automat
 from __future__ import annotations
 
 import json
+import os
 import logging
 import shutil
 import subprocess
@@ -136,13 +137,17 @@ def finalize(ctx: Ctx, version: int, model_dir: Path, actor_id: int | None) -> d
     info = {k: check["info"].get(k) for k in ("architecture", "params", "context_length", "tokenizer_fingerprint",
                                               "dtype", "config", "training", "resources")}
     info["source"] = rel["info"].get("source", {})
+    for k in ("model_version", "display_name", "lineage_id", "family"):  # MOTH model identity (0.5.2)
+        if check["info"].get(k) is not None:
+            info[k] = check["info"][k]
     _set(ctx, version, "uploaded", sha256=check["info"]["sha256"], size=check["info"]["size"], path=str(dest),
          info=json.dumps(info), error=None)
     src_type = (info["source"] or {}).get("type")
     if src_type != "evolution":  # evolution records its own lineage (parent, cycle, experiment, data)
         from moth_server.evolution.memory import record_lineage
 
-        record_lineage(ctx, version, None, "network" if src_type == "training-network" else "upload")
+        method = {"training-network": "network", "official": (info["source"] or {}).get("method") or "foundation"}
+        record_lineage(ctx, version, None, method.get(src_type or "", "upload"))
     audit(ctx.db, "models.uploaded", actor_id, f"release:{version}", {"sha256": check["info"]["sha256"]})
     return release(ctx, version)
 
@@ -541,6 +546,18 @@ def auto_pipeline(ctx: Ctx) -> dict[str, Any]:
         results["evaluated"].append(v)
         if st == "published":
             results["passed"].append(v)
+    official = [v for v in results["passed"] if release(ctx, v)["info"].get("source", {}).get("type") == "official"]
+    if official and flags(ctx).get("auto_deploy_official_models"):
+        cur = deployed(ctx)
+        cur_mv = (cur or {}).get("info", {}).get("model_version") if cur else None
+        best = max(official)
+        new_mv = release(ctx, best)["info"].get("model_version")
+        if cur is None or cur_mv is None or _mv(new_mv) > _mv(cur_mv):
+            try:
+                results["deployed"] = deploy(ctx, best)["version"]
+                return results
+            except ReleaseError as e:
+                results["deploy_error"] = str(e)
     network = [v for v in results["passed"] if release(ctx, v)["info"].get("source", {}).get("type") == "training-network"]
     if network and flags(ctx).get("auto_deploy_models"):
         try:
@@ -548,3 +565,76 @@ def auto_pipeline(ctx: Ctx) -> dict[str, Any]:
         except ReleaseError as e:
             results["deploy_error"] = str(e)
     return results
+
+
+def _mv(v: str | None) -> tuple:
+    try:
+        return tuple(int(x) for x in str(v).split("."))
+    except ValueError:
+        return (0,)
+
+
+def import_official(ctx: Ctx, manifest_bytes: bytes, signature_b64: str, archive: Path) -> dict:
+    """A signed official MOTH model release (``kind: model``) relayed by the update agent.
+
+    The manifest must verify with the release key, the archive must match its SHA-256, and the same model
+    version is never imported twice. The model then goes through the normal evaluation; it is deployed
+    automatically when it passes and ``auto_deploy_official_models`` is on."""
+    from moth_server import releases as RL
+
+    m = RL.verify_manifest(ctx, manifest_bytes, signature_b64)
+    if m.get("kind") != "model":
+        raise ReleaseError("not a model release")
+    comp = (m.get("components") or {}).get("model") or {}
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(archive, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    if h.hexdigest() != comp.get("sha256"):
+        raise ReleaseError("the model archive does not match the SHA-256 in the signed manifest")
+    model = m.get("model") or {}
+    mv = str(model.get("model_version") or m["version"])
+    for r in list_releases(ctx):
+        src = (r["info"] or {}).get("source") or {}
+        if src.get("type") == "official" and src.get("model_version") == mv and r["status"] != "failed":
+            return r  # already imported: never twice
+    name = model.get("display_name") or f"MOTH {mv}"
+    version = reserve(ctx, name, {"type": "official", "model_version": mv, "method": model.get("method", "foundation"),
+                                  "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+                                  "git_sha": m.get("git_sha")}, None)
+    rel = register_upload(ctx, archive, name, None, version=version)
+    (Path(rel["path"]) / "release-manifest.json").write_bytes(manifest_bytes)
+    (Path(rel["path"]) / "release-manifest.json.sig").write_text(signature_b64.strip() + "\n")
+    audit(ctx.db, "models.official_imported", None, f"release:{version}", {"model_version": mv})
+    return release(ctx, version)
+
+
+def package_archive(ctx: Ctx, version: int) -> tuple[Path, str]:
+    """A tar of a release's package for download (built once, cached), and its SHA-256."""
+    import hashlib
+
+    rel = release(ctx, version)
+    if not rel or not rel["path"]:
+        raise ReleaseError("unknown release")
+    out = releases_dir(ctx) / f"v{version:05d}.tar"
+    side = out.with_suffix(".tar.sha256")
+    if out.exists() and side.exists():
+        return out, side.read_text().strip()
+    tmp = out.with_suffix(".tar.tmp")
+    src = Path(rel["path"])
+    with tarfile.open(tmp, "w") as tar:
+        for name in ("manifest.json", "config.json", "tokenizer.json", "model.pt", "ATTRIBUTION.md"):
+            if (src / name).exists():
+                info = tar.gettarinfo(str(src / name), arcname=f"model/{name}")
+                info.mtime, info.uid, info.gid, info.uname, info.gname = 0, 0, 0, "", ""
+                with open(src / name, "rb") as f:
+                    tar.addfile(info, f)
+    h = hashlib.sha256()
+    with open(tmp, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    os.replace(tmp, out)
+    side.write_text(h.hexdigest())
+    return out, h.hexdigest()

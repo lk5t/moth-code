@@ -27,6 +27,7 @@ FEATURE_FLAGS = {
     "knowledge_enabled": True,          # knowledge search and cited answers (0.5.1)
     "feedback_collection": True,        # users can rate answers (0.5.1)
     "external_ai_enabled": False,       # compatible external providers: off unless the Owner turns them on
+    "auto_deploy_official_models": True,  # signed official MOTH models deploy when they pass evaluation (0.5.2)
 }
 # Flags that no longer do anything but are still accepted from older apps and scripts.
 RETIRED_FLAGS = {"allow_cpu_workers"}  # 0.5: CPU workers are production workers

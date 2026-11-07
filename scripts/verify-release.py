@@ -69,11 +69,12 @@ def main() -> int:
           f"manifest signature verifies with release key {pub[:12]}…")
     m = json.loads(raw)
     v = m["version"]
-    print(f"release {v} · channel {m['channel']} · schema {m['schema_version']} · api {m['api_version']} · "
-          f"commit {m.get('git_sha', '?')[:12]}")
+    print(f"release {v} · channel {m['channel']} · schema {m.get('schema_version', '-')} · "
+          f"api {m.get('api_version', '-')} · commit {m.get('git_sha', '?')[:12]}")
     comps = m["components"]
     entries = [("server", comps.get("server")), ("worker", comps.get("worker"))]
     entries += [(f"desktop/{k}", e) for k, e in (comps.get("desktop") or {}).items()]
+    entries += [("model", comps.get("model"))]
     for comp, e in entries:
         if not e:
             continue
@@ -82,6 +83,28 @@ def main() -> int:
               f"{comp}: {e['file']} matches SHA-256 {e['sha256'][:16]}… and size {e['size']}")
     kind = m.get("kind") or ("desktop" if set(comps) == {"desktop"} else "server")
     print(f"kind: {kind} release")
+    if kind == "model":
+        check(set(comps) == {"model"}, "model release contains only the model package")
+        p = d / comps["model"]["file"]
+        if p.exists():
+            with tarfile.open(p) as t:
+                mems = t.getmembers()
+                check(not any(x.name.startswith("/") or ".." in Path(x.name).parts or x.issym() or x.islnk()
+                              for x in mems), "package has no absolute paths, '..' or links")
+                mfm = next((x for x in mems if x.name.endswith("/manifest.json")), None)
+                wm = next((x for x in mems if x.name.endswith("/model.pt")), None)
+                check(mfm is not None and wm is not None, "package contains manifest.json and model.pt")
+                if mfm is not None and wm is not None:
+                    pm = json.loads(t.extractfile(mfm).read())
+                    h = hashlib.sha256(t.extractfile(wm).read()).hexdigest()
+                    check(h == pm["sha256"] == m["model"]["weights_sha256"],
+                          "weights match the package manifest and the signed release manifest")
+                    mv = (m.get("model") or {}).get("model_version")
+                    check(str(pm.get("model_version")) == str(mv), f"package is model version {mv}")
+        crit = ((m.get("model") or {}).get("evaluation") or {}).get("criteria") or {}
+        check(m["channel"] != "stable" or crit.get("passed") is True, "stable model release passed its release criteria")
+        print("PASS" if not problems else f"FAILED: {len(problems)} problem(s)")
+        return 0 if not problems else 1
     if kind == "desktop":
         check(set(comps) == {"desktop"}, "desktop release contains only the desktop app")
         for plat, e in comps["desktop"].items():

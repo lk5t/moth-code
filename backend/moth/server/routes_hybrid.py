@@ -38,6 +38,41 @@ def register(app: FastAPI, svc: Services, deps) -> None:
     router = InferenceRouter(inference_settings, account=lambda: svc.extras.get("account"), consent=consented)
     svc.extras["inference_router"] = router
 
+    # ---- MOTH on this computer (0.5.2) ----------------------------------------------------------------
+    from moth.inference.ondevice import OnDevice, OnDeviceError
+
+    ondevice = OnDevice(svc.paths.models, account=lambda: svc.extras.get("account"), publish=svc.bus.publish)
+    svc.extras["ondevice"] = ondevice
+
+    class OnDeviceIn(BaseModel):
+        answer_on_device: bool
+
+    @app.get("/api/ondevice", dependencies=deps)
+    def ondevice_status():
+        return {**ondevice.status(), "answer_on_device": bool((svc.db.get_setting("ondevice") or {}).get("answer_on_device"))}
+
+    @app.post("/api/ondevice/download", dependencies=deps)
+    def ondevice_download():
+        try:
+            ondevice._api()
+        except OnDeviceError as e:
+            raise HTTPException(401, str(e)) from None
+        ondevice.start_download()
+        return ondevice.status()
+
+    @app.put("/api/ondevice/settings", dependencies=deps)
+    def ondevice_settings(body: OnDeviceIn):
+        if body.answer_on_device and not ondevice.installed():
+            raise HTTPException(409, "Download MOTH to this computer first.")
+        svc.db.set_setting("ondevice", {"answer_on_device": body.answer_on_device})
+        return ondevice_status()
+
+    @app.delete("/api/ondevice", dependencies=deps)
+    def ondevice_remove():
+        ondevice.remove()
+        svc.db.set_setting("ondevice", {"answer_on_device": False})
+        return ondevice_status()
+
     # ---- MOTH Cloud status & per-workspace consent -----------------------------------------------
     @app.get("/api/cloud/status", dependencies=deps)
     def cloud_status():
