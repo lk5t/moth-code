@@ -36,6 +36,83 @@ def dir_size(p: Path) -> int:
     return total
 
 
+@router.get("/model-overview")
+def model_overview(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """Owner model measurements, accepted ancestry and verified checkpoint metadata."""
+    from moth.model.registry import sha256_file
+    from moth_server.evolution import backends as B, compute as C, engine as EN, memory as MEM
+    from moth_server.evolution import settings as ES
+
+    st = EN.state(ctx)
+    current = M.deployed(ctx)
+    if st.get('stable_version'):
+        current = M.release(ctx, st['stable_version'])
+    current = current or next((r for r in M.list_releases(ctx) if r.get('path')), None)
+    cache = ctx.extras.setdefault('checkpoint_stat_cache', {})
+
+    def checkpoint(path, expected, kind):
+        if not path or not expected:
+            return None
+        p = Path(path)
+        try:
+            stat = p.stat()
+            key = (str(p), stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, expected)
+            if key not in cache:
+                if len(cache) > 100:
+                    cache.clear()
+                cache[key] = sha256_file(p) == expected
+            return {'kind': kind, 'sha256': expected, 'bytes': stat.st_size, 'valid': cache[key]}
+        except OSError:
+            return {'kind': kind, 'sha256': expected, 'bytes': None, 'valid': False}
+
+    def summary(r):
+        info = r['info']
+        return {'release': r['version'], 'name': info.get('display_name') or r['name'],
+                'model_version': info.get('model_version'), 'params': info.get('params'),
+                'architecture': info.get('architecture'), 'config': info.get('config'),
+                'training': info.get('training') or {}, 'totals': info.get('lineage_totals'),
+                'status': r['status'], 'created_at': r['created_at'], 'deployed_at': r.get('deployed_at'),
+                'growth': info.get('growth'), 'evaluation': r.get('evaluation')}
+
+    accepted = []
+    if current:
+        for a in reversed(MEM.ancestors(ctx, current['version'])):
+            r = M.release(ctx, a['version'])
+            if r['status'] == 'deployed' or r.get('previously_deployed'):
+                accepted.append({**summary(r), 'parent': a['parent_version'], 'method': a['method']})
+    cyc = MEM.active_cycle(ctx)
+    settings = ES.get(ctx)
+    exps = MEM.experiments(ctx, cyc['id']) if cyc else []
+    running = next((e for e in exps if e['status'] == 'running'), None)
+    progress = (running.get('metrics') or {}).get('progress') if running else None
+    if running and running.get('backend') == 'local':
+        progress = B.progress(ctx, running)
+    jobs = ctx.db.all(select(training_jobs).where(training_jobs.c.status == 'leased'))
+    ids = {j['worker_id'] for j in jobs}
+    active = [w for w in ctx.db.all(select(workers)) if w['id'] in ids and not w['paused']
+              and not w['revoked_at'] and (w['last_heartbeat_at'] or 0) >= time.time() - 180]
+    if not progress and jobs:
+        progress = next(((json.loads(j.get('result') or '{}')).get('progress') for j in jobs
+                         if (json.loads(j['spec']).get('evolution_experiment') == (running or {}).get('id'))), None)
+    dev = ((current or {}).get('info') or {}).get('dev_checkpoint') or {}
+    development = checkpoint(dev.get('path'), dev.get('sha256'), 'development')
+    package = checkpoint(str(Path(current['path']) / 'model.pt'), current['sha256'], 'serving-package') if current else None
+    latest = next((c for c in (development, package) if c and c['valid']), None)
+    measured = next((e for e in MEM.experiments(ctx, limit=100) if e.get('candidate_version') == (current or {}).get('version')), None)
+    history = [{'experiment': e['id'], 'status': e['status'], 'candidate': e.get('candidate_version'),
+                'base': e['base_version'], 'created_at': e['created_at'], 'metrics': e.get('metrics'),
+                'growth': e['config'].get('grow'), 'error': e.get('error')} for e in MEM.experiments(ctx, limit=30)]
+    return {'model': summary(current) if current else None, 'accepted_versions': accepted,
+            'checkpoint': latest, 'development_checkpoint': development, 'package': package,
+            'training': {'status': 'off' if not settings['enabled'] else 'paused' if settings['paused']
+                         else cyc['status'] if cyc else st.get('idle_reason') or 'idle',
+                         'progress': progress, 'experiments': history},
+            'evaluation': measured.get('metrics') if measured else None,
+            'workers': {'active': len(active), 'active_gpu': sum(json.loads(w['hardware'] or '{}').get('compute') == 'gpu' for w in active),
+                        'active_cpu': sum(json.loads(w['hardware'] or '{}').get('compute') != 'gpu' for w in active)},
+            'resources': C.local(ctx), 'recent': MEM.events(ctx, limit=15)}
+
+
 @router.get("/overview")
 def overview(request: Request, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     db, t = ctx.db, time.time()

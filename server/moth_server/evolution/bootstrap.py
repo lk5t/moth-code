@@ -50,5 +50,6 @@ def initialize(ctx: Ctx, actor_id: int | None = None) -> dict:
         import json
 
         M._set(ctx, rel["version"], info=json.dumps({**rel["info"], "initialization": "random-untrained",
+                                                   "lineage_totals": {"steps": 0, "tokens": 0, "cycles": 0},
                                                    "dev_checkpoint": dev}))
         return {"created": True, "model": M.release(ctx, rel["version"])}

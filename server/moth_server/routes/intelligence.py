@@ -493,7 +493,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
             "name": info.get("display_name") or r["name"], "params": info.get("params"), "method": row["method"],
             "architecture": info.get("architecture"),
             "training": {k: (info.get("training") or {}).get(k) for k in
-                         ("step", "steps", "best_val", "val_loss", "tokens", "backend")},
+                         ("step", "steps", "best_val", "val_loss", "train_loss", "tokens", "backend")},
             "parent": row["parent_version"], "created_at": row["created_at"], "status": r["status"],
             "deployed": row["version"] == deployed, "stable": row["version"] == stable,
             "has_dev_checkpoint": bool((info.get("dev_checkpoint") or {}).get("path")),

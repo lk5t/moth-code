@@ -44,6 +44,7 @@ function Library() {
   const updates: Any[] = data.updates?.results ?? [];
   return (
     <>
+      <Discovery />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Database className="size-4 text-accent" />Approved datasets</CardTitle>
@@ -91,6 +92,9 @@ function Library() {
                 {b.content_sha256 && <span className="font-mono text-faint">{b.content_sha256.slice(0, 12)}</span>}
               </div>
               {b.error && <div className="text-danger">{b.error}</div>}
+              {b.progress && <p className="text-muted">{b.progress.message}</p>}
+              {b.token_counts && <p className="text-muted">{Object.entries(b.token_counts as Record<string, Any>).map(([domain, counts]) => `${domain}: ${counts.train.toLocaleString()} training / ${counts.val.toLocaleString()} validation tokens`).join(" · ")}</p>}
+              <p className="text-muted">Used by releases: {b.used_by_releases?.length ? b.used_by_releases.map((v: number) => `#${v}`).join(", ") : "None recorded"}</p>
               {b.domains && (
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted">
                   {Object.entries(b.domains as Record<string, Any>).map(([d, v]) => (
@@ -113,6 +117,26 @@ function Library() {
       </Card>
     </>
   );
+}
+
+function Discovery() {
+  const { data, error, load } = usePoll<Any>("/v1/admin/library/discovery", 5000);
+  const { run, view } = useAction(load);
+  if (!data) return <p className="text-muted">{error ?? "Loading discovery policy…"}</p>;
+  const update = (changes: Any) => serverApi("/v1/admin/library/discovery", { method: "PUT", json: { changes } });
+  return <Card><CardHeader><CardTitle>Automatic dataset discovery</CardTitle><CardDescription>Only selected trusted, licensed sources may be prepared unattended. Upstream revisions still require approval; revoked training data remains blocked.</CardDescription></CardHeader>
+    <CardContent className="space-y-3 text-xs">
+      <div className="flex flex-wrap items-center gap-2"><Badge>{data.policy.enabled ? "Enabled" : "Disabled"}</Badge>
+        <Button size="sm" variant="secondary" onClick={() => run(() => update({ enabled: !data.policy.enabled }), "Discovery policy saved.")}>{data.policy.enabled ? "Disable discovery" : "Enable discovery"}</Button>
+        <Button size="sm" onClick={() => run(() => post("/v1/admin/library/discovery/prepare"), "Preparation requested; approval and storage limits apply.")}>Prepare eligible datasets</Button>
+        <span className="text-muted">{data.state.status ?? "No preparation requested"}</span>
+      </div>
+      <details><summary className="cursor-pointer text-muted">Source approvals and preparation limits</summary><div className="mt-3 space-y-2">
+        {data.discovered.map((d: Any) => <label key={d.id} className="flex items-center gap-2"><input type="checkbox" checked={d.approved} disabled={!d.license_verified} onChange={e => run(() => update({ approved_sources: e.target.checked ? [...data.policy.approved_sources, d.id] : data.policy.approved_sources.filter((id: string) => id !== d.id) }), "Source policy saved.")} />{d.name} · <a href={d.license_url} target="_blank" rel="noreferrer" className="text-accent">{d.license}</a> · {formatBytes(d.download_bytes)} · revision {d.revision?.slice(0, 12) ?? "local Python"}</label>)}
+        <label className="flex items-center gap-2">Maximum download bytes<Input className="max-w-48" type="number" defaultValue={data.policy.max_download_bytes} onBlur={e => { const n = Number(e.target.value); if (n !== data.policy.max_download_bytes) run(() => update({ max_download_bytes: n }), "Download limit saved."); }} /></label>
+        <label className="flex items-center gap-2">Maximum characters per source<Input className="max-w-48" type="number" defaultValue={data.policy.max_source_chars} onBlur={e => { const n = Number(e.target.value); if (n !== data.policy.max_source_chars) run(() => update({ max_source_chars: n }), "Preparation limit saved."); }} /></label>
+      </div></details>{view}
+    </CardContent></Card>;
 }
 
 function Weaknesses() {

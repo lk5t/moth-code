@@ -61,6 +61,10 @@ def status(ctx: Ctx) -> dict[str, Any]:
     builds = [{**_public_build(b), "progress": ctx.db.get_config(f"library_progress_{b['id']}", None)}
               for b in ctx.db.all(select(library_builds).order_by(library_builds.c.id.desc())
                                                    .limit(10))]
+    from moth_server.evolution import memory as MEM
+    lineage = MEM.lineage(ctx)
+    for b in builds:
+        b['used_by_releases'] = [r['version'] for r in lineage if b['content_sha256'] in r.get('datasets', [])]
     return {"datasets": out, "builds": builds, "updates": ctx.db.get_config("library_updates", None)}
 
 

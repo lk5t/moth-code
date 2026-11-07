@@ -90,3 +90,26 @@ CUDA/Windows hardware is absent; native GPU execution and Windows packaging were
 training remains the existing synchronized, token-weighted local-update algorithm, not shared AdamW
 state across machines. Full optimizer continuity is supported by local development checkpoints;
 worker jobs retain AdamW within a resumable job but start fresh moments on a new assignment.
+
+## Phase 4
+
+Owner navigation now has exactly five main sections: Overview, Intelligence, Network, Community and
+Settings. All original model/evaluation-data, evolution, data/feedback/knowledge, server, worker,
+user, billing/referral, update, policy/flags and audit panels remain available under those groups.
+The desktop's broader navigation, branding and updater screens are unchanged.
+
+`ModelOverview.tsx` and owner-only `/v1/admin/model-overview` show exact registered parameters,
+architecture/config, verified checkpoint bytes/hash, recorded cumulative steps/tokens, live training
+loss/progress, CPU/GPU active-worker counts, promotion/retention gates, accepted ancestry and growth/
+failure history. Missing measurements explicitly show Unavailable. Checkpoint verification is cached
+only for an unchanged file stat/hash identity and detects actual corruption. Comparisons require
+matching held-out datasets/metrics. The existing interactive benchmark timeline remains accessible.
+
+The dataset library now exposes unattended source approvals and download/preparation limits, live
+build messages, actual token counts and recorded model usage. Unknown licenses cannot be enabled.
+Advanced architecture, source and history details are expandable.
+
+Verification: 7 focused server tests passed, covering owner authorization, initialization/migration,
+exact metrics, checkpoint corruption and discovery. Five focused UI tests passed, covering the five
+sections, preserved panel navigation, missing metrics, worker controls and evolution/parameter charts;
+TypeScript checks passed. Browser/native desktop visual testing is deferred to final verification.

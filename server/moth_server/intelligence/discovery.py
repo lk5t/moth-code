@@ -50,7 +50,12 @@ def status(ctx: Ctx) -> dict:
     from moth_server.intelligence import library
 
     p = policy(ctx)
-    return {"policy": p, "state": ctx.db.get_config(KEY + "_state", {}) or {},
+    state = ctx.db.get_config(KEY + "_state", {}) or {}
+    if state.get('build'):
+        b = next((b for b in library.status(ctx)['builds'] if b['id'] == state['build']), None)
+        if b:
+            state = {**state, 'status': b['status'], 'error': b.get('error'), 'progress': b.get('progress')}
+    return {"policy": p, "state": state,
             "discovered": [{**catalog.public(catalog.with_pin(s, library.pins(ctx).get(s['id']))),
                             "approved": s['id'] in p['approved_sources'],
                             "license_verified": s['license'] in LICENSES and bool(s.get('attribution'))}

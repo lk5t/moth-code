@@ -13,6 +13,8 @@ import { formatNumber, timeAgo } from "@/lib/utils";
 import { ModelsPanel, ServerPanel, UpdatesPanel, WorkersPanel } from "./ops";
 import { EvolutionPanel } from "./evolution";
 import { IntelligencePanel } from "./intelligence";
+import { ModelOverview } from "./ModelOverview";
+import { IntelligenceView } from "@/features/intelligence/IntelligenceView";
 
 type Any = Record<string, any>;
 
@@ -341,20 +343,39 @@ function PolicyAndFlags() {
   return <div className="flex flex-col gap-6"><Flags /><Policy /></div>;
 }
 
+type OwnerTab = [string, string, React.ComponentType];
+function Sections({ tabs }: { tabs: OwnerTab[] }) {
+  return <Tabs defaultValue={tabs[0][0]}><TabsList className="mb-4 flex-wrap border-b border-border">
+    {tabs.map(([v, label]) => <TabsTrigger key={v} value={v}>{label}</TabsTrigger>)}
+  </TabsList>{tabs.map(([v, , Panel]) => <TabsContent key={v} value={v}><Panel /></TabsContent>)}</Tabs>;
+}
+function IntelligenceSection() {
+  return <Sections tabs={[["model", "MOTH AI", ModelOverview], ["evolution", "Training & evolution", EvolutionPanel],
+    ["data", "Data & intelligence", IntelligencePanel], ["benchmarks", "Benchmark timeline", IntelligenceView],
+    ["registry", "Model registry", ModelsPanel]]} />;
+}
+function NetworkSection() {
+  return <Sections tabs={[["workers", "Workers", WorkersPanel], ["server", "Server", ServerPanel]]} />;
+}
+function CommunitySection() {
+  return <Sections tabs={[["users", "Users", Users], ["billing", "Plans & referrals", Billing]]} />;
+}
+function SettingsSection() {
+  return <Sections tabs={[["updates", "Updates", UpdatesPanel], ["policy", "Policy & flags", PolicyAndFlags],
+    ["audit", "Audit log", Audit]]} />;
+}
+
 export function OwnerDashboard() {
   const role = useAccount((s) => s.user?.role);
   if (role !== "owner") return <EmptyState title="Owner Dashboard">Available to the MOTH Owner account only.</EmptyState>;
-  const tabs: [string, string, React.ComponentType][] = [
-    ["overview", "Overview", Overview], ["server", "Server", ServerPanel], ["updates", "Updates", UpdatesPanel],
-    ["models", "AI models", ModelsPanel], ["evolution", "Evolution", EvolutionPanel], ["intelligence", "Intelligence", IntelligencePanel], ["workers", "Workers", WorkersPanel], ["users", "Users", Users],
-    ["billing", "Plans & referrals", Billing], ["settings", "Policy & flags", PolicyAndFlags], ["audit", "Audit log", Audit],
-  ];
+  const tabs: OwnerTab[] = [["overview", "Overview", Overview], ["intelligence", "Intelligence", IntelligenceSection],
+    ["network", "Network", NetworkSection], ["community", "Community", CommunitySection], ["settings", "Settings", SettingsSection]];
   return (
     <div className="h-full overflow-auto">
       <div className="mx-auto flex max-w-6xl flex-col gap-4 p-8 animate-rise">
         <h1 className="flex items-center gap-2 text-lg font-semibold"><Crown className="size-5 text-accent" />Owner Dashboard</h1>
         <Tabs defaultValue="overview">
-          <TabsList className="mb-4 border-b border-border">
+          <TabsList aria-label="Owner sections" className="mb-4 flex-wrap border-b border-border">
             {tabs.map(([v, l]) => <TabsTrigger key={v} value={v}>{l}</TabsTrigger>)}
           </TabsList>
           {tabs.map(([v, , C]) => <TabsContent key={v} value={v}><C /></TabsContent>)}
