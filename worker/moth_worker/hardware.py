@@ -149,7 +149,10 @@ def _raw_machine_id() -> str:
 
 def machine_id() -> str:
     """Salted hash of the OS machine id: identifies the computer, reveals nothing about it."""
-    return hashlib.sha256(b"moth-worker-machine:" + _raw_machine_id().encode()).hexdigest()[:32]
+    # MOTH_WORKER_INSTANCE: several workers on one big machine (e.g. one per GPU) are separate registrations
+    inst = os.environ.get("MOTH_WORKER_INSTANCE", "")
+    return hashlib.sha256(b"moth-worker-machine:" + _raw_machine_id().encode()
+                          + (f":{inst}".encode() if inst else b"")).hexdigest()[:32]
 
 
 def cpu_model() -> str | None:
