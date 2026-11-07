@@ -176,6 +176,8 @@ def plan_growth(cfg: MothConfig, evidence: dict[str, Any], budget: dict[str, Any
     if len(imps) < 3:
         return {**out, "reason": "not enough completed cycles to judge a plateau (need 3)"}
     recent = imps[-3:]
+    if not all(math.isfinite(float(x)) for x in imps):
+        return {**out, "reason": "growth needs finite held-out improvement measurements"}
     if max(recent) >= thr:
         return {**out, "reason": f"the model is still improving ({max(recent):+.2%} in a recent cycle): no growth"}
     tl, vl = evidence.get("train_loss"), evidence.get("val_loss")
@@ -183,7 +185,11 @@ def plan_growth(cfg: MothConfig, evidence: dict[str, Any], budget: dict[str, Any
         return {**out, "reason": f"held-out loss is {vl - tl:.2f} above training loss (overfitting): more data, "
                                  f"not more parameters, is needed"}
     # strength of the plateau → size of the step (flexible increments 5%..40%)
-    stuck = sum(1 for x in imps[::-1] if x < thr)
+    stuck = 0
+    for x in reversed(imps):
+        if x >= thr:
+            break
+        stuck += 1
     target = min(1.4, 1.05 + 0.05 * stuck)
     max_params = int(budget.get("max_params") or 0)
     max_ratio = float(budget.get("max_ratio", 1.5))

@@ -15,13 +15,13 @@ def _events(r):
 
 
 def _serve_tiny(client, tiny_model_dir, owner):
-    from moth.inference.local import LocalInference
+    from moth_server import models as M
 
-    eng = LocalInference(tiny_model_dir.parent)
-    eng.load(tiny_model_dir.name, "cpu")
     ctx = client.app.state.ctx
-    ctx.extras["inference_engine"] = eng
-    ctx.extras["deployed_version"] = 1
+    rel = M._register(ctx, tiny_model_dir, "moth-chat-test", {"type": "upload"}, None)
+    assert M.evaluate(ctx, rel["version"])["status"] == "published"
+    M.deploy(ctx, rel["version"])
+    eng = ctx.extras["inference_engine"]
     r = client.put("/v1/admin/config/flags", json={"cloud_inference_enabled": True}, headers=H(owner["token"]))
     assert r.status_code == 200, r.text
     return eng

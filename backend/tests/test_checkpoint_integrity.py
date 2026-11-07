@@ -8,6 +8,16 @@ import pytest
 from moth.training.checkpoint import CheckpointError, RunLock, load_latest_verified, save_checkpoint
 
 
+@pytest.mark.parametrize("pointer", ['{', '{}', '[]', '{"file": "../outside.pt"}',
+                                     '{"file": "step_00000001.pt"}'])
+def test_damaged_or_stale_pointer_recovers_newest_verified_checkpoint(tmp_path, pointer):
+    save_checkpoint(tmp_path, 1, {"step": 1})
+    save_checkpoint(tmp_path, 2, {"step": 2})
+    (tmp_path / "checkpoints" / "latest.json").write_text(pointer)
+    path, ck = load_latest_verified(tmp_path)
+    assert path.name == "step_00000002.pt" and ck["step"] == 2
+
+
 def test_corrupted_latest_falls_back_to_previous_verified(tmp_path):
     for step in (1, 2, 3):
         save_checkpoint(tmp_path, step, {"step": step, "w": [step] * 100})

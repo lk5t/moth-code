@@ -37,6 +37,9 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: python -m pytest -q
+      - name: Full foundation architecture training, resume and inference smoke
+        if: runner.os == 'Linux'
+        run: python scripts/verify-foundation-training.py --out "${{ runner.temp }}/moth-foundation-smoke"
 
   server:
     name: MOTH Server tests (${{ matrix.db }})

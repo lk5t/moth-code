@@ -13,6 +13,7 @@ import json
 import math
 import os
 import random
+import shutil
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -39,6 +40,7 @@ class TrainConfig:
     seq_len: int = 1024
     batch_size: int = 8
     grad_accum: int = 4
+    batch_autotune: bool = False
     max_steps: int = 20000
     lr: float = 6e-4
     min_lr: float = 6e-5
@@ -220,8 +222,15 @@ class Trainer:
         val = open_dataset(cfg.dataset, "val", cfg.seq_len, cfg.mixture)
 
         resumed_from = None
+        had_progress = any((self.run_dir / "checkpoints").glob("step_*.pt*")) or (self.run_dir / "checkpoints" / "best.pt").exists()
         ckpt_path, ck = load_latest_verified(self.run_dir, self.device, self.emit)
+        if ck is None and had_progress:
+            raise ValueError("no valid resumable checkpoint remains; refusing to restart existing training from random weights")
         if ck is not None:
+            if ck.get("tokenizer_fingerprint") and ck["tokenizer_fingerprint"] != self.tokenizer.fingerprint():
+                raise ValueError("existing checkpoint uses a different tokenizer")
+            if ck.get("dataset_build") and ck["dataset_build"] != self.dataset_meta.get("build_sha256"):
+                raise ValueError("existing checkpoint uses a different dataset build; start a separate continuation run")
             if MothConfig.from_dict(ck["model_config"]).compatibility_key() != self.model_cfg.compatibility_key():
                 raise ValueError("existing checkpoint in this run directory has a different architecture")
             model.load_state_dict(ck["model"])
@@ -231,10 +240,10 @@ class Trainer:
             self.step = ck["step"]
             self.best_val = ck.get("best_val", float("inf"))
             self.tokens_seen = ck.get("tokens_seen", 0)
-            data_gen.set_state(ck["rng"]["data"])
-            torch.set_rng_state(ck["rng"]["torch"])
+            data_gen.set_state(ck["rng"]["data"].cpu())
+            torch.set_rng_state(ck["rng"]["torch"].cpu())
             if self.device == "cuda" and ck["rng"].get("cuda") is not None:
-                torch.cuda.set_rng_state_all(ck["rng"]["cuda"])
+                torch.cuda.set_rng_state_all([s.cpu() for s in ck["rng"]["cuda"]])
             resumed_from = str(ckpt_path)
         elif cfg.init_from:
             src = load_checkpoint(Path(cfg.init_from), self.device)
@@ -250,9 +259,25 @@ class Trainer:
                 except (ValueError, KeyError):
                     pass
 
+        tuning = None
+        if ck is not None and ck.get("batch_tuning"):
+            tuning = ck["batch_tuning"]
+            if tuning["effective_batch_size"] != cfg.batch_size * cfg.grad_accum:
+                raise ValueError("resuming with a different effective batch size is not supported")
+            cfg.batch_size, cfg.grad_accum = tuning["batch_size"], tuning["grad_accum"]
+        elif cfg.batch_autotune:
+            from moth.training.autotune import tune_batch
+
+            def probe_sample(batch):
+                return train.batch(batch, torch.Generator().manual_seed(cfg.seed), self.device)
+
+            tuning = tune_batch(model, cfg.batch_size, cfg.grad_accum, probe_sample, self.device, amp_dtype,
+                                seq_len=cfg.seq_len)
+            cfg.batch_size, cfg.grad_accum = tuning["batch_size"], tuning["grad_accum"]
+
         self.emit("start", device=self.device, params=model.num_params(), model_config=self.model_cfg.to_dict(),
                   resumed_from=resumed_from, precision=str(amp_dtype or "fp32"),
-                  train_tokens=len(train), val_tokens=len(val))
+                  train_tokens=len(train), val_tokens=len(val), batch_tuning=tuning)
         model.train()
         tokens_per_step = cfg.batch_size * cfg.grad_accum * train.seq_len
         t_last, tokens_since = time.time(), 0
@@ -261,6 +286,7 @@ class Trainer:
         def checkpoint() -> None:
             save_checkpoint(self.run_dir, self.step, {
                 "model": model.state_dict(), "optimizer": optimizer.state_dict(),
+                "batch_tuning": tuning,
                 "scaler": scaler.state_dict() if use_scaler else None,
                 "step": self.step, "best_val": self.best_val, "tokens_seen": self.tokens_seen,
                 "lineage": {**cfg.lineage,
@@ -315,11 +341,8 @@ class Trainer:
                     self.emit("metrics", split="val", loss=vl, perplexity=math.exp(min(vl, 20)), best=improved,
                               domains=per_domain, tokens_seen=self.tokens_seen)
                     if improved:
-                        torch.save({"model": model.state_dict(), "model_config": self.model_cfg.to_dict(),
-                                    "step": self.step, "val_loss": vl, "train_config": cfg.to_dict(),
-                                    "tokenizer_path": self.dataset_meta["tokenizer_path"],
-                                    "tokenizer_fingerprint": self.tokenizer.fingerprint()},
-                                   self.run_dir / "checkpoints" / "best.pt.tmp")
+                        checkpoint()  # the selected weights must keep their own optimizer/RNG state
+                        shutil.copyfile(latest_checkpoint(self.run_dir), self.run_dir / "checkpoints" / "best.pt.tmp")
                         (self.run_dir / "checkpoints" / "best.pt.tmp").replace(self.run_dir / "checkpoints" / "best.pt")
                 if self.step % cfg.checkpoint_interval == 0:
                     checkpoint()
@@ -339,4 +362,4 @@ class Trainer:
                 checkpoint()
             (self.run_dir / "STOP").unlink(missing_ok=True)
         self.emit("end", reason=stop_reason, best_val=self.best_val if self.best_val < float("inf") else None)
-        return {"step": self.step, "reason": stop_reason, "best_val": self.best_val}
+        return {"step": self.step, "reason": stop_reason, "best_val": self.best_val, "batch_tuning": tuning}

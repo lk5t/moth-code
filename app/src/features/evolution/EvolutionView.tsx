@@ -41,7 +41,7 @@ export function EvolutionView() {
   const cyc = tr.cycle;
   const busy = cyc && !["completed", "rejected", "failed", "cancelled", "rolled_back"].includes(cyc.status);
   const act = (fn: () => Promise<unknown>, ok: string) => secure(fn).then(() => { setMsg(ok); load(); }).catch((e) => setMsg((e as Error).message));
-  const settings = (v: Any) => serverApi("/v1/admin/evolution/settings", { method: "PUT", json: v });
+  const settings = (v: Any) => serverApi("/v1/admin/evolution/settings", { method: "PUT", json: { changes: v } });
   return (
     <div className="h-full overflow-auto">
       <div className="mx-auto flex max-w-3xl flex-col gap-5 p-8 animate-rise">
@@ -59,7 +59,7 @@ export function EvolutionView() {
               <div className="flex items-center justify-between gap-4">
                 <div><div className="text-[13px] text-fg">Improve MOTH automatically</div>
                   <div className="text-muted">Training cycles run on their own when data and computers are available.</div></div>
-                <Switch checked={tr.enabled && !tr.paused} onCheckedChange={(v) =>
+                <Switch aria-label="Improve MOTH automatically" checked={tr.enabled && !tr.paused} onCheckedChange={(v) =>
                   act(() => settings(v ? { enabled: true, paused: false } : { paused: true }), v ? "Automatic evolution is on." : "Paused.")} />
               </div>
             )}
@@ -84,6 +84,38 @@ export function EvolutionView() {
             {msg && <div className="text-muted">{msg}</div>}
           </CardContent>
         </Card>
+        {tr.experiments?.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Experiments and parameter growth</CardTitle>
+              <CardDescription>Candidates are tested separately. The stable model stays available while they train.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4 text-xs">
+              {tr.experiments.map((e: Any) => {
+                const tuning = e.metrics?.training?.batch_tuning;
+                const growth = e.growth;
+                return <div key={e.id} className="flex flex-col gap-1.5 border-b border-border pb-3 last:border-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">Experiment #{e.id}</span><Badge>{e.status}</Badge>
+                    <span className="text-muted">{e.backend || "Waiting for compute"}</span>
+                  </div>
+                  {growth && <div>Parameter growth: {growth.params_before?.toLocaleString()} → {growth.params_after?.toLocaleString()}</div>}
+                  {e.requires_approval && <div className="flex items-center gap-2 text-muted">Waiting for Owner approval.
+                    {isOwner && <Button size="sm" onClick={() => act(() => serverApi(
+                      `/v1/admin/evolution/experiments/${e.id}/approve`, { method: "POST" }), "Expansion approved.")}>
+                      Approve expansion
+                    </Button>}
+                  </div>}
+                  {e.progress != null && <Progress value={e.progress * 100} />}
+                  {tuning && <div className="text-muted">Measured batch: {tuning.batch_size} × {tuning.grad_accum} accumulation
+                    {" · "}{tuning.effective_batch_size} examples per optimizer step</div>}
+                  {e.candidate_version && <div className="text-muted">Candidate v{e.candidate_version}</div>}
+                  {e.error && <div className="text-danger">{e.error}</div>}
+                </div>;
+              })}
+            </CardContent>
+          </Card>
+        )}
         {isOwner ? <NetworkTraining /> : <Card><CardContent><ParticipantSwitch /></CardContent></Card>}
       </div>
     </div>

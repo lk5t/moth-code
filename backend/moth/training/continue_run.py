@@ -83,6 +83,7 @@ def run(spec: dict[str, Any]) -> dict[str, Any]:
         preset="moth-tiny", model_overrides={k: v for k, v in base_cfg.to_dict().items() if k not in ("vocab_size", "name")},
         seq_len=seq_len, batch_size=int(spec.get("batch_size", 8)),
         grad_accum=int(spec.get("grad_accum", 1)), max_steps=int(spec["steps"]), lr=float(spec["lr"]),
+        batch_autotune=bool(spec.get("batch_autotune", True)),
         min_lr=float(spec.get("min_lr", float(spec["lr"]) / 10)), warmup_steps=int(spec.get("warmup_steps", 0)),
         weight_decay=float(spec.get("weight_decay", 0.0)), eval_interval=int(spec.get("eval_interval", 50)),
         eval_iters=int(spec.get("eval_iters", 8)), log_interval=int(spec.get("log_interval", 5)),
@@ -103,7 +104,9 @@ def run(spec: dict[str, Any]) -> dict[str, Any]:
     res = trainer.run()
     out: dict[str, Any] = {"reason": res["reason"], "step": res["step"], "max_steps": cfg.max_steps,
                            "best_val": res["best_val"] if res["best_val"] != float("inf") else None,
-                           "resumed": resumed, "seconds": round(time.time() - t0, 2), "device": trainer.device}
+                           "resumed": resumed, "seconds": round(time.time() - t0, 2), "device": trainer.device,
+                           "batch_size": cfg.batch_size, "grad_accum": cfg.grad_accum,
+                           "batch_tuning": res.get("batch_tuning")}
     try:
         import resource
 
@@ -112,7 +115,8 @@ def run(spec: dict[str, Any]) -> dict[str, Any]:
         pass
     if res["reason"] == "completed":
         best = run_dir / "checkpoints" / "best.pt"
-        ckpt = best if best.exists() else latest_checkpoint(run_dir)
+        # Legacy best.pt files held weights only; keep them intact, but export a resumable pair.
+        ckpt = best if best.exists() and torch.load(best, map_location="cpu", weights_only=False).get("optimizer") else latest_checkpoint(run_dir)
         pkg_parent = run_dir / "export"
         shutil.rmtree(pkg_parent, ignore_errors=True)
         method = "from_scratch" if spec.get("from_scratch") else ("expansion" if spec.get("grow") else "continued")
@@ -124,7 +128,7 @@ def run(spec: dict[str, Any]) -> dict[str, Any]:
         out["sha256"] = exported["sha256"]
         out["params"] = exported["params"]
         # the newest full checkpoint (weights + optimizer) continues the lineage if this candidate is promoted
-        full = latest_checkpoint(run_dir)
+        full = ckpt
         if full is not None:
             from moth.training.checkpoint import file_sha256
 

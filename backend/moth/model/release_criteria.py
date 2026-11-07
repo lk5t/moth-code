@@ -10,6 +10,7 @@ claim of broad capability. Every criterion is a measurement; nothing is estimate
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 FOUNDATION_CRITERIA: list[dict[str, Any]] = [
@@ -42,6 +43,9 @@ def check(report: dict[str, Any], criteria: list[dict[str, Any]] | None = None) 
             value = m.get("value") if m.get("ok", True) else None
         if value is None:
             results.append({**c, "measured": None, "passed": False, "detail": "not measured"})
+            continue
+        if not math.isfinite(float(value)):
+            results.append({**c, "measured": None, "passed": False, "detail": "non-finite measurement"})
             continue
         ok = value <= c["value"] if c["op"] == "<=" else value >= c["value"]
         results.append({**c, "measured": round(float(value), 4), "passed": bool(ok)})

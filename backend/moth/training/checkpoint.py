@@ -146,12 +146,16 @@ def save_checkpoint(run_dir: Path, step: int, payload: dict[str, Any], keep: int
 
 def latest_checkpoint(run_dir: Path) -> Path | None:
     ckpt_dir = Path(run_dir) / "checkpoints"
+    candidates = sorted(ckpt_dir.glob("step_*.pt")) if ckpt_dir.exists() else []
     pointer = ckpt_dir / "latest.json"
     if pointer.exists():
-        p = ckpt_dir / json.loads(pointer.read_text())["file"]
-        if p.exists():
-            return p
-    candidates = sorted(ckpt_dir.glob("step_*.pt")) if ckpt_dir.exists() else []
+        try:
+            name = json.loads(pointer.read_text())["file"]
+            p = ckpt_dir / name
+            if p.name == name and p.name.startswith("step_") and p.suffix == ".pt" and p.is_file():
+                return max([p, *candidates])
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # a damaged pointer must not prevent scanning intact checkpoints
     return candidates[-1] if candidates else None
 
 

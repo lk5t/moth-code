@@ -15,6 +15,11 @@ monitoring, rollback) are in [EVOLUTION.md](EVOLUTION.md); this page describes w
 
 ## Research laboratory
 
+* Local and worker trainers measure forward/backward throughput for bounded microbatch candidates.
+  Gradient accumulation preserves the requested effective batch and optimizer-step budget; the chosen
+  batch and timings are checkpointed and reused after interruption. Probes never update the weights.
+  Evolution displays completed experiments' measured batch choices alongside candidate/growth status.
+
 * Experiments train on the dataset library's **curriculum mixture** (all capability domains at once),
   with variants per cycle: a weakness-tilted mixture, a balanced mixture, and learning rates ranked by
   earlier results on the same architecture.

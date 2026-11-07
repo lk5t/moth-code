@@ -77,7 +77,7 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     import torch
 
     from moth_server import models as M
-    from moth_server.evolution.backends import run_dir
+    from moth_server.evolution.backends import run_dir, worker_training_supported
     from moth_server.evolution import datasets as DS
 
     cfg = exp["config"]
@@ -90,7 +90,12 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     rounds = max(1, int(d.get("rounds", 3)))
     local_steps = max(1, math.ceil(int(cfg["steps"]) / rounds))
     dev = (base["info"].get("dev_checkpoint") or {})
-    src = Path(dev["path"]) if dev.get("path") and Path(dev["path"]).exists() else Path(base["path"]) / "model.pt"
+    src = Path(dev["path"]) if dev.get("path") else Path(base["path"]) / "model.pt"
+    expected_sha = dev.get("sha256") if dev.get("path") else base["sha256"]
+    if not src.is_file() or not expected_sha or _sha(src) != expected_sha:
+        raise ValueError("distributed training requires an intact, checksum-verified base checkpoint")
+    if not worker_training_supported(ctx, exp):
+        raise ValueError("assistant-masked data cannot use token-only distributed shards")
     raw = torch.load(src, map_location="cpu", weights_only=False)
     state = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
     torch.save({k: v.float() if v.is_floating_point() else v for k, v in state.items()}, _round_weights(rd, 0))
@@ -154,6 +159,7 @@ def _create_round_jobs(ctx: Ctx, exp: dict, base: dict, st: dict, need_bytes: in
                     "shard_id": f"evolution-{exp['id']}-shard-{i}", "shard_sha256": _sha(rd / f"shard-{i}.bin"),
                     "shard_license": "approved library data", "job_id": f"evolution-{exp['id']}-r{r}-s{i}",
                     "train": {"steps": st["local_steps"], "lr": cfg["lr"], "batch_size": cfg["batch_size"],
+                              "batch_autotune": bool(cfg.get("batch_autotune", True)),
                               "seq_len": cfg["seq_len"], "weight_decay": cfg["weight_decay"]},
                     "protocol": PROTOCOL, "requirements": {"memory_bytes": int(need_bytes)}, "prefer_gpu": True}
             jid = c.execute(training_jobs.insert().values(kind="dist_shard", status="queued", spec=json.dumps(spec),
@@ -226,6 +232,7 @@ def accept_shard(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) -> dict:
         return {"accepted": False, "reasons": report.reasons}
     tmp = dest.with_suffix(".tmp")
     torch.save({"delta": delta, "tokens": int(meta.get("tokens") or 0), "worker_id": job_row["worker_id"],
+                "batch_tuning": meta.get("batch_tuning"),
                 "loss_before": meta.get("loss_before"), "loss_after": meta.get("loss_after")}, tmp)
     tmp.replace(dest)
     return {"accepted": True, **report.stats}
@@ -290,6 +297,7 @@ def advance(ctx: Ctx, exp: dict, settings: dict) -> dict[str, Any]:
         contributors[w] = contributors.get(w, 0) + int(it["tokens"])
     st["history"].append({"round": r, "participants": len(items), "tokens": total, "probe_before": round(before, 5),
                           "probe_after": round(after, 5), "accepted": accepted, "contributors": contributors,
+                          "batch_tuning": {str(it["worker_id"]): it.get("batch_tuning") for it in items},
                           "at": now()})
     MEM.event(ctx, "distributed.round", f"Experiment #{exp['id']}: round {r + 1}/{st['rounds']} from {len(items)} "
               f"participant(s): probe loss {before:.3f} → {after:.3f} "

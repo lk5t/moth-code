@@ -15,6 +15,7 @@ import { cn, formatNumber } from "@/lib/utils";
 type Any = Record<string, any>;
 
 const LABEL: Record<string, string> = {
+  parameters: "Parameter count", training_steps: "Training steps", validation_loss: "Validation loss",
   math: "Maths (GSM8K)", reasoning: "Reasoning (ARC-Easy)", code: "Code (MBPP, executed)", instruction: "Instruction following",
   safety: "Safety", holdout_language: "Language (held-out loss)", holdout_conversation: "Conversation (held-out loss)",
   holdout_knowledge: "Knowledge (held-out loss)", holdout_writing: "Writing (held-out loss)", holdout_math: "Maths text (held-out loss)",
@@ -72,7 +73,8 @@ function TimelineChart({ versions, metric }: { versions: Any[]; metric: string }
           <g key={f}>
             <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} className="stroke-border" strokeWidth={1} />
             <text x={pad.l - 6} y={y(v) + 3} textAnchor="end" className="fill-[var(--color-faint,#888)] text-[10px]">
-              {pts[0].b.higher_is_better ? `${(v * 100).toFixed(0)}%` : v.toFixed(2)}
+              {metric === "parameters" ? `${(v / 1e6).toFixed(1)}M` : metric === "training_steps" ? v.toFixed(0)
+                : pts[0].b.higher_is_better ? `${(v * 100).toFixed(0)}%` : v.toFixed(2)}
             </text>
           </g>
         );
@@ -103,7 +105,16 @@ export function IntelligenceView() {
     return () => clearInterval(t);
   }, [signedIn]);
   const versions: Any[] = p?.timeline ?? [];
-  const metrics = useMemo(() => Array.from(new Set(versions.flatMap((v) => Object.keys(v.benchmarks)))).sort(), [p]);
+  const chartVersions = useMemo(() => versions.map((v) => {
+    const benchmarks = { ...v.benchmarks };
+    const measured = { parameters: v.params, training_steps: v.lineage_totals?.steps ?? v.training?.step ?? v.training?.steps,
+      validation_loss: v.training?.best_val ?? v.training?.val_loss };
+    for (const [key, value] of Object.entries(measured)) {
+      if (typeof value === "number" && Number.isFinite(value)) benchmarks[key] = { value, higher_is_better: false };
+    }
+    return { ...v, benchmarks };
+  }), [p]);
+  const metrics = useMemo(() => Array.from(new Set(chartVersions.flatMap((v) => Object.keys(v.benchmarks)))).sort(), [chartVersions]);
   if (!signedIn) return <EmptyState title="Sign in to see MOTH's progress">The dashboard shows MOTH Cloud's measurements.</EmptyState>;
   if (err) return <EmptyState title="Progress is not available">{err}</EmptyState>;
   if (!p) return null;
@@ -115,7 +126,7 @@ export function IntelligenceView() {
       <div className="mx-auto flex max-w-5xl flex-col gap-5 p-8 animate-rise">
         <div>
           <h1 className="text-lg font-semibold">Intelligence</h1>
-          <p className="mt-1 text-xs text-muted">What MOTH can do today and how it improved. Values are measured on held-out benchmarks MOTH never trained on.</p>
+          <p className="mt-1 text-xs text-muted">Recorded model sizes and training progress, with capabilities measured on held-out benchmarks MOTH never trained on.</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat icon={<Brain />} label="Current model" value={cur ? (cur.model_version ? `MOTH ${cur.model_version}` : cur.name) : "None yet"}
@@ -171,7 +182,7 @@ export function IntelligenceView() {
                 ))}
               </div>
             )}
-            <TimelineChart versions={versions} metric={metric} />
+            <TimelineChart versions={chartVersions} metric={metric} />
             <ol className="flex flex-col gap-2">
               {[...versions].reverse().map((v) => (
                 <li key={v.version} className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
@@ -188,6 +199,8 @@ export function IntelligenceView() {
                     {v.params ? `${formatNumber(v.params)} parameters` : ""}
                     {v.growth ? ` · grown from ${formatNumber(v.growth.params_before)}` : ""}
                     {v.lineage_totals ? ` · ${formatNumber(v.lineage_totals.tokens)} tokens in total` : ""}
+                    {v.architecture ? ` · ${v.architecture}` : ""}
+                    {v.training?.best_val != null ? ` · validation loss ${v.training.best_val.toFixed(3)}` : ""}
                     {v.datasets?.length ? ` · data: ${v.datasets.map((d: Any) => d.sources ? d.sources.join(", ") : d.sha256).join("; ")}` : ""}
                   </div>
                 </li>

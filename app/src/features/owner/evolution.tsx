@@ -455,6 +455,7 @@ function SettingsCard({ s, reload }: { s: Any; reload: () => void }) {
             {numField("interval_hours", "Hours between cycles")}
             {sw("auto_deploy", "Deploy passing candidates automatically")}
             {numField("max_experiments_per_cycle", "Experiments per cycle", "1")}
+            {sw("training.batch_autotune", "Measure and tune training batches")}
             {numField("schedule.max_requests_per_minute", "Train only below (requests/min)")}
             <label className="flex items-center justify-between gap-2"><span className="text-muted">Training hours (UTC, optional)</span>
               <Input className="h-7 w-28 text-xs" placeholder="e.g. 1-6" value={Array.isArray(quiet) ? quiet.join("-") : ""}

@@ -35,7 +35,7 @@ FAST = {
     "limits": {"cpu_threads": 2, "min_free_memory_gb": 0.05, "min_free_disk_gb": 0.05},
     "schedule": {"max_requests_per_minute": 10_000},
     "gates": {"max_speed_regression": 0.9, "max_memory_growth": 5.0},
-    "monitoring": {"minutes": 0.0},
+    "monitoring": {"minutes": 0.0, "min_requests": 0},  # offline fixture; traffic gating is tested separately
 }
 
 

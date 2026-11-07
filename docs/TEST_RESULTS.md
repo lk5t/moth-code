@@ -1,6 +1,9 @@
 # Verified test results
 
-Everything below was actually run. Commands are listed so the results can be reproduced.
+The sections below are retained historical reports. Current independently executed checks and the
+feature classification are in [CONTINUATION.md](CONTINUATION.md). In particular, no trained Foundation
+checkpoint was found or verified; historical model-training claims must not be treated as proof of a
+completed Foundation model. Commands are retained for reproduction.
 
 # 0.5.0 — ASCENSION milestone 1 (EasyConnect workers, CPU workers, Rewards 2.0)
 

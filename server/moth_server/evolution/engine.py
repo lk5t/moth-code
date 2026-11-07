@@ -114,7 +114,8 @@ def dataset_revoked(ctx: Ctx, dataset_id: int) -> int:
     """Stop every unfinished experiment that would train on a revoked dataset. Returns how many."""
     n = 0
     for e in MEM.experiments(ctx, limit=1000):
-        if e["dataset_id"] == dataset_id and e["status"] not in MEM.TERMINAL_EXPERIMENT + ("trained", "evaluating"):
+        if (e["dataset_id"] == dataset_id or dataset_id in ((e["config"] or {}).get("mixture") or {}).get("dataset_ids", [])) \
+                and e["status"] not in MEM.TERMINAL_EXPERIMENT + ("trained", "evaluating"):
             _stop_experiment(ctx, e, "its training dataset was revoked")
             MEM.event(ctx, "experiment.cancelled", f"Experiment #{e['id']} was cancelled: its training dataset was "
                       "revoked", level="warning", cycle_id=e["cycle_id"], experiment_id=e["id"])
@@ -264,9 +265,12 @@ def _need_bytes(ctx: Ctx, exp: dict) -> int:
 
     base = M.release(ctx, exp["base_version"])
     cfg = base["info"].get("config") or {}
-    return C.estimate_training_memory(int(base["info"].get("params") or 0), exp["config"]["batch_size"],
+    growth = exp["config"].get("grow") or {}
+    params = max(int(base["info"].get("params") or 0), int(growth.get("params_after") or 0))
+    layers = int(cfg.get("n_layers", 12)) + int(growth.get("add_layers", 0))
+    return C.estimate_training_memory(params, exp["config"]["batch_size"],
                                       exp["config"]["seq_len"], int(cfg.get("d_model", 512)),
-                                      int(cfg.get("n_layers", 12)))
+                                      layers)
 
 
 def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
@@ -317,6 +321,9 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
     from moth_server.evolution import distributed as D
 
     need = _need_bytes(ctx, exp)
+    masked = not B.worker_training_supported(ctx, exp)
+    if masked:
+        settings = {**settings, "backends": {**settings["backends"], "workers": False}}
     ok, n = D.available(ctx, settings, need)
     if ok and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
         st = D.start(ctx, exp, settings, need)
@@ -332,6 +339,8 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
         return
     choice, reasons = C.choose_backend(ctx, settings, need)
     if choice is None:  # a paused experiment keeps its checkpoint and stays "paused"
+        if masked:
+            reasons.append("assistant-masked data requires a local backend; token-only workers are incompatible")
         _waiting(ctx, cyc, exp, reasons, "paused" if exp["status"] == "paused" else "waiting")
         return
     if choice["backend"] == "local":
@@ -385,7 +394,8 @@ def _finish_training(ctx: Ctx, cyc: dict, exp: dict, result: dict, seconds: floa
         B.cleanup_run(ctx, exp)
         return
     training = {k: result.get(k) for k in ("step", "max_steps", "best_val", "seconds", "device", "resumed",
-                                           "loss_before", "loss_after", "tokens", "backend", "peak_memory_bytes")}
+                                           "loss_before", "loss_after", "tokens", "backend", "peak_memory_bytes",
+                                           "batch_tuning", "batch_size", "grad_accum")}
     MEM.update_experiment(ctx, exp["id"], status="trained", candidate_version=rel["version"], compute_seconds=total,
                           metrics={**(exp["metrics"] or {}), "training": training, "progress": B.progress(ctx, exp)},
                           resources={**(exp["resources"] or {}), "peak_memory_bytes": result.get("peak_memory_bytes")},
@@ -676,6 +686,18 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
         _schedule_next(ctx, failed=False)
         return
     if now() - started >= float(mon["minutes"]) * 60:
+        if stats["requests"] < int(mon["min_requests"]):
+            MEM.update_cycle(ctx, cyc["id"], result={**res, "monitor": stats,
+                             "waiting_reason": "waiting for the configured minimum monitored requests"})
+            return
+        try:
+            from moth_server.evolution import v2 as V2
+
+            mv = V2.assign_model_version(ctx, cyc["candidate_version"])
+            serving.sign_release(ctx, cyc["candidate_version"])
+        except Exception as e:  # retain the stable model and retry; never promote unsigned artifacts
+            MEM.update_cycle(ctx, cyc["id"], error=f"model manifest signing failed: {e}")
+            return
         if staged:
             try:
                 serving.promote_canary(ctx)  # everyone now gets the candidate
@@ -683,15 +705,9 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
                 MEM.update_cycle(ctx, cyc["id"], status="failed", finished_at=now(), error=str(e))
                 _schedule_next(ctx, failed=True)
                 return
-        MEM.update_cycle(ctx, cyc["id"], status="completed", finished_at=now(), result={**res, "outcome": "deployed"})
+        MEM.update_cycle(ctx, cyc["id"], status="completed", finished_at=now(), error=None,
+                         result={**res, "outcome": "deployed", "waiting_reason": None})
         _set_state(ctx, stable_version=cyc["candidate_version"])
-        from moth_server.evolution import v2 as V2
-
-        mv = V2.assign_model_version(ctx, cyc["candidate_version"])
-        try:
-            serving.sign_release(ctx, cyc["candidate_version"])  # signed model manifest for every promoted version
-        except Exception:  # noqa: BLE001
-            log.exception("signing the model manifest failed")
         try:
             from moth_server.intelligence import curriculum
 

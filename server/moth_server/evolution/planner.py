@@ -133,6 +133,7 @@ def _plan_datasets(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dic
             cfg = {"method": "continued", "base_version": base["version"], "base_sha256": base["sha256"],
                    "architecture_key": arch, "dataset_id": d["id"], "dataset_sha256": d["sha256"],
                    "steps": v["steps"], "lr": v["lr"], "batch_size": int(tr["batch_size"]),
+                   "batch_autotune": bool(tr.get("batch_autotune", True)),
                    "seq_len": int(tr["seq_len"]), "weight_decay": float(tr["weight_decay"]),
                    "eval_interval": int(tr["eval_interval"]), "checkpoint_interval": int(tr["checkpoint_interval"]),
                    "seed": cycle_seed}

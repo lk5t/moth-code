@@ -19,7 +19,7 @@ DEFAULTS: dict[str, Any] = {
     "auto_deploy": True,             # deploy a candidate that passed every gate (then monitor it)
     "max_experiments_per_cycle": 2,
     "training": {"steps": 200, "lr": 3e-4, "batch_size": 8, "seq_len": 256, "weight_decay": 0.0,
-                 "eval_interval": 50, "checkpoint_interval": 25},
+                 "eval_interval": 50, "checkpoint_interval": 25, "batch_autotune": True},
     "min_dataset_tokens": 20_000,    # an approved dataset needs at least this many training tokens
     "gates": {
         "min_improvement": 0.005,      # primary held-out score must improve by at least 0.5 %

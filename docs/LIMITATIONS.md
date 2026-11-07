@@ -1,6 +1,6 @@
 # Known limitations & remaining requirements (0.5.4)
 
-Everything the README lists as working is implemented and tested (see [TEST_RESULTS.md](TEST_RESULTS.md)).
+Current verified implementation status and remaining requirements are in [CONTINUATION.md](CONTINUATION.md).
 This page lists what depends on the Owner's infrastructure or accounts, what could not be verified in
 the development environment, and what is unfinished — so nothing is overstated.
 
@@ -65,8 +65,8 @@ After that every update is automatic. The same is true for workers enrolled with
 
 ## ASCENSION 0.5.x
 
-- **Compute.** MOTH 0.1 (49.3M parameters) was trained for 49M tokens on a 4-core CPU (about 11 hours).
-  That is a small amount of training for its size; its abilities are limited (see Model capability).
+- **Foundation status.** Earlier docs claim a 49M-token CPU run, but no trained Foundation weights or
+  corresponding evaluation report were found in this checkout. Training completion is unverified.
   Every further improvement is limited by the compute the network provides — with only CPU workers, a
   cycle of a few thousand steps takes hours.
 - **GPU training** is implemented (CUDA, bf16) but not verified on real NVIDIA hardware; all build
@@ -79,10 +79,10 @@ After that every update is automatic. The same is true for workers enrolled with
 
 ## Model capability
 
-MOTH 0.1 is a small model trained on a small budget. It writes simple English, follows the chat format
-and knows some common facts and Python patterns, but it is not a general assistant: its maths, reasoning
-and coding benchmark scores are low (see [TEST_RESULTS.md](TEST_RESULTS.md#moth-01)), and it makes things up.
-MOTH Code says so next to every answer (the model and its measured capabilities are shown in Chat).
+The trained Foundation model's conversational, factual, mathematical and coding capabilities cannot
+be verified without its actual weights and matching held-out data. The executed full-size scratch
+smoke test demonstrates training, resume and generation, not useful intelligence. Chat should report
+the deployed model's actual recorded benchmarks; unmeasured capabilities remain unmeasured.
 
 ## Design limits
 

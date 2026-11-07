@@ -207,40 +207,84 @@ class WorkerRunner:
             gen = torch.Generator().manual_seed(jid)
             ckpt_path = self.state_dir / "jobs" / f"{jid}.pt"
             start_step, n_tokens = 0, 0
+            tuning = None
+            saved_rng = None
             if ckpt_path.exists():  # resume after an interruption
+                from moth.training.checkpoint import verify
+
+                if not verify(ckpt_path):
+                    ckpt_path.replace(ckpt_path.with_name(ckpt_path.name + ".corrupt"))
+                    raise RuntimeError("worker checkpoint checksum failed; preserved as .corrupt")
                 ck = torch.load(ckpt_path, map_location=device, weights_only=False)
                 if ck.get("base_sha256") == spec["base_sha256"]:
                     model.load_state_dict(ck["model"])
                     opt.load_state_dict(ck["optimizer"])
-                    gen.set_state(ck["gen"])
+                    gen.set_state(ck["gen"].cpu())
                     start_step, n_tokens = ck["step"], ck["tokens"]
+                    tuning = ck.get("batch_tuning")
+                    saved_rng = ck.get("rng")
                     self.log(f"job {jid}: resuming from step {start_step}")
             held = tokens[-(4 * 257):] if len(tokens) > 4 * 257 * 4 else tokens
             loss_before = batch_loss(_base_model(base, spec, device), held, device)
             seq = min(train["seq_len"], model.cfg.max_seq_len, len(tokens) - 2)
             duty = float(limits.get("duty_cycle") or 1.0)
             model.train()
+            def sample(batch, rng=None):
+                starts = torch.randint(0, len(tokens) - seq - 1, (batch,), generator=rng or gen).tolist()
+                x = torch.from_numpy(np.stack([tokens[s:s + seq] for s in starts]).astype(np.int64)).to(device)
+                y = torch.from_numpy(np.stack([tokens[s + 1:s + seq + 1] for s in starts]).astype(np.int64)).to(device)
+                return x, y, None
+
+            if tuning is None and train.get("batch_autotune", True):
+                from moth.training.autotune import tune_batch
+
+                tuning = tune_batch(model, train["batch_size"], 1,
+                                    lambda b: sample(b, torch.Generator().manual_seed(jid)), device, seq_len=seq)
+            micro = tuning["batch_size"] if tuning else train["batch_size"]
+            accumulation = tuning["grad_accum"] if tuning else 1
+            if micro * accumulation != train["batch_size"]:
+                raise RuntimeError("worker checkpoint effective batch differs from the assigned job")
+            if saved_rng:
+                torch.set_rng_state(saved_rng["torch"].cpu())
+                if device == "cuda" and saved_rng.get("cuda") is not None:
+                    torch.cuda.set_rng_state_all([s.cpu() for s in saved_rng["cuda"]])
+            completed_steps = start_step
+
+            def checkpoint():
+                from moth.training.checkpoint import atomic_torch_save
+
+                atomic_torch_save({"model": model.state_dict(), "optimizer": opt.state_dict(), "gen": gen.get_state(),
+                                  "batch_tuning": tuning, "step": completed_steps, "tokens": n_tokens,
+                                  "rng": {"torch": torch.get_rng_state(),
+                                          "cuda": torch.cuda.get_rng_state_all() if device == "cuda" else None},
+                                  "base_sha256": spec["base_sha256"]}, ckpt_path)
+
             for step in range(start_step, train["steps"]):
                 if self.stop_event.is_set() or self.revoked:
+                    if completed_steps > 0:
+                        checkpoint()
                     raise Stop()
                 while self.paused and not self.stop_event.is_set():
                     time.sleep(1)
+                if self.stop_event.is_set() or self.revoked:
+                    if completed_steps > 0:
+                        checkpoint()
+                    raise Stop()
                 t0 = time.time()
-                starts = torch.randint(0, len(tokens) - seq - 1, (train["batch_size"],), generator=gen).tolist()
-                x = torch.from_numpy(np.stack([tokens[s:s + seq] for s in starts]).astype(np.int64)).to(device)
-                y = torch.from_numpy(np.stack([tokens[s + 1:s + seq + 1] for s in starts]).astype(np.int64)).to(device)
-                _, loss = model(x, y)
-                if not torch.isfinite(loss):
-                    raise RuntimeError("training diverged (non-finite loss)")
-                loss.backward()
+                for _ in range(accumulation):
+                    x, y, _ = sample(micro)
+                    _, loss = model(x, y)
+                    if not torch.isfinite(loss):
+                        raise RuntimeError("training diverged (non-finite loss)")
+                    (loss / accumulation).backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 opt.step()
                 opt.zero_grad(set_to_none=True)
-                n_tokens += x.numel()
+                n_tokens += micro * seq * accumulation
+                completed_steps = step + 1
                 self.progress = (step + 1) / train["steps"]
                 if (step + 1) % CHECKPOINT_EVERY == 0 and step + 1 < train["steps"]:
-                    torch.save({"model": model.state_dict(), "optimizer": opt.state_dict(), "gen": gen.get_state(),
-                                "step": step + 1, "tokens": n_tokens, "base_sha256": spec["base_sha256"]}, ckpt_path)
+                    checkpoint()
                     self.client.progress(jid, self.progress)
                 if duty < 1.0:
                     time.sleep((time.time() - t0) * (1 / duty - 1))
@@ -254,8 +298,10 @@ class WorkerRunner:
                     "delta_sha256": tensor_bytes_sha256(payload), "tokens": n_tokens, "steps": train["steps"],
                     "loss_before": loss_before, "loss_after": loss_after, "protocol": spec["protocol"],
                     "worker_version": __version__}
+            meta["batch_tuning"] = tuning
             result = self.client.result(jid, meta, payload)
             ckpt_path.unlink(missing_ok=True)
+            ckpt_path.with_name(ckpt_path.name + ".sha256").unlink(missing_ok=True)
             self.log(f"job {jid}: {'accepted' if result.get('accepted') else 'rejected'} "
                      f"(loss {loss_before:.3f} → {loss_after:.3f})")
             return result

@@ -50,10 +50,78 @@ def mixture_source(ctx: Ctx, base: dict) -> dict[str, Any] | None:
         anchor = next((d for d in DS.approved(ctx, fp) if f"(build {b['id']})" in d["name"]), None)
         if anchor is None:
             continue
-        return {"build_id": b["id"], "path": str(mix_file.parent), "build_sha256": b["content_sha256"],
+        source = {"build_id": b["id"], "path": str(mix_file.parent), "build_sha256": b["content_sha256"],
                 "dataset_id": anchor["id"],
                 "domain_tokens": {d: v["tokens"]["train"] for d, v in mix["domains"].items()}}
+        return _replay_source(ctx, base, source, rows, DS.approved(ctx, fp))
     return None
+
+
+def _replay_source(ctx, base, source, builds, approved):
+    """Compose current data with bounded historical samples; never alter original builds."""
+    import numpy as np
+    from moth_server.evolution.datasets import _sha
+
+    used = MEM.datasets_used_by_lineage(ctx, base["version"])
+    allowed = {d["sha256"]: d["id"] for d in approved}
+    selected = [b for b in builds if b["id"] == source["build_id"] or b["content_sha256"] in used]
+    selected.sort(key=lambda b: b["id"] != source["build_id"])
+    parts, shas, ids = {}, [], set()
+    for b in selected:
+        if b["content_sha256"] in shas:
+            continue
+        root = Path(b["path"]) / "tokens"
+        if not (root / "mixture.json").exists():
+            continue
+        mix = json.loads((root / "mixture.json").read_text())
+        if mix["tokenizer_fingerprint"] != base["info"]["tokenizer_fingerprint"]:
+            continue
+        added = False
+        for domain, info in mix["domains"].items():
+            path = (root / info["dir"]).resolve()
+            digest = _sha(path / "train.bin")
+            if digest in allowed:
+                parts.setdefault(domain, []).append((path, b["id"] == source["build_id"]))
+                ids.add(allowed[digest])
+                added = True
+        if added:
+            shas.append(b["content_sha256"])
+    if len(shas) == 1 and set(parts) == set(source["domain_tokens"]):
+        return source
+    digest = MEM.config_hash({"builds": shas, "datasets": sorted(ids), "replay_tokens": 65536})
+    dest = Path(ctx.settings.data_dir) / "evolution" / "mixtures" / digest
+    if not (dest / "mixture.json").exists():
+        dest.mkdir(parents=True, exist_ok=True)
+        original = json.loads((Path(source["path"]) / "mixture.json").read_text())
+        mixture = {**original, "build_sha256": digest, "domains": {}}
+        for domain, paths in parts.items():
+            target = dest / domain
+            target.mkdir(exist_ok=True)
+            meta = json.loads((paths[0][0] / "meta.json").read_text())
+            sources = set()
+            counts = {}
+            for split in ("train", "val"):
+                count = 0
+                with open(target / f"{split}.bin", "wb") as toks, open(target / f"{split}.mask", "wb") as masks:
+                    for path, current in paths:
+                        old_meta = json.loads((path / "meta.json").read_text())
+                        sources.update(json.dumps(s, sort_keys=True) for s in old_meta.get("sources", []))
+                        tokens = np.memmap(path / f"{split}.bin", dtype=old_meta["dtype"], mode="r")
+                        mask = np.memmap(path / f"{split}.mask", dtype=np.uint8, mode="r")
+                        n = len(tokens) if current else min(len(tokens), 65536)
+                        np.asarray(tokens[:n], dtype=meta["dtype"]).tofile(toks)
+                        np.asarray(mask[:n], dtype=np.uint8).tofile(masks)
+                        count += n
+                counts[split] = count
+            (target / "meta.json").write_text(json.dumps({**meta, "tokens": counts,
+                                                        "sources": [json.loads(s) for s in sorted(sources)]}))
+            mixture["domains"][domain] = {"dir": domain, "tokens": counts}
+        tmp = dest / "mixture.json.tmp"
+        tmp.write_text(json.dumps(mixture))
+        tmp.replace(dest / "mixture.json")
+    mixture = json.loads((dest / "mixture.json").read_text())
+    return {**source, "path": str(dest), "build_sha256": digest, "build_shas": shas, "dataset_ids": sorted(ids),
+            "domain_tokens": {d: v["tokens"]["train"] for d, v in mixture["domains"].items()}}
 
 
 def write_mixture_shard(mix_path: str, weights: dict[str, float], n_tokens: int, seed: int, dest: Path) -> str:
@@ -89,7 +157,10 @@ def write_mixture_shard(mix_path: str, weights: dict[str, float], n_tokens: int,
 def growth_evidence(ctx: Ctx, base: dict) -> dict[str, Any]:
     """Measured improvements of the last completed cycles on this lineage, and the stable model's losses."""
     imps: list[float] = []
+    lineage_versions = {base["version"]} | {a["version"] for a in MEM.ancestors(ctx, base["version"])}
     for c in reversed(MEM.cycles(ctx, 30)):  # oldest first
+        if c.get("base_version") not in lineage_versions:
+            continue
         if c["status"] in ("completed", "rejected") and c.get("result"):
             best = None
             for e in MEM.experiments(ctx, c["id"]):
@@ -124,8 +195,8 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
     out["weaknesses"] = analysis["ranked"]
     tr = settings["training"]
     budget = int(tr["steps"]) * int(tr["batch_size"]) * int(tr["seq_len"])
-    tilted = curriculum.plan(ctx, budget, analysis)
-    balanced = curriculum.plan(ctx, budget, None)
+    tilted = curriculum.plan(ctx, budget, analysis, tokens=src["domain_tokens"])
+    balanced = curriculum.plan(ctx, budget, None, tokens=src["domain_tokens"])
     arch = architecture_key(base)
     lrs = _lr_ranking(ctx, arch, float(tr["lr"]))
     dev = (base["info"].get("dev_checkpoint") or {})
@@ -165,8 +236,10 @@ def _config(base, arch, src, mix, lr, steps, settings, seed) -> dict[str, Any]:
     return {"method": "continued", "base_version": base["version"], "base_sha256": base["sha256"],
             "architecture_key": arch, "dataset_id": src["dataset_id"], "dataset_sha256": src["build_sha256"],
             "mixture": {"build_id": src["build_id"], "path": src["path"], "build_sha256": src["build_sha256"],
-                        "weights": {d: round(w, 3) for d, w in mix["weights"].items()}, "stage": mix["stage"]},
+                        "weights": {d: round(w, 3) for d, w in mix["weights"].items()}, "stage": mix["stage"],
+                        **({"build_shas": src["build_shas"], "dataset_ids": src["dataset_ids"]} if src.get("build_shas") else {})},
             "steps": steps, "lr": lr, "batch_size": int(tr["batch_size"]), "seq_len": int(tr["seq_len"]),
+            "batch_autotune": bool(tr.get("batch_autotune", True)),
             "weight_decay": float(tr["weight_decay"]), "eval_interval": int(tr["eval_interval"]),
             "checkpoint_interval": int(tr["checkpoint_interval"]), "seed": seed}
 

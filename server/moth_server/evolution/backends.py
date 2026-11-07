@@ -87,6 +87,7 @@ def start_local(ctx: Ctx, exp: dict, device: str, settings: dict) -> dict:
             "gpu_memory_fraction": float(lim["gpu_memory_fraction"]) if device == "cuda" else None,
             "from_scratch": cfg.get("method") == "from_scratch"}
     spec.update(_v2_spec(base, cfg, exp))
+    spec["batch_autotune"] = bool(cfg.get("batch_autotune", True))
     spec_path = rd / "spec.json"
     spec_path.write_text(json.dumps(spec, indent=2))
     env = dict(os.environ)
@@ -223,7 +224,7 @@ def register_candidate(ctx: Ctx, exp: dict, package: Path, result: dict | None =
     name = f"moth-evolution-v{exp['base_version']}-e{exp['id']}"
     version = M.reserve(ctx, name, source, None)
     rel = M.finalize(ctx, version, package, None)
-    datasets = [cfg["mixture"]["build_sha256"]] if cfg.get("mixture") else [ds["sha256"]]
+    datasets = (cfg["mixture"].get("build_shas") or [cfg["mixture"]["build_sha256"]]) if cfg.get("mixture") else [ds["sha256"]]
     MEM.record_lineage(ctx, version, exp["base_version"], cfg.get("method", "continued"), exp["cycle_id"], exp["id"],
                        datasets)
     # Evolution 2.0: keep the full training checkpoint (weights + optimizer) so a promoted candidate's
@@ -251,6 +252,24 @@ def register_candidate(ctx: Ctx, exp: dict, package: Path, result: dict | None =
 
 
 # ---- worker backend -----------------------------------------------------------------------------------
+def worker_training_supported(ctx: Ctx, exp: dict) -> bool:
+    """The existing token-only worker protocol cannot preserve assistant-only loss masks."""
+    import numpy as np
+
+    mix = exp["config"].get("mixture")
+    if mix:
+        root = Path(mix["path"])
+        info = json.loads((root / "mixture.json").read_text())
+        paths = [root / v["dir"] for d, v in info["domains"].items() if mix["weights"].get(d, 0) > 0]
+    else:
+        paths = [Path(DS.get(ctx, exp["dataset_id"])["path"])]
+    for path in paths:
+        mask = np.memmap(path / "train.mask", dtype=np.uint8, mode="r")
+        if any(np.any(mask[i:i + 1048576] == 0) for i in range(0, len(mask), 1048576)):
+            return False
+    return True
+
+
 def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0) -> int:
     from moth.community.protocol import PROTOCOL
     from moth.model.registry import sha256_file
@@ -258,9 +277,34 @@ def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0) -> int:
     from moth_server import models as M
 
     cfg = exp["config"]
+    if not worker_training_supported(ctx, exp):
+        raise ValueError("assistant-masked data requires local training; the worker protocol carries tokens only")
     base = M.release(ctx, exp["base_version"])
     ds = DS.get(ctx, exp["dataset_id"])
     rd = run_dir(ctx, exp)
+    rd.mkdir(parents=True, exist_ok=True)
+    weights = Path(base["path"]) / "model.pt"
+    model_config = json.loads((Path(base["path"]) / "config.json").read_text())
+    if cfg.get("grow"):
+        import torch
+        from moth.model.config import MothConfig
+        from moth.model.growth import grow_checkpoint, assert_function_preserved
+        from moth.training.checkpoint import atomic_torch_save
+
+        dev = base["info"].get("dev_checkpoint") or {}
+        src = Path(dev["path"]) if dev.get("path") else weights
+        expected = dev.get("sha256") if dev.get("path") else base["sha256"]
+        if not src.is_file() or not expected or sha256_file(src) != expected:
+            raise ValueError("worker growth requires a verified base checkpoint")
+        raw = torch.load(src, map_location="cpu", weights_only=False)
+        ck = raw if "model" in raw else {"model": raw, "model_config": model_config}
+        grown = grow_checkpoint(ck, cfg["grow"]["add_layers"], cfg["grow"]["ffn_hidden"], cfg["seed"])
+        before, after = MothConfig.from_dict(ck["model_config"]), MothConfig.from_dict(grown["model_config"])
+        assert_function_preserved(ck["model"], before, grown["model"], after,
+                                  torch.zeros((1, min(16, before.max_seq_len)), dtype=torch.long))
+        weights = rd / "growth-base.pt"
+        atomic_torch_save(grown["model"], weights)
+        model_config = grown["model_config"]
     if cfg.get("mixture"):  # a curriculum shard: tokens sampled from every domain by weight
         from moth_server.evolution.v2 import write_mixture_shard
 
@@ -269,14 +313,14 @@ def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0) -> int:
                                         rd / "shard.bin")
     else:
         shard_sha = DS.write_shard(ds, rd / "shard.bin")
-    weights = Path(base["path"]) / "model.pt"
     spec = {"evolution_experiment": exp["id"], "round": -exp["id"], "model_version": base["version"],
             "base_sha256": sha256_file(weights),
-            "model_config": json.loads((Path(base["path"]) / "config.json").read_text()),  # exact architecture
+            "model_config": model_config, "expanded": bool(cfg.get("grow")),
             "tokenizer_fingerprint": base["info"].get("tokenizer_fingerprint"),
             "shard_id": f"evolution-{exp['id']}", "shard_sha256": shard_sha, "shard_license": ds["license"],
             "job_id": f"evolution-{exp['id']}",
             "train": {"steps": cfg["steps"], "lr": cfg["lr"], "batch_size": cfg["batch_size"],
+                      "batch_autotune": bool(cfg.get("batch_autotune", True)),
                       "seq_len": cfg["seq_len"], "weight_decay": cfg["weight_decay"]},
             "protocol": PROTOCOL,
             # assignment: only workers with enough memory get it; a GPU worker is preferred briefly
@@ -298,7 +342,7 @@ def job_files(ctx: Ctx, spec: dict) -> tuple[Path, Path]:
 
     exp = MEM.experiment(ctx, int(spec["evolution_experiment"]))
     base = M.release(ctx, exp["base_version"])
-    return Path(base["path"]) / "model.pt", run_dir(ctx, exp) / "shard.bin"
+    return (run_dir(ctx, exp) / "growth-base.pt" if spec.get("expanded") else Path(base["path"]) / "model.pt"), run_dir(ctx, exp) / "shard.bin"
 
 
 def accept_worker_result(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) -> dict:
@@ -308,6 +352,7 @@ def accept_worker_result(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) ->
     from moth.community.aggregation import apply_delta
     from moth.community.validation import deserialize_state, tensor_bytes_sha256, validate_delta
     from moth.model.registry import sha256_file
+    from moth.model.config import MothConfig
 
     from moth_server import models as M
 
@@ -326,11 +371,19 @@ def accept_worker_result(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) ->
         return {"accepted": False, "reasons": [f"unreadable update: {e}"]}
     base = M.release(ctx, exp["base_version"])
     bdir = Path(base["path"])
-    state = torch.load(bdir / "model.pt", map_location="cpu", weights_only=True)
+    state = torch.load(job_files(ctx, spec)[0], map_location="cpu", weights_only=True)
     base_f = {k: v.float() for k, v in state.items()}
     # Shapes, finiteness and a sanity bound on the update size (a whole experiment changes weights far more
     # than one network round; quality is decided by the evaluation gates, not by this check).
-    report = validate_delta(base_f, delta, max_relative_norm=EVOLUTION_MAX_RELATIVE_NORM)
+    norm_reference = base_f
+    if spec.get("expanded"):
+        from moth.model.growth import ZERO_INIT
+
+        # New residual projections start at zero. Use the model's initialization scale for their
+        # norm bound, while applying accepted deltas to the real, function-preserving zero weights.
+        norm_reference = {k: torch.full_like(w, 0.02) if k.endswith(ZERO_INIT) and not torch.count_nonzero(w)
+                          else w for k, w in base_f.items()}
+    report = validate_delta(norm_reference, delta, max_relative_norm=EVOLUTION_MAX_RELATIVE_NORM)
     if not report.ok:
         return {"accepted": False, "reasons": report.reasons}
     new = apply_delta(base_f, delta)
@@ -340,17 +393,19 @@ def accept_worker_result(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) ->
     pkg.mkdir(parents=True)
     dtype = state[next(iter(state))].dtype
     torch.save({k: v.to(dtype) if v.is_floating_point() else v for k, v in new.items()}, pkg / "model.pt")
-    for f in ("config.json", "tokenizer.json"):
-        shutil.copy2(bdir / f, pkg / f)
+    shutil.copy2(bdir / "tokenizer.json", pkg / "tokenizer.json")
+    (pkg / "config.json").write_text(json.dumps(spec["model_config"]))
     manifest = json.loads((bdir / "manifest.json").read_text())
     manifest.update(name=f"moth-evolution-e{exp['id']}", created=now(), sha256=sha256_file(pkg / "model.pt"),
-                    training={"method": "continued", "backend": "worker", "steps": meta.get("steps"),
+                    params=MothConfig.from_dict(spec["model_config"]).num_params(),
+                    training={"method": exp["config"].get("method", "continued"), "backend": "worker", "steps": meta.get("steps"),
                               "tokens": meta.get("tokens"), "loss_before": meta.get("loss_before"),
                               "loss_after": meta.get("loss_after")},
-                    lineage={"base_sha256": base["sha256"], "base_name": base["name"], "method": "continued"})
+                    lineage={"base_sha256": base["sha256"], "base_name": base["name"], "method": exp["config"].get("method", "continued")})
     (pkg / "manifest.json").write_text(json.dumps(manifest, indent=2))
     (rd / "result.json").write_text(json.dumps({"ok": True, "reason": "completed", "package": str(pkg),
                                                 "sha256": manifest["sha256"], "backend": "worker",
                                                 "loss_before": meta.get("loss_before"),
-                                                "loss_after": meta.get("loss_after"), "tokens": meta.get("tokens")}))
+                                                "loss_after": meta.get("loss_after"), "tokens": meta.get("tokens"),
+                                                "batch_tuning": meta.get("batch_tuning")}))
     return {"accepted": True, **report.stats}

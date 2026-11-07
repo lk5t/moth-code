@@ -59,12 +59,13 @@ def domain_tokens(ctx: Ctx) -> dict[str, int]:
     return {d: v["tokens"]["train"] for d, v in json.loads(mix.read_text())["domains"].items()}
 
 
-def plan(ctx: Ctx, budget_tokens: int, analysis: dict[str, Any] | None = None) -> dict[str, Any]:
+def plan(ctx: Ctx, budget_tokens: int, analysis: dict[str, Any] | None = None,
+         tokens: dict[str, int] | None = None) -> dict[str, Any]:
     from moth.datafactory.curriculum import plan_mixture
 
     from moth_server.intelligence.weakness import mixture_weakness
 
-    toks = domain_tokens(ctx)
+    toks = domain_tokens(ctx) if tokens is None else tokens
     st = state(ctx)
     if not toks:
         return {"stage": st["stage"], "weights": {}, "note": "no dataset library build yet"}

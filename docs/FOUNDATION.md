@@ -1,5 +1,11 @@
 # MOTH 0.1 — Foundation (0.5.2)
 
+**Verified status (2026-11-07):** the architecture and scratch-training pipeline exist, but this checkout
+contains no trained Foundation checkpoint, split weights, or matching completed evaluation report.
+Earlier corpus/run/release descriptions below are historical claims and have not been independently
+verified. Foundation training must not be described as complete on this evidence. The short 49.3M
+architecture smoke run in [CONTINUATION.md](CONTINUATION.md) is not a trained Foundation release.
+
 MOTH 0.1 is the root of the one MOTH model lineage. Everything later (0.2, 0.3 …) continues these weights;
 nothing restarts from random weights unless a new architecture is deliberately created.
 
@@ -24,7 +30,7 @@ MIT, CC-BY-4.0, PSF-2.0 — attribution in every package's `ATTRIBUTION.md`.
 The **foundation** curriculum stage mixes the domains (language 30%, knowledge 28%, code 14%, conversation
 12%, maths 6%, writing 5%, reasoning 3%) with at most 4 passes over any small dataset.
 
-## Training (real, on CPU)
+## Training recipe (historical completed-run claim unverified)
 
 `python scripts/train-moth-foundation.py --data DIR --steps 3000 --threads 3` — 3,000 steps × 16,384
 tokens (batch 8 × accumulation 4 × 512) = 49M tokens, AdamW (β 0.9/0.95, weight decay 0.1), learning rate
@@ -71,4 +77,23 @@ deployed model (signature and SHA-256 verified) and answer on the computer.
 
 ## Results
 
-See [TEST_RESULTS.md](TEST_RESULTS.md#moth-01) for the measured scores of the published model.
+No trained Foundation quality result was verified in this continuation. See
+[CONTINUATION.md](CONTINUATION.md) for actual tests and remaining model-quality requirements.
+
+## Safe preparation and resume
+
+With approved catalog datasets available, prepare without starting training:
+
+```bash
+python scripts/train-moth-foundation.py --data /path/to/new-foundation-data --prepare-only
+```
+
+Then run the same command without `--prepare-only`, choosing `--device cpu` or `--device cuda` and
+appropriate `--threads`, `--batch-size`, `--grad-accum` and `--steps`. Batch probing is enabled;
+`--no-batch-autotune` keeps the configured microbatch. Reuse the same data directory to resume.
+An existing tokenizer, approved build, replay mixture and lineage are retained. Incompatible metadata
+or a run with no intact resumable checkpoint causes an explicit error, never a silent random restart.
+Do not repurpose an existing run directory for another corpus or tokenizer.
+
+Development-only checks may use `--sources python-stdlib --max-source-chars 20000 --preset moth-tiny
+--vocab-size 320`; such a subset is not a complete Foundation corpus or quality evaluation.

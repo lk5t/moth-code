@@ -45,8 +45,16 @@ def main() -> int:
     ap.add_argument("--steps", type=int, default=450)
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--work", type=Path, default=None)
+    ap.add_argument("--sources", help="comma-separated approved library source IDs; default: full catalog")
+    ap.add_argument("--domain-chars", type=int, help="bounded per-domain corpus size for integration smoke runs")
+    ap.add_argument("--timeout", type=float, default=21600, help="maximum cycle wall time in seconds")
+    ap.add_argument("--worker-threads", type=int, default=2, help="CPU threads per worker in this isolated run")
     a = ap.parse_args()
     work = a.work or Path(tempfile.mkdtemp(prefix="moth-e2e-evolution-"))
+    if a.work:
+        work.mkdir(parents=True, exist_ok=False)
+    a.package = a.package.resolve()
+    a.cache.mkdir(parents=True, exist_ok=True)
     data = work / "server"
     env = {**os.environ, "MOTH_SERVER_DATA_DIR": str(data), "PYTHONPATH": os.pathsep.join(
         [str(ROOT / "server"), str(ROOT / "backend"), str(ROOT / "worker")]), "OMP_NUM_THREADS": "2"}
@@ -72,13 +80,24 @@ def main() -> int:
     os.symlink(a.cache.resolve(), data / "library" / "cache")
     with TestClient(create_app(Settings.from_env(), extras={"synchronous_jobs": True, "disable_background": True})) as c:
         ctx = c.app.state.ctx
-        rel = M._register(ctx, a.package, "MOTH 0.1 — Foundation", {"type": "official", "model_version": "0.1",
-                                                                     "method": "foundation"}, None)
+        package_manifest = json.loads((a.package / "manifest.json").read_text())
+        rel = M._register(ctx, a.package, package_manifest.get("display_name") or package_manifest["name"],
+                          {"type": "upload"}, None)
         log(f"model registered as release v{rel['version']} ({rel['info']['params']:,} parameters)")
         log(f"evaluation: {M.evaluate(ctx, rel['version'])['status']}")
         M.deploy(ctx, rel["version"])
         ctx.db.set_config("feature_flags", {"cloud_inference_enabled": True})
-        bid = library.start_build(ctx, None, {}, wait=True)
+        from moth_server.evolution import settings as ES
+
+        ES.update(ctx, {"paused": True})  # configure/enroll before the scheduler starts a cycle
+        build_config = {}
+        if a.sources:
+            build_config["sources"] = a.sources.split(",")
+        if a.domain_chars:
+            from moth.datafactory.catalog import SOURCES
+
+            build_config["max_chars"] = {s["id"]: a.domain_chars for s in SOURCES}
+        bid = library.start_build(ctx, None, build_config, wait=True)
         b = library.latest_ready(ctx)
         assert b and b["id"] == bid, library.status(ctx)["builds"][:1]
         log(f"dataset library build {bid}: {b['content_sha256'][:12]} (tokenizer {b['tokenizer_fingerprint']})")
@@ -99,13 +118,14 @@ def main() -> int:
         tok = h.post("/v1/auth/login", json={"username": "LK5T", "password": PASSWORD}).json()["token"]
         H = {"Authorization": f"Bearer {tok}"}
         # evolution: distributed rounds on workers, staged rollout, short monitoring
-        r = h.put("/v1/admin/evolution/settings", headers=H, json={
+        r = h.put("/v1/admin/evolution/settings", headers=H, json={"changes": {
             "training": {"steps": a.steps, "lr": 2e-4, "batch_size": 4, "seq_len": 256, "eval_interval": 50,
                          "checkpoint_interval": 50},
             "backends": {"local_cpu": False, "local_gpu": False, "workers": True},
             "distributed": {"enabled": True, "min_participants": 2, "rounds": a.rounds, "eval_on_workers": True},
             "monitoring": {"minutes": 1.0, "min_requests": 1000}, "max_experiments_per_cycle": 1,
-            "limits": {"min_free_memory_gb": 0.5, "min_free_disk_gb": 1.0}})
+            "min_dataset_tokens": 2000 if a.domain_chars else 20_000,
+            "limits": {"min_free_memory_gb": 0.5, "min_free_disk_gb": 1.0}}})
         assert r.status_code == 200, r.text
         # ---- 3. two real MOTH Worker processes -------------------------------------------------------------
         for name in ("worker-a", "worker-b"):
@@ -114,6 +134,10 @@ def main() -> int:
             wenv = {**env, "MOTH_WORKER_INSTANCE": name}  # two workers on this one machine
             subprocess.run([sys.executable, "-m", "moth_worker.cli", "--home", str(home), "enroll", "--server", base,
                             "--token", e["token"]], env=wenv, check=True, capture_output=True)
+            enrolled = next(w for w in h.get("/v1/training/workers", headers=H).json()["workers"] if w["name"] == name)
+            limits = h.put(f"/v1/training/workers/{enrolled['id']}/limits", headers=H,
+                           json={"cpu_threads": a.worker_threads})
+            assert limits.status_code == 200, limits.text
             procs.append(subprocess.Popen([sys.executable, "-m", "moth_worker.cli", "--home", str(home), "run"],
                                           env=wenv, stdout=open(work / f"{name}.log", "w"), stderr=subprocess.STDOUT,
                                           start_new_session=True))
@@ -122,10 +146,18 @@ def main() -> int:
         # ---- 4. one evolution cycle ---------------------------------------------------------------------
         r = h.post("/v1/admin/evolution/run", headers=H)
         assert r.status_code == 200, r.text
+        r = h.post("/v1/admin/evolution/resume", headers=H)
+        assert r.status_code == 200, r.text
         last = None
+        deadline = time.monotonic() + a.timeout
         while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"evolution did not finish in {a.timeout:g} seconds; logs: {work}")
             st = h.get("/v1/admin/evolution/status", headers=H).json()
             cyc = st["cycle"]
+            if cyc is None:
+                time.sleep(1)
+                continue
             msg = f"cycle {cyc['id']}: {cyc['status']}"
             con = h.get("/v1/admin/evolution/contributions", headers=H).json().get("experiment")
             if con:
@@ -147,13 +179,19 @@ def main() -> int:
                   "timeline": progress["timeline"], "current": progress["current"]}
         a.out.write_text(json.dumps(report, indent=1, default=str))
         log(f"cycle {cycle['id']} ended: {cycle['status']}; report written to {a.out}")
-        return 0
+        return 0 if cycle["status"] in ("completed", "rejected", "rolled_back") else 1
     finally:
         for p in procs:
             try:
                 os.killpg(p.pid, signal.SIGTERM)
             except OSError:
                 pass
+        for p in procs:
+            try:
+                p.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                os.killpg(p.pid, signal.SIGKILL)
+                p.wait()
 
 
 if __name__ == "__main__":

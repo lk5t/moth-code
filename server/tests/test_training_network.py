@@ -203,11 +203,24 @@ def test_worker_resumes_mid_job_from_checkpoint(client, settings, training_world
     r1.client.progress = progress_then_stop
     with pytest.raises(Stop):
         r1.run_job(job)
-    assert (tmp_path / "rs" / "jobs" / f"{job['id']}.pt").exists()
+    checkpoint = tmp_path / "rs" / "jobs" / f"{job['id']}.pt"
+    from moth.training.checkpoint import load_checkpoint, verify
+
+    assert checkpoint.exists() and verify(checkpoint)
+    state = load_checkpoint(checkpoint)
+    assert state["batch_tuning"]["effective_batch_size"] == job["spec"]["train"]["batch_size"]
+    assert state["rng"]["torch"].device.type == "cpu"
     logs = []
     r2 = WorkerRunner(WorkerClient("http://test", w["worker_token"], http=client), tmp_path / "rs", allow_cpu=True,
                       log=logs.append, heartbeat_seconds=3600)
     again = client.post("/v1/worker/jobs/claim", headers=H(w["worker_token"])).json()
     assert again["id"] == job["id"]
+    import moth.training.autotune as tuning
+
+    def no_reprobe(*args, **kwargs):
+        raise AssertionError("a resumed worker must reuse its checkpointed batch choice")
+
+    monkeypatch.setattr(tuning, "tune_batch", no_reprobe)
     assert r2.run_job(again)["accepted"]
+    assert not checkpoint.exists() and not checkpoint.with_name(checkpoint.name + ".sha256").exists()
     assert any("resuming from step 2" in m for m in logs)

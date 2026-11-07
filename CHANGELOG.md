@@ -1,5 +1,8 @@
 # Changelog
 
+Earlier entries describe historical development/release claims. The current verified status, including
+the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
+
 ## 0.5.4 — ASCENSION, milestones 3–5: FOUNDATION, EVOLUTION 2.0, EXPERIENCE
 
 MOTH Cloud, MOTH Code and MOTH Worker 0.5.4. Milestones 0.5.2 (FOUNDATION), 0.5.3 (EVOLUTION 2.0) and 0.5.4

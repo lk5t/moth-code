@@ -2,6 +2,7 @@
 evidence-based growth decisions."""
 
 import torch
+import pytest
 
 from moth.model.config import preset
 from moth.model.growth import (assert_function_preserved, expand_optimizer, expand_state, grow_checkpoint, grown_config,
@@ -91,3 +92,18 @@ def test_plan_growth_needs_evidence():
     none = plan_growth(cfg, {"recent_improvements": [0.0] * 6, "train_loss": 2, "val_loss": 2},
                        {"max_params": cfg.num_params()})
     assert not none["grow"]
+
+
+def test_growth_increment_counts_only_the_current_plateau():
+    cfg = preset("moth-50m", vocab_size=16384)
+    evidence = {"train_loss": 2.0, "val_loss": 2.1}
+    recent = [0.002] * 3
+    short = plan_growth(cfg, {**evidence, "recent_improvements": recent})
+    interrupted = plan_growth(cfg, {**evidence, "recent_improvements": [0.001] * 10 + [0.1] + recent})
+    assert interrupted["grow"] and interrupted["ratio"] == short["ratio"]
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), float("-inf")])
+def test_growth_requires_finite_measurements(invalid):
+    decision = plan_growth(preset("moth-tiny"), {"recent_improvements": [0.0, invalid, 0.0]})
+    assert not decision["grow"] and "finite" in decision["reason"]

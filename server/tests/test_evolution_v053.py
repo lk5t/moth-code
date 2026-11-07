@@ -323,4 +323,10 @@ def test_progress_dashboard_and_timeline_from_measurements(client, settings, own
     assert cur["model_version"] == "0.1" and cur["stable"] and cur["has_dev_checkpoint"]
     assert "capability:holdout:language" not in cur["benchmarks"] and "holdout_language" in cur["benchmarks"]
     assert p["development"]["version"] == cyc["candidate_version"]
+    assert p["training"]["experiments"]
+    experiment = p["training"]["experiments"][0]
+    stored = MEM.experiment(ctx, experiment["id"])
+    assert experiment["status"] == stored["status"]
+    assert experiment["metrics"] == stored["metrics"]
+    assert experiment["metrics"]["training"]["batch_tuning"]["effective_batch_size"] == 8
     assert p["datasets"]["sources"][0]["license"] == "MIT" and p["timeline"][1]["datasets"][0]["build"]

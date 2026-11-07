@@ -463,6 +463,9 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
         versions.append({
             "version": row["version"], "model_version": info.get("model_version"),
             "name": info.get("display_name") or r["name"], "params": info.get("params"), "method": row["method"],
+            "architecture": info.get("architecture"),
+            "training": {k: (info.get("training") or {}).get(k) for k in
+                         ("step", "steps", "best_val", "val_loss", "tokens", "backend")},
             "parent": row["parent_version"], "created_at": row["created_at"], "status": r["status"],
             "deployed": row["version"] == deployed, "stable": row["version"] == stable,
             "has_dev_checkpoint": bool((info.get("dev_checkpoint") or {}).get("path")),
@@ -485,12 +488,22 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                "sources": [{"id": x["id"], "name": x["name"], "license": x["license"], "records": (x.get("stats") or {}).get("kept")}
                            for x in m.get("sources", [])]}
     exp = next((e for e in MEM.experiments(ctx, cyc["id"])), None) if cyc else None
+    # Prefer the currently executing experiment over a later, merely planned variant.
+    experiments = MEM.experiments(ctx, cyc["id"]) if cyc else []
+    exp = next((e for e in experiments if e["status"] == "running"), exp)
+    experiment_history = [{"id": e["id"], "status": e["status"], "backend": e["backend"],
+                          "method": e["config"].get("method"), "growth": e["config"].get("grow"),
+                          "requires_approval": bool(e["config"].get("requires_approval") and not e["config"].get("approved_by")),
+                          "progress": e.get("progress"), "metrics": e.get("metrics"),
+                          "candidate_version": e.get("candidate_version"), "error": e.get("error")}
+                         for e in experiments]
     return {
         "current": next((v for v in versions if v["deployed"]), None), "stable": next((v for v in versions if v["stable"]), None),
         "development": dev, "rollout": serving.loaded_versions(ctx), "timeline": versions,
         "training": {"enabled": s["enabled"], "paused": s["paused"], "cycle": {
             "id": cyc["id"], "status": cyc["status"], "waiting_reason": (cyc.get("result") or {}).get("waiting_reason")}
             if cyc else None, "experiment_progress": exp.get("progress") if exp else None,
+            "experiments": experiment_history,
             "next_cycle_at_estimate": st.get("next_cycle_at") or None, "curriculum": CU.state(ctx).get("stage")},
         "datasets": lib,
         "network": {"workers_online": len(on), "gpu_online": gpu, "cpu_online": len(on) - gpu,

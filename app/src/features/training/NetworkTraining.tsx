@@ -64,7 +64,7 @@ export function NetworkTraining() {
   const s = evo.settings;
   const useWorkers = !!(s.backends?.workers && s.distributed?.enabled);
   const setWorkers = (v: boolean) => secure(() => serverApi("/v1/admin/evolution/settings", {
-    method: "PUT", json: { backends: { ...s.backends, workers: v }, distributed: { ...s.distributed, enabled: v } },
+    method: "PUT", json: { changes: { backends: { ...s.backends, workers: v }, distributed: { ...s.distributed, enabled: v } } },
   })).then(reloadEvo).catch((e) => setMsg((e as Error).message));
   const trainNow = () => secure(() => serverApi("/v1/admin/evolution/run", { method: "POST" }))
     .then(() => { setMsg("Training started on MOTH Cloud."); reloadEvo(); }).catch((e) => setMsg((e as Error).message));
@@ -89,7 +89,7 @@ export function NetworkTraining() {
         <div className="flex items-center justify-between gap-4">
           <div><div className="flex items-center gap-2 text-[13px] text-fg"><Users className="size-4 text-accent" />Use cloud workers</div>
             <div className="text-muted">Share each experiment across all compatible MOTH workers (CPU and GPU) in verified rounds.</div></div>
-          <Switch checked={useWorkers} onCheckedChange={setWorkers} />
+            <Switch aria-label="Use cloud workers" checked={useWorkers} onCheckedChange={setWorkers} />
         </div>
         <ParticipantSwitch />
         {exp && (

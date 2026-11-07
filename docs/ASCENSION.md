@@ -1,5 +1,8 @@
 # ASCENSION (0.5.x) — plan and status
 
+See the [continuation audit](CONTINUATION.md) for the current checkout's verified status, focused fixes,
+and remaining requirements; the milestone labels below are historical release descriptions.
+
 ASCENSION ships as staged, tested and signed releases. Each one is usable on its own and verified in
 production before the next. This page says what each milestone contains and where it stands, so
 nothing is presented as done before it is.
