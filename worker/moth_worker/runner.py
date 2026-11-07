@@ -143,6 +143,40 @@ class WorkerRunner:
         self.stop_event.set()
         return done
 
+    def run_eval(self, job: dict) -> dict:
+        """Measure a candidate on held-out data (evaluation jobs go to CPU workers while GPUs train)."""
+        import json as _json
+
+        jid, spec = job["id"], job["spec"]
+        self.current_job, self.progress = jid, 0.0
+        self.log(f"job {jid}: evaluating {spec['eval']['suite_id']} of model v{spec['eval']['version']}")
+        try:
+            weights = self.client.download(jid, "weights", spec["base_sha256"])
+            data = self.client.download(jid, "shard", spec["shard_sha256"])
+            torch.set_num_threads(max(1, int(self.limits.get("cpu_threads") or max(1, (os.cpu_count() or 2) - 1))))
+            total, count = _eval_loss(weights, data, spec["model_config"],
+                                      progress=lambda p: setattr(self, "progress", p))
+            payload = _json.dumps({"total": total, "count": count}).encode()
+            from moth.community.validation import tensor_bytes_sha256
+
+            meta = {"round": -1, "base_sha256": spec["base_sha256"], "delta_sha256": tensor_bytes_sha256(payload),
+                    "tokens": 0, "steps": 0, "protocol": spec.get("protocol", 1), "worker_version": __version__}
+            result = self.client.result(jid, meta, payload)
+            self.log(f"job {jid}: loss {total / max(1, count):.4f} over {count} tokens "
+                     f"({'accepted' if result.get('accepted') else 'rejected'})")
+            return result
+        except ServerError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            self.log(f"job {jid} failed: {e}")
+            try:
+                self.client.fail(jid, f"{type(e).__name__}: {e}")
+            except Exception:  # noqa: BLE001
+                pass
+            return {"accepted": False, "error": str(e)}
+        finally:
+            self.current_job, self.progress = None, None
+
     # ---- one training round ------------------------------------------------------------------
     def run_job(self, job: dict) -> dict:
         from moth.community.client import batch_loss
@@ -150,6 +184,8 @@ class WorkerRunner:
         from moth.model.config import MothConfig
         from moth.model.transformer import MothModel
 
+        if job.get("kind") == "eval_loss":
+            return self.run_eval(job)
         jid, spec = job["id"], job["spec"]
         self.current_job, self.progress = jid, 0.0
         self.log(f"job {jid}: round {spec['round']}, shard {spec['shard_id']}")
@@ -237,6 +273,33 @@ class WorkerRunner:
             return {"accepted": False, "error": str(e)}
         finally:
             self.current_job, self.progress = None, None
+
+
+def _eval_loss(weights: bytes, data: bytes, model_config: dict, progress=None) -> tuple[float, int]:
+    """Masked negative log-likelihood (sum, count) of a candidate on held-out token data (CPU, fp32)."""
+    from moth.model.config import MothConfig
+    from moth.model.transformer import MothModel
+
+    state = torch.load(io.BytesIO(weights), map_location="cpu", weights_only=True)
+    d = torch.load(io.BytesIO(data), map_location="cpu", weights_only=True)
+    model = MothModel(MothConfig.from_dict(model_config))
+    model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in state.items()})
+    model.eval()
+    ids, mask, offs = d["ids"], d["mask"].bool(), d["offsets"].tolist()
+    total, count = 0.0, 0
+    with torch.no_grad():
+        for n, (a, b) in enumerate(zip(offs, offs[1:])):
+            x = ids[a:b]
+            logits, _ = model(x[:-1].unsqueeze(0))
+            lp = torch.log_softmax(logits[0].float(), dim=-1)
+            tgt = x[1:]
+            m = mask[a + 1:b]
+            nll = -lp[torch.arange(len(tgt)), tgt][m]
+            total += float(nll.sum())
+            count += int(m.sum())
+            if progress:
+                progress((n + 1) / max(1, len(offs) - 1))
+    return total, count
 
 
 def _base_model(base: dict, spec: dict, device: str):

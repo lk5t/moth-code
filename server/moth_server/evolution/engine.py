@@ -510,11 +510,18 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
     from moth_server import models as M
 
     base = M.release(ctx, cyc["base_version"])
+    from moth_server.evolution import remote_eval as RE
+
+    waiting_remote = False
     for e in sorted(MEM.experiments(ctx, cyc["id"]), key=lambda x: x["id"]):
         if e["status"] not in ("trained", "evaluating"):
             continue
         MEM.update_experiment(ctx, e["id"], status="evaluating")
         cand = M.release(ctx, e["candidate_version"])
+        if RE.ensure(ctx, MEM.experiment(ctx, e["id"]), cand, settings):  # CPU workers are measuring it
+            waiting_remote = True
+            continue
+        e = MEM.experiment(ctx, e["id"])  # keep what the remote evaluation recorded
         try:
             verdict = EV.gate(ctx, cand, base, DS.get(ctx, e["dataset_id"]), settings,
                               mixture=(e["config"] or {}).get("mixture"))
@@ -538,6 +545,8 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
                   level="info" if verdict["passed"] else "warning", cycle_id=cyc["id"], experiment_id=e["id"],
                   improvement=verdict["primary_improvement"])
         B.cleanup_run(ctx, e)
+    if waiting_remote:
+        return
     exps = MEM.experiments(ctx, cyc["id"])
     passed = [e for e in exps if e["status"] == "passed"]
     if not passed:

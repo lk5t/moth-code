@@ -45,7 +45,8 @@ DEFAULTS: dict[str, Any] = {
     "early_stopping": {"enabled": True, "min_evals": 3, "patience": 3},
     "growth": {"enabled": True, "approval_ratio": 1.25, "max_ratio": 1.5, "max_params": 400_000_000,
                "plateau_threshold": 0.01, "steps_multiplier": 2},
-    "distributed": {"enabled": True, "min_participants": 2, "max_participants": 8, "rounds": 3},
+    "distributed": {"enabled": True, "min_participants": 2, "max_participants": 8, "rounds": 3,
+                    "eval_on_workers": True, "eval_wait_minutes": 10.0},
     # staged rollout: a promoted candidate first serves this share of users while it is monitored
     "rollout": {"canary_percent": 20.0},
 }

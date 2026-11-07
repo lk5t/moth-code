@@ -256,3 +256,56 @@ def test_moth_code_contributes_its_computer_to_the_same_experiment(client, owner
     names = {x["name"]: x for x in c["contributors"]}
     assert set(names) == {"MOTH Code on this computer", "ubuntu-cpu"} and names["MOTH Code on this computer"]["this_app"]
     assert all(x["tokens"] > 0 for x in c["contributors"])
+
+
+def test_cpu_workers_evaluate_candidates_with_two_independent_results(client, owner, tmp_path, monkeypatch):
+    """While training runs elsewhere, two CPU workers measure the candidate's held-out losses; the result
+    is used only because both agree, and is stored as the suite's report."""
+    import time as _time
+
+    from sqlalchemy import select
+
+    from moth_server.db import evaluation_reports, training_jobs
+    from moth_worker.client import WorkerClient
+    from moth_worker.runner import WorkerRunner
+
+    import moth_worker
+
+    monkeypatch.setattr(moth_worker, "__version__", "0.5.3")  # evaluation jobs need MOTH Worker 0.5.3+
+    ctx, base_v = _world(client, owner, tmp_path, monkeypatch)
+    S.update(ctx, {"backends": {"local_cpu": True, "local_gpu": False, "workers": False},
+                   "distributed": {"enabled": False, "eval_on_workers": True, "eval_wait_minutes": 10}})
+    o = H(owner["token"])
+    runners = []
+    for name in ("eval-1", "eval-2"):
+        e = client.post("/v1/training/enrollments", json={"name": name}, headers=o).json()
+        w = client.post("/v1/worker/enroll", json={"token": e["token"], "version": "0.5.3", "hardware": {
+            "gpus": [], "cpu_count": 4, "ram_gb": 16.0, "compute": "cpu", "machine_id": name}}).json()
+        r = WorkerRunner(WorkerClient("http://t", w["worker_token"], http=client), tmp_path / name,
+                         log=lambda m: None, heartbeat_seconds=3600, update_check_seconds=None)
+        r.beat()
+        runners.append((w, r))
+    deadline = _time.time() + 600
+    while _time.time() < deadline:
+        EN.tick(ctx)
+        for w, r in runners:
+            r.beat()
+        if ctx.db.one(select(training_jobs).where(training_jobs.c.kind == "eval_loss")):
+            break
+        _time.sleep(0.5)
+    jobs = ctx.db.all(select(training_jobs).where(training_jobs.c.kind == "eval_loss"))
+    assert len(jobs) == 2, (MEM.cycles(ctx, 1), [m["message"] for m in MEM.events(ctx, 12)])  # two replicas
+    for w, r in runners:
+        job = client.post("/v1/worker/jobs/claim", headers=H(w["worker_token"])).json()
+        assert job["kind"] == "eval_loss"
+        assert r.run_job(job)["accepted"]
+    cyc = drive(ctx, lambda c: c["status"] in MEM.TERMINAL_CYCLE, timeout=600)
+    exp = next(e for e in MEM.experiments(ctx, cyc["id"]) if e["candidate_version"])
+    rep = ctx.db.one(select(evaluation_reports).where(evaluation_reports.c.model_version == exp["candidate_version"],
+                                                      evaluation_reports.c.suite == "capability:holdout:language"))
+    import json as _json
+
+    m = _json.loads(rep["metrics"])
+    assert sorted(m["computed_by"]) == sorted(w["worker_id"] for w, _ in runners)
+    assert exp["metrics"]["remote_eval"]["accepted"] == ["capability:holdout:language"]
+    assert any(g["gate"] == "capability:holdout:language" for g in exp["metrics"]["gates"])

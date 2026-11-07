@@ -162,6 +162,27 @@ def _create_round_jobs(ctx: Ctx, exp: dict, base: dict, st: dict, need_bytes: in
             jobs[str(i)] = jid
 
 
+def steps_for(conn, spec: dict, hw: dict) -> int:
+    """Local steps for a participant: proportional to its measured speed relative to the online median
+    (within 0.25×–4× of the round's base), so slow CPUs do not hold up a round."""
+    base = int(spec["train"]["steps"])
+    mine = float((hw.get("benchmark") or {}).get("gflops") or 0)
+    if mine <= 0:
+        return base
+    t = now()
+    speeds = []
+    for w in conn.execute(select(workers.c.hardware).where(workers.c.revoked_at.is_(None),
+                                                           workers.c.last_heartbeat_at >= t - ONLINE_SECONDS)):
+        g = (json.loads(w[0] or "{}").get("benchmark") or {}).get("gflops")
+        if g:
+            speeds.append(float(g))
+    if not speeds:
+        return base
+    speeds.sort()
+    median = speeds[len(speeds) // 2]
+    return max(1, min(base * 4, int(round(base * max(0.25, min(4.0, mine / median))))))
+
+
 def job_files(ctx: Ctx, spec: dict) -> tuple[Path, Path]:
     from moth_server.evolution.backends import run_dir
 

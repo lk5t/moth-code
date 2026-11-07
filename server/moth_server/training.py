@@ -219,9 +219,27 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
             # model-evolution experiments first (one per worker), then training-network rounds
             job = None
             gpu_online = None
-            for cand in c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
-                                                              training_jobs.c.kind.in_(("evolve_train", "dist_shard")))
-                                  .order_by(training_jobs.c.id)).mappings().all():
+            from moth_server.evolution.remote_eval import _version_ok
+
+            if _version_ok(worker.get("version")):
+                # evaluation jobs: CPU workers first (GPUs keep training); never both replicas to one worker
+                mine = {(json.loads(r["spec"]).get("eval") or {}).get("suite_id"): json.loads(r["spec"])["eval"]["version"]
+                        for r in c.execute(select(training_jobs).where(training_jobs.c.kind == "eval_loss",
+                                                                       training_jobs.c.worker_id == worker["id"]))
+                        .mappings().all()}
+                for cand in c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
+                                                                  training_jobs.c.kind == "eval_loss")
+                                      .order_by(training_jobs.c.id)).mappings().all():
+                    ev = json.loads(cand["spec"])["eval"]
+                    if mine.get(ev["suite_id"]) == ev["version"]:
+                        continue
+                    if hw.get("compute") == "gpu" and t - cand["created_at"] < GPU_PREFERENCE_SECONDS:
+                        continue
+                    job = cand
+                    break
+            for cand in ([] if job else c.execute(select(training_jobs).where(
+                    training_jobs.c.status == "queued", training_jobs.c.kind.in_(("evolve_train", "dist_shard")))
+                    .order_by(training_jobs.c.id)).mappings().all()):
                 spec = json.loads(cand["spec"])
                 if not fits(hw, spec):
                     continue
@@ -238,6 +256,12 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
             if not job:
                 return None
             spec = json.loads(job["spec"])
+            if job["kind"] == "dist_shard" and job["attempts"] == 0:
+                # workload follows hardware: faster participants train more steps of their shard, so a round's
+                # participants finish at about the same time (the averaging is weighted by tokens trained)
+                from moth_server.evolution.distributed import steps_for
+
+                spec["train"] = {**spec["train"], "steps": steps_for(c, spec, hw)}
             if job["kind"] == "train_round" and ("job_id" not in spec or spec.get("round") != coord.config["round"]):
                 spec = {**coord.next_job(f"worker-{worker['id']}").to_dict(), "round": coord.config["round"]}
             res = c.execute(training_jobs.update().where(training_jobs.c.id == job["id"],
@@ -283,6 +307,10 @@ def submit_result(ctx: Ctx, worker: dict, job_id: int, meta: dict, payload: byte
         from moth_server.evolution.distributed import accept_shard
 
         result = accept_shard(ctx, job, meta, payload)
+    elif job["kind"] == "eval_loss":
+        from moth_server.evolution.remote_eval import accept
+
+        result = accept(ctx, job, meta, payload)
     else:
         coord = coordinator(ctx)
         if coord is None:
