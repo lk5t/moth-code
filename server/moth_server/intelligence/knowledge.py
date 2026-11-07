@@ -174,9 +174,9 @@ def search(ctx: Ctx, user_id: int | None, query: str, k: int = 5) -> list[dict[s
         ).scalar() or 0
         if not n_chunks:
             return []
-        avg_len = c.execute(select(func.avg(knowledge_chunks.c.length)).select_from(
+        avg_len = float(c.execute(select(func.avg(knowledge_chunks.c.length)).select_from(
             knowledge_chunks.join(knowledge_docs, knowledge_docs.c.id == knowledge_chunks.c.doc_id)).where(vis)
-        ).scalar() or 1.0
+        ).scalar() or 1.0)  # Postgres returns Decimal
         rows = c.execute(
             select(knowledge_terms.c.term, knowledge_terms.c.tf, knowledge_chunks.c.id, knowledge_chunks.c.length)
             .select_from(knowledge_terms.join(knowledge_chunks, knowledge_chunks.c.id == knowledge_terms.c.chunk_id)

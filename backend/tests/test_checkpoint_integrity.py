@@ -1,6 +1,7 @@
 """Checkpoint integrity: corrupted checkpoints are detected and skipped; one trainer per run directory."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -22,16 +23,31 @@ def test_corrupted_latest_falls_back_to_previous_verified(tmp_path):
 
 
 def test_run_lock_prevents_concurrent_trainers(tmp_path):
-    with RunLock(tmp_path, "worker-a"):
-        lock = json.loads((tmp_path / "run.lock").read_text())
-        assert lock["owner"] == "worker-a"
-        # a second trainer in another process would be refused; simulate with a live foreign pid
-        (tmp_path / "run.lock").write_text(json.dumps({"pid": 1, "owner": "worker-b"}))
+    """A second trainer (another process) is refused while the first holds the run; when the holder dies
+    — even killed — the run can be taken over immediately."""
+    import subprocess
+    import sys
+    import time
+
+    holder = subprocess.Popen([sys.executable, "-c", (
+        "import sys, time; sys.path.insert(0, %r)\n"
+        "from moth.training.checkpoint import RunLock\n"
+        "with RunLock(%r, 'worker-b'):\n    print('locked', flush=True); time.sleep(60)\n")
+        % (str(Path(__file__).resolve().parents[1]), str(tmp_path))], stdout=subprocess.PIPE, text=True)
+    try:
+        assert holder.stdout.readline().strip() == "locked"
         with pytest.raises(CheckpointError, match="worker-b"):
             RunLock(tmp_path, "worker-c").__enter__()
-        (tmp_path / "run.lock").write_text(json.dumps(lock))
-    assert not (tmp_path / "run.lock").exists()
-    # a stale lock of a dead process is taken over
-    (tmp_path / "run.lock").write_text(json.dumps({"pid": 999_999_999, "owner": "dead"}))
-    with RunLock(tmp_path, "new"):
+    finally:
+        holder.kill()
+        holder.wait()
+    time.sleep(0.2)
+    with RunLock(tmp_path, "new"):  # the killed holder's lock is gone
         pass
+
+
+def test_retention_keeps_newest_and_milestones(tmp_path):
+    for step in range(1, 11):
+        save_checkpoint(tmp_path, step, {"step": step}, keep=2, keep_every=4)
+    names = sorted(p.name for p in (tmp_path / "checkpoints").glob("step_*.pt"))
+    assert names == ["step_00000004.pt", "step_00000008.pt", "step_00000009.pt", "step_00000010.pt"]

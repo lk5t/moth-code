@@ -52,6 +52,7 @@ class TrainConfig:
     log_interval: int = 10
     checkpoint_interval: int = 500
     keep_checkpoints: int = 3
+    keep_every: int = 0  # also keep every N-th step's checkpoint (milestones)
     device: str = "auto"  # auto | cuda | cpu
     precision: str = "auto"  # auto | bf16 | fp16 | fp32
     seed: int = 1337
@@ -271,7 +272,7 @@ class Trainer:
                 "tokenizer_path": self.dataset_meta["tokenizer_path"],
                 "rng": {"data": data_gen.get_state(), "torch": torch.get_rng_state(),
                         "cuda": torch.cuda.get_rng_state_all() if self.device == "cuda" else None},
-            }, keep=cfg.keep_checkpoints)
+            }, keep=cfg.keep_checkpoints, keep_every=cfg.keep_every)
             self.emit("checkpoint", path=str(latest_checkpoint(self.run_dir)))
 
         try:

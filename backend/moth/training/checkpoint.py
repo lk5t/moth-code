@@ -53,56 +53,71 @@ def verify(path: Path) -> bool:
 
 
 class RunLock:
-    """Exclusive lock on a run directory (stale locks of dead processes are taken over)."""
+    """Exclusive lock on a run directory, held by the operating system for the trainer's lifetime.
+
+    Uses ``flock`` (Linux, macOS) or ``msvcrt.locking`` (Windows): the lock disappears the moment the
+    process ends — also when it is killed — so a crashed trainer never blocks recovery, and two live
+    trainers can never write the same run."""
 
     def __init__(self, run_dir: Path, owner: str = ""):
         self.path = Path(run_dir) / "run.lock"
         self.owner = owner or f"pid {os.getpid()}"
+        self._f = None
 
     def __enter__(self) -> "RunLock":
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        for _ in range(2):
+        f = open(self.path, "a+")
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
             try:
-                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                with os.fdopen(fd, "w") as f:
-                    json.dump({"pid": os.getpid(), "owner": self.owner, "since": time.time()}, f)
-                return self
-            except FileExistsError:
-                try:
-                    info = json.loads(self.path.read_text())
-                    pid = int(info.get("pid", 0))
-                except (OSError, ValueError):
-                    info, pid = {}, 0
-                if pid and pid != os.getpid() and _pid_alive(pid):
-                    raise CheckpointError(f"run is already being trained by {info.get('owner') or pid}")
-                self.path.unlink(missing_ok=True)
-        raise CheckpointError("could not lock the run directory")
+                f.seek(1 if os.name == "nt" else 0)  # Windows: byte 0 is locked (mandatory lock)
+                info = json.loads(f.read() or "{}")
+            except (OSError, ValueError):
+                info = {}
+            f.close()
+            raise CheckpointError(f"run is already being trained by {info.get('owner') or 'another process'}")
+        if os.name == "nt":  # the locked byte is 0; owner details live after it
+            f.seek(1)
+            f.truncate()
+            f.write(json.dumps({"pid": os.getpid(), "owner": self.owner, "since": time.time()}))
+        else:
+            f.seek(0)
+            f.truncate()
+            f.write(json.dumps({"pid": os.getpid(), "owner": self.owner, "since": time.time()}))
+        f.flush()
+        self._f = f
+        return self
 
     def __exit__(self, *exc) -> None:
-        self.path.unlink(missing_ok=True)
+        if self._f is not None:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    self._f.seek(0)
+                    msvcrt.locking(self._f.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(self._f.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+            self._f.close()
+            self._f = None
 
 
-def _pid_alive(pid: int) -> bool:
-    if os.name == "nt":
-        import ctypes
-
-        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not h:
-            return False
-        code = ctypes.c_ulong()
-        ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(code))
-        ctypes.windll.kernel32.CloseHandle(h)
-        return code.value == 259  # STILL_ACTIVE
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-
-
-def save_checkpoint(run_dir: Path, step: int, payload: dict[str, Any], keep: int = 3) -> Path:
+def save_checkpoint(run_dir: Path, step: int, payload: dict[str, Any], keep: int = 3, keep_every: int = 0) -> Path:
+    """Write a verified checkpoint. Retention: the newest ``keep`` plus every ``keep_every``-th step
+    (milestones, never rotated away) and ``best.pt``."""
     ckpt_dir = Path(run_dir) / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     path = ckpt_dir / f"step_{step:08d}.pt"
@@ -113,7 +128,14 @@ def save_checkpoint(run_dir: Path, step: int, payload: dict[str, Any], keep: int
     os.replace(tmp, latest)
     # rotation (never delete best.pt)
     existing = sorted(ckpt_dir.glob("step_*.pt"))
-    for old in existing[:-keep]:
+
+    def milestone(p: Path) -> bool:
+        try:
+            return keep_every > 0 and int(p.stem.split("_")[1]) % keep_every == 0
+        except ValueError:
+            return False
+
+    for old in [p for p in existing[:-keep] if not milestone(p)]:
         try:
             old.unlink()
             old.with_name(old.name + ".sha256").unlink(missing_ok=True)
