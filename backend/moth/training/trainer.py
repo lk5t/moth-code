@@ -14,6 +14,7 @@ import math
 import os
 import random
 import shutil
+import sys
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -77,6 +78,10 @@ class TrainConfig:
 
 
 def cpu_has_fast_bf16() -> bool:
+    # CPU feature bits alone do not establish that the Windows runtime can execute
+    # the selected BF16/AMX kernels. Keep automatic CPU training on the FP32 path.
+    if sys.platform == "win32":
+        return False
     try:
         if hasattr(torch.cpu, "_is_amx_tile_supported") and torch.cpu._is_amx_tile_supported():
             return True

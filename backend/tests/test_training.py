@@ -15,6 +15,36 @@ from moth.training.sources import LicenseError, SourceSpec
 from moth.training.trainer import TrainConfig, Trainer, lr_at
 
 
+@pytest.mark.parametrize('platform,amx,bf16,expected', [
+    ('win32', True, True, False),
+    ('linux', True, False, True),
+    ('linux', False, True, True),
+    ('linux', False, False, False),
+])
+def test_automatic_cpu_precision_respects_runtime_support(monkeypatch, platform, amx, bf16, expected):
+    from moth.training import trainer as training
+
+    with monkeypatch.context() as patch:
+        patch.setattr(training.sys, 'platform', platform)
+        patch.setattr(torch.cpu, '_is_amx_tile_supported', lambda: amx, raising=False)
+        patch.setattr(torch.cpu, '_is_avx512_bf16_supported', lambda: bf16, raising=False)
+        assert training.cpu_has_fast_bf16() is expected
+        trainer = Trainer.__new__(Trainer)
+        trainer.cfg, trainer.device = TrainConfig(), 'cpu'
+        assert trainer._precision() == (torch.bfloat16 if expected else None, False)
+
+
+def test_windows_cpu_fallback_preserves_cuda_precision(monkeypatch):
+    from moth.training import trainer as training
+
+    with monkeypatch.context() as patch:
+        patch.setattr(training.sys, 'platform', 'win32')
+        patch.setattr(torch.cuda, 'is_bf16_supported', lambda: True)
+        trainer = Trainer.__new__(Trainer)
+        trainer.cfg, trainer.device = TrainConfig(), 'cuda'
+        assert trainer._precision() == (torch.bfloat16, False)
+
+
 def cfg(pipeline, out, **kw):
     base = dict(run_name="t", dataset=str(pipeline["dataset"]), out_dir=str(out), preset="moth-tiny",
                 seq_len=64, batch_size=8, grad_accum=1, max_steps=60, lr=3e-3, min_lr=3e-4, warmup_steps=5,
