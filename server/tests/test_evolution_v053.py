@@ -68,7 +68,7 @@ def test_curriculum_cycle_dev_checkpoint_and_model_version(client, owner, tmp_pa
     assert any(k.startswith("capability:holdout:") for k in gates)  # capability benchmarks gate promotion
     cand = M.release(ctx, cyc["candidate_version"])
     assert ctx.extras["deployed_version"] == cand["version"]
-    assert cand["info"]["dev_checkpoint"]["sha256"] and cand["info"]["model_version"] == "0.1"
+    assert cand["info"]["dev_checkpoint"]["sha256"] and cand["info"]["model_version"] == "0.01"
     assert cand["info"]["lineage_totals"]["steps"] == FAST["training"]["steps"]
     # the next cycle continues from the development checkpoint (weights + optimizer), not from scratch
     from moth_server.evolution.backends import _v2_spec
@@ -320,7 +320,7 @@ def test_progress_dashboard_and_timeline_from_measurements(client, settings, own
     p = client.get("/v1/intelligence/progress", headers=H(t)).json()
     assert [v["version"] for v in p["timeline"]] == [base_v, cyc["candidate_version"]]
     cur = p["current"]
-    assert cur["model_version"] == "0.1" and cur["stable"] and cur["has_dev_checkpoint"]
+    assert cur["model_version"] == "0.01" and cur["stable"] and cur["has_dev_checkpoint"]
     assert "capability:holdout:language" not in cur["benchmarks"] and "holdout_language" in cur["benchmarks"]
     assert p["development"]["version"] == cyc["candidate_version"]
     assert p["training"]["experiments"]

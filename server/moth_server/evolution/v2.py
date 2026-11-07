@@ -347,7 +347,7 @@ def assign_model_version(ctx: Ctx, version: int) -> str | None:
             break
     major = parent_mv[0] if parent_mv else 0
     minor = max([u[1] for u in used if u[0] == major] or [0]) + 1
-    mv = f"{major}.{minor}"
+    mv = f"{major}.{minor:02d}"
     info = {**rel["info"], "model_version": mv, "display_name": f"MOTH {mv}",
             "family": rel["info"].get("family") or "MOTH"}
     M._set(ctx, version, None, info=json.dumps(info))

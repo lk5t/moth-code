@@ -222,6 +222,8 @@ class Trainer:
         val = open_dataset(cfg.dataset, "val", cfg.seq_len, cfg.mixture)
 
         resumed_from = None
+        last_train_loss = None
+        last_val_loss = None
         had_progress = any((self.run_dir / "checkpoints").glob("step_*.pt*")) or (self.run_dir / "checkpoints" / "best.pt").exists()
         ckpt_path, ck = load_latest_verified(self.run_dir, self.device, self.emit)
         if ck is None and had_progress:
@@ -240,6 +242,8 @@ class Trainer:
             self.step = ck["step"]
             self.best_val = ck.get("best_val", float("inf"))
             self.tokens_seen = ck.get("tokens_seen", 0)
+            last_train_loss = ck.get("train_loss")
+            last_val_loss = ck.get("val_loss")
             data_gen.set_state(ck["rng"]["data"].cpu())
             torch.set_rng_state(ck["rng"]["torch"].cpu())
             if self.device == "cuda" and ck["rng"].get("cuda") is not None:
@@ -287,6 +291,7 @@ class Trainer:
             save_checkpoint(self.run_dir, self.step, {
                 "model": model.state_dict(), "optimizer": optimizer.state_dict(),
                 "batch_tuning": tuning,
+                "train_loss": last_train_loss, "val_loss": last_val_loss,
                 "scaler": scaler.state_dict() if use_scaler else None,
                 "step": self.step, "best_val": self.best_val, "tokens_seen": self.tokens_seen,
                 "lineage": {**cfg.lineage,
@@ -326,6 +331,7 @@ class Trainer:
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
                 self.step += 1
+                last_train_loss = loss_acc
                 tokens_since += tokens_per_step
                 self.tokens_seen += tokens_per_step
 
@@ -336,6 +342,7 @@ class Trainer:
                     t_last, tokens_since = time.time(), 0
                 if self.step % cfg.eval_interval == 0 or self.step == cfg.max_steps:
                     vl, per_domain = self.evaluate_domains(model, val, amp_dtype)
+                    last_val_loss = vl
                     improved = vl < self.best_val
                     self.best_val = min(self.best_val, vl)
                     self.emit("metrics", split="val", loss=vl, perplexity=math.exp(min(vl, 20)), best=improved,

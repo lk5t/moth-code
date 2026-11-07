@@ -125,6 +125,16 @@ class SettingsIn(BaseModel):
     changes: dict[str, Any]
 
 
+@router.post("/initialize")
+def initialize(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.evolution.bootstrap import initialize as init
+
+    try:
+        return init(ctx, auth.uid)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(409, str(e)) from None
+
+
 @router.put("/settings")
 def put_settings(body: SettingsIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
     try:
