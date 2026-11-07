@@ -15,6 +15,9 @@ suite get directly comparable numbers. Suites:
   the Owner for reasoning, instruction following or factual accuracy; the share of wrong answers is
   reported as the error (hallucination) rate. Without a supplied suite these capabilities are reported
   as *not measured* — never estimated.
+* ``capability`` — the Data Factory's held-out capability benchmarks (maths, reasoning, code execution,
+  per-domain held-out loss, instruction following, safety); see ``moth.model.capabilities``. They are
+  scored from text, so they compare models with different tokenizers or architectures fairly.
 * ``performance`` — load time, generation speed (tokens/s) and peak memory.
 
 Lower is better for ``heldout``; higher is better for ``code_syntax`` and ``tasks`` accuracy.
@@ -147,6 +150,10 @@ def run(package: Path, suites: list[dict[str, Any]]) -> dict[str, Any]:
                 r = code_syntax(model, tok)
             elif s["kind"] == "tasks":
                 r = tasks_suite(model, tok, Path(s["path"]))
+            elif s["kind"] == "capability":
+                from moth.model.capabilities import run_suite
+
+                r = run_suite(model, tok, s)
             else:
                 raise EvalError(f"unknown suite kind {s['kind']!r}")
             r["ok"] = math.isfinite(float(r["value"]))

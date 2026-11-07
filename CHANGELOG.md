@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.5.1 — ASCENSION, milestone 2: INTELLIGENCE
+
+MOTH Cloud and MOTH Code 0.5.1. Details: [docs/INTELLIGENCE.md](docs/INTELLIGENCE.md).
+
+- **Intelligence Router:** every chat request goes to the best available model for what it needs
+  (benchmarked per capability, then latency), with fallback when a model fails and plain-language
+  errors when none can answer. External (OpenAI-compatible) providers are supported but **off by
+  default**, and used only for users who allow them.
+- **Real streaming chat on MOTH Cloud** (`/v1/chat`): tokens stream as they are generated; optional cloud
+  conversation history with delete controls (MOTH Code keeps its history on the computer and asks the
+  cloud not to store it).
+- **Knowledge Engine:** shared (Owner-approved) and private documents, versioned and deduplicated, BM25
+  search, cited answers. Private knowledge is isolated per user.
+- **Feedback learning with consent:** rate answers and report what went wrong. Prompts and answers are
+  stored only with the user's opt-in; Owner-approved feedback becomes training data.
+- **Smart Dataset Library & Data Factory:** eight approved, licensed datasets (TinyStories, Dolly 15k,
+  OpenAssistant, Simple English Wikipedia, GSM8K, ARC, MBPP, Python standard library), pinned to exact
+  revisions and SHA-256, downloaded once and reused; cleaning, PII scrubbing, quality scoring, benchmark
+  decontamination, exact and near-duplicate removal, reproducible manifests, Owner-approved dataset
+  updates.
+- **Curriculum and Weakness Detection:** staged curriculum with replay and epoch caps; capability
+  benchmarks on held-out data (maths, reasoning, executed code, instruction following, held-out loss per
+  domain, safety); weaknesses, regressions and recommendations; candidate models must not regress beyond
+  sampling noise.
+- **Training integrity:** checkpoints carry SHA-256 sidecars; resuming verifies them and falls back to the
+  newest intact checkpoint; one trainer per run directory (lock); bf16 training on CPUs with AMX.
+- **Safety baseline** on MOTH Cloud (Owner toggle).
+- Database schema 5 (new tables only; nothing existing is changed).
+- MOTH Code: Settings → Intelligence & privacy (consent switches, models, my knowledge); sources and
+  ratings under cloud answers; Owner Dashboard → Intelligence (dataset library, builds, weaknesses and
+  curriculum, feedback review, shared knowledge).
+
 ## 0.5.0 — ASCENSION, milestone 1: EasyConnect workers, CPU workers, Rewards 2.0
 
 MOTH Cloud, MOTH Code and MOTH Worker 0.5.0 are released together. This is the first of the staged

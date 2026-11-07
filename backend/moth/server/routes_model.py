@@ -113,8 +113,14 @@ def register(app: FastAPI, svc: Services, deps) -> None:
                                              "text": piece})
 
                 stats = router.chat(msgs, params, on_text, cancel)
-                meta = {"model": model_name, "via": "cloud", "tokens": stats.generated_tokens,
-                        "tokens_per_sec": round(stats.tokens_per_sec, 1), "stop_reason": stats.stop_reason}
+                extra = getattr(stats, "extra", None) or {}
+                if extra.get("replaced_text") is not None:  # MOTH Cloud's content policy edited the answer
+                    text = extra["replaced_text"]
+                meta = {"model": extra.get("model") or model_name, "via": "cloud", "tokens": stats.generated_tokens,
+                        "tokens_per_sec": round(stats.tokens_per_sec, 1), "stop_reason": stats.stop_reason,
+                        "sources": extra.get("sources") or [], "capability": extra.get("capability"),
+                        "model_version": extra.get("model_version"), "provider": extra.get("provider"),
+                        "prompt": body.message}
                 svc.db.execute("INSERT INTO messages(conversation_id, role, content, meta, ts) VALUES (?,?,?,?,?)",
                                (cid, "assistant", text, json.dumps(meta), time.time()))
                 svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "done",

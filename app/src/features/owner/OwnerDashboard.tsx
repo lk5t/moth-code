@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/empty";
 import { formatNumber, timeAgo } from "@/lib/utils";
 import { ModelsPanel, ServerPanel, UpdatesPanel, WorkersPanel } from "./ops";
 import { EvolutionPanel } from "./evolution";
+import { IntelligencePanel } from "./intelligence";
 
 type Any = Record<string, any>;
 
@@ -345,7 +346,7 @@ export function OwnerDashboard() {
   if (role !== "owner") return <EmptyState title="Owner Dashboard">Available to the MOTH Owner account only.</EmptyState>;
   const tabs: [string, string, React.ComponentType][] = [
     ["overview", "Overview", Overview], ["server", "Server", ServerPanel], ["updates", "Updates", UpdatesPanel],
-    ["models", "AI models", ModelsPanel], ["evolution", "Evolution", EvolutionPanel], ["workers", "Workers", WorkersPanel], ["users", "Users", Users],
+    ["models", "AI models", ModelsPanel], ["evolution", "Evolution", EvolutionPanel], ["intelligence", "Intelligence", IntelligencePanel], ["workers", "Workers", WorkersPanel], ["users", "Users", Users],
     ["billing", "Plans & referrals", Billing], ["settings", "Policy & flags", PolicyAndFlags], ["audit", "Audit log", Audit],
   ];
   return (

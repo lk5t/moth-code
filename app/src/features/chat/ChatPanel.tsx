@@ -14,12 +14,13 @@ import { MothEmblem } from "@/components/MothEmblem";
 import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
 import { AgentPanel } from "@/features/agent/AgentPanel";
+import { AnswerFooter, type AnswerMeta } from "@/features/intelligence/AnswerFooter";
 
 interface ChatMessage {
   id: number | string;
   role: "user" | "assistant" | "error";
   content: string;
-  meta?: { model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string } | null;
+  meta?: ({ model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string } & AnswerMeta) | null;
   streaming?: boolean;
 }
 
@@ -224,6 +225,7 @@ export function ChatPanel() {
                               {m.meta.stop_reason === "cancelled" && " · cancelled"}
                             </div>
                           )}
+                          {m.meta && !m.streaming && <AnswerFooter meta={m.meta} answer={m.content} />}
                         </div>
                       </div>
                     )}

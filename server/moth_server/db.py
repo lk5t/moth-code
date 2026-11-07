@@ -20,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.engine import Connection, Engine
 
 metadata = MetaData()
-SCHEMA_VERSION = 4  # see MIGRATIONS below
+SCHEMA_VERSION = 5  # see MIGRATIONS below
 
 
 def now() -> float:
@@ -475,6 +475,96 @@ evolution_events = Table(
 )
 
 
+# ---- 0.5.1 INTELLIGENCE: conversations, knowledge, feedback, dataset library --------------------------
+conversations = Table(
+    "conversations", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id"), nullable=False, index=True),
+    Column("title", String(120), nullable=False, default=""),
+    Column("model", String(64)),
+    Column("created_at", Float, nullable=False),
+    Column("updated_at", Float, nullable=False),
+)
+
+conversation_messages = Table(
+    "conversation_messages", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("conversation_id", Integer, ForeignKey("conversations.id"), nullable=False, index=True),
+    Column("role", String(16), nullable=False),
+    Column("content", Text, nullable=False),
+    Column("model", String(64)),
+    Column("model_version", Integer),
+    Column("sources", Text, nullable=False, default="[]"),  # knowledge citations
+    Column("stats", Text, nullable=False, default="{}"),
+    Column("created_at", Float, nullable=False),
+)
+
+knowledge_docs = Table(
+    "knowledge_docs", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("owner_id", Integer, ForeignKey("users.id"), index=True),  # NULL = shared (Owner-approved) knowledge
+    Column("key", String(200), nullable=False),  # stable identity of a document across versions
+    Column("title", String(200), nullable=False),
+    Column("source", String(500), nullable=False, default=""),
+    Column("license", String(64), nullable=False, default=""),
+    Column("version", Integer, nullable=False, default=1),
+    Column("sha256", String(64), nullable=False),
+    Column("status", String(16), nullable=False, default="active"),  # active | superseded | pending | deleted
+    Column("chars", Integer, nullable=False, default=0),
+    Column("created_at", Float, nullable=False),
+    Column("updated_at", Float, nullable=False),
+)
+
+knowledge_chunks = Table(
+    "knowledge_chunks", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("doc_id", Integer, ForeignKey("knowledge_docs.id"), nullable=False, index=True),
+    Column("ord", Integer, nullable=False),
+    Column("text", Text, nullable=False),
+    Column("length", Integer, nullable=False),  # number of terms (BM25 length normalisation)
+)
+
+knowledge_terms = Table(
+    "knowledge_terms", metadata,
+    Column("term", String(48), primary_key=True),
+    Column("chunk_id", Integer, ForeignKey("knowledge_chunks.id"), primary_key=True, index=True),
+    Column("tf", Integer, nullable=False),
+)
+
+feedback = Table(
+    "feedback", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id"), nullable=False, index=True),
+    Column("message_id", Integer),
+    Column("model", String(64)),
+    Column("model_version", Integer),
+    Column("rating", Integer, nullable=False),  # +1 | -1
+    Column("category", String(32), nullable=False, default=""),  # wrong | unhelpful | code_error | unsafe | other
+    Column("capability", String(24), nullable=False, default="conversation"),
+    Column("comment", Text, nullable=False, default=""),
+    Column("correction", Text, nullable=False, default=""),
+    # prompt/response are stored only when the user consented to training use
+    Column("prompt", Text),
+    Column("response", Text),
+    Column("consent", Boolean, nullable=False, default=False),
+    Column("status", String(16), nullable=False, default="new"),  # new | approved | rejected | used
+    Column("created_at", Float, nullable=False, index=True),
+)
+
+library_builds = Table(
+    "library_builds", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("status", String(16), nullable=False),  # queued | running | ready | failed
+    Column("path", String(500)),
+    Column("content_sha256", String(64)),
+    Column("tokenizer_fingerprint", String(32)),
+    Column("manifest", Text, nullable=False, default="{}"),
+    Column("error", Text),
+    Column("created_at", Float, nullable=False),
+    Column("finished_at", Float),
+)
+
+
 # ---- schema migrations ------------------------------------------------------------------------
 # ``create_all`` adds new tables; columns and data changes are versioned migrations. A migration
 # marked destructive (drops or rewrites data irreversibly) is never applied automatically: it needs
@@ -530,6 +620,8 @@ MIGRATIONS: list[tuple[int, str, bool, Any]] = [
     (3, "v0.4: model evolution (training datasets, cycles, experiments, evaluation reports, lineage)", False,
      _m3_evolution),
     (4, "v0.5: worker machine id and contribution totals", False, _m4_workers),
+    (5, "v0.5.1: conversations, knowledge engine, feedback, dataset library (new tables only)", False,
+     lambda c: None),
 ]
 
 

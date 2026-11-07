@@ -101,7 +101,11 @@ class MothCloudClient:
         return health["models"][0]
 
     def chat(self, messages: list[Message], params: GenerationParams, on_text: Callable[[str], None],
-             cancel_event: threading.Event | None = None, model: str | None = None) -> GenerationStats:
+             cancel_event: threading.Event | None = None, model: str | None = None,
+             use_knowledge: bool | None = None) -> GenerationStats:
+        health = self._health or self.health()
+        if health.get("routed_chat") and self.base_url.endswith("/cloud"):
+            return self._routed_chat(messages, params, on_text, cancel_event, use_knowledge)
         body = {"model": model or self.default_model()["name"],
                 "messages": [{"role": m.role, "content": m.content, "trusted": m.allow_special} for m in messages],
                 "params": {k: v for k, v in params.__dict__.items()}}
@@ -133,6 +137,61 @@ class MothCloudClient:
                         stats.generated_tokens = s.get("generated_tokens", 0)
                         stats.seconds = s.get("seconds", 0.0)
                         stats.stop_reason = s.get("stop_reason", "")
+        except httpx.HTTPError as e:
+            raise CloudUnavailable(f"MOTH Cloud request failed: {e}") from None
+        return stats
+
+    def _routed_chat(self, messages: list[Message], params: GenerationParams, on_text: Callable[[str], None],
+                     cancel_event: threading.Event | None, use_knowledge: bool | None) -> GenerationStats:
+        """MOTH Cloud 0.5.1+: the Intelligence Router picks the model and adds cited knowledge.
+
+        The history stays on this computer: recent turns are sent with the request and not stored."""
+        turns = [m for m in messages if m.role in ("user", "assistant")]
+        if not turns or turns[-1].role != "user":
+            raise CloudUnavailable("the conversation must end with a user message")
+        body = {"message": turns[-1].content, "history": [{"role": m.role, "content": m.content} for m in turns[:-1]][-40:],
+                "store": False, "params": {k: v for k, v in params.__dict__.items()}}
+        if use_knowledge is not None:
+            body["use_knowledge"] = use_knowledge
+        stats = GenerationStats()
+        stats.extra = {}  # type: ignore[attr-defined]
+        root = self.base_url[: -len("/cloud")]
+        headers = {**self._headers(), "X-Request-Id": uuid.uuid4().hex}
+        try:
+            with self.http.stream("POST", root + "/v1/chat", json=body, headers=headers) as r:
+                if r.status_code >= 400:
+                    r.read()
+                    try:
+                        detail = r.json().get("detail")
+                    except ValueError:
+                        detail = None
+                    if isinstance(detail, dict):
+                        detail = detail.get("message")
+                    raise CloudUnavailable(detail or f"MOTH Cloud returned HTTP {r.status_code}")
+                text: list[str] = []
+                for line in r.iter_lines():
+                    if cancel_event is not None and cancel_event.is_set():
+                        stats.stop_reason = "cancelled"
+                        break
+                    if not line.strip():
+                        continue
+                    ev = json.loads(line)
+                    t = ev.get("type")
+                    if t == "delta":
+                        text.append(ev["text"])
+                        on_text(ev["text"])
+                    elif t == "replace":  # the content policy edited the answer
+                        stats.extra["replaced_text"] = ev["text"]  # type: ignore[attr-defined]
+                    elif t == "error":
+                        raise CloudUnavailable(ev.get("message") or "MOTH Cloud could not answer")
+                    elif t == "done":
+                        s = ev.get("stats") or {}
+                        stats.prompt_tokens = int(s.get("prompt_tokens") or 0)
+                        stats.generated_tokens = int(s.get("generated_tokens") or 0)
+                        stats.seconds = float(s.get("seconds") or 0.0)
+                        stats.stop_reason = s.get("stop_reason", "")
+                        stats.extra.update({k: ev.get(k) for k in ("model", "model_version", "provider",  # type: ignore[attr-defined]
+                                                                   "capability", "sources")})
         except httpx.HTTPError as e:
             raise CloudUnavailable(f"MOTH Cloud request failed: {e}") from None
         return stats

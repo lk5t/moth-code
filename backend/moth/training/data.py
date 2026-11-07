@@ -143,3 +143,72 @@ class TokenDataset:
             return (X.pin_memory().to(device, non_blocking=True), Y.pin_memory().to(device, non_blocking=True),
                     M.pin_memory().to(device, non_blocking=True))
         return X.to(device), Y.to(device), M.to(device)
+
+
+class MixtureDataset:
+    """Weighted sampling over per-domain prepared datasets (a Data Factory ``mixture.json``).
+
+    Every batch row is drawn from one domain chosen by weight, so the curriculum controls exactly what
+    the model sees. All domains must share one tokenizer. ``domain_batches`` gives per-domain batches for
+    capability-level validation losses.
+    """
+
+    def __init__(self, path: str | Path, split: str, seq_len: int, weights: dict[str, float] | None = None):
+        self.path = Path(path)
+        self.mix = json.loads((self.path / "mixture.json").read_text())
+        self.parts: dict[str, TokenDataset] = {}
+        for d, info in self.mix["domains"].items():
+            if info["tokens"].get(split, 0) < 3:
+                continue
+            self.parts[d] = TokenDataset(self.path / info["dir"], split, seq_len)
+        if not self.parts:
+            raise ValueError(f"mixture at {self.path} has no {split} data")
+        fps = {p.meta["tokenizer_fingerprint"] for p in self.parts.values()}
+        if fps != {self.mix["tokenizer_fingerprint"]}:
+            raise ValueError("mixture domains were tokenized with different tokenizers")
+        self.meta = {**next(iter(self.parts.values())).meta, "tokenizer_fingerprint": self.mix["tokenizer_fingerprint"],
+                     "tokenizer_path": self.mix["tokenizer_path"]}
+        self.seq_len = min(p.seq_len for p in self.parts.values())
+        self.set_weights(weights)
+
+    def set_weights(self, weights: dict[str, float] | None) -> None:
+        w = {d: float((weights or {}).get(d, 0.0 if weights else 1.0)) for d in self.parts}
+        if sum(w.values()) <= 0:
+            w = {d: 1.0 for d in self.parts}
+        total = sum(w.values())
+        self.weights = {d: v / total for d, v in w.items() if v > 0}
+        self._names = list(self.weights)
+        self._probs = torch.tensor([self.weights[d] for d in self._names], dtype=torch.float64)
+
+    def __len__(self) -> int:
+        return sum(len(p) for p in self.parts.values())
+
+    def batch(self, batch_size: int, generator: torch.Generator, device: str | torch.device = "cpu"):
+        picks = torch.multinomial(self._probs, batch_size, replacement=True, generator=generator).tolist()
+        rows = [self.parts[self._names[i]].batch(1, generator, "cpu") for i in picks]
+        X = torch.cat([r[0][:, : self.seq_len] for r in rows])
+        Y = torch.cat([r[1][:, : self.seq_len] for r in rows])
+        M = torch.cat([r[2][:, : self.seq_len] for r in rows])
+        return X.to(device), Y.to(device), M.to(device)
+
+    def domain_batches(self) -> dict[str, TokenDataset]:
+        return dict(self.parts)
+
+
+def open_dataset(path: str | Path, split: str, seq_len: int, weights: dict[str, float] | None = None):
+    """A prepared dataset directory or a Data Factory mixture directory."""
+    if (Path(path) / "mixture.json").exists():
+        return MixtureDataset(path, split, seq_len, weights)
+    return TokenDataset(path, split, seq_len)
+
+
+def dataset_meta(path: str | Path) -> dict:
+    p = Path(path)
+    if (p / "mixture.json").exists():
+        mix = json.loads((p / "mixture.json").read_text())
+        return {"tokenizer_path": mix["tokenizer_path"], "tokenizer_fingerprint": mix["tokenizer_fingerprint"],
+                "mixture": True, "build_sha256": mix.get("build_sha256"),
+                "tokens": {"train": sum(d["tokens"]["train"] for d in mix["domains"].values()),
+                           "val": sum(d["tokens"]["val"] for d in mix["domains"].values())},
+                "domains": {d: v["tokens"] for d, v in mix["domains"].items()}}
+    return json.loads((p / "meta.json").read_text())

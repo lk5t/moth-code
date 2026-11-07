@@ -175,3 +175,38 @@ class PolicyEngine:
 
     def filter_output(self, text: str) -> PolicyDecision:
         return self._apply(text, "output")
+
+
+# A small baseline for public serving: refuses requests that clearly seek serious harm. Owners keep full
+# control (MOTH Cloud has an Owner toggle); the desktop app's local policy is unchanged.
+SAFETY_BASELINE_MESSAGE = "MOTH can't help with that request because it could cause serious harm."
+SAFETY_BASELINE_RULES: list[dict[str, Any]] = [
+    {"id": "baseline-weapons", "description": "Instructions for explosives or illegal weapons", "applies_to": "input",
+     "action": "block", "message": SAFETY_BASELINE_MESSAGE,
+     "match": {"type": "regex", "patterns": [
+         r"\b(make|build|assemble|construct|instructions?|steps?|how to)\b.{0,60}\b(pipe ?bomb|bomb|explosive|ied|napalm|molotov)\b",
+         r"\b(buy|get|obtain)\b.{0,40}\bguns?\b.{0,40}\b(illegal(ly)?|without (a )?background check)\b"]}},
+    {"id": "baseline-malware", "description": "Writing malware or stealing credentials", "applies_to": "input",
+     "action": "block", "message": SAFETY_BASELINE_MESSAGE,
+     "match": {"type": "regex", "patterns": [
+         r"\b(write|create|code|generate|build|make)\b.{0,60}\b(malware|ransomware|keylogger|trojan|botnet|virus)\b",
+         r"\b(steal|exfiltrate|dump)\b.{0,40}\b(passwords?|credentials|cookies|card numbers?)\b",
+         r"\bphishing\b.{0,60}\b(email|message|page|site)\b"]}},
+    {"id": "baseline-drugs", "description": "Synthesising hard drugs", "applies_to": "input", "action": "block",
+     "message": SAFETY_BASELINE_MESSAGE,
+     "match": {"type": "regex", "patterns": [
+         r"\b(make|cook|synthesi[sz]e|produce|manufacture)\b.{0,40}\b(meth(amphetamine)?|cocaine|heroin|fentanyl)\b"]}},
+    {"id": "baseline-violence", "description": "Hurting, poisoning or threatening people", "applies_to": "input",
+     "action": "block", "message": SAFETY_BASELINE_MESSAGE,
+     "match": {"type": "regex", "patterns": [
+         r"\b(poison|kill|murder|hurt)\b.{0,30}\b(someone|somebody|a person|my \w+|him|her|them)\b",
+         r"\b(threaten|harass)\w*\b.{0,60}\b(family|coworker|neighbou?r|ex|her|him)\b"]}},
+]
+
+
+def with_safety_baseline(policy: dict[str, Any] | None) -> dict[str, Any]:
+    """``policy`` plus the baseline rules (rules with the same id in ``policy`` take precedence)."""
+    p = copy.deepcopy(policy or {})
+    have = {r.get("id") for r in p.get("content_rules", [])}
+    p["content_rules"] = list(p.get("content_rules", [])) + [r for r in SAFETY_BASELINE_RULES if r["id"] not in have]
+    return p

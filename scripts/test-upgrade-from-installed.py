@@ -40,7 +40,7 @@ from importlib import import_module  # noqa: E402
 
 E = import_module("test-ecosystem-update")
 ROOT = E.ROOT
-INSTALLED = "9d0ec47"  # the commit tagged server-v0.4.0 (what the production VPS runs)
+INSTALLED = "954e2e5"  # the commit tagged server-v0.5.0 (what the production VPS runs)
 
 
 def _installed(path: str, pattern: str) -> str:

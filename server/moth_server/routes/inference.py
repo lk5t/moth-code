@@ -61,7 +61,7 @@ def health(ctx: Ctx = Depends(get_ctx)):
         m = engine.manifest
         models.append({k: m.get(k) for k in ("name", "architecture", "params", "context_length", "sha256")})
     return {"service": "moth-cloud", "protocol": 1, "models": models, "metered": True, "status": status,
-            "message": message}
+            "message": message, "routed_chat": "/v1/chat"}
 
 
 @router.post("/chat")

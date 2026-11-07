@@ -23,6 +23,10 @@ FEATURE_FLAGS = {
     "referrals_enabled": True,
     "training_enrollment_open": True,
     "auto_deploy_models": False,        # deploy candidates automatically when they pass evaluation
+    "safety_baseline": True,            # refuse clearly harmful requests on MOTH Cloud (0.5.1)
+    "knowledge_enabled": True,          # knowledge search and cited answers (0.5.1)
+    "feedback_collection": True,        # users can rate answers (0.5.1)
+    "external_ai_enabled": False,       # compatible external providers: off unless the Owner turns them on
 }
 # Flags that no longer do anything but are still accepted from older apps and scripts.
 RETIRED_FLAGS = {"allow_cpu_workers"}  # 0.5: CPU workers are production workers

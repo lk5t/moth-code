@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import random
 import time
 from dataclasses import asdict, dataclass, field
@@ -23,8 +24,9 @@ import torch
 from moth.model.config import MothConfig, preset
 from moth.model.tokenizer import Tokenizer
 from moth.model.transformer import MothModel
-from moth.training.checkpoint import latest_checkpoint, load_checkpoint, save_checkpoint
-from moth.training.data import TokenDataset
+from moth.training.checkpoint import (RunLock, latest_checkpoint, load_checkpoint, load_latest_verified,
+                                     save_checkpoint)
+from moth.training.data import MixtureDataset, dataset_meta, open_dataset
 
 
 @dataclass
@@ -58,6 +60,10 @@ class TrainConfig:
     gpu_memory_fraction: float | None = None
     duty_cycle: float = 1.0  # fraction of wall time spent computing (1.0 = no throttling)
     init_from: str | None = None  # start from an exported model / checkpoint instead of random init
+    init_optimizer: bool = True  # continuing a lineage: also restore the optimizer moments when compatible
+    mixture: dict[str, float] | None = None  # Data Factory mixture weights (curriculum)
+    threads: int | None = None  # CPU threads (None = all but one)
+    lineage: dict[str, Any] = field(default_factory=dict)  # lineage id, parent checkpoint, cumulative counters
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "TrainConfig":
@@ -65,6 +71,17 @@ class TrainConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def cpu_has_fast_bf16() -> bool:
+    try:
+        if hasattr(torch.cpu, "_is_amx_tile_supported") and torch.cpu._is_amx_tile_supported():
+            return True
+        if hasattr(torch.cpu, "_is_avx512_bf16_supported") and torch.cpu._is_avx512_bf16_supported():
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def pick_device(requested: str = "auto") -> str:
@@ -112,7 +129,7 @@ class Trainer:
         self._should_stop = should_stop or (lambda: False)
         self.run_dir = Path(cfg.out_dir)
         (self.run_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
-        meta = json.loads((Path(cfg.dataset) / "meta.json").read_text())
+        meta = dataset_meta(cfg.dataset)
         self.tokenizer = Tokenizer.load(meta["tokenizer_path"])
         if self.tokenizer.fingerprint() != meta["tokenizer_fingerprint"]:
             raise ValueError("dataset was prepared with a different tokenizer than the one on disk")
@@ -121,6 +138,7 @@ class Trainer:
         self.model_cfg = build_model_config(cfg, self.tokenizer.vocab_size)
         self.step = 0
         self.best_val = float("inf")
+        self.tokens_seen = 0  # this run
 
     # ---- helpers -----------------------------------------------------------
     def emit(self, kind: str, **data: Any) -> None:
@@ -134,33 +152,59 @@ class Trainer:
 
     def _precision(self) -> tuple[torch.dtype | None, bool]:
         p = self.cfg.precision
-        if self.device != "cuda" or p == "fp32":
+        if self.device == "cpu":
+            # bf16 autocast is ~2x faster only where the CPU has bf16 matrix units (AMX / AVX512-BF16)
+            if p == "bf16" or (p == "auto" and cpu_has_fast_bf16()):
+                return torch.bfloat16, False
+            return None, False
+        if p == "fp32":
             return None, False
         if p == "bf16" or (p == "auto" and torch.cuda.is_bf16_supported()):
             return torch.bfloat16, False
         return torch.float16, True
 
     @torch.no_grad()
-    def evaluate(self, model: MothModel, data: TokenDataset, amp_dtype) -> float:
+    def evaluate(self, model: MothModel, data, amp_dtype) -> float:
+        loss, _ = self.evaluate_domains(model, data, amp_dtype)
+        return loss
+
+    @torch.no_grad()
+    def evaluate_domains(self, model: MothModel, data, amp_dtype) -> tuple[float, dict[str, float]]:
+        """Validation loss overall and, for mixtures, per capability domain (the same batches every time)."""
         model.eval()
-        gen = torch.Generator().manual_seed(1234)  # same batches every eval → comparable numbers
-        losses = []
-        for _ in range(self.cfg.eval_iters):
-            x, y, m = data.batch(self.cfg.batch_size, gen, self.device)
-            with torch.autocast(self.device, dtype=amp_dtype, enabled=amp_dtype is not None):
-                _, loss = model(x, y, loss_mask=m)
-            losses.append(loss.item())
+        parts = data.domain_batches() if isinstance(data, MixtureDataset) else {"all": data}
+        per: dict[str, float] = {}
+        iters = max(2, self.cfg.eval_iters // max(1, len(parts))) if len(parts) > 1 else self.cfg.eval_iters
+        for name, part in parts.items():
+            gen = torch.Generator().manual_seed(1234)
+            losses = []
+            for _ in range(iters):
+                x, y, m = part.batch(self.cfg.batch_size, gen, self.device)
+                with torch.autocast(self.device, dtype=amp_dtype, enabled=amp_dtype is not None):
+                    _, loss = model(x, y, loss_mask=m)
+                losses.append(loss.item())
+            per[name] = float(np.mean(losses))
         model.train()
-        return float(np.mean(losses))
+        if isinstance(data, MixtureDataset):
+            overall = float(sum(per[d] * w for d, w in data.weights.items() if d in per)
+                            / max(1e-9, sum(w for d, w in data.weights.items() if d in per)))
+            return overall, per
+        return per["all"], {}
 
     # ---- main loop -----------------------------------------------------------
     def run(self) -> dict[str, Any]:
+        with RunLock(self.run_dir, owner=self.cfg.run_name):
+            return self._run()
+
+    def _run(self) -> dict[str, Any]:
         cfg = self.cfg
         torch.manual_seed(cfg.seed)
         random.seed(cfg.seed)
         np.random.seed(cfg.seed)
         if self.device == "cuda" and cfg.gpu_memory_fraction:
             torch.cuda.set_per_process_memory_fraction(float(cfg.gpu_memory_fraction))
+        if self.device == "cpu":
+            torch.set_num_threads(max(1, int(cfg.threads or max(1, (os.cpu_count() or 2) - 1))))
         if self.device == "cuda":
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
@@ -171,13 +215,12 @@ class Trainer:
         amp_dtype, use_scaler = self._precision()
         scaler = torch.amp.GradScaler("cuda", enabled=use_scaler)
         data_gen = torch.Generator().manual_seed(cfg.seed)
-        train = TokenDataset(cfg.dataset, "train", cfg.seq_len)
-        val = TokenDataset(cfg.dataset, "val", cfg.seq_len)
+        train = open_dataset(cfg.dataset, "train", cfg.seq_len, cfg.mixture)
+        val = open_dataset(cfg.dataset, "val", cfg.seq_len, cfg.mixture)
 
         resumed_from = None
-        ckpt_path = latest_checkpoint(self.run_dir)
-        if ckpt_path is not None:
-            ck = load_checkpoint(ckpt_path, self.device)
+        ckpt_path, ck = load_latest_verified(self.run_dir, self.device, self.emit)
+        if ck is not None:
             if MothConfig.from_dict(ck["model_config"]).compatibility_key() != self.model_cfg.compatibility_key():
                 raise ValueError("existing checkpoint in this run directory has a different architecture")
             model.load_state_dict(ck["model"])
@@ -186,6 +229,7 @@ class Trainer:
                 scaler.load_state_dict(ck["scaler"])
             self.step = ck["step"]
             self.best_val = ck.get("best_val", float("inf"))
+            self.tokens_seen = ck.get("tokens_seen", 0)
             data_gen.set_state(ck["rng"]["data"])
             torch.set_rng_state(ck["rng"]["torch"])
             if self.device == "cuda" and ck["rng"].get("cuda") is not None:
@@ -193,8 +237,17 @@ class Trainer:
             resumed_from = str(ckpt_path)
         elif cfg.init_from:
             src = load_checkpoint(Path(cfg.init_from), self.device)
-            state = src.get("model", src)
-            model.load_state_dict(state)
+            src_cfg = src.get("model_config")
+            if src_cfg and MothConfig.from_dict(src_cfg).compatibility_key() != self.model_cfg.compatibility_key():
+                raise ValueError("init_from has a different architecture; architecture changes are migrations")
+            if src.get("tokenizer_fingerprint") and src["tokenizer_fingerprint"] != self.tokenizer.fingerprint():
+                raise ValueError("init_from was trained with a different tokenizer")
+            model.load_state_dict(src.get("model", src))
+            if cfg.init_optimizer and src.get("optimizer"):
+                try:  # keep AdamW moments: continuing training should not start "cold"
+                    optimizer.load_state_dict(src["optimizer"])
+                except (ValueError, KeyError):
+                    pass
 
         self.emit("start", device=self.device, params=model.num_params(), model_config=self.model_cfg.to_dict(),
                   resumed_from=resumed_from, precision=str(amp_dtype or "fp32"),
@@ -208,7 +261,11 @@ class Trainer:
             save_checkpoint(self.run_dir, self.step, {
                 "model": model.state_dict(), "optimizer": optimizer.state_dict(),
                 "scaler": scaler.state_dict() if use_scaler else None,
-                "step": self.step, "best_val": self.best_val,
+                "step": self.step, "best_val": self.best_val, "tokens_seen": self.tokens_seen,
+                "lineage": {**cfg.lineage,
+                            "total_tokens": int(cfg.lineage.get("base_tokens", 0)) + self.tokens_seen,
+                            "total_steps": int(cfg.lineage.get("base_steps", 0)) + self.step},
+                "dataset_build": self.dataset_meta.get("build_sha256"),
                 "model_config": self.model_cfg.to_dict(), "train_config": cfg.to_dict(),
                 "tokenizer_fingerprint": self.tokenizer.fingerprint(),
                 "tokenizer_path": self.dataset_meta["tokenizer_path"],
@@ -243,6 +300,7 @@ class Trainer:
                 optimizer.zero_grad(set_to_none=True)
                 self.step += 1
                 tokens_since += tokens_per_step
+                self.tokens_seen += tokens_per_step
 
                 if self.step % cfg.log_interval == 0 or self.step == 1:
                     dt = time.time() - t_last
@@ -250,10 +308,11 @@ class Trainer:
                               tokens_per_sec=tokens_since / dt if dt > 0 else 0.0, max_steps=cfg.max_steps)
                     t_last, tokens_since = time.time(), 0
                 if self.step % cfg.eval_interval == 0 or self.step == cfg.max_steps:
-                    vl = self.evaluate(model, val, amp_dtype)
+                    vl, per_domain = self.evaluate_domains(model, val, amp_dtype)
                     improved = vl < self.best_val
                     self.best_val = min(self.best_val, vl)
-                    self.emit("metrics", split="val", loss=vl, perplexity=math.exp(min(vl, 20)), best=improved)
+                    self.emit("metrics", split="val", loss=vl, perplexity=math.exp(min(vl, 20)), best=improved,
+                              domains=per_domain, tokens_seen=self.tokens_seen)
                     if improved:
                         torch.save({"model": model.state_dict(), "model_config": self.model_cfg.to_dict(),
                                     "step": self.step, "val_loss": vl, "train_config": cfg.to_dict(),

@@ -72,6 +72,57 @@ def add_task_suite(ctx: Ctx, name: str, capability: str, data: bytes) -> dict[st
     return meta
 
 
+CAPABILITY_LIMITS = {"math": 50, "reasoning": 200, "code": 50, "instruction": 30, "holdout": 200}
+
+
+def capability_suites(ctx: Ctx) -> list[dict[str, Any]]:
+    """0.5.1 capability benchmarks from the latest dataset-library build (never-trained held-out data).
+
+    They are scored from text, so models with different tokenizers or sizes are compared fairly. The
+    suite hash covers the items and the limit, so results are cached per model version."""
+    from moth_server.intelligence import library
+
+    d = library.eval_dir(ctx)
+    if d is None:
+        return []
+    out: list[dict[str, Any]] = []
+
+    def file_sha(p: Path) -> str:
+        return hashlib.sha256(p.read_bytes()).hexdigest()
+
+    names = {"math": "Maths (GSM8K)", "reasoning": "Reasoning (ARC-Easy)", "code": "Code (MBPP, executed)"}
+    for cap in ("math", "reasoning", "code"):
+        p = d / f"{cap}.jsonl"
+        if p.exists():
+            lim = CAPABILITY_LIMITS[cap]
+            out.append({"id": f"capability:{cap}:{p.stem}", "kind": "capability", "capability": cap, "path": str(p),
+                        "limit": lim, "name": names[cap], "sha": _sha(f"capability/v1:{cap}:{lim}:{file_sha(p)}")})
+    conv = d / "holdout_conversation.jsonl"
+    if conv.exists():
+        lim = CAPABILITY_LIMITS["instruction"]
+        out.append({"id": "capability:instruction:conversation", "kind": "capability", "capability": "instruction",
+                    "path": str(conv), "limit": lim, "name": "Instruction following",
+                    "sha": _sha(f"capability/v1:instruction:{lim}:{file_sha(conv)}")})
+    for p in sorted(d.glob("holdout_*.jsonl")):
+        dom = p.stem.split("_", 1)[1]
+        lim = CAPABILITY_LIMITS["holdout"]
+        out.append({"id": f"capability:holdout:{dom}", "kind": "capability", "capability": "holdout", "path": str(p),
+                    "limit": lim, "name": f"Held-out {dom}", "sha": _sha(f"capability/v1:holdout:{lim}:{file_sha(p)}")})
+    out.append({"id": "capability:safety:baseline", "kind": "capability", "capability": "safety",
+                "name": "Safety (harmful requests refused)", "sha": _sha("capability/v1:safety:1"),
+                "policy": _serving_policy(ctx)})
+    return out
+
+
+def _serving_policy(ctx: Ctx) -> dict[str, Any]:
+    from moth.policy.engine import with_safety_baseline
+
+    from moth_server.routes.admin import flags
+
+    p = ctx.db.get_config("content_policy", {}) or {}
+    return with_safety_baseline(p) if flags(ctx).get("safety_baseline") else p
+
+
 def build_suites(ctx: Ctx, release: dict) -> list[dict[str, Any]]:
     """The benchmark suites a model of this tokenizer is compared on (same list for base and candidate)."""
     from moth_server import evalsets
@@ -90,6 +141,7 @@ def build_suites(ctx: Ctx, release: dict) -> list[dict[str, Any]]:
                            "dataset": evalsets.spec(ds), "sha": _sha(f"heldout/v1:{ds['sha256']}")})
     suites.append({"id": "code_syntax", "kind": "code_syntax", "name": "Python completion validity",
                    "sha": CODE_SUITE_SHA})
+    suites += capability_suites(ctx)
     for t in task_suites(ctx):
         suites.append({"id": f"tasks:{t['id']}", "kind": "tasks", "name": f"{t['name']} ({t['capability']})",
                        "path": t["path"], "capability": t["capability"], "sha": _sha(f"tasks/v1:{t['sha256']}")})
@@ -182,6 +234,19 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
             entry.update(passed=rel_imp >= -float(g["retention_tolerance"]),
                          detail=f"retention: may not get worse by more than {float(g['retention_tolerance']):.1%} "
                                 f"(changed {rel_imp:+.2%})")
+        elif s["kind"] == "capability" and not higher:  # held-out loss of one capability domain
+            entry.update(passed=rel_imp >= -float(g["retention_tolerance"]),
+                         detail=f"memory protection: held-out loss may not get worse by more than "
+                                f"{float(g['retention_tolerance']):.1%} (changed {rel_imp:+.2%})")
+        elif s["kind"] == "capability":
+            # accuracy on n items: a drop within sampling noise (2 standard errors) is not a regression
+            n = max(1, int(c.get("n") or b.get("n") or 1))
+            p_ = min(max(float(b["value"]), 0.0), 1.0)
+            noise = 2 * (p_ * (1 - p_) / n) ** 0.5
+            allowed = max(float(g["task_tolerance"]), noise)
+            drop = float(b["value"]) - float(c["value"])
+            entry.update(passed=drop <= allowed, detail=f"{s['name']}: {float(b['value']):.1%} → "
+                                                        f"{float(c['value']):.1%} (allowed drop {allowed:.1%})")
         elif s["kind"] == "code_syntax":
             drop = float(b["value"]) - float(c["value"])
             entry.update(passed=drop <= float(g["code_tolerance"]),
