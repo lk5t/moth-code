@@ -82,8 +82,13 @@ echo "== crash recovery: the worker is killed; the cron entry starts exactly one
 PID=$(cat "$MOTH_WORKER_HOME/worker.pid"); kill -9 "$PID"; sleep 1
 LINE=$(crontab -l | grep '^\* \* \* \* \*' | sed 's/^\* \* \* \* \* //; s/ # moth-worker$//')
 bash -c "$LINE" & bash -c "$LINE" &   # two cron ticks at once
-sleep 8
-N=$(pgrep -fc "bin/python .*moth-worker --home .* run --log-file" || true)  # worker processes, not shells
+# a second instance exits as soon as it finds the lock taken: wait until the count settles (a real
+# double instance would stay and fail the check)
+for _ in $(seq 1 20); do
+  sleep 1
+  N=$(pgrep -fc "bin/python .*moth-worker --home .* run --log-file" || true)  # worker processes, not shells
+  [[ "$N" == 1 ]] && break
+done
 echo "running workers after restart: $N"
 [[ "$N" == "1" ]]
 [[ "$(cat "$MOTH_WORKER_HOME/worker.pid")" != "$PID" ]]

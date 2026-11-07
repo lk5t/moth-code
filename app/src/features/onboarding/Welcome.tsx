@@ -3,9 +3,9 @@
  * No server addresses, ports or Python: MOTH Cloud is built in.
  */
 import { useState } from "react";
-import { FolderOpen, LogIn, UserPlus } from "lucide-react";
+import { FolderOpen, LogIn, MessageSquare, UserPlus } from "lucide-react";
 import { useAccount } from "@/lib/account";
-import { useApp } from "@/lib/app-state";
+import { appStore, useApp } from "@/lib/app-state";
 import { useConnection } from "@/lib/connection";
 import { openAccountDialog } from "@/features/account/AccountDialog";
 import { pickProject } from "@/features/workspace/project-actions";
@@ -67,14 +67,14 @@ export function Welcome() {
         <MothEmblem className="size-16 drop-shadow-[0_0_18px_rgba(193,18,31,0.45)]" />
         <div>
           <h1 className="text-xl font-semibold">Welcome to MOTH Code</h1>
-          <p className="mt-1 text-sm text-muted">An AI coding agent powered by MOTH, its own neural network.</p>
+          <p className="mt-1 text-sm text-muted">Chat and code with MOTH — an AI that keeps improving itself, trained on licensed data by MOTH Cloud and its community of computers.</p>
         </div>
         <div className="flex w-full items-center justify-center gap-3 text-xs text-muted">
           <StepDot n={1} active={step === 1} complete={step > 1} /> Sign in
           <span className="h-px w-8 bg-border" />
-          <StepDot n={2} active={step === 2} complete={false} /> Open a workspace
+          <StepDot n={2} active={step === 2} complete={false} /> Start chatting
           <span className="h-px w-8 bg-border" />
-          <StepDot n={3} active={false} complete={false} /> Code
+          <StepDot n={3} active={false} complete={false} /> Code (optional)
         </div>
         {step === 1 ? (
           <div className="flex w-full flex-col gap-2">
@@ -86,8 +86,15 @@ export function Welcome() {
           </div>
         ) : (
           <div className="flex w-full flex-col gap-2">
-            <p className="text-sm">Signed in as <span className="text-fg">{user?.display_name || user?.username}</span>. Now open the folder you want to work in.</p>
-            <Button size="lg" disabled={busy} onClick={async () => {
+            <p className="text-sm">Signed in as <span className="text-fg">{user?.display_name || user?.username}</span>.</p>
+            <ul className="flex flex-col gap-1 text-left text-xs text-muted">
+              <li><b className="text-fg">Chat</b> — ask questions, write and explain things.</li>
+              <li><b className="text-fg">Code</b> — open a folder and let MOTH help with your project.</li>
+              <li><b className="text-fg">Intelligence</b> and <b className="text-fg">Evolution</b> — see what MOTH can do and how it improves.</li>
+              <li><b className="text-fg">Network</b> — lend this computer's spare power to train MOTH.</li>
+            </ul>
+            <Button size="lg" onClick={() => { appStore.setState({ view: "chat" }); finish(); }}><MessageSquare /> Start chatting</Button>
+            <Button size="lg" variant="secondary" disabled={busy} onClick={async () => {
               setBusy(true);
               try {
                 await pickProject();
@@ -95,7 +102,7 @@ export function Welcome() {
               } finally {
                 setBusy(false);
               }
-            }}><FolderOpen /> Open a workspace</Button>
+            }}><FolderOpen /> Open a code folder</Button>
           </div>
         )}
         <button className="cursor-pointer text-xs text-faint hover:text-fg" onClick={finish}>

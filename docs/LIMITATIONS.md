@@ -1,4 +1,4 @@
-# Known limitations & remaining requirements (0.4.0)
+# Known limitations & remaining requirements (0.5.4)
 
 Everything the README lists as working is implemented and tested (see [TEST_RESULTS.md](TEST_RESULTS.md)).
 This page lists what depends on the Owner's infrastructure or accounts, what could not be verified in
@@ -50,10 +50,10 @@ After that every update is automatic. The same is true for workers enrolled with
   Reasoning, instruction following and factual accuracy (hallucination rate) are measured only if you
   upload task suites; otherwise they are reported as *not measured*. Small models also score 0 % on
   valid-Python completions today, so that gate only catches regressions once a model can complete code.
-- **Architecture migration.** Continued training requires the same architecture and tokenizer.
-  Migrating to a larger architecture (e.g. distilling MOTH-50M into moth-150m) is not implemented:
-  datasets for another tokenizer are marked *needs migration*, and training from scratch is possible
-  only when explicitly enabled (`allow_from_scratch`).
+- **Architecture migration.** Since 0.5.3 a model can grow deeper and wider in its FFN without losing
+  what it learned (function-preserving growth). Changing the residual width, the number of heads or the
+  tokenizer is still not implemented (it needs distillation); datasets for another tokenizer are marked
+  *needs migration*, and training from scratch is possible only when explicitly enabled.
 - **One host.** The engine assumes one MOTH Cloud server process (as installed). Two server processes
   on one database would each run a scheduler.
 - **Zero downtime.** The model switch is atomic for new requests (requests already running finish on
@@ -63,11 +63,26 @@ After that every update is automatic. The same is true for workers enrolled with
 - **Compute budget** counts training time as experiments report it (at pause and finish), so a single
   long run is counted when it pauses or ends, not continuously.
 
+## ASCENSION 0.5.x
+
+- **Compute.** MOTH 0.1 (49.3M parameters) was trained for 49M tokens on a 4-core CPU (about 11 hours).
+  That is a small amount of training for its size; its abilities are limited (see Model capability).
+  Every further improvement is limited by the compute the network provides — with only CPU workers, a
+  cycle of a few thousand steps takes hours.
+- **GPU training** is implemented (CUDA, bf16) but not verified on real NVIDIA hardware; all build
+  machines are CPU-only. MOTH Code's Windows build bundles CPU PyTorch, so it contributes CPU compute.
+- **Distributed training** uses verified local-SGD rounds; it is not robust against a coordinated group
+  of malicious workers (no secure aggregation), and data preparation stays on the server.
+- **External AI providers** are implemented but off by default (as decided); none is configured.
+- **Model families** (separate Core/Code/Lite models) were not built: there is one MOTH lineage.
+- **Releases.** Milestones 0.5.2–0.5.4 were built and tested in order but published together as 0.5.4.
+
 ## Model capability
 
-No well-trained MOTH model exists yet. Publishing and deployment now work reliably, but the models
-available today (a few million parameters, trained for minutes on CPU) produce code-like text, not
-useful answers. The agent reports "beyond current model" until MOTH-50M is trained at scale.
+MOTH 0.1 is a small model trained on a small budget. It writes simple English, follows the chat format
+and knows some common facts and Python patterns, but it is not a general assistant: its maths, reasoning
+and coding benchmark scores are low (see [TEST_RESULTS.md](TEST_RESULTS.md#moth-01)), and it makes things up.
+MOTH Code says so next to every answer (the model and its measured capabilities are shown in Chat).
 
 ## Design limits
 

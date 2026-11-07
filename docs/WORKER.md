@@ -117,14 +117,28 @@ command; from then on they update themselves.
 | `moth-worker install-service [--mode …]` | Set up the automatic start (systemd, cron, launchd or a scheduled task) |
 | `moth-worker uninstall [--keep-files] [--yes]` | Stop, remove the automatic start, revoke on MOTH Cloud, delete files |
 
+## Jobs a worker runs (0.5.3+)
+
+| Job | Who gets it | What happens |
+| --- | --- | --- |
+| Evolution experiment (`evolve_train`) | the first compatible worker (GPU preferred for 5 minutes) | trains a whole experiment and returns its update |
+| Distributed shard (`dist_shard`) | every compatible participant, once per round | trains its slice of the curriculum from the round's weights; steps follow the worker's measured speed |
+| Evaluation (`eval_loss`, MOTH Worker 0.5.3+) | CPU workers first | measures a candidate's held-out loss; counts only when two different workers agree |
+| Training-network round (`train_round`) | workers with ≥ 1 GB free memory | the original federated rounds of the training network |
+
+MOTH Code can take part too (Network or Model training → *Contribute this computer*): it enrolls this
+computer with your account and runs the same worker loop in the background.
+
 ## Status of distributed training (honest summary)
 
-The network trains controlled rounds: workers train the same checkpoint on different shards,
-and verified updates are aggregated by token-weighted federated averaging into a new
-checkpoint version. That checkpoint must then pass the evaluation gate before the Owner (or
-auto-deploy) puts it into MOTH Cloud.
+Experiments train in verified rounds: participants train the same weights on different slices of the
+curriculum, the server checks every update and averages them weighted by tokens, and applies a round
+only if its own held-out probe does not get worse. Repeated or late submissions are refused and expired
+shards are reassigned. Tested end to end with real training in real MOTH Worker runners (two workers,
+including a disconnection; MOTH Code's participant alongside a standalone worker) — see
+[TEST_RESULTS.md](TEST_RESULTS.md).
 
-This loop is tested end to end with real training on CPU (see [TEST_RESULTS.md](TEST_RESULTS.md)).
-Large-scale distributed training is future work: many workers, larger models, robust
-aggregation against coordinated poisoning, and secure aggregation. GPU execution of the
-worker itself has not been verified on real NVIDIA hardware in the development environment.
+Not done yet: large-scale training (many workers, larger models), robust aggregation against coordinated
+poisoning, secure aggregation, and data preparation on workers. GPU execution has not been verified on
+real NVIDIA hardware here (all build machines are CPU-only), and the Windows desktop build bundles CPU
+PyTorch, so MOTH Code contributes CPU compute.

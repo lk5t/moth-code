@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.5.4 — ASCENSION, milestones 3–5: FOUNDATION, EVOLUTION 2.0, EXPERIENCE
+
+MOTH Cloud, MOTH Code and MOTH Worker 0.5.4. Milestones 0.5.2 (FOUNDATION), 0.5.3 (EVOLUTION 2.0) and 0.5.4
+(EXPERIENCE) were developed and tested one after another; they are published together as 0.5.4 because
+all three were complete before the first could be released (the MOTH 0.1 training run gated 0.5.2).
+
+**FOUNDATION** ([docs/FOUNDATION.md](docs/FOUNDATION.md))
+- MOTH 0.1 — Foundation: a 49.3M-parameter MOTH transformer with its own 16k BPE tokenizer, trained on the
+  approved dataset library (released separately as the signed model release `model-v0.1`).
+- Official model releases (`kind: model`), signed with the MOTH release key; the update agent relays them,
+  MOTH Cloud re-verifies, evaluates and deploys them. A model that fails its release criteria is never
+  published (the release workflow re-runs the benchmarks itself).
+- Model identity independent of app versions (MOTH 0.1, 0.2 …).
+- MOTH on this computer: MOTH Code downloads the deployed model (signature and SHA-256 verified) and answers
+  without the internet, automatically when MOTH Cloud cannot be reached.
+- Checkpoint retention with milestones; capability benchmarks and release criteria.
+
+**EVOLUTION 2.0** ([docs/EVOLUTION2.md](docs/EVOLUTION2.md))
+- Continuous improvement from the development checkpoint (weights + optimizer), curriculum mixtures,
+  research variants, duplicate-free experiments, early stopping, capability regression gates.
+- Distributed training rounds across CPU and GPU workers with verified, token-weighted averaging,
+  speed-proportional workloads, recovery from disconnections; CPU workers evaluate candidates (two
+  agreeing results).
+- Unified training: MOTH Code contributes its computer to the same experiments; Use cloud workers (on by
+  default); per-participant contributions.
+- Adaptive Parameter Growth: function-preserving depth/FFN expansion sized by evidence and budget, tested as
+  a candidate, Owner approval above +25%.
+- Staged rollout (20% first), version pinning, server-signed model manifests, automatic model versions.
+
+**EXPERIENCE**
+- One navigation: Chat, Code, Intelligence, Evolution, Network, Settings (plus Owner tools).
+- Chat: full-page conversations with the active model and its measured capabilities.
+- Intelligence: progress dashboard and the MOTH timeline, from measurements only.
+- Evolution: one switch for automatic evolution, start / pause / resume, the training network.
+- Settings in five tabs; new onboarding.
+
+MOTH Worker 0.5.4 runs evaluation jobs; MOTH Cloud's schema stays 5 (no migration).
+
 ## 0.5.1 — ASCENSION, milestone 2: INTELLIGENCE
 
 MOTH Cloud and MOTH Code 0.5.1. Details: [docs/INTELLIGENCE.md](docs/INTELLIGENCE.md).
