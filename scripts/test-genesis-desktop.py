@@ -86,7 +86,8 @@ def main(installer):
         api('/v1/admin/evolution/initialize/activate', {}, 'POST')
         api('/v1/admin/config/flags', {'cloud_inference_enabled': True}, 'PUT')
         appenv = {**env, 'MOTH_HOME': str(out / 'desktop-home'),
-                  'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': '--remote-debugging-port=9222'}
+                  'WEBVIEW2_USER_DATA_FOLDER': str(out / 'webview-profile'),
+                  'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': '--remote-debugging-port=9222 --remote-debugging-address=127.0.0.1'}
         subprocess.run([str(installer.resolve()), '/S'], check=True, timeout=600, env=appenv)
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Uninstall') as parent:
             exe = None

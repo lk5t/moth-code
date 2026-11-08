@@ -93,8 +93,12 @@ def probe_cloud(manifest, out):
 
 def evaluate(expression):
     import websocket
-    with urllib.request.urlopen("http://127.0.0.1:9222/json", timeout=5) as r:
-        targets = json.load(r)
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:9222/json", timeout=5) as r:
+            targets = json.load(r)
+    except urllib.error.URLError:
+        with urllib.request.urlopen("http://localhost:9222/json", timeout=5) as r:
+            targets = json.load(r)
     target = next(t for t in targets if t.get("type") == "page")
     ws = websocket.create_connection(target["webSocketDebuggerUrl"], timeout=10, suppress_origin=True)
     try:
@@ -173,7 +177,9 @@ def main():
         install_id = next(f"published-ci-{i}" for i in range(1000) if bucket(f"published-ci-{i}", "0.5.4") < 10)
         home = out / "backend-home"
         home.mkdir(exist_ok=True)
-        app_env = {**os.environ, "MOTH_HOME": str(home), "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--remote-debugging-port=9222"}
+        app_env = {**os.environ, "MOTH_HOME": str(home),
+                   "WEBVIEW2_USER_DATA_FOLDER": str(out / 'webview-profile'),
+                   "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--remote-debugging-port=9222 --remote-debugging-address=127.0.0.1"}
         print('::notice title=Published lifecycle stage::Installing the original 0.5.1 desktop', flush=True)
         # If the installer starts the app, its first WebView must inherit the test flags.
         run(str(old), "/S", timeout=600, env=app_env)
@@ -213,8 +219,12 @@ def main():
                     desktop_log.flush()
                     detail = (out / 'desktop-process.log').read_text(errors='replace')[-3000:]
                     print(f'::notice title=Published desktop launch diagnostics::Executable={exe}; exit={desktop.poll()}; stderr={detail}', flush=True)
-                    run('powershell', '-NoProfile', '-Command',
-                        "Get-CimInstance Win32_Process | Where-Object {$_.Name -match 'moth|webview'} | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath | ConvertTo-Json", timeout=30)
+                    processes = run('powershell', '-NoProfile', '-Command',
+                        "Get-CimInstance Win32_Process | Where-Object {$_.Name -match 'moth|webview'} | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath,@{Name='DebugArguments';Expression={([regex]::Matches($_.CommandLine,'--remote-debugging-[^ ]+') | ForEach-Object Value) -join ' '}} | ConvertTo-Json -Compress", timeout=30, capture_output=True, text=True)
+                    windows = run('powershell', '-NoProfile', '-Command',
+                        "Get-Process | Where-Object {$_.Name -match 'moth|webview'} | Select-Object ProcessName,Id,MainWindowTitle | ConvertTo-Json -Compress", timeout=30, capture_output=True, text=True)
+                    print('::notice title=Published desktop processes::' + processes.stdout.strip(), flush=True)
+                    print('::notice title=Published desktop windows::' + windows.stdout.strip(), flush=True)
                     raise
                 time.sleep(1)
         print('::notice title=Published lifecycle stage::Waiting for tampered-download rejection', flush=True)
