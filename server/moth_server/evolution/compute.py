@@ -188,7 +188,10 @@ def local_blockers(ctx: Ctx, settings: dict, device: str, need_disk: int = 0) ->
     if hw["disk"]["free"] < float(lim["min_free_disk_gb"]) * GB + need_disk:
         out.append(f"free disk space is below the {lim['min_free_disk_gb']} GB reserve")
     act = activity(ctx)
-    if device == "cpu" and act.active > 0:
+    # Balanced yields even GPU training to active inference. Training First still enforces
+    # CPU contention, the owner's traffic ceiling, reserves, quiet hours and compute budgets.
+    selected_priority = (ctx.db.get_config("evolution_settings", {}) or {}).get("training_priority")
+    if act.active > 0 and (device == "cpu" or selected_priority == "balanced"):
         out.append("MOTH Cloud is answering requests (CPU is shared with inference)")
     rpm = act.per_minute()
     if rpm > float(settings["schedule"]["max_requests_per_minute"]):

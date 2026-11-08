@@ -73,7 +73,7 @@ def start_cycle(ctx: Ctx, trigger: str = "manual", actor_id: int | None = None) 
     """Start a cycle now (Owner: "Run now"), if none is active and its prerequisites exist."""
     from moth_server import models as M
 
-    settings = S.get(ctx)
+    settings = S.runtime(ctx)
     base = M.deployed(ctx)
     if not base:
         raise EvolutionError("no model is deployed: evolution continues training the deployed model")
@@ -178,7 +178,7 @@ def wake(ctx: Ctx) -> None:
 
 
 def _tick(ctx: Ctx, woken: bool = False) -> dict[str, Any]:
-    settings = S.get(ctx)
+    settings = S.runtime(ctx)
     if not ctx.extras.get("evolution_recovered"):
         recover(ctx)
         ctx.extras["evolution_recovered"] = True
@@ -750,7 +750,7 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
 
 
 def _schedule_next(ctx: Ctx, failed: bool) -> None:
-    settings = S.get(ctx)
+    settings = S.runtime(ctx)
     st = state(ctx)
     fails = int(st["consecutive_failures"]) + 1 if failed else 0
     delay = float(settings["interval_hours"]) * 3600 * (2 ** min(fails, 4))

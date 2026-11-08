@@ -1,3 +1,4 @@
+import { EvolutionControls } from "@/features/training/EvolutionControls";
 /**
  * Owner Dashboard → Evolution: MOTH improving its own model.
  *
@@ -7,14 +8,13 @@
  * reports progress, and "waiting" is shown as waiting, with the reason).
  */
 import { useRef, useState } from "react";
-import { Activity, Cpu, Database, FlaskConical, GitBranch, HardDrive, MemoryStick, Pause, Play, RotateCcw, Settings2, Sparkles, Upload } from "lucide-react";
+import { Activity, Cpu, Database, FlaskConical, GitBranch, HardDrive, MemoryStick, Pause, Play, RotateCcw, Sparkles, Upload } from "lucide-react";
 import { serverApi } from "@/lib/account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/ui/empty";
 import { cn, formatNumber, timeAgo } from "@/lib/utils";
 import { formatBytes, useAction, usePoll } from "./ops";
@@ -69,10 +69,6 @@ export function EvolutionPanel() {
               {active && <Badge variant={VARIANT[cyc.status]}>cycle #{cyc.id}</Badge>}
             </div>
             <div className="flex items-center gap-2">
-              <label className="flex items-center gap-2 text-muted">
-                Automatic evolution
-                <Switch checked={s.enabled} onCheckedChange={(v) => run(() => serverApi("/v1/admin/evolution/settings", { method: "PUT", json: { changes: { enabled: v } } }), v ? "Automatic evolution is on." : "Automatic evolution is off.")} />
-              </label>
               {s.paused
                 ? <Button size="sm" variant="secondary" onClick={() => run(() => post("/v1/admin/evolution/resume"), "Resumed.")}><Play /> Resume</Button>
                 : <Button size="sm" variant="ghost" onClick={() => run(() => post("/v1/admin/evolution/pause"), "Paused. Running training checkpoints and stops.")}><Pause /> Pause</Button>}
@@ -418,82 +414,8 @@ function ActivityLog({ st }: { st: Any }) {
 
 function SettingsCard({ s, reload }: { s: Any; reload: () => void }) {
   const { run, view } = useAction(reload);
-  const [d, setD] = useState<Any>({});
-  const get = (path: string) => (d[path] !== undefined ? d[path] : path.split(".").reduce((o: Any, k) => o?.[k], s));
-  const set = (path: string, value: any) => setD({ ...d, [path]: value });
-  const changes = () => {
-    const out: Any = {};
-    for (const [path, value] of Object.entries(d)) {
-      const keys = path.split(".");
-      let o = out;
-      keys.slice(0, -1).forEach((k) => { o[k] = o[k] ?? {}; o = o[k]; });
-      o[keys[keys.length - 1]] = value;
-    }
-    return out;
-  };
-  const numField = (path: string, label: string, step = "any") => (
-    <label className="flex items-center justify-between gap-2">
-      <span className="text-muted">{label}</span>
-      <Input className="h-7 w-28 text-xs" type="number" step={step} value={get(path) ?? ""} onChange={(e) => set(path, e.target.value === "" ? null : Number(e.target.value))} />
-    </label>
-  );
-  const sw = (path: string, label: string) => (
-    <label className="flex items-center justify-between gap-2"><span className="text-muted">{label}</span>
-      <Switch checked={!!get(path)} onCheckedChange={(x) => set(path, x)} /></label>
-  );
-  const quiet = get("schedule.quiet_hours_utc");
-  return (
-    <Card>
-      <details>
-        <summary className="cursor-pointer list-none">
-          <CardHeader><CardTitle className="flex items-center gap-2"><Settings2 className="size-4 text-accent" />Settings</CardTitle>
-            <CardDescription>Schedule, compute limits, training defaults and safety thresholds.</CardDescription></CardHeader>
-        </summary>
-        <CardContent className="grid grid-cols-1 gap-x-8 gap-y-2 text-xs md:grid-cols-2">
-          <div className="flex flex-col gap-2">
-            <div className="font-medium">Schedule</div>
-            {numField("interval_hours", "Hours between cycles")}
-            {sw("auto_deploy", "Deploy passing candidates automatically")}
-            {numField("max_experiments_per_cycle", "Experiments per cycle", "1")}
-            {sw("training.batch_autotune", "Measure and tune training batches")}
-            {numField("schedule.max_requests_per_minute", "Train only below (requests/min)")}
-            <label className="flex items-center justify-between gap-2"><span className="text-muted">Training hours (UTC, optional)</span>
-              <Input className="h-7 w-28 text-xs" placeholder="e.g. 1-6" value={Array.isArray(quiet) ? quiet.join("-") : ""}
-                onChange={(e) => { const m = e.target.value.match(/^(\d{1,2})-(\d{1,2})$/); set("schedule.quiet_hours_utc", m ? [Number(m[1]), Number(m[2])] : null); }} /></label>
-            {numField("budget.max_compute_hours_per_day", "Training budget (hours/day)")}
-            {numField("budget.max_cycle_hours", "Max hours per cycle")}
-            <div className="mt-2 font-medium">Compute</div>
-            {sw("backends.local_gpu", "Use this server's GPU")}
-            {sw("backends.workers", "Use MOTH GPU workers")}
-            {sw("backends.local_cpu", "Allow CPU training on this server")}
-            {numField("limits.cpu_threads", "CPU threads for training", "1")}
-            {numField("limits.min_free_memory_gb", "Keep free memory (GB)")}
-            {numField("limits.min_free_disk_gb", "Keep free disk (GB)")}
-            {numField("limits.gpu_memory_fraction", "GPU memory fraction")}
-          </div>
-          <div className="flex flex-col gap-2">
-            <div className="font-medium">Training defaults</div>
-            {numField("training.steps", "Steps", "1")}
-            {numField("training.lr", "Learning rate")}
-            {numField("training.batch_size", "Batch size", "1")}
-            {numField("training.seq_len", "Sequence length", "1")}
-            {numField("min_dataset_tokens", "Minimum dataset tokens", "1")}
-            <div className="mt-2 font-medium">Promotion gates</div>
-            {numField("gates.min_improvement", "Required improvement (0.005 = 0.5%)")}
-            {numField("gates.retention_tolerance", "Allowed retention loss")}
-            {numField("gates.max_speed_regression", "Allowed speed loss")}
-            {numField("monitoring.minutes", "Monitor new models (minutes)")}
-            {numField("monitoring.max_error_rate", "Roll back above error rate")}
-            {numField("max_consecutive_failures", "Pause after failed cycles", "1")}
-            {numField("retention_days", "Keep activity history (days)", "1")}
-          </div>
-          <div className="col-span-full flex items-center gap-2 pt-1">
-            <Button size="sm" disabled={!Object.keys(d).length} onClick={() => run(() => serverApi("/v1/admin/evolution/settings", { method: "PUT", json: { changes: changes() } }).then(() => setD({})), "Settings saved.")}>Save settings</Button>
-            {Object.keys(d).length > 0 && <Button size="sm" variant="ghost" onClick={() => setD({})}>Discard</Button>}
-            {view}
-          </div>
-        </CardContent>
-      </details>
-    </Card>
-  );
+  return <Card><CardHeader><CardTitle>Evolution settings</CardTitle></CardHeader>
+    <CardContent><EvolutionControls settings={s} onChange={(changes) => run(() => serverApi("/v1/admin/evolution/settings", {
+      method: "PUT", json: { changes },
+    }), "Settings saved.")} />{view}</CardContent></Card>;
 }

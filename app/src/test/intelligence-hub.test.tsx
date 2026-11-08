@@ -43,7 +43,7 @@ describe("Intelligence consolidation", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Training" }), { button: 0 });
     await screen.findByRole("button", { name: "Train MOTH now" });
     expect(screen.getByRole("switch", { name: "Contribute this computer" })).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Use server CPUs" })).toBeChecked();
+    expect(screen.getByRole("combobox", { name: "Training Mode" })).toHaveValue("automatic");
     expect(screen.getByRole("button", { name: "Prepare and verify backup" })).toBeInTheDocument();
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Data" }), { button: 0 });
     await screen.findByText("Approved dataset controls");

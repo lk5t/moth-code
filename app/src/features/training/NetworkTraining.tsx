@@ -1,3 +1,4 @@
+import { EvolutionControls } from "./EvolutionControls";
 /**
  * Model training → MOTH training network: one model, trained by MOTH Cloud, its workers and this computer.
  *
@@ -6,7 +7,7 @@
  * computer" lets this computer take part in the same experiment. Every number comes from MOTH Cloud.
  */
 import { useEffect, useState } from "react";
-import { Cloud, Cpu, Laptop, Play, Users } from "lucide-react";
+import { Cloud, Cpu, Laptop, Play } from "lucide-react";
 import { get, put } from "@/lib/backend";
 import { serverApi } from "@/lib/account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,10 +64,6 @@ export function NetworkTraining() {
   const [msg, setMsg] = useState<string | null>(null);
   if (!evo) return <p role="status" className="text-xs text-muted">{loadError || "Loading training status…"}</p>;
   const s = evo.settings;
-  const useWorkers = !!(s.backends?.workers && s.distributed?.enabled);
-  const setWorkers = (v: boolean) => secure(() => serverApi("/v1/admin/evolution/settings", {
-    method: "PUT", json: { changes: { backends: { ...s.backends, workers: v }, distributed: { ...s.distributed, enabled: v } } },
-  })).then(reloadEvo).catch((e) => setMsg((e as Error).message));
   const trainNow = () => secure(() => serverApi("/v1/admin/evolution/run", { method: "POST" }))
     .then(() => { setMsg("Training requested. Live status shows data preparation and compute availability."); reloadEvo(); }).catch((e) => setMsg((e as Error).message));
   const cyc = evo.cycle;
@@ -87,18 +84,9 @@ export function NetworkTraining() {
           {cyc && <Badge variant={active ? "accent" : cyc.status === "completed" ? "success" : "default"}>Cycle #{cyc.id}: {cyc.status.replaceAll("_", " ")}</Badge>}
           {cyc?.result?.waiting_reason && <span className="text-muted">{cyc.result.waiting_reason}</span>}
         </div>
-        <div className="flex items-center justify-between gap-4">
-          <div><div className="flex items-center gap-2 text-[13px] text-fg"><Users className="size-4 text-accent" />Use cloud workers</div>
-            <div className="text-muted">Share each experiment across all compatible MOTH workers (CPU and GPU) in verified rounds.</div></div>
-            <Switch aria-label="Use cloud workers" checked={useWorkers} onCheckedChange={setWorkers} />
-        </div>
-        <div className="flex items-center justify-between gap-4">
-          <div><div className="flex items-center gap-2 text-[13px] text-fg"><Cpu className="size-4 text-accent" />Use server CPUs</div>
-            <div className="text-muted">Fallback for compatible jobs, including assistant-masked data. Memory, traffic and CPU limits still apply.</div></div>
-          <Switch aria-label="Use server CPUs" checked={!!s.backends?.local_cpu} onCheckedChange={(v) => secure(() => serverApi("/v1/admin/evolution/settings", {
-            method: "PUT", json: { changes: { backends: { local_cpu: v } } },
-          })).then(reloadEvo).catch((e) => setMsg((e as Error).message))} />
-        </div>
+        <EvolutionControls settings={s} onChange={(changes) => secure(() => serverApi("/v1/admin/evolution/settings", {
+          method: "PUT", json: { changes },
+        })).then(reloadEvo).catch((e) => setMsg((e as Error).message))} />
         <ParticipantSwitch />
         {exp && (
           <div className="flex flex-col gap-2 rounded-md border border-border p-3">

@@ -13,6 +13,8 @@ KEY = "evolution_settings"
 DEFAULTS: dict[str, Any] = {
     # Automatic evolution is on by default, but a cycle only starts once its prerequisites exist: a
     # deployed model, an Owner-approved training dataset for it, and a compute backend that can train.
+    "training_mode": "automatic",
+    "training_priority": "balanced",
     "enabled": True,
     "paused": False,
     "interval_hours": 24.0,          # time between the end of one cycle and the start of the next
@@ -88,6 +90,10 @@ def get(ctx: Ctx) -> dict[str, Any]:
 
 
 def validate(s: dict[str, Any]) -> None:
+    for key, choices in {"training_mode": ("automatic", "maximum", "eco"),
+                         "training_priority": ("balanced", "training_first")}.items():
+        if s.get(key) not in choices:
+            raise SettingsError(f"{key} must be one of {choices}")
     for path, (lo, hi) in _BOUNDS.items():
         node: Any = s
         for part in path.split("."):
@@ -120,3 +126,19 @@ def update(ctx: Ctx, changes: dict[str, Any]) -> dict[str, Any]:
     validate(merged)
     ctx.db.set_config(KEY, new_stored)
     return merged
+
+
+def runtime(ctx: Ctx) -> dict[str, Any]:
+    """Apply mode ceilings without overwriting configured owner limits or legacy settings."""
+    s = get(ctx)
+    # Existing installations retain their effective settings until a mode is selected.
+    stored = ctx.db.get_config(KEY, {}) or {}
+    if "training_mode" not in stored:
+        return s
+    mode = s["training_mode"]
+    cores = max(1, cpu_count())
+    fraction, duty = {"eco": (.25, .25), "automatic": (.5, .75), "maximum": (1., 1.)}[mode]
+    s["limits"]["cpu_threads"] = min(s["limits"]["cpu_threads"], max(1, int(cores * fraction)))
+    s["limits"]["duty_cycle"] = min(s["limits"]["duty_cycle"], duty)
+    # Existing measured batch tuning and planner ranking remain responsible for workload tuning.
+    return s
