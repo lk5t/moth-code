@@ -182,4 +182,12 @@ jobs:
         with:
           workspaces: app/src-tauri
       - name: Rust tests
-        run: cargo test --manifest-path app/src-tauri/Cargo.toml
+        shell: pwsh
+        run: |
+          cargo test --manifest-path app/src-tauri/Cargo.toml 2>&1 | Tee-Object -FilePath cargo-test.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $details = ((Get-Content cargo-test.log -Tail 80) -join "`n").Replace("%", "%25").Replace("`r", "%0D").Replace("`n", "%0A")
+            Write-Output "::error title=Desktop Rust test failure::$details"
+          }
+          exit $code

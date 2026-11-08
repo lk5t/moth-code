@@ -77,7 +77,7 @@ def probe_cloud(manifest, out):
             with urllib.request.urlopen(req, timeout=30) as r:
                 body = r.read().decode()
                 result = {"probe": name, "status": r.status, "body": body, "headers": dict(r.headers)}
-                if r.status == 200:
+                if r.status == 200 and "/updates/desktop/" in path:
                     offer = json.loads(body)
                     if offer["version"] == "0.5.4":
                         assert offer["signature"] == manifest["components"]["desktop"]["windows-x86_64"]["signature"]
