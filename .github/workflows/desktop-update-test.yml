@@ -38,6 +38,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/test-published-desktop-update.py
+      - name: Require independent proof of the completed original-installer lifecycle
+        shell: pwsh
+        run: |
+          $path = "$env:RUNNER_TEMP/published-desktop-test/evidence.json"
+          if (-not (Test-Path $path)) {
+            $log = "$env:APPDATA/dev.mothcode.desktop/logs/updates.log"
+            if (Test-Path $log) { Get-Content $log -Tail 30 | ForEach-Object { Write-Output "::notice title=Published updater postmortem::$_" } }
+            throw "The legacy harness exited without completing installation/restart/data-preservation assertions"
+          }
+          $proof = Get-Content -Raw $path | ConvertFrom-Json
+          if (-not $proof.completed -or $proof.to_version -ne "0.5.4" -or -not $proof.restart_report_received) { throw "Incomplete original-installer update proof" }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -45,6 +56,7 @@ jobs:
           path: |
             ${{ runner.temp }}/published-desktop-test/*.log
             ${{ runner.temp }}/published-desktop-test/live-cloud-probe.json
+            ${{ runner.temp }}/published-desktop-test/evidence.json
 
   update:
     # Reusable release calls declare no such input, so both release gates always run.

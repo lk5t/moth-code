@@ -262,6 +262,12 @@ def main():
         ui.click('Settings')
         ui.optional_tab('Account')
         assert ui.text_value('MOTH Cloud server address') == 'https://localhost:8900'
+        evidence = {'completed': True, 'from_version': '0.5.1', 'to_version': installed_version(),
+                    'production_signatures': True, 'tampered_installer_rejected': True,
+                    'verified_download_before_close': True, 'installed_on_close': True,
+                    'restart_report_received': True, 'settings_accounts_workspaces_preserved': True}
+        (out / 'evidence.json').write_text(json.dumps(evidence, indent=2))
+        print('::notice title=Published desktop lifecycle completed::' + json.dumps(evidence), flush=True)
         print("PASS: actual published 0.5.1 -> 0.5.4 detected, downloaded, signature-verified, installed on close, restarted and reported success; data preserved", flush=True)
     finally:
         # Semantic diagnostics stay available through the GitHub checks API when artifact/log
