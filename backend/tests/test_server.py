@@ -87,7 +87,10 @@ def test_participant_json_body_regression(paths):
         assert disabled.status_code == 200, disabled.text
         assert disabled.json()['enabled'] is False
         enabled = c.put('/api/participant', json={'enabled': True}, headers=H())
-        assert enabled.status_code == 409 and 'Sign in' in enabled.json()['detail']
+        assert enabled.status_code == 409
+        # The standalone backend test install does not include the optional worker package;
+        # production desktop builds do. Both are real readable failures after JSON binding.
+        assert ('Sign in' if disabled.json()['available'] else 'missing') in enabled.json()['detail']
         missing = c.put('/api/participant', json={}, headers=H())
         assert missing.status_code == 422
         assert missing.json()['detail'][0]['loc'][:1] == ['body']

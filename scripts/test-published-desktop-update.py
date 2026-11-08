@@ -134,7 +134,9 @@ def main():
     (out / "tls.der").write_bytes(cert.public_bytes(serialization.Encoding.DER))
     (out / "tls.key").write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
     print('::notice title=Published lifecycle stage::Installing isolated test TLS certificate', flush=True)
-    run("certutil", "-f", "-user", "-addstore", "Root", str(out / "tls.der"))
+    # CurrentUser\Root can display a consent dialog in a noninteractive Windows runner.
+    # Hosted Windows runners are administrators: use their isolated machine store, then remove it.
+    run("certutil", "-f", "-addstore", "Root", str(out / "tls.der"))
     data = out / "server-data"
     data.mkdir(exist_ok=True)
     (out / "agent.token").write_text("isolated-desktop-test")
@@ -250,7 +252,7 @@ def main():
         server.wait(timeout=30)
         log.close()
         if update_log.exists(): shutil.copy(update_log, out / "updates.log")
-        run("certutil", "-user", "-delstore", "Root", cert.fingerprint(hashes.SHA1()).hex())
+        run("certutil", "-f", "-delstore", "Root", cert.fingerprint(hashes.SHA1()).hex())
     return 0
 
 
