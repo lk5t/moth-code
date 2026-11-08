@@ -266,7 +266,7 @@ def main():
         assert (home / "workspace.txt").read_text() == "keep workspace content"
         assert json.loads(accounts.read_text())["accounts"][0]["username"] == "preserved-ci-account"
         ui.click('Settings')
-        ui.click('Account', control_type='TabItem')
+        ui.optional_tab('Account')
         assert ui.text_value('MOTH Cloud server address') == 'https://localhost:8900'
         print("PASS: actual published 0.5.1 -> 0.5.4 detected, downloaded, signature-verified, installed on close, restarted and reported success; data preserved", flush=True)
     finally:
