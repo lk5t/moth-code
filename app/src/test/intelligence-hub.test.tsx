@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 const mocks = vi.hoisted(() => ({ api: vi.fn(), get: vi.fn(), put: vi.fn() }));
 vi.mock("@/lib/account", () => ({ serverApi: mocks.api, useAccount: (fn: (s: any) => unknown) => fn({ token: "test-session", user: { role: "owner" } }) }));
 vi.mock("@/lib/backend", () => ({ get: mocks.get, put: mocks.put }));
@@ -58,4 +58,17 @@ describe("Intelligence consolidation", () => {
     await waitFor(() => expect(screen.getByText("Training progress received")).toBeInTheDocument());
     expect(screen.getByText(/Fresh, untrained baseline/)).toBeInTheDocument();
   });
+});
+
+
+it("clears model activity after a failed refresh instead of showing stale state as current", async () => {
+  vi.useFakeTimers();
+  try {
+    await act(async () => { render(<IntelligenceHub />); });
+    expect(screen.getByRole("button", { name: "Inspect layer 2" })).toBeInTheDocument();
+    mocks.api.mockRejectedValue(new Error("connection lost"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.queryByRole("button", { name: "Inspect layer 2" })).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Live status unavailable/).length).toBeGreaterThan(0);
+  } finally { vi.useRealTimers(); }
 });

@@ -288,6 +288,10 @@ def create_app(paths: Paths, token: str | None = None, services: Services | None
     # ---- MOTH account (in memory only; the desktop shell keeps tokens in the OS vault) ----
     @app.put("/api/account/session", dependencies=A)
     def set_account_session(body: AccountSessionIn):
+        previous = svc.extras.get("account") or {}
+        participant = svc.extras.get("participant")
+        if participant and (previous.get("token"), previous.get("server_url")) != (body.token, body.server_url):
+            participant.disable()
         svc.extras["account"] = body.model_dump()
         svc.bus.publish("account", {"signed_in": bool(body.token), "user": body.user})
         pub = svc.extras.get("publisher")

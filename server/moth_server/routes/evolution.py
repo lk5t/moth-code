@@ -197,7 +197,8 @@ def start_training(body: TrainingStartIn, auth: Auth = Depends(owner_reauthed), 
                                          min(settings['training']['seq_len'], cfg.get('max_seq_len', 256)),
                                          cfg.get('d_model', 512), cfg.get('n_layers', 12))
         rows = ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
-        selected = [w['id'] for w in rows if (body.worker_id is None or w['id'] == body.worker_id)
+        selected = [w['id'] for w in rows if (not w["paused"] or w["user_id"] == auth.uid)
+                    and (body.worker_id is None or w['id'] == body.worker_id)
                     and (w.get('last_heartbeat_at') or 0) >= now() - 180
                     and T.fits(json.loads(w['hardware'] or '{}'), {'requirements': {'memory_bytes': need}},
                                json.loads(w['limits'] or '{}'))]

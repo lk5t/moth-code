@@ -50,6 +50,7 @@ class Participant:
         self.log_lines: deque[str] = deque(maxlen=60)
         self.completed = 0
         self.error: str | None = None
+        self.authorized_session: tuple[str, str] | None = None
 
     def _cfg(self) -> dict[str, Any]:
         return self.get_setting("participant") or {}
@@ -93,10 +94,27 @@ class Participant:
         server = (acct.get("server_url") or "").rstrip("/")
         if not acct.get("token") or not server:
             raise ParticipantError("Sign in to MOTH Cloud first.")
+        with self.http_factory(server) as http:
+            response = http.get("/v1/me", headers={"Authorization": f"Bearer {acct['token']}"})
+            if response.status_code != 200:
+                raise ParticipantError("Verify your signed-in account before authorizing this computer.")
+            user = response.json()
+            uid = (user.get("user") or user).get("id")
+        if not uid:
+            raise ParticipantError("The server did not return a verified account identity.")
+        from moth_worker.hardware import machine_id
+        identity = {"account_id": uid, "device_id": machine_id()}
         cfg = self._cfg()
+        if any(cfg.get(k) != v for k, v in identity.items()):
+            self.disable()
+            if self.thread and self.thread.is_alive():
+                raise ParticipantError("Previous contribution is still checkpointing; retry after it stops.")
+            cfg = {"enabled": False}
+            self.set_setting("participant", cfg)
         if cfg.get("server") != server or not cfg.get("worker_token"):
             cfg = self._enroll(server, acct["token"])
-        self.set_setting("participant", {**cfg, "enabled": True})
+        self.set_setting("participant", {**cfg, **identity, "enabled": True})
+        self.authorized_session = (server, acct["token"])
         self.start()
         return self.status()
 
@@ -104,6 +122,10 @@ class Participant:
         if self.thread and self.thread.is_alive():
             return
         cfg = self._cfg()
+        acct = self.account() or {}
+        if not self.authorized_session or self.authorized_session != ((acct.get("server_url") or "").rstrip("/"), acct.get("token")):
+            self.disable()
+            return
         if not cfg.get("enabled") or not cfg.get("worker_token"):
             return
         from moth_worker.client import WorkerClient
@@ -132,6 +154,7 @@ class Participant:
         self.thread.start()
 
     def disable(self) -> dict[str, Any]:
+        self.authorized_session = None
         self.set_setting("participant", {**self._cfg(), "enabled": False})
         self.stop()
         return self.status()

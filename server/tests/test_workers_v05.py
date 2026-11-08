@@ -114,3 +114,12 @@ def test_rewards_2_proportional_held_for_duplicates_and_unreliable_workers(clien
     d = client.get("/v1/referrals", headers=H(ref["token"])).json()
     assert {x["name"][:2] for x in d["referred_workers"]} and any(x["verified_jobs"] >= 3 for x in d["referred_workers"])
     assert any("per 1,000 tokens" in t for t in d["rules_text"])
+
+
+def test_owner_cannot_resume_another_accounts_paused_device(client, settings, owner):
+    account = register_verified(client, settings, 'private-device')['token']
+    w = enroll(client, account, machine='private-pc')
+    path = f"/v1/training/workers/{w['worker_id']}"
+    assert client.post(path + '/pause', headers=H(account)).status_code == 200
+    assert client.post(path + '/resume', headers=H(owner['token'])).status_code == 403
+    assert client.post(path + '/resume', headers=H(account)).status_code == 200

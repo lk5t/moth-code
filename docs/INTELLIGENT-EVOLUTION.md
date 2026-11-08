@@ -85,3 +85,19 @@ conservatively. Previously its Windows fallback used total RAM as available RAM.
 reports 2 GB available and that scheduling admission respects that limit (passed).
 This is an OS-API simulation; native Windows verification and the remaining adaptive
 hardware work are still required. Phase 2 is not complete.
+
+### Consent and live-status integration progress
+
+- `backend/moth/community/participant.py`: explicit enable verifies `/v1/me`, binds the saved enrollment to account ID and local machine ID, and requires an in-memory authorized session. Saved settings alone cannot start compute. Account changes stop the prior runner before re-enrollment; checkpointing must finish first.
+- `backend/moth/server/app.py`: changing or clearing the session disables local contribution.
+- `server/moth_server/routes/training.py`: the Owner cannot resume another account's paused device.
+- `server/moth_server/routes/evolution.py`: Owner bulk start excludes another account's paused devices.
+- `backend/tests/test_participant_consent.py`: two startup/session authorization regressions passed.
+- `server/tests/test_workers_v05.py`: added cross-account Owner resume rejection; nine worker/control tests passed.
+- The existing real CPU test `test_moth_code_contributes_its_computer_to_the_same_experiment` passed after the consent changes (30.11 seconds).
+- `IntelligenceHub.tsx` and `IntelligenceView.tsx` clear stale data on failed refresh and show explicit unavailable status. Resource failures also clear the cached resource report.
+- `app/src/test/intelligence-hub.test.tsx` verifies a successful model display is cleared after a failed refresh; eight focused UI tests and TypeScript checking passed.
+
+These changes close specific gaps; they do not complete the separate cloud-worker classification,
+all personal-device lifecycle controls, earned milestone system, hardware optimization or full
+public-release verification. Those remain outstanding. No release is authorized to bypass the gates.

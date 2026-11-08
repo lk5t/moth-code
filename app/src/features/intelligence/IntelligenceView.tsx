@@ -103,7 +103,7 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
   const [selection, setSelection] = useState<Any | null>(null);
   useEffect(() => {
     if (!signedIn) return;
-    const load = () => serverApi<Any>("/v1/intelligence/progress").then((d) => { setP(d); setErr(null); }).catch((e) => setErr(e.message));
+    const load = () => serverApi<Any>("/v1/intelligence/progress").then((d) => { setP(d); setErr(null); }).catch((e) => { setP(null); setErr("Live status unavailable: " + e.message); });
     load();
     const t = setInterval(load, 20000);
     return () => clearInterval(t);

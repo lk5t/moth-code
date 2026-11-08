@@ -168,6 +168,8 @@ def control_worker(wid: int, action: str, auth: Auth = Depends(current_auth), ct
     w = own_worker(ctx, auth, wid)
     if w["revoked_at"]:
         raise HTTPException(409, "This worker was revoked.")
+    if action == "resume" and w["user_id"] != auth.uid:
+        raise HTTPException(403, "Only the enrolled account may resume this device.")
     values = {"pause": {"paused": True}, "resume": {"paused": False}, "stop": {"paused": True},
               "revoke": {"revoked_at": now(), "status": "revoked", "token_hash": f"revoked-{wid}-{now()}"}}.get(action)
     if values is None:

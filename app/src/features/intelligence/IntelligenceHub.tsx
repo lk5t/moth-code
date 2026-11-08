@@ -83,7 +83,7 @@ export function ModelActivity({ progress, resources }: { progress: Any | null; r
       </div>
       <div className="flex min-w-0 flex-col justify-center gap-4">
         <div><p className="text-[11px] uppercase tracking-[0.18em] text-faint">One native lineage</p>
-          <h2 className="mt-1 text-xl font-medium tracking-tight">{model ? modelLabel(model) : "No model deployed"}</h2>
+          <h2 className="mt-1 text-xl font-medium tracking-tight">{model ? modelLabel(model) : "Model status unavailable"}</h2>
           <p className="mt-1 text-xs text-muted">{model?.params != null ? `${formatNumber(model.params)} actual parameters` : "Parameters have not been measured"}</p>
         </div>
         <div className="flex items-center gap-2 text-xs"><span className={cn("size-1.5 rounded-full", recent ? "bg-success" : "bg-faint")} />{recent ? "Training progress received" : status}</div>
@@ -118,8 +118,8 @@ export function IntelligenceHub() {
     if (!signedIn) return;
     let alive = true;
     const load = () => {
-      serverApi<Any>("/v1/intelligence/progress").then((data) => { if (alive) { setP(data); setError(null); } }).catch((e) => { if (alive) setError(e.message); });
-      if (owner) serverApi<Any>("/v1/admin/evolution/resources").then((data) => { if (alive) setResources(data); }).catch(() => {});
+      serverApi<Any>("/v1/intelligence/progress").then((data) => { if (alive) { setP(data); setError(null); } }).catch((e) => { if (alive) { setP(null); setResources(null); setError("Live status unavailable: " + e.message); } });
+      if (owner) serverApi<Any>("/v1/admin/evolution/resources").then((data) => { if (alive) setResources(data); }).catch(() => { if (alive) setResources(null); });
     };
     load(); const timer = setInterval(load, owner ? 5000 : 20000);
     return () => { alive = false; clearInterval(timer); };
@@ -131,7 +131,7 @@ export function IntelligenceHub() {
         <p className="text-[10px] uppercase tracking-[0.22em] text-accent">MOTH / Intelligence</p>
         <h1 className="mt-1 text-2xl font-medium tracking-tight">Intelligence</h1>
         <p className="mt-1 text-xs text-muted">One place for the native model, its training, its computers and the data it learns from.</p>
-      </div><span className="text-xs text-faint">{p?.current ? modelLabel(p.current) : "No active baseline"}</span></header>
+      </div><span className="text-xs text-faint">{p?.current ? modelLabel(p.current) : "Model status unavailable"}</span></header>
       {error && <p role="alert" className="rounded-lg border border-border p-3 text-xs text-danger">{error}</p>}
       <Tabs value={tab} onValueChange={(value) => openIntelligence(value as IntelligenceTab)}>
         <TabsList aria-label="Intelligence sections" className="mb-3 w-full justify-start">
