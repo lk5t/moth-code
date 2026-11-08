@@ -60,7 +60,9 @@ def test_uninstall_leave_revokes_the_worker(client, settings):
     assert client.post("/v1/worker/leave", headers=H(w["worker_token"])).json()["ok"]
     assert client.post("/v1/worker/heartbeat", json={}, headers=H(w["worker_token"])).status_code == 401
     mine = client.get("/v1/training/workers", headers=H(t)).json()["workers"]
-    assert mine[0]["status"] == "revoked"
+    assert mine == []
+    tombstone = client.app.state.ctx.db.one(select(workers).where(workers.c.id == w["worker_id"]))
+    assert tombstone["status"] == "revoked" and tombstone["revoked_at"] is not None
 
 
 def _contribute(client, worker_id, job_id, tokens):
