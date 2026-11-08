@@ -231,6 +231,7 @@ def main():
         print('::notice title=Published lifecycle stage::Tampered update rejected; restoring the authentic installer', flush=True)
         shutil.copyfile(new, served)
         ui.check_update()
+        print('::notice title=Published lifecycle stage::Valid update check requested; waiting for verification', flush=True)
         deadline = time.monotonic() + 480
         while time.monotonic() < deadline:
             if update_log.exists() and "downloaded and verified 0.5.4" in update_log.read_text(): break

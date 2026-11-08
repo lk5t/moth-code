@@ -41,7 +41,13 @@ class WindowsUI:
             ('iface_invoke', 'Invoke'), ('iface_toggle', 'Toggle')]
         for pattern, action in actions:
             try:
-                getattr(getattr(c, pattern), action)()
+                interface = getattr(c, pattern)
+                if action == 'Invoke':
+                    # The library wraps Invoke in a watchdog thread: raw COM Invoke can hang
+                    # while the target handles a download, dialog, or process transition.
+                    c.invoke()
+                else:
+                    getattr(interface, action)()
                 return
             except NoPatternInterfaceError:
                 pass
