@@ -7,6 +7,7 @@ Windows accessibility drives the unmodified release through its normal Settings 
 from __future__ import annotations
 
 import base64
+import collections
 import datetime as dt
 import hashlib
 import ipaddress
@@ -14,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -214,18 +216,10 @@ def main():
         WindowsUI = runpy.run_path(str(ROOT / 'scripts/windows-desktop-ui.py'))['WindowsUI']
         ui = WindowsUI(desktop.pid)
         ui.configure_cloud('https://localhost:8900')
-        # Restart after changing Settings so no in-flight check uses the previous address.
-        time.sleep(3)  # allow the browser's settings transaction to reach disk
-        # Setup only: stop any in-flight request to the previous server before the test begins.
-        # Normal window-close installation is exercised below, after a verified test download.
-        run('taskkill', '/F', '/T', '/PID', str(desktop.pid), capture_output=True)
-        desktop.wait(timeout=30)
-        if update_log.exists():
-            shutil.copy(update_log, out / 'before-update-test.log')
-            update_log.write_text('')
-        desktop = subprocess.Popen([str(exe)], env=app_env, stdout=desktop_log, stderr=desktop_log)
-        ui = WindowsUI(desktop.pid)
-        ui.check_update()
+        # Do not force-kill a browser while it is committing the selected Cloud address.
+        # Keep the real process alive through negative verification and the eventual normal close.
+        if not update_log.exists() or 'update error:' not in update_log.read_text():
+            ui.check_update(wait_for_enabled=False)
         print('::notice title=Published lifecycle stage::Waiting for tampered-download rejection', flush=True)
         deadline = time.monotonic() + 240
         while time.monotonic() < deadline:
@@ -277,12 +271,15 @@ def main():
             observations['updater_log'] = update_log.read_text(errors='replace')[-2000:]
         try:
             observations['ui_status'] = [c.element_info.name for c in ui.root.descendants(control_type='Text')
-                                         if any(word in c.element_info.name.lower() for word in ('update', 'checking', 'ready', 'error'))][-20:]
+                                         if any(word in c.element_info.name.lower() for word in
+                                                ('update', 'checking', 'ready', 'error', 'up to date', 'signature', 'verified', 'connected', 'server address'))][-30:]
+            observations['address_matches_fixture'] = ui.text_value('MOTH Cloud server address') == 'https://localhost:8900'
         except Exception:
             pass
         try:
-            observations['update_requests'] = [line for line in (out / 'server.log').read_text(errors='replace').splitlines()
-                                               if '/v1/updates' in line][-20:]
+            requests = re.findall(r'"(GET|POST|PUT|DELETE) ([^ ?]+)(?:\?[^ ]*)? HTTP/[^\"]+" (\d+)',
+                                  (out / 'server.log').read_text(errors='replace'))
+            observations['request_counts'] = [list(key) + [count] for key, count in collections.Counter(requests).most_common(40)]
             with sqlite3.connect(data / 'moth-server.db') as db:
                 observations['reports'] = db.execute("SELECT from_version,to_version,ok,error FROM update_reports WHERE component='desktop'").fetchall()[-10:]
         except Exception:

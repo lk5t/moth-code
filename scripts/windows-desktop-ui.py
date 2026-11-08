@@ -78,9 +78,13 @@ class WindowsUI:
         self.click('Test & use')
         self.find('Connected', ('Text',), prefix=True)
 
-    def check_update(self):
+    def check_update(self, wait_for_enabled=True):
         self.click('Settings')
         self.optional_tab('Updates & about')
+        if not wait_for_enabled:
+            buttons = [c for c in self.root.descendants(control_type='Button') if c.element_info.name == 'Check now']
+            if not buttons or not buttons[0].is_enabled():
+                return  # an automatic background check/download is already running
         self.click('Check now')
 
     def login(self, username, password):
