@@ -54,7 +54,7 @@ function Change({ cur, prev }: { cur: Any; prev?: Any }) {
 }
 
 /** One benchmark across model versions (measured points only). */
-function TimelineChart({ versions, metric }: { versions: Any[]; metric: string }) {
+function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric: string; onSelect?: (v: Any) => void }) {
   const pts = versions.map((v, i) => ({ i, v, b: v.benchmarks[metric] })).filter((p) => p.b);
   const W = 640, H = 180, pad = { l: 44, r: 16, t: 14, b: 30 };
   if (pts.length === 0) return <div className="py-6 text-center text-xs text-muted">Not measured yet.</div>;
@@ -81,7 +81,9 @@ function TimelineChart({ versions, metric }: { versions: Any[]; metric: string }
       })}
       <path d={d} fill="none" className="stroke-accent" strokeWidth={2} />
       {pts.map((p) => (
-        <g key={p.i}>
+        <g key={p.i} role="button" tabIndex={0} aria-label={`Inspect ${p.v.model_version ? `MOTH ${p.v.model_version}` : p.v.name} ${LABEL[metric] ?? metric}`}
+          onClick={() => onSelect?.(p.v)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.v); } }} className="cursor-pointer">
+          <title>{`${p.v.model_version ?? p.v.name}: ${fmt(p.b)}`}</title>
           <circle cx={x(p.i)} cy={y(p.b.value)} r={3.5} className="fill-accent" />
           <text x={x(p.i)} y={H - 10} textAnchor="middle" className="fill-[var(--color-muted,#999)] text-[10px]">
             {p.v.model_version ? `MOTH ${p.v.model_version}` : `v${p.v.version}`}
@@ -92,11 +94,12 @@ function TimelineChart({ versions, metric }: { versions: Any[]; metric: string }
   );
 }
 
-export function IntelligenceView() {
+export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
   const signedIn = useAccount((s) => !!s.token);
   const [p, setP] = useState<Any | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [metric, setMetric] = useState<string>("holdout_language");
+  const [selection, setSelection] = useState<Any | null>(null);
   useEffect(() => {
     if (!signedIn) return;
     const load = () => serverApi<Any>("/v1/intelligence/progress").then((d) => { setP(d); setErr(null); }).catch((e) => setErr(e.message));
@@ -122,12 +125,12 @@ export function IntelligenceView() {
   const prev = cur ? versions.find((v) => v.version === cur.parent) : null;
   const caps = cur ? Object.entries(cur.benchmarks as Record<string, Any>) : [];
   return (
-    <div className="h-full overflow-auto">
-      <div className="mx-auto flex max-w-5xl flex-col gap-5 p-8 animate-rise">
-        <div>
+    <div className={embedded ? "min-w-0" : "h-full overflow-auto"}>
+      <div className={embedded ? "flex flex-col gap-5" : "mx-auto flex max-w-5xl flex-col gap-5 p-8 animate-rise"}>
+        {!embedded && <div>
           <h1 className="text-lg font-semibold">Intelligence</h1>
           <p className="mt-1 text-xs text-muted">Recorded model sizes and training progress, with capabilities measured on held-out benchmarks MOTH never trained on.</p>
-        </div>
+        </div>}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat icon={<Brain />} label="Current model" value={cur ? (cur.model_version ? `MOTH ${cur.model_version}` : cur.name) : "None yet"}
             sub={cur ? `${formatNumber(cur.params ?? 0)} parameters · ${METHOD[cur.method] ?? cur.method}` : "Nothing is deployed on MOTH Cloud"} />
@@ -182,7 +185,13 @@ export function IntelligenceView() {
                 ))}
               </div>
             )}
-            <TimelineChart versions={chartVersions} metric={metric} />
+            <TimelineChart versions={chartVersions} metric={metric} onSelect={setSelection} />
+            {selection && <div role="status" className="rounded-lg border border-border bg-bg p-3">
+              <div className="font-medium">{selection.model_version ? `MOTH ${selection.model_version}` : selection.name}</div>
+              <div className="mt-1 text-muted">{formatNumber(selection.params)} parameters · {when(selection.created_at)}
+                {selection.lineage_totals && ` · ${formatNumber(selection.lineage_totals.tokens)} recorded training tokens`}</div>
+              <div className="mt-1 text-muted">{selection.benchmarks[metric] ? `${LABEL[metric] ?? metric}: ${fmt(selection.benchmarks[metric])}` : "This metric was not measured for this version."}</div>
+            </div>}
             <ol className="flex flex-col gap-2">
               {[...versions].reverse().map((v) => (
                 <li key={v.version} className="flex flex-col gap-0.5 border-l-2 border-border pl-3">

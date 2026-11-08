@@ -1,4 +1,5 @@
-import { Brain, Crown, MessageSquare, Network, Settings, Sparkles, SquareTerminal } from "lucide-react";
+import { useEffect } from "react";
+import { Brain, Crown, Settings, SquareTerminal } from "lucide-react";
 import { useAccount } from "@/lib/account";
 import { appStore, useApp, type View } from "@/lib/app-state";
 import { Tip } from "@/components/ui/tooltip";
@@ -6,27 +7,33 @@ import { cn } from "@/lib/utils";
 import { MothEmblem } from "./MothEmblem";
 import { AccountMenu } from "@/features/account/AccountMenu";
 
-// One navigation for everything: Chat, Code, Intelligence, Evolution, Network, (Owner tools), Settings.
+// Code/Chat share one workspace; all native AI tools live in Intelligence.
 const items: { view: View; label: string; icon: React.ReactNode; owner?: boolean }[] = [
-  { view: "chat", label: "Chat", icon: <MessageSquare /> },
-  { view: "workspace", label: "Code", icon: <SquareTerminal /> },
+  { view: "workspace", label: "Workspace · Code / Chat", icon: <SquareTerminal /> },
   { view: "intelligence", label: "Intelligence", icon: <Brain /> },
-  { view: "evolution", label: "Evolution", icon: <Sparkles /> },
-  { view: "network", label: "Network", icon: <Network /> },
   { view: "owner", label: "Owner tools", icon: <Crown />, owner: true },
 ];
-const OWNER_VIEWS: View[] = ["owner", "training", "models"];
+const INTELLIGENCE_VIEWS: View[] = ["intelligence", "evolution", "network", "training", "models"];
 
 export function NavRail() {
   const view = useApp((s) => s.view);
   const isOwner = useAccount((s) => s.user?.role === "owner");
+  useEffect(() => {
+    const shortcut = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !e.altKey) return;
+      const target = ({ w: "workspace", i: "intelligence", s: "settings" } as const)[e.key.toLowerCase() as "w" | "i" | "s"];
+      if (target) { e.preventDefault(); appStore.setState({ view: target === "workspace" && appStore.getState().workspaceMode === "chat" ? "chat" : target }); }
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, []);
   const button = (v: View, label: string, icon: React.ReactNode) => (
     <Tip key={v} label={label}>
       <button
-        onClick={() => appStore.setState({ view: v })}
+        onClick={() => appStore.setState({ view: v === "workspace" && appStore.getState().workspaceMode === "chat" ? "chat" : v })}
         className={cn(
           "relative flex size-9 cursor-pointer items-center justify-center rounded-lg text-faint transition-all hover:bg-surface-2 hover:text-fg [&_svg]:size-[18px]",
-          (view === v || (v === "owner" && OWNER_VIEWS.includes(view))) && "text-fg bg-surface-2 before:absolute before:-left-[9px] before:h-5 before:w-0.5 before:rounded-full before:bg-accent before:shadow-[0_0_8px_#C1121F]",
+          (view === v || (v === "workspace" && view === "chat") || (v === "intelligence" && INTELLIGENCE_VIEWS.includes(view))) && "text-fg bg-surface-2 before:absolute before:-left-[9px] before:h-5 before:w-0.5 before:rounded-full before:bg-accent",
         )}
         aria-label={label}
       >

@@ -1,6 +1,9 @@
 /** Readable FastAPI validation failures, shared by local and Cloud requests. */
 export function requestError(detail: unknown, fallback: string): string {
   if (typeof detail === "string" && detail.trim()) return detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail) && "message" in detail && typeof detail.message === "string") {
+    return detail.message;
+  }
   if (Array.isArray(detail)) {
     const messages = detail.map((item) => {
       if (!item || typeof item !== "object") return "";

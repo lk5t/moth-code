@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Activity, Crown, RefreshCw } from "lucide-react";
 import { serverApi, withReauth, useAccount } from "@/lib/account";
 import { askPassword } from "@/features/account/reauth";
+import { openIntelligence } from "@/lib/app-state";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -10,11 +11,7 @@ import { Input, Label, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/ui/empty";
 import { formatNumber, timeAgo } from "@/lib/utils";
-import { ModelsPanel, ServerPanel, UpdatesPanel, WorkersPanel } from "./ops";
-import { EvolutionPanel } from "./evolution";
-import { IntelligencePanel } from "./intelligence";
-import { ModelOverview } from "./ModelOverview";
-import { IntelligenceView } from "@/features/intelligence/IntelligenceView";
+import { ServerPanel, UpdatesPanel } from "./ops";
 
 type Any = Record<string, any>;
 
@@ -70,7 +67,7 @@ function Overview() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-end"><Button size="sm" variant="ghost" onClick={load}><RefreshCw /> Refresh</Button></div>
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Users" value={o.users.total} sub={`${o.users.verified} verified · ${o.users.new_30d} new (30d)`} />
         <Stat label="Subscriptions" value={o.billing.active_subscriptions} sub={o.billing.payments_configured ? "payments live" : "payments not configured"} />
         <Stat label="Cloud tokens (month)" value={formatNumber(o.billing.tokens_used_this_month, 1)} sub={`${formatNumber(o.billing.credits_outstanding, 1)} credits outstanding`} />
@@ -349,13 +346,8 @@ function Sections({ tabs }: { tabs: OwnerTab[] }) {
     {tabs.map(([v, label]) => <TabsTrigger key={v} value={v}>{label}</TabsTrigger>)}
   </TabsList>{tabs.map(([v, , Panel]) => <TabsContent key={v} value={v}><Panel /></TabsContent>)}</Tabs>;
 }
-function IntelligenceSection() {
-  return <Sections tabs={[["model", "MOTH AI", ModelOverview], ["evolution", "Training & evolution", EvolutionPanel],
-    ["data", "Data & intelligence", IntelligencePanel], ["benchmarks", "Benchmark timeline", IntelligenceView],
-    ["registry", "Model registry", ModelsPanel]]} />;
-}
 function NetworkSection() {
-  return <Sections tabs={[["workers", "Workers", WorkersPanel], ["server", "Server", ServerPanel]]} />;
+  return <ServerPanel />;
 }
 function CommunitySection() {
   return <Sections tabs={[["users", "Users", Users], ["billing", "Plans & referrals", Billing]]} />;
@@ -368,12 +360,13 @@ function SettingsSection() {
 export function OwnerDashboard() {
   const role = useAccount((s) => s.user?.role);
   if (role !== "owner") return <EmptyState title="Owner Dashboard">Available to the MOTH Owner account only.</EmptyState>;
-  const tabs: OwnerTab[] = [["overview", "Overview", Overview], ["intelligence", "Intelligence", IntelligenceSection],
-    ["network", "Network", NetworkSection], ["community", "Community", CommunitySection], ["settings", "Settings", SettingsSection]];
+  const tabs: OwnerTab[] = [["overview", "Overview", Overview],
+    ["network", "Servers", NetworkSection], ["community", "Community", CommunitySection], ["settings", "Settings", SettingsSection]];
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 p-8 animate-rise">
-        <h1 className="flex items-center gap-2 text-lg font-semibold"><Crown className="size-5 text-accent" />Owner Dashboard</h1>
+      <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 sm:p-6 lg:p-8 animate-rise">
+        <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="flex items-center gap-2 text-lg font-semibold"><Crown className="size-5 text-accent" />Owner Dashboard</h1>
+          <Button size="sm" variant="secondary" onClick={() => openIntelligence()}>Open Intelligence</Button></div>
         <Tabs defaultValue="overview">
           <TabsList aria-label="Owner sections" className="mb-4 flex-wrap border-b border-border">
             {tabs.map(([v, l]) => <TabsTrigger key={v} value={v}>{l}</TabsTrigger>)}

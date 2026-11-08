@@ -28,12 +28,12 @@ that Foundation training is complete.
 | Phase | Status |
 |---|---|
 | 1 Backup and fresh lineage | Owner-gated backup, fresh seed, activation and restoration implemented; 3 isolated regression cases passed; production reset still awaits Owner approval |
-| 2 Quality data | Reuse existing approved-source discovery, provenance/license validation, deduplication, masks and held-out separation; targeted verification pending |
+| 2 Quality data | Existing approved-source discovery, provenance/license validation, deduplication, masks and held-out separation retained; data factory regressions passed |
 | 3 CPU/GPU coordination | Defaults and selection fixes tested; fresh-lineage CPU evidence pending |
 | 4 Evolution/growth | Existing real trainer, research planning, growth and promotion/rollback retained; GENESIS lineage reset integration pending |
-| 5 Code/Chat workspace | Pending |
-| 6 Intelligence control center | Pending |
-| 7 UI consistency | Pending |
+| 5 Code/Chat workspace | Implemented compact switch, retained mounted workspaces, drafts/files, separate general history and consent-gated project excerpts; focused UI and real local API regressions passed |
+| 6 Intelligence control center | Five tabs consolidate existing controls; actual architecture and reported-step activity, selectable layers and timeline; focused UI regressions passed; native Windows verification pending |
+| 7 UI consistency | Sidebar consolidation, persistent navigation/layout, keyboard shortcuts, collapsible advanced panels, smaller minimum window and reduced-motion support implemented; native layout verification pending |
 | 8 Integration fixes | Worker-body fix tested; signed updater repair in Windows release verification |
 | 9 Real verification | In progress; no physical GPU available |
 | 10 Delivery | Progress committed and pushed by phase; release confirmation recorded only after GitHub publication |
@@ -60,3 +60,17 @@ published 0.5.1-to-0.5.4 test remains unresolved; Desktop 0.5.5 is not yet confi
 ## Reset safety evidence
 
 Isolated tests preserve a real optimizer state and original checkpoint bytes, verify a complete archive restoration, reject unapproved activation and tampered backups, initialize 99,648 fresh parameters with zero steps/tokens, and restore a deleted legacy checkpoint. Worker leases must quiesce before preparation; lease issuance is synchronized with the reset gate. Existing registry records remain available. A fresh baseline can score worse than the legacy model: only the separately confirmed Owner reset uses the existing explicit regression override, while retaining the real evaluation result. Automatic promotion gates are unchanged.
+
+## Recovered workspace and UI verification
+
+The disconnection preserved the uncommitted workspace/UI implementation. TypeScript checking
+and seven focused UI cases pass, including Code/Chat drafts and unsaved files, Intelligence
+navigation and controls, and the rule that training animation requires increased measured steps.
+The Owner dashboard retains administration and links to Intelligence; existing advanced training,
+registry, growth approval, rollback and worker controls remain accessible there.
+
+Twenty-four backend cases pass, including actual HTTP project-consent enforcement and general/project
+history separation, plus data factory, optimizer-moment growth and continued-training regressions.
+The chat transport in the consent test is a named simulation, not training or inference-quality evidence.
+No editor contents, account credentials or conversation messages are added to navigation storage.
+Project excerpts are opt-in and use the existing cloud-consent and redaction path with Cloud history storage disabled.

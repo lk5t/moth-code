@@ -19,21 +19,22 @@ import { secure } from "@/features/owner/ops";
 
 type Any = Record<string, any>;
 
-function usePoll<T>(fn: () => Promise<T>, ms: number): [T | null, () => void] {
+function usePoll<T>(fn: () => Promise<T>, ms: number): [T | null, () => void, string | null] {
   const [d, setD] = useState<T | null>(null);
-  const load = () => fn().then(setD).catch(() => {});
+  const [error, setError] = useState<string | null>(null);
+  const load = () => fn().then((v) => { setD(v); setError(null); }).catch((e) => setError(e.message));
   useEffect(() => {
     load();
     const t = setInterval(load, ms);
     return () => clearInterval(t);
   }, []);
-  return [d, load];
+  return [d, load, error];
 }
 
 export function ParticipantSwitch({ compact = false }: { compact?: boolean }) {
-  const [st, reload] = usePoll<Any>(() => get<Any>("/api/participant"), 5000);
+  const [st, reload, loadError] = usePoll<Any>(() => get<Any>("/api/participant"), 5000);
   const [err, setErr] = useState<string | null>(null);
-  if (!st) return null;
+  if (!st) return <p role="status" className="text-xs text-muted">{loadError || "Checking this computer's training connection…"}</p>;
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-4">
@@ -41,8 +42,8 @@ export function ParticipantSwitch({ compact = false }: { compact?: boolean }) {
           <div className="flex items-center gap-2 text-[13px] text-fg"><Laptop className="size-4 text-accent" />Contribute this computer</div>
           {!compact && <div className="text-xs text-muted">This computer trains parts of MOTH's experiments when it is idle enough. Stop at any time; work is checkpointed.</div>}
         </div>
-        <Switch checked={!!st.enabled} disabled={!st.available}
-          onCheckedChange={(v) => put("/api/participant", { enabled: v }).then(reload).catch((e) => setErr((e as Error).message))} />
+        <Switch aria-label="Contribute this computer" checked={!!st.enabled} disabled={!st.available}
+          onCheckedChange={(v) => { setErr(null); put("/api/participant", { enabled: v }).then(reload).catch((e) => setErr((e as Error).message)); }} />
       </div>
       {st.enabled && (
         <div className="text-xs text-muted">
@@ -57,17 +58,17 @@ export function ParticipantSwitch({ compact = false }: { compact?: boolean }) {
 }
 
 export function NetworkTraining() {
-  const [evo, reloadEvo] = usePoll<Any>(() => serverApi<Any>("/v1/admin/evolution/status"), 5000);
+  const [evo, reloadEvo, loadError] = usePoll<Any>(() => serverApi<Any>("/v1/admin/evolution/status"), 5000);
   const [con] = usePoll<Any>(() => serverApi<Any>("/v1/admin/evolution/contributions"), 5000);
   const [msg, setMsg] = useState<string | null>(null);
-  if (!evo) return null;
+  if (!evo) return <p role="status" className="text-xs text-muted">{loadError || "Loading training status…"}</p>;
   const s = evo.settings;
   const useWorkers = !!(s.backends?.workers && s.distributed?.enabled);
   const setWorkers = (v: boolean) => secure(() => serverApi("/v1/admin/evolution/settings", {
     method: "PUT", json: { changes: { backends: { ...s.backends, workers: v }, distributed: { ...s.distributed, enabled: v } } },
   })).then(reloadEvo).catch((e) => setMsg((e as Error).message));
   const trainNow = () => secure(() => serverApi("/v1/admin/evolution/run", { method: "POST" }))
-    .then(() => { setMsg("Training started on MOTH Cloud."); reloadEvo(); }).catch((e) => setMsg((e as Error).message));
+    .then(() => { setMsg("Training requested. Live status shows data preparation and compute availability."); reloadEvo(); }).catch((e) => setMsg((e as Error).message));
   const cyc = evo.cycle;
   const active = cyc && !["completed", "rejected", "failed", "cancelled", "rolled_back"].includes(cyc.status);
   const exp = con?.experiment;
@@ -82,7 +83,7 @@ export function NetworkTraining() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-xs">
         <div className="flex flex-wrap items-center gap-3">
-          <Button size="sm" disabled={!!active} onClick={trainNow}><Play />{active ? "Training in progress" : "Train MOTH now"}</Button>
+          <Button size="sm" disabled={!!active && !s.paused} onClick={trainNow}><Play />{s.paused ? "Resume MOTH training" : active ? "Training cycle active" : "Train MOTH now"}</Button>
           {cyc && <Badge variant={active ? "accent" : cyc.status === "completed" ? "success" : "default"}>Cycle #{cyc.id}: {cyc.status.replaceAll("_", " ")}</Badge>}
           {cyc?.result?.waiting_reason && <span className="text-muted">{cyc.result.waiting_reason}</span>}
         </div>
@@ -90,6 +91,13 @@ export function NetworkTraining() {
           <div><div className="flex items-center gap-2 text-[13px] text-fg"><Users className="size-4 text-accent" />Use cloud workers</div>
             <div className="text-muted">Share each experiment across all compatible MOTH workers (CPU and GPU) in verified rounds.</div></div>
             <Switch aria-label="Use cloud workers" checked={useWorkers} onCheckedChange={setWorkers} />
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div><div className="flex items-center gap-2 text-[13px] text-fg"><Cpu className="size-4 text-accent" />Use server CPUs</div>
+            <div className="text-muted">Fallback for compatible jobs, including assistant-masked data. Memory, traffic and CPU limits still apply.</div></div>
+          <Switch aria-label="Use server CPUs" checked={!!s.backends?.local_cpu} onCheckedChange={(v) => secure(() => serverApi("/v1/admin/evolution/settings", {
+            method: "PUT", json: { changes: { backends: { local_cpu: v } } },
+          })).then(reloadEvo).catch((e) => setMsg((e as Error).message))} />
         </div>
         <ParticipantSwitch />
         {exp && (

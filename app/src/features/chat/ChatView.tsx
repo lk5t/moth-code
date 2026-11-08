@@ -1,10 +1,11 @@
 /** Chat: a clean, full-page conversation with MOTH (everyday questions, explanations, writing, code). */
 import { useEffect, useState } from "react";
-import { Info } from "lucide-react";
+import { Info, FolderOpen } from "lucide-react";
 import { serverApi, useAccount } from "@/lib/account";
-import { get } from "@/lib/backend";
+import { get, put } from "@/lib/backend";
 import { Badge } from "@/components/ui/badge";
-import { appStore } from "@/lib/app-state";
+import { appStore, useApp } from "@/lib/app-state";
+import { Switch } from "@/components/ui/switch";
 import { ChatPanel } from "./ChatPanel";
 
 type Any = Record<string, any>;
@@ -36,10 +37,33 @@ function ModelBar() {
 }
 
 export function ChatView() {
+  const project = useApp((s) => s.project);
+  const [shareProjectId, setShareProjectId] = useState<number | null>(null);
+  const share = !!project && shareProjectId === project.id;
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setShareProjectId(null); setError(null); }, [project?.id]);
+  const attach = async (enabled: boolean) => {
+    if (!project || !enabled) { setShareProjectId(null); return; }
+    setError(null);
+    try {
+      const consent = await get<{ granted: boolean }>(`/api/projects/${project.id}/cloud-consent`);
+      if (!consent.granted) {
+        if (!confirm(`Allow relevant excerpts from ${project.name} to be sent to MOTH Cloud for chat? They are not added to training data. Conversation history stays on this computer.`)) return;
+        await put(`/api/projects/${project.id}/cloud-consent`, { granted: true });
+      }
+      setShareProjectId(project.id);
+    } catch (e) { setError((e as Error).message); }
+  };
   return (
     <div className="flex h-full flex-col">
       <ModelBar />
-      <div className="min-h-0 flex-1"><ChatPanel general /></div>
+      {project && <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted">
+        <FolderOpen className="size-3.5" /><span className="min-w-0 truncate">Context from {project.name}</span>
+        <Switch aria-label="Attach approved project context" checked={share} onCheckedChange={attach} />
+        <span className="text-faint">{share ? "Relevant excerpts may be shared · not used for training" : "Off · this chat stays separate from your project"}</span>
+        {error && <span role="alert" className="text-danger">{error}</span>}
+      </div>}
+      <div className="min-h-0 flex-1"><ChatPanel general contextProjectId={share ? project?.id : null} /></div>
     </div>
   );
 }

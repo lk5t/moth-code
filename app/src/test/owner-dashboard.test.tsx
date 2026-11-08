@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { OwnerDashboard } from "@/features/owner/OwnerDashboard";
+import { appStore } from "@/lib/app-state";
 import { ModelOverview } from "@/features/owner/ModelOverview";
 
 const { api } = vi.hoisted(() => ({ api: vi.fn() }));
@@ -8,18 +9,13 @@ vi.mock("@/lib/account", () => ({ serverApi: api, withReauth: (fn: () => Promise
   useAccount: (fn: (s: unknown) => unknown) => fn({ user: { role: "owner" } }) }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
-it("organizes all existing owner functions beneath five primary sections", async () => {
+it("keeps administration in Owner tools and routes native AI into Intelligence", async () => {
   api.mockResolvedValue(null);
   render(<OwnerDashboard />);
   const primary = screen.getByRole("tablist", { name: "Owner sections" });
-  expect(within(primary).getAllByRole("tab").map(t => t.textContent)).toEqual(["Overview", "Intelligence", "Network", "Community", "Settings"]);
-  fireEvent.mouseDown(within(primary).getByRole("tab", { name: "Intelligence" }), { button: 0 });
-  await screen.findByRole("tab", { name: "Model registry" });
-  expect(screen.getByRole("tab", { name: "Training & evolution" })).toBeInTheDocument();
-  expect(screen.getByRole("tab", { name: "Data & intelligence" })).toBeInTheDocument();
-  fireEvent.mouseDown(within(primary).getByRole("tab", { name: "Network" }), { button: 0 });
-  await screen.findByRole("tab", { name: "Workers" });
-  expect(screen.getByRole("tab", { name: "Server" })).toBeInTheDocument();
+  expect(within(primary).getAllByRole("tab").map(t => t.textContent)).toEqual(["Overview", "Servers", "Community", "Settings"]);
+  fireEvent.click(screen.getByRole("button", { name: "Open Intelligence" }));
+  expect(appStore.getState().view).toBe("intelligence");
   fireEvent.mouseDown(within(primary).getByRole("tab", { name: "Settings" }), { button: 0 });
   await screen.findByRole("tab", { name: "Updates" });
   expect(screen.getByRole("tab", { name: "Audit log" })).toBeInTheDocument();

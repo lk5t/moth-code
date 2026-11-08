@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Splash } from "@/components/Splash";
 import { NavRail } from "@/components/NavRail";
 import { StatusBar } from "@/components/StatusBar";
-import { WorkspaceView } from "@/features/workspace/WorkspaceView";
+import { WorkspaceShell } from "@/features/workspace/WorkspaceShell";
 import { ApprovalDialog } from "@/features/workspace/ApprovalDialog";
 import { SettingsView } from "@/features/settings/SettingsView";
 import { loadProjects } from "@/features/workspace/project-actions";
@@ -92,11 +92,11 @@ export default function App() {
           <NavRail />
           <main className="min-w-0 flex-1">
             {/* Workspace stays mounted so editor/terminal state survives view switches. */}
-            <div className={view === "workspace" ? "flex h-full" : "hidden"}>
-              <ErrorBoundary label="The workspace"><WorkspaceView /></ErrorBoundary>
+            <div className={view === "workspace" || view === "chat" ? "flex h-full" : "hidden"}>
+              <ErrorBoundary label="The workspace"><WorkspaceShell /></ErrorBoundary>
             </div>
             {view === "settings" && <ErrorBoundary label="Settings"><SettingsView /></ErrorBoundary>}
-            {Extra && <ErrorBoundary key={view} label="This view"><Extra /></ErrorBoundary>}
+            {Extra && <ErrorBoundary key={["intelligence", "evolution", "network", "training", "models"].includes(view) ? "intelligence" : view} label="This view"><Extra /></ErrorBoundary>}
           </main>
         </div>
         <StatusBar />

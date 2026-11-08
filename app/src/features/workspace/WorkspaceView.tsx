@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import { PanelLeft, PanelRight, SquareTerminal } from "lucide-react";
 import { appStore, useApp } from "@/lib/app-state";
@@ -22,6 +22,7 @@ export function WorkspaceView() {
   const project = useApp((s) => s.project);
   const explorer = usePanelRef();
   const tools = usePanelRef();
+  const initialLayout = useRef(appStore.getState().workspaceLayout);
 
   useEffect(() => {
     const p = explorer.current;
@@ -74,8 +75,10 @@ export function WorkspaceView() {
           </Button>
         </Tip>
       </header>
-      <Group orientation="horizontal" className="min-h-0 flex-1">
+      <Group orientation="horizontal" className="min-h-0 flex-1" defaultLayout={initialLayout.current}
+        onLayoutChanged={(layout) => appStore.setState({ workspaceLayout: layout })}>
         <Panel
+          id="explorer"
           panelRef={explorer}
           defaultSize="18%"
           minSize="12%"
@@ -90,11 +93,12 @@ export function WorkspaceView() {
           <Explorer onOpenProject={pickProject} />
         </Panel>
         <Separator />
-        <Panel defaultSize="40%" minSize="25%">
+        <Panel id="conversation" defaultSize="40%" minSize="25%">
           <ChatPanel />
         </Panel>
         <Separator />
         <Panel
+          id="tools"
           panelRef={tools}
           defaultSize="42%"
           minSize="20%"

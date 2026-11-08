@@ -31,13 +31,13 @@ interface Conversation {
 
 
 /** ``general``: the full-page Chat (everyday questions, writing, explanations) — not tied to a project. */
-export function ChatPanel({ general = false }: { general?: boolean } = {}) {
+export function ChatPanel({ general = false, contextProjectId = null }: { general?: boolean; contextProjectId?: number | null } = {}) {
   const workspaceProject = useApp((s) => s.project);
   const project = general ? null : workspaceProject;
   const [mode, setMode] = useState<"chat" | "agent">("chat");
   const { status: cloud, reload: reloadCloud } = useCloudStatus();
   const { data: conversations, reload: reloadConversations } = useResource<Conversation[]>(
-    `/api/conversations${project ? `?project_id=${project.id}` : ""}`,
+    `/api/conversations${project ? `?project_id=${project.id}` : "?scope=general"}`,
     [],
     [],
   );
@@ -115,6 +115,7 @@ export function ChatPanel({ general = false }: { general?: boolean } = {}) {
         message: text,
         conversation_id: cid,
         project_id: project?.id ?? null,
+        context_project_id: contextProjectId,
       });
       if (isNew) {
         skipFetch.current = r.conversation_id;

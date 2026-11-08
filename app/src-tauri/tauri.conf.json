@@ -15,8 +15,8 @@
         "title": "MOTH Code",
         "width": 1440,
         "height": 900,
-        "minWidth": 960,
-        "minHeight": 600,
+        "minWidth": 760,
+        "minHeight": 520,
         "theme": "Dark",
         "backgroundColor": "#080808",
         "center": true
