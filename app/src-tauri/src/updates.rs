@@ -80,6 +80,11 @@ pub fn endpoint_for(server: &str, channel: &str) -> Result<Url, String> {
 // check() collapses HTTP failures into ReleaseNotFound. restore_update() retains Tauri's version
 // comparison, platform selection and mandatory signed-version verification for the actual package.
 async fn check_metadata(endpoint: Url, install_id: &str, version: &str) -> Result<Option<serde_json::Value>, String> {
+    // Same provider as tauri-plugin-updater. reqwest's rustls-no-provider deliberately
+    // requires explicit initialization; retain normal certificate and hostname verification.
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
     let response = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .build().map_err(|e| e.to_string())?
