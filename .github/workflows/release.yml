@@ -111,6 +111,7 @@ jobs:
           if (-not (Test-Path $path)) { throw "Native verification exited without completing its assertions" }
           $proof = Get-Content -Raw $path | ConvertFrom-Json
           if (-not $proof.native_windows -or -not $proof.real_frozen_backend -or -not $proof.owner_session_and_navigation_restored_after_restart -or -not $proof.training_cycle_id) { throw "Incomplete native GENESIS verification evidence" }
+          Write-Output "::notice title=Independent native GENESIS proof::$($proof | ConvertTo-Json -Compress)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

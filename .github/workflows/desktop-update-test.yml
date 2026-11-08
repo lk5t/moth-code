@@ -49,6 +49,7 @@ jobs:
           }
           $proof = Get-Content -Raw $path | ConvertFrom-Json
           if (-not $proof.completed -or $proof.to_version -ne "0.5.4" -or -not $proof.restart_report_received) { throw "Incomplete original-installer update proof" }
+          Write-Output "::notice title=Independent legacy update proof::$($proof | ConvertTo-Json -Compress)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

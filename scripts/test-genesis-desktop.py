@@ -106,7 +106,7 @@ def main(installer):
         for label in ('Overview', 'Training', 'Evolution', 'Network', 'Data'):
             ui.find(label, ('TabItem',))
         ui.click('Inspect layer 2')
-        ui.find('Layer 2 selected', ('Text',), prefix=True)
+        wait(lambda: 'Layer 2 selected' in ui.text(), 'selected architecture layer')
         ui.click('Training', control_type='TabItem')
         for value in (False, True):
             ui.click('Use cloud workers')

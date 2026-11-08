@@ -4,6 +4,7 @@ Uses UI Automation patterns, not release DevTools/debugging flags. No applicatio
 credentials or edit values are included in failure diagnostics.
 """
 import time
+import re
 
 
 class WindowsUI:
@@ -130,5 +131,12 @@ class WindowsUI:
         win32gui.SetWindowPos(self.root.handle, 0, 0, 0, width, height,
                              win32con.SWP_NOMOVE | win32con.SWP_NOZORDER)
 
+    def text(self):
+        # Accessibility exposes adjacent React text nodes separately (e.g. "Layer ", "2").
+        return re.sub(r'\s+', ' ', ' '.join(c.element_info.name for c in
+                      self.root.descendants(control_type='Text') if c.is_visible()))
+
     def close(self):
-        self.root.close()
+        import win32gui
+        import win32con
+        win32gui.PostMessage(self.root.handle, win32con.WM_CLOSE, 0, 0)
