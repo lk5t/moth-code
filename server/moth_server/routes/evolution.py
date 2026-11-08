@@ -29,6 +29,8 @@ router = APIRouter(prefix="/v1/admin/evolution", tags=["evolution"])
 
 
 def setup(ctx: Ctx) -> None:
+    if ctx.db.get_config('genesis_state') is None:
+        ctx.db.set_config('genesis_state', {'status': 'not_prepared'})
     if not ctx.extras.get("disable_background"):
         EN.start_background(ctx)
 
@@ -83,6 +85,10 @@ def status(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     deployed = M.deployed(ctx)
     active = MEM.active_cycle(ctx)
     last = active or (MEM.cycles(ctx, 1) or [None])[0]
+    if deployed and (deployed['info'] or {}).get('lineage_id'):
+        lineage_id = deployed['info']['lineage_id']
+        ids = {r['version'] for r in M.list_releases(ctx) if r['info'].get('lineage_id') == lineage_id}
+        last = next((c for c in MEM.cycles(ctx, 100) if c['base_version'] in ids), None)
     latest_eval = next((e for e in MEM.experiments(ctx, limit=20) if (e.get("metrics") or {}).get("gates")), None)
     return {
         "settings": settings,
@@ -128,6 +134,45 @@ class SettingsIn(BaseModel):
 class TrainingStartIn(BaseModel):
     worker_id: int | None = None
     server_cpu: bool = False
+
+
+class GenesisActivationIn(BaseModel):
+    reset_id: str
+    confirmation: str
+    start_training: bool = False
+
+
+@router.get('/genesis')
+def genesis_status(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.evolution import genesis
+    return genesis.status(ctx)
+
+
+@router.post('/genesis/prepare')
+def genesis_prepare(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.evolution import genesis
+    try:
+        return genesis.prepare(ctx, auth.uid)
+    except (ValueError, OSError) as e:
+        raise HTTPException(409, str(e)) from None
+
+
+@router.post('/genesis/activate')
+def genesis_activate(body: GenesisActivationIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.evolution import genesis
+    try:
+        return genesis.activate(ctx, body.reset_id, body.confirmation, auth.uid, body.start_training)
+    except (ValueError, OSError, M.ReleaseError) as e:
+        raise HTTPException(409, str(e)) from None
+
+
+@router.post('/genesis/{reset_id}/restore')
+def genesis_restore(reset_id: str, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.evolution import genesis
+    try:
+        return genesis.restore(ctx, reset_id, auth.uid)
+    except (ValueError, OSError, M.ReleaseError) as e:
+        raise HTTPException(409, str(e)) from None
 
 
 @router.post("/training/start")

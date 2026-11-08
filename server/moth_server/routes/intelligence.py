@@ -473,6 +473,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     deployed = ctx.extras.get("deployed_version")
     st = EN.state(ctx)
     stable = st.get("stable_version") or deployed
+    active_lineage = (rels.get(deployed) or {}).get('info', {}).get('lineage_id')
     builds = {}
     for b in library.status(ctx)["builds"]:
         if b["status"] == "ready" and b["content_sha256"]:
@@ -491,11 +492,14 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
         if not r:
             continue
         info = r["info"] or {}
+        if deployed and info.get('lineage_id') != active_lineage:
+            continue  # archived lineages stay in the registry, not in the active MOTH timeline
         reps = capability_reports(ctx, row["version"])
         versions.append({
             "version": row["version"], "model_version": info.get("model_version"),
             "name": info.get("display_name") or r["name"], "params": info.get("params"), "method": row["method"],
             "architecture": info.get("architecture"),
+            "config": info.get("config"), "initialization": info.get("initialization"),
             "training": {k: (info.get("training") or {}).get(k) for k in
                          ("step", "steps", "best_val", "val_loss", "train_loss", "tokens", "backend")},
             "parent": row["parent_version"], "created_at": row["created_at"], "status": r["status"],
@@ -506,7 +510,8 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
             "benchmarks": {k: {"value": v["value"], "metric": v.get("metric"), "higher_is_better": v.get("higher_is_better")}
                            for k, v in reps.items()}})
     dev = next((v for v in reversed(versions) if v["has_dev_checkpoint"]), None)
-    cyc = MEM.active_cycle(ctx) or (MEM.cycles(ctx, 1) or [None])[0]
+    lineage_versions = {v['version'] for v in versions}
+    cyc = next((c for c in MEM.cycles(ctx, 100) if c['base_version'] in lineage_versions), None)
     s = ES.get(ctx)
     online = [w for w in ctx.db.all(_select(workers).where(workers.c.revoked_at.is_(None)))]
     t = __import__("time").time()

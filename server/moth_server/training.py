@@ -41,6 +41,8 @@ def coordinator_root(ctx: Ctx) -> Path:
 
 def coordinator(ctx: Ctx):
     """The training coordinator, if the Owner initialised one (``moth-server training init``)."""
+    if (ctx.db.get_config('genesis_state', {}) or {}).get('retired_legacy_jobs'):
+        return None  # retained for rollback, never silently restart the retired model's rounds
     coord = ctx.extras.get("coordinator")
     if coord is None and (coordinator_root(ctx) / "config.json").exists():
         from moth.community.coordinator import Coordinator
@@ -211,7 +213,7 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
     a job is offered only if its memory requirement fits the worker (GPU memory, else RAM); jobs that
     benefit from a GPU wait briefly for an online GPU worker before a CPU worker takes them.
     ``allow_cpu`` is kept for compatibility and no longer restricts anything."""
-    if worker["paused"]:
+    if worker["paused"] or (ctx.db.get_config('genesis_state', {}) or {}).get('status') in ('preparing', 'prepared'):
         return None
     hw = json.loads(worker["hardware"] or "{}")
     requeue_expired(ctx)
@@ -220,6 +222,15 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
     t = now()
     with ctx.db.tx() as c:
         # Resume: a job this worker still holds comes back first (e.g. after a reconnect).
+        # Serialize lease issuance with GENESIS preparation. Once its pause is committed,
+        # a backup sees every earlier lease and no new one can race the checkpoint snapshot.
+        from moth_server.db import server_config
+        gate = select(server_config.c.value).where(server_config.c.key == 'genesis_state')
+        if not ctx.db.is_sqlite:
+            gate = gate.with_for_update()
+        reset = c.execute(gate).first()
+        if reset and json.loads(reset[0]).get('status') in ('preparing', 'prepared'):
+            return None
         job = c.execute(select(training_jobs).where(training_jobs.c.status == "leased",
                                                     training_jobs.c.worker_id == worker["id"])).mappings().first()
         if not job:

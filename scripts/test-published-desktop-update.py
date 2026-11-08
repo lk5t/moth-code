@@ -27,6 +27,7 @@ REPO = "lk5t/moth-code"
 
 
 def run(*args, **kw):
+    kw.setdefault('timeout', 180)
     return subprocess.run(args, check=True, **kw)
 
 
@@ -132,7 +133,8 @@ def main():
     (out / "tls.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     (out / "tls.der").write_bytes(cert.public_bytes(serialization.Encoding.DER))
     (out / "tls.key").write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
-    run("certutil", "-user", "-addstore", "Root", str(out / "tls.der"))
+    print('::notice title=Published lifecycle stage::Installing isolated test TLS certificate', flush=True)
+    run("certutil", "-f", "-user", "-addstore", "Root", str(out / "tls.der"))
     data = out / "server-data"
     data.mkdir(exist_ok=True)
     (out / "agent.token").write_text("isolated-desktop-test")
@@ -155,6 +157,7 @@ def main():
         # Trust the isolated CA for the helper; clients still enforce HTTPS and the production keys.
         os.environ["SSL_CERT_FILE"] = str(out / "tls.pem")
         harness = runpy.run_path(str(ROOT / "scripts/desktop-update-harness.py"))
+        print('::notice title=Published lifecycle stage::Registering verified 0.5.4 on the isolated server', flush=True)
         harness["register"]("https://localhost:8900", data, out / "agent.token", out / "new")
         served = data / "storage/software/desktop/0.5.4" / new.name
         # Corrupt an already relayed installer: the stock client's independent minisign check
@@ -166,7 +169,8 @@ def main():
             f.write(bytes([last[0] ^ 1]))
         from moth_server.releases import bucket
         install_id = next(f"published-ci-{i}" for i in range(1000) if bucket(f"published-ci-{i}", "0.5.4") < 10)
-        run(str(old), "/S")
+        print('::notice title=Published lifecycle stage::Installing the original 0.5.1 desktop', flush=True)
+        run(str(old), "/S", timeout=600)
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall") as parent:
             for i in range(winreg.QueryInfoKey(parent)[0]):
@@ -192,6 +196,7 @@ def main():
         home.mkdir(exist_ok=True)
         (home / "workspace.txt").write_text("keep workspace content")
         app_env = {**os.environ, "MOTH_HOME": str(home), "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--remote-debugging-port=9222"}
+        print('::notice title=Published lifecycle stage::Starting original desktop and setting the isolated Cloud address', flush=True)
         subprocess.Popen([str(exe)], env=app_env)
         deadline = time.monotonic() + 120
         while True:
@@ -201,6 +206,7 @@ def main():
             except Exception:
                 if time.monotonic() > deadline: raise
                 time.sleep(1)
+        print('::notice title=Published lifecycle stage::Waiting for tampered-download rejection', flush=True)
         deadline = time.monotonic() + 240
         while time.monotonic() < deadline:
             if update_log.exists() and "update error:" in update_log.read_text(): break
@@ -208,6 +214,7 @@ def main():
         else: raise AssertionError("Stock 0.5.1 did not report the tampered installer failure")
         assert "signature" in update_log.read_text().lower(), update_log.read_text()
         assert installed_version() == "0.5.1", "an invalid signature must never install"
+        print('::notice title=Published lifecycle stage::Tampered update rejected; restoring the authentic installer', flush=True)
         shutil.copyfile(new, served)
         evaluate("location.reload()")
         deadline = time.monotonic() + 480
@@ -217,6 +224,7 @@ def main():
         else: raise AssertionError("Stock 0.5.1 did not detect, download and verify stock 0.5.4")
         assert installed_version() == "0.5.1", "must wait for close, not install during download"
         # WM_CLOSE exercises the installed app's actual onCloseRequested handler.
+        print('::notice title=Published lifecycle stage::Closing original desktop to install its verified update', flush=True)
         run("powershell", "-NoProfile", "-Command", f"Get-Process | Where-Object {{ $_.Path -eq '{exe}' }} | ForEach-Object {{ $_.CloseMainWindow() | Out-Null }}")
         deadline = time.monotonic() + 240
         while time.monotonic() < deadline and installed_version() != "0.5.4": time.sleep(2)

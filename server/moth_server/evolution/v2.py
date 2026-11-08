@@ -336,8 +336,10 @@ def assign_model_version(ctx: Ctx, version: int) -> str | None:
     rel = M.release(ctx, version)
     if not rel or rel["info"].get("model_version"):
         return rel["info"].get("model_version") if rel else None
+    lineage_id = rel['info'].get('lineage_id')
     used = [_parse((r["info"] or {}).get("model_version")) for r in M.list_releases(ctx)
-            if r['status'] == 'deployed' or r.get('previously_deployed')]
+            if (r['status'] == 'deployed' or r.get('previously_deployed'))
+            and r['info'].get('lineage_id') == lineage_id]
     used = [u for u in used if u]
     anc = MEM.ancestors(ctx, version)
     parent_mv = None

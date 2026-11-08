@@ -27,7 +27,7 @@ that Foundation training is complete.
 
 | Phase | Status |
 |---|---|
-| 1 Backup and fresh lineage | Owner-gated preparation/activation/restore under implementation; no production reset |
+| 1 Backup and fresh lineage | Owner-gated backup, fresh seed, activation and restoration implemented; 3 isolated regression cases passed; production reset still awaits Owner approval |
 | 2 Quality data | Reuse existing approved-source discovery, provenance/license validation, deduplication, masks and held-out separation; targeted verification pending |
 | 3 CPU/GPU coordination | Defaults and selection fixes tested; fresh-lineage CPU evidence pending |
 | 4 Evolution/growth | Existing real trainer, research planning, growth and promotion/rollback retained; GENESIS lineage reset integration pending |
@@ -56,3 +56,7 @@ Its updater agent has no code changes. Windows CI on the corrected updater sourc
 the current A-to-B Windows update test passed detection/download/signature verification,
 installation on close, restart/reporting and user-data preservation. The separate original
 published 0.5.1-to-0.5.4 test remains unresolved; Desktop 0.5.5 is not yet confirmed published.
+
+## Reset safety evidence
+
+Isolated tests preserve a real optimizer state and original checkpoint bytes, verify a complete archive restoration, reject unapproved activation and tampered backups, initialize 99,648 fresh parameters with zero steps/tokens, and restore a deleted legacy checkpoint. Worker leases must quiesce before preparation; lease issuance is synchronized with the reset gate. Existing registry records remain available. A fresh baseline can score worse than the legacy model: only the separately confirmed Owner reset uses the existing explicit regression override, while retaining the real evaluation result. Automatic promotion gates are unchanged.
