@@ -13,14 +13,15 @@ class WindowsUI:
         self.window.wait('exists', timeout=timeout)
         self.root = self.window.wrapper_object()
 
-    def find(self, name, types=None, timeout=60, prefix=False):
+    def find(self, name, types=None, timeout=60, prefix=False, contains=False):
         deadline = time.monotonic() + timeout
         while True:
             for c in self.root.descendants():
                 info = c.element_info
                 if types and info.control_type not in types:
                     continue
-                if (info.name.startswith(name) if prefix else info.name == name) and c.is_enabled():
+                matches = name in info.name if contains else info.name.startswith(name) if prefix else info.name == name
+                if matches and c.is_enabled():
                     return c
             if time.monotonic() > deadline:
                 labels = [(c.element_info.control_type, c.element_info.name) for c in self.root.descendants()
@@ -77,6 +78,8 @@ class WindowsUI:
         self.set_text('MOTH Cloud server address', url)
         self.click('Test & use')
         self.find('Connected', ('Text',), prefix=True)
+        # Confirm rendered account/connection state, not just an editor value, before any login.
+        self.find(url, ('Text',), contains=True)
 
     def check_update(self, wait_for_enabled=True):
         self.click('Settings')
