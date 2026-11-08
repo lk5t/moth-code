@@ -11,6 +11,12 @@ The reset first verifies an archive/restoration and then requires separate expli
 Installing this release never resets the deployed model or user data. A fresh baseline is untrained;
 neither these smoke tests nor this release establishes completed Foundation training.
 
+The 0.5.8 update-agent patch uses public GitHub download URLs for unauthenticated release
+assets, reducing REST use to one release-list request per check. An unreadable historical
+manifest no longer blocks verified newer releases. Private repositories keep authenticated
+asset requests; manifest signatures, payload checksums, health verification and rollback remain required.
+Desktop 0.5.7 remains the compatible Windows release.
+
 | File | What it is |
 | --- | --- |
 | `moth-cloud-__VERSION__.tar.gz` | Server bundle: server, MOTH backend, update agent, installer, templates, backup script, `INSTALL.md` |

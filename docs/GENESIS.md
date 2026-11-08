@@ -114,8 +114,8 @@ GPU hardware declarations in selection tests are explicitly simulated; no GPU ex
 
 ## Published GENESIS 0.5.7
 
-The coordinated release is **0.5.7**; existing 0.5.5/0.5.6 releases were preserved. All
-application/server/worker version declarations agree. Frontend verification passed **40 tests**,
+The coordinated release is **0.5.7**; existing 0.5.5/0.5.6 releases were preserved. Desktop 0.5.7 is paired with compatible Server/Worker 0.5.7; the later agent-only
+Server/Worker 0.5.8 patch is described below and requires no Desktop rebuild. Frontend verification passed **40 tests**,
 TypeScript checking and a production frontend build. The existing Desktop workflow passed its
 actual installed Windows gate: signed installer/frozen backend, Owner sign-in, Code/Chat draft
 retention, interactive architecture, all five Intelligence tabs, real desktop-worker enrollment
@@ -210,9 +210,9 @@ Both releases are published (`draft=false`, stable); each tag targets
   full CI and existing signature/checksum/bundle-content verification before publication.
 
 [Machine-readable delivery evidence](GENESIS-DELIVERY-EVIDENCE.json) records exact asset digests,
-source commits and independent native/legacy Windows receipts. The updater agent, production
-signing keys and their trust requirements have no changes. Publication proves GitHub delivery;
-it does not prove that the user's computer has installed the release. The unchanged agent's
+source commits and independent native/legacy Windows receipts. Through the 0.5.7 publications, the updater agent had no source changes. The separately requested
+0.5.8 agent transport fix is scoped below; production signing keys and trust requirements are unchanged. Publication proves GitHub delivery;
+it does not prove that the user's computer has installed the release. The agent's
 normal GitHub check interval is 900 seconds, and existing desktop rollout stages remain in force.
 The last live Cloud observation is recorded separately in the delivery evidence.
 The post-publication read-only probe still reported healthy **server 0.5.6**, model release **1**,
@@ -221,12 +221,43 @@ not been confirmed; protected agent status was not inspected with production Own
 The follow-up native test then failed with `ElementAmbiguousError`: two top-level accessibility
 controls matched the same process/title. Its driver now selects the visible Window control;
 this test-only selector repair changes no application binary, signing key or updater behavior.
+The focused rerun https://github.com/lk5t/moth-code/actions/runs/42489618727 passed its independent
+original-installer completion receipt after this repair.
 
 
 Main integration commits: worker JSON/CPU defaults `f8b0d9b`; reversible GENESIS `2b61ca0`;
 workspace/Intelligence `d26b7d1`; training controls/scheduling `cd8e943`; real approved-reset CPU
 lifecycle `832ea88`; active-lineage comparisons `649c5ca`; native Windows RAM `6fda2c3`;
 continued training on Windows/final product source `4760087`.
+
+## Targeted Cloud agent rate-limit repair (0.5.8)
+
+The Owner reported agent Online, server 0.5.6 running, server 0.5.7 available and
+`download failed: https://api.github.com/repos/lk5t/moth-code/releases/assets/717106496: HTTP Error 403: rate limit exceeded`.
+GitHub's API identifies that asset as `moth-release-desktop-0.3.1.json`. Source inspection confirmed
+that every poll fetched up to 20 historical manifests plus signatures via REST and aborted the
+whole check when this old file failed. Up to 41 REST calls per check exceeds the anonymous
+60/hour budget at the default four checks/hour.
+
+The minimal agent patch uses public release download URLs without a configured credential,
+retains authenticated API downloads for private repositories, and isolates an unavailable old
+manifest so verified newer releases can proceed. All-unavailable checks remain errors; Ed25519
+manifest verification, signed size/SHA-256 checks, resumed downloads, update health checks and
+rollback are retained. API credentials are attached only to the exact GitHub API host.
+
+Ten focused agent transport regressions pass, including four hourly checks consuming only four
+REST calls, private authentication, historical 403 isolation, all-unavailable error reporting,
+cryptographic tamper rejection, checksum/size rejection and actual interrupted HTTP transfers.
+The network GitHub service in the new cases is an explicit test double; cryptographic verification
+and downloaded-byte validation are real. The existing real-process Cloud update/recovery CI gates
+remain mandatory for publication.
+
+Server/Worker **0.5.8** is the patch candidate; Desktop **0.5.7** is unchanged. The builder requires
+backend/server/worker version declarations to match, so only those package versions and the server
+workflow default advance. Existing releases are immutable. See [recovery steps](SERVER.md#github-api-rate-limit-recovery-agent-058)
+for the old-agent bootstrap limitation: a rate-limited installed agent needs one successful signed
+update after quota reset (or its existing read-only credential option) before new code can take effect.
+Live patch installation is not claimed until actual agent/server status confirms it.
 
 ## Tests and activation that remain conditional
 
@@ -254,7 +285,7 @@ continued training on Windows/final product source `4760087`.
 
 ## Exact changed files
 
-Compared with the source at `03331f6` before the carried-forward updater repair. Existing files are reused; no updater agent or signing key was changed.
+Compared with the source at `03331f6` before the carried-forward updater repair. Existing files are reused. The agent transport changes only for the later Owner-reported rate-limit defect; signing keys and trust checks are preserved.
 
 | File | Necessary purpose |
 |---|---|
@@ -263,7 +294,7 @@ Compared with the source at `03331f6` before the carried-forward updater repair.
 | `.github/workflows/ci.yml` | Expose Rust failure details through Actions annotations without changing test exit status. |
 | `.github/workflows/desktop-update-test.yml` | Verify original published installers/signatures and actual close-triggered update installation. |
 | `.github/workflows/release.yml` | Add the real installed Windows GENESIS gate and set the release version default. |
-| `.github/workflows/server-release.yml` | Set the coordinated server release version default. |
+| `.github/workflows/server-release.yml` | Set the Server/Worker 0.5.8 patch release default; preserve full CI and signing/verification gates. |
 | `app/package-lock.json` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
 | `app/package.json` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
 | `app/src-tauri/Cargo.lock` | Lock the coordinated app version and direct use of the already-locked HTTP/TLS dependencies. |
@@ -293,23 +324,25 @@ Compared with the source at `03331f6` before the carried-forward updater repair.
 | `app/src/test/updater.test.ts` | Regress readable validation errors and updater detection/download/rejection/close behavior. |
 | `app/src/test/workspace-modes.test.tsx` | Verify consolidated controls, measured-activity-only animation and retained drafts/unsaved files. |
 | `app/src/views.tsx` | Map legacy AI destinations to the hub and retain the Owner guard. |
-| `backend/moth/__init__.py` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
+| `backend/moth/__init__.py` | Coordinate Server/Worker patch version 0.5.8 as required by the existing signed bundle builder; Desktop remains 0.5.7. |
 | `backend/moth/server/routes_hybrid.py` | Resolve request models at module scope to fix PUT /api/participant query.body validation. |
 | `backend/moth/server/routes_model.py` | Enforce project consent/redaction for chat context and filter general history separately. |
 | `backend/moth/training/continue_run.py` | Allow actual continued CPU training when the optional Unix os.nice API is absent on Windows; retain resource limits. |
-| `backend/pyproject.toml` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
+| `backend/pyproject.toml` | Coordinate Server/Worker patch version 0.5.8 as required by the existing signed bundle builder; Desktop remains 0.5.7. |
 | `backend/tests/test_continue_v053.py` | Reproduce absent Unix priority support and verify genuine CPU optimizer steps and a resumable optimizer checkpoint. |
 | `backend/tests/test_genesis_chat.py` | Verify real local HTTP consent/history behavior with an explicitly simulated inference transport. |
 | `backend/tests/test_server.py` | Reproduce the exact participant JSON/authentication/persistence error, including optional-worker builds. |
+| `deploy/agent/moth_agent.py` | Fix the Owner-reported historical-asset REST rate limit using public downloads; retain private authentication, signature/checksum checks and rollback. |
 | `docs/GENESIS-CPU-EVIDENCE.json` | Record phase status, measured CPU/evaluation/checkpoint evidence, delivery results and limitations. |
 | `docs/GENESIS-DELIVERY-EVIDENCE.json` | Record public GitHub publication, exact asset digests/source commits and independent Windows completion receipts. |
 | `docs/GENESIS.md` | Record phase status, measured CPU/evaluation/checkpoint evidence, delivery results and limitations. |
+| `docs/SERVER.md` | Document the verified agent rate-limit cause and safe old-agent bootstrap through quota reset or the existing read-only credential option. |
 | `scripts/desktop-update-harness.py` | Allow an explicitly verifying TLS context for isolated signed-release registration. |
 | `scripts/prepare-release.mjs` | Document that the update test exercises actual window-close installation; preserve release signing configuration. |
 | `scripts/test-genesis-desktop.py` | Gate release on a real installer/frozen-backend/Cloud UI and training-control smoke test. |
 | `scripts/test-published-desktop-update.py` | Verify published 0.5.1/0.5.4 bytes/signatures and native tamper rejection, close installation and preserved data. |
 | `scripts/windows-desktop-ui.py` | Drive unchanged signed Windows releases through accessibility patterns when release WebView debugging is unavailable. |
-| `server/moth_server/__init__.py` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
+| `server/moth_server/__init__.py` | Coordinate Server/Worker patch version 0.5.8 as required by the existing signed bundle builder; Desktop remains 0.5.7. |
 | `server/moth_server/evolution/backends.py` | Use safe CPU defaults/resources, fresh compatible workers and the GPU device that actually fits. |
 | `server/moth_server/evolution/compute.py` | Use safe CPU defaults/resources, fresh compatible workers and the GPU device that actually fits. |
 | `server/moth_server/evolution/distributed.py` | Prefer fitting GPU participants when real distributed training can use them. |
@@ -322,11 +355,12 @@ Compared with the source at `03331f6` before the carried-forward updater repair.
 | `server/moth_server/routes/system.py` | Measure native available Windows RAM for safe CPU admission; preserve Linux measurements and unknown-capacity refusal. |
 | `server/moth_server/routes/updates.py` | Distinguish genuine no-update from rollout, metadata, artifact, signature and compatibility errors. |
 | `server/moth_server/training.py` | Synchronize leases with reset preparation, retire legacy rounds and match GPU preference to each eligible job. |
-| `server/pyproject.toml` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
+| `server/pyproject.toml` | Coordinate Server/Worker patch version 0.5.8 as required by the existing signed bundle builder; Desktop remains 0.5.7. |
+| `server/tests/test_agent_download.py` | Reproduce rate-limited REST assets and verify public/private transport, historical failure isolation and unchanged cryptographic/download protection. |
 | `server/tests/test_autonomous_lifecycle.py` | Verify real CPU progression and rollback from both an empty installation and an approved GENESIS reset. |
 | `server/tests/test_evolution.py` | Regress authenticated training controls, resumption, cancellation recovery and persisted worker settings. |
 | `server/tests/test_genesis_compute.py` | Regress CPU defaults/Owner limits, stale workers, GPU fit and job permissions with explicit simulated hardware. |
 | `server/tests/test_genesis_reset.py` | Verify real weights/optimizer archival, tamper protection, Owner gates, new-lineage metrics and restoration. |
 | `server/tests/test_updates.py` | Regress desktop update HTTP semantics and artifact/channel/version requirements. |
-| `worker/moth_worker/__init__.py` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
-| `worker/pyproject.toml` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
+| `worker/moth_worker/__init__.py` | Coordinate Server/Worker patch version 0.5.8 as required by the existing signed bundle builder; Desktop remains 0.5.7. |
+| `worker/pyproject.toml` | Coordinate Server/Worker patch version 0.5.8 as required by the existing signed bundle builder; Desktop remains 0.5.7. |

@@ -202,5 +202,33 @@
     "latest_observed_desktop_offer": "0.5.4",
     "new_0_5_7_install_or_relay_verified": false,
     "note": "Read-only public probes succeeded; subsequent isolated legacy GUI automation failed with ElementAmbiguousError. Driver narrowed to the visible Window control and focused rerun required."
+  },
+  "post_publication_windows_rerun": {
+    "workflow_run": 42489618727,
+    "job_id": 128758925369,
+    "conclusion": "success",
+    "selector_fix": "Visible Window role only",
+    "proof": {
+      "completed": true,
+      "from_version": "0.5.1",
+      "to_version": "0.5.4",
+      "production_signatures": true,
+      "tampered_installer_rejected": true,
+      "verified_download_before_close": true,
+      "installed_on_close": true,
+      "restart_report_received": true,
+      "settings_accounts_workspaces_preserved": true
+    }
+  },
+  "cloud_rate_limit_issue": {
+    "reported_by": "Owner Dashboard status supplied by the user",
+    "running_server": "0.5.6",
+    "available_server": "0.5.7",
+    "agent_online": true,
+    "asset_id": 717106496,
+    "asset_name": "moth-release-desktop-0.3.1.json",
+    "error": "HTTP Error 403: rate limit exceeded",
+    "patch_candidate": "server-v0.5.8",
+    "live_patch_installation_verified": false
   }
 }

@@ -42,11 +42,12 @@ import tempfile
 import time
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
 
-AGENT_VERSION = "0.5.4"
+AGENT_VERSION = "0.5.8"
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import ed25519_verify  # noqa: E402  (stdlib-only verifier shipped next to this file)
@@ -214,7 +215,7 @@ class Agent:
         """
         h = {"User-Agent": f"moth-agent/{AGENT_VERSION}", **(headers or {})}
         tok_file = self.cfg.get("github_token_file")
-        if "api.github.com" in url and tok_file and Path(tok_file).exists():
+        if urllib.parse.urlsplit(url).hostname == "api.github.com" and tok_file and Path(tok_file).exists():
             h["Authorization"] = "Bearer " + Path(tok_file).read_text().strip()
         name = url.split("?")[0]
         tmp = dest.with_suffix(dest.suffix + ".part") if dest is not None else None
@@ -281,16 +282,29 @@ class Agent:
             repo = src[7:]
             data = json.loads(self._http_get(f"https://api.github.com/repos/{repo}/releases?per_page=20",
                                              {"Accept": "application/vnd.github+json"}))
+            token_file = self.cfg.get("github_token_file")
+            authenticated = bool(token_file and Path(token_file).is_file() and Path(token_file).read_text().strip())
+            unavailable = []
             for rel in data:
                 if rel.get("draft"):
                     continue
-                assets = {a["name"]: a["url"] for a in rel.get("assets", [])}
+                # Public files belong on GitHub's download endpoint, not the rate-limited REST
+                # asset endpoint. Keep authenticated REST downloads for private repositories.
+                assets = {a["name"]: a["url"] if authenticated else a.get("browser_download_url") or a["url"]
+                          for a in rel.get("assets", [])}
                 mf = next((n for n in assets if n.startswith("moth-release-") and n.endswith(".json")), None)
                 if not mf or mf + ".sig" not in assets:
                     continue
-                raw = self._http_get(assets[mf], {"Accept": "application/octet-stream"})
-                sig = self._http_get(assets[mf + ".sig"], {"Accept": "application/octet-stream"}).decode()
+                try:
+                    raw = self._http_get(assets[mf], {"Accept": "application/octet-stream"})
+                    sig = self._http_get(assets[mf + ".sig"], {"Accept": "application/octet-stream"}).decode()
+                except AgentError as e:
+                    unavailable.append(str(e))
+                    self.log(f"could not read GitHub release {rel.get('tag_name') or mf}: {e}")
+                    continue  # an unavailable historical release must not block verified newer ones
                 found.append((raw, sig, lambda name, size=None, a=assets: self._gh_fetch(a, name, size)))
+            if not found and unavailable:
+                raise AgentError("no GitHub release manifests could be read: " + unavailable[0])
         elif src:
             raise AgentError(f"unknown release source {src!r}")
         out = []

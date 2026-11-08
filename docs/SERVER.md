@@ -113,6 +113,31 @@ Owner Dashboard). For each new **signed** release on the server's channel it:
 An update interrupted by a crash or reboot is finished or rolled back on the agent's next start.
 Pause updates, retry a failed version, approve migrations or roll back from **Owner Dashboard → Updates**.
 
+### GitHub API rate-limit recovery (agent 0.5.8)
+
+Older agents fetch up to 20 release manifests and signatures through the REST asset API on every
+check: up to 41 API requests per cycle, exceeding the unauthenticated 60-requests/hour budget
+with the normal four hourly checks. Failure to read even an old desktop manifest can abort the
+entire check before a newer server is applied. For example, asset `717106496` is the historical
+Desktop 0.3.1 manifest, not the new server bundle.
+
+Agent 0.5.8 uses GitHub's public `browser_download_url` for manifests, signatures and payloads
+when no GitHub credential is configured. Only the release-list request consumes REST quota.
+Configured private-repository credentials keep the authenticated asset API. Every manifest
+still must verify with the installed release public key, and every payload must match its
+signed SHA-256 and size. Available verified releases can proceed when an unrelated historical
+manifest is unavailable; a check with no readable manifest remains an error.
+
+The old agent must complete one successful signed Server/Worker 0.5.8 update to install this
+patch. If its current quota is already exhausted, leave automatic checks enabled until GitHub's
+rate-limit window resets; repeated **Check now** does not reset that window. For faster recovery
+or private/shared-IP installations, the existing `github_token_file` setting in
+`config/agent.json` accepts a local mode-600 file containing a read-only GitHub token (repository
+Contents: read). Keep it on the VPS; never send the token through chat. This is an existing
+credential option, not a signature or rollback bypass. No model reset or account migration is
+needed. Confirm agent version 0.5.8, running server version and desktop relay status in Updates
+after a successful check. Publication alone does not prove the live agent installed the patch.
+
 ### Operator command (exceptional recovery only)
 
 ```bash
