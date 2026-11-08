@@ -110,11 +110,14 @@ def worker_capacity(ctx: Ctx, need_bytes: int = 0, worker_ids: list[int] | None 
     rows = ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
     if worker_ids is not None:
         rows = [w for w in rows if w['id'] in worker_ids]
-    online = [w for w in rows if w["status"] == "online" and not w["paused"]]
+    online = [w for w in rows if w["status"] == "online" and not w["paused"]
+              and (w.get("last_heartbeat_at") or 0) >= time.time() - 180]
     hws = [json.loads(w["hardware"] or "{}") for w in online]
     gpu = [h for h in hws if h.get("compute") == "gpu" or (h.get("compute") is None and h.get("gpus"))]
     fitting = [h for h, w in zip(hws, online) if capacity_bytes(h, json.loads(w['limits'] or '{}')) >= need_bytes]
+    fitting_gpu = [h for h in fitting if h.get("compute") == "gpu" or (h.get("compute") is None and h.get("gpus"))]
     return {"total": len(rows), "online": len(online), "online_gpu": len(gpu), "online_cpu": len(hws) - len(gpu),
+            "usable_gpu": len(fitting_gpu),
             "usable": len(fitting), "gpus": [g.get("name") for h in gpu for g in h.get("gpus", [])],
             "gflops": round(sum(((h.get("benchmark") or {}).get("gflops") or 0) for h in hws), 1)}
 
@@ -149,7 +152,7 @@ def choose_backend(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[dict | No
         reasons.append("this server has no GPU")
     if be.get("workers"):
         cap = worker_capacity(ctx, need_bytes, settings.get("worker_ids"))
-        if cap["usable"]:
+        if cap["usable_gpu"]:
             return {"backend": "worker", "device": "worker"}, []
         if not cap["total"]:
             reasons.append("no MOTH workers are enrolled")
@@ -166,6 +169,8 @@ def choose_backend(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[dict | No
                        f"{reserve / GB:.1f} GB reserve)")
     else:
         reasons.append("CPU training on this server is turned off (Evolution → Settings → Compute)")
+    if be.get("workers") and cap["usable"]:
+        return {"backend": "worker", "device": "worker"}, []
     return None, reasons
 
 

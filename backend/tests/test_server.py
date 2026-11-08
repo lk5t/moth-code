@@ -77,3 +77,20 @@ def test_websocket_rejects_bad_token(paths):
         with pytest.raises(WebSocketDisconnect):
             with c.websocket_connect("/ws/events?token=wrong") as ws:
                 ws.receive_json()
+
+
+def test_participant_json_body_regression(paths):
+    """The real desktop PUT must never interpret its JSON body as query.body."""
+    with client(paths) as c:
+        assert c.put('/api/participant', json={'enabled': False}).status_code == 401
+        disabled = c.put('/api/participant', json={'enabled': False}, headers=H())
+        assert disabled.status_code == 200, disabled.text
+        assert disabled.json()['enabled'] is False
+        enabled = c.put('/api/participant', json={'enabled': True}, headers=H())
+        assert enabled.status_code == 409 and 'Sign in' in enabled.json()['detail']
+        missing = c.put('/api/participant', json={}, headers=H())
+        assert missing.status_code == 422
+        assert missing.json()['detail'][0]['loc'][:1] == ['body']
+        assert c.get('/api/participant', headers=H()).json()['enabled'] is False
+        ondevice = c.put('/api/ondevice/settings', json={'answer_on_device': False}, headers=H())
+        assert ondevice.status_code == 200, ondevice.text

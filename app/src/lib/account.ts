@@ -8,6 +8,7 @@
  * features on the user's behalf; it never persists the token.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { requestError } from "./errors";
 import { isTauri, put } from "./backend";
 import { createStore } from "./store";
 import { CLIENT_HEADER, officialServer, resolveServer, setUserServer } from "./endpoint";
@@ -126,7 +127,7 @@ export async function serverApi<T = any>(
     let extra: any = {};
     try {
       extra = await res.json();
-      detail = typeof extra.detail === "string" ? extra.detail : JSON.stringify(extra.detail);
+      detail = requestError(extra.detail, detail);
     } catch {
       /* not json */
     }

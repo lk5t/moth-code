@@ -26,6 +26,16 @@ class PersonalExportIn(BaseModel):
     name: str = "personal-tasks"
 
 
+# Resolve postponed annotations in module globals: FastAPI otherwise treats a function-local
+# model name as an unresolved query parameter, producing the reported query.body error.
+class ParticipantIn(BaseModel):
+    enabled: bool
+
+
+class OnDeviceIn(BaseModel):
+    answer_on_device: bool
+
+
 def register(app: FastAPI, svc: Services, deps) -> None:
     jobs = svc.extras["jobs"]
 
@@ -49,9 +59,6 @@ def register(app: FastAPI, svc: Services, deps) -> None:
     except Exception:  # noqa: BLE001 - never blocks the app from starting
         pass
 
-    class ParticipantIn(BaseModel):
-        enabled: bool
-
     @app.get("/api/participant", dependencies=deps)
     def participant_status():
         return participant.status()
@@ -68,9 +75,6 @@ def register(app: FastAPI, svc: Services, deps) -> None:
 
     ondevice = OnDevice(svc.paths.models, account=lambda: svc.extras.get("account"), publish=svc.bus.publish)
     svc.extras["ondevice"] = ondevice
-
-    class OnDeviceIn(BaseModel):
-        answer_on_device: bool
 
     @app.get("/api/ondevice", dependencies=deps)
     def ondevice_status():

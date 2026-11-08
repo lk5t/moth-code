@@ -1,0 +1,58 @@
+# GENESIS delivery record
+
+Work stays on `claude/jolly-darwin-2qeihd`. The existing ASCENSION engine, trainer,
+checkpoint format, dataset library, signed releases and update agents remain the foundation.
+
+Production model reset is **not activated**. The GENESIS request requires verified backups
+and separate explicit Owner approval before the deployed model is replaced. A prepared
+fresh baseline must be labelled untrained; neither a baseline nor a CPU smoke test proves
+that Foundation training is complete.
+
+## Verified integration fixes
+
+- The exact Desktop `PUT /api/participant` JSON request now binds to a request body. Its
+  Pydantic model and the related on-device settings model are defined at module scope so
+  postponed annotations resolve. The regression checks authentication, disable persistence,
+  missing-body validation and the real signed-out enrollment error.
+- Local CPU training defaults on where no Owner override exists. Explicit CPU disables and
+  pauses survive settings merges. Threads use the existing quota-aware CPU detector.
+- Scheduling ignores stale worker heartbeats, prefers compatible GPUs, and keeps the local
+  assistant-mask-preserving trainer as the fallback. CPU workers remain available.
+- API validation arrays become readable field messages rather than raw JSON.
+- Local checks: participant regression **1 passed**; compute plus existing Evolution 2.0
+  regression cases **10 passed**. GPU selection is simulated; physical GPU execution has
+  not been verified.
+
+## Phase status
+
+| Phase | Status |
+|---|---|
+| 1 Backup and fresh lineage | Owner-gated preparation/activation/restore under implementation; no production reset |
+| 2 Quality data | Reuse existing approved-source discovery, provenance/license validation, deduplication, masks and held-out separation; targeted verification pending |
+| 3 CPU/GPU coordination | Defaults and selection fixes tested; fresh-lineage CPU evidence pending |
+| 4 Evolution/growth | Existing real trainer, research planning, growth and promotion/rollback retained; GENESIS lineage reset integration pending |
+| 5 Code/Chat workspace | Pending |
+| 6 Intelligence control center | Pending |
+| 7 UI consistency | Pending |
+| 8 Integration fixes | Worker-body fix tested; signed updater repair in Windows release verification |
+| 9 Real verification | In progress; no physical GPU available |
+| 10 Delivery | Progress committed and pushed by phase; release confirmation recorded only after GitHub publication |
+
+## Updater work carried forward
+
+The Cloud endpoint previously returned HTTP 204 for missing installers, unsupported platforms,
+paused releases and rollout exclusions; the desktop interpreted that as “up to date”. The
+repair distinguishes those results, preserves HTTP errors, retains Tauri signature/version
+verification, retries failed checks, and tests installation on normal window close.
+
+The real Cloud offered signed 0.5.4 metadata to a 0.5.1 request on 2026-11-08 at 00:49 UTC,
+with `Cache-Control: no-store`. Its desktop registration timestamp was 00:33:49 UTC, after
+GitHub publication at 00:16:44 UTC. That verifies relay delay, not the installed user's
+complete failure history. The user's device update has not been verified.
+
+Server 0.5.5 was published through the existing signed workflow:
+https://github.com/lk5t/moth-code/releases/tag/server-v0.5.5
+Its updater agent has no code changes. Windows CI on the corrected updater source is green;
+the current A-to-B Windows update test passed detection/download/signature verification,
+installation on close, restart/reporting and user-data preservation. The separate original
+published 0.5.1-to-0.5.4 test remains unresolved; Desktop 0.5.5 is not yet confirmed published.

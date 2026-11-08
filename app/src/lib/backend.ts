@@ -8,6 +8,7 @@
  * matches `python -m moth.server --port 8765`.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { requestError } from "./errors";
 
 export type BackendStatus = "starting" | "ready" | "failed";
 
@@ -70,7 +71,7 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     let detail = res.statusText;
     try {
       const data = await res.json();
-      detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail ?? data);
+      detail = requestError(data.detail, detail);
     } catch {
       /* not JSON */
     }

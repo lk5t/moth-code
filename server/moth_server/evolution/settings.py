@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import copy
-import os
 from typing import Any
 
 from moth_server.context import Ctx
+from moth.training.resources import cpu_count
 
 KEY = "evolution_settings"
 
@@ -30,9 +30,9 @@ DEFAULTS: dict[str, Any] = {
         "max_memory_growth": 0.25,     # peak memory may grow by at most 25 %
     },
     "monitoring": {"minutes": 30.0, "max_error_rate": 0.05, "max_latency_factor": 2.0, "min_requests": 5},
-    "backends": {"local_gpu": True, "local_cpu": False, "workers": True},
+    "backends": {"local_gpu": True, "local_cpu": True, "workers": True},
     "worker_ids": None,             # optional owner-selected training participants; null = all
-    "limits": {"cpu_threads": max(1, (os.cpu_count() or 2) // 2), "min_free_memory_gb": 1.0,
+    "limits": {"cpu_threads": max(1, cpu_count() // 2), "min_free_memory_gb": 1.0,
                "min_free_disk_gb": 5.0, "gpu_memory_fraction": 0.8, "duty_cycle": 1.0},
     # Train during low activity: local training waits (or pauses with a checkpoint) while MOTH Cloud
     # serves more than this many chat requests per minute, and outside quiet hours if they are set.

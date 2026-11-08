@@ -334,8 +334,9 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
     masked = not B.worker_training_supported(ctx, exp)
     if masked:
         settings = {**settings, "backends": {**settings["backends"], "workers": False}}
+    choice, reasons = C.choose_backend(ctx, settings, need)
     ok, n = D.available(ctx, settings, need)
-    if ok and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
+    if ok and not (choice and choice.get("device") == "cuda") and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
         st = D.start(ctx, exp, settings, need)
         MEM.update_experiment(ctx, exp["id"], status="running", backend="distributed", error=None, started_at=now(),
                               run_dir=str(B.run_dir(ctx, exp)),
@@ -347,7 +348,6 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
                   f"{'development checkpoint' if st['started_from'] == 'dev_checkpoint' else 'model weights'})",
                   cycle_id=cyc["id"], experiment_id=exp["id"], participants=n)
         return
-    choice, reasons = C.choose_backend(ctx, settings, need)
     if choice is None:  # a paused experiment keeps its checkpoint and stays "paused"
         if masked:
             reasons.append("assistant-masked data requires a local backend; token-only workers are incompatible")

@@ -95,3 +95,11 @@ describe("endpoint", () => {
     expect(resolveServer()).toBe("http://127.0.0.1:8900");
   });
 });
+
+import { requestError } from "@/lib/errors";
+describe("API validation messages", () => {
+  it("renders the reported query.body failure as a readable message", () => {
+    expect(requestError([{ type: "missing", loc: ["query", "body"], msg: "Field required", input: null }], "Bad request")).toBe("Field required");
+    expect(requestError([{ loc: ["body", "enabled"], msg: "Input should be a valid boolean" }], "Bad request")).toBe("enabled: Input should be a valid boolean");
+  });
+});
