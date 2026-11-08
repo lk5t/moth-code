@@ -1,5 +1,9 @@
 # GENESIS delivery record
 
+**GENESIS 0.5.7 is published for Windows Desktop and Server/Worker.** Both tags target tested
+product source `47600879997343fc2785f34f01490688ce086857`. GitHub publication, asset digests and
+independent native Windows receipts are recorded in [delivery evidence](GENESIS-DELIVERY-EVIDENCE.json).
+
 Work stays on `claude/jolly-darwin-2qeihd`. The existing ASCENSION engine, trainer,
 checkpoint format, dataset library, signed releases and update agents remain the foundation.
 
@@ -32,11 +36,11 @@ that Foundation training is complete.
 | 3 CPU/GPU coordination | Automatic CPU fallback, compatible GPU selection and stale-worker checks tested; real CPU optimizer, checkpoint and server-restart recovery verified; physical GPU unverified |
 | 4 Evolution/growth | Real approved GENESIS reset → 0.01 → 0.02 → 0.03 promotion/rollback verified; real degraded candidate rejection, expanded-model training and distributed recovery regressions passed |
 | 5 Code/Chat workspace | Implemented compact switch, retained mounted workspaces, drafts/files, separate general history and consent-gated project excerpts; focused UI and real local API regressions passed |
-| 6 Intelligence control center | Five tabs consolidate existing controls; actual architecture and reported-step activity, selectable layers and timeline; focused UI regressions passed; native Windows verification pending |
-| 7 UI consistency | Sidebar consolidation, persistent navigation/layout, keyboard shortcuts, collapsible advanced panels, smaller minimum window and reduced-motion support implemented; native layout verification pending |
-| 8 Integration fixes | Worker JSON/control APIs and real browser enrollment/training verified; original 0.5.1 → 0.5.4 Windows lifecycle passed an independent completion guard; 0.5.7 full native UI/release pending |
-| 9 Real verification | In progress; no physical GPU available |
-| 10 Delivery | Progress committed and pushed by phase; release confirmation recorded only after GitHub publication |
+| 6 Intelligence control center | Five tabs consolidate existing controls; actual architecture and reported-step activity, selectable layers and timeline; focused UI and actual installed Windows verification passed |
+| 7 UI consistency | Sidebar consolidation, persistent navigation/layout, keyboard shortcuts, collapsible advanced panels, smaller minimum window and reduced-motion support implemented; actual installed Windows 800×600 layout and restored navigation verified |
+| 8 Integration fixes | Worker JSON/control APIs and real browser enrollment/training verified; original 0.5.1 → 0.5.4 Windows lifecycle passed an independent completion guard; 0.5.7 native UI, current updater and signed release gates passed |
+| 9 Real verification | Real CPU optimizer/promotions/rejection/rollback/kill-restart recovery, browser and installed Windows checks passed; no physical GPU available |
+| 10 Delivery | Progress committed/pushed by phase on the Claude branch; signed Desktop and Server/Worker 0.5.7 published and all 11 assets confirmed through GitHub |
 
 ## Updater work carried forward
 
@@ -108,16 +112,15 @@ training after Owner approval, two real CPU worker runners with expired-lease re
 duplicate-shard rejection, continued development checkpoints and trusted-source ingestion.
 GPU hardware declarations in selection tests are explicitly simulated; no GPU execution is claimed.
 
-## Release candidate
+## Published GENESIS 0.5.7
 
-The coordinated release candidate is **0.5.7**. Server 0.5.6 is already published; the native
-Windows gate subsequently exposed a Windows-only Cloud memory-admission bug, so the next server
-and Desktop packages share a new version rather than replacing immutable release assets. All application/server/worker version declarations agree.
-Frontend verification passed **40 tests**, TypeScript checking and a production frontend build.
-The existing Desktop release workflow now gates publication on an actual installed Windows UI
-smoke covering launch, Code/Chat draft retention, restored navigation, the five Intelligence tabs,
-real desktop-worker enrollment/toggles and a real CPU cycle requested through the UI. This gate
-uses isolated test services; its result is pending until Windows Actions completes.
+The coordinated release is **0.5.7**; existing 0.5.5/0.5.6 releases were preserved. All
+application/server/worker version declarations agree. Frontend verification passed **40 tests**,
+TypeScript checking and a production frontend build. The existing Desktop workflow passed its
+actual installed Windows gate: signed installer/frozen backend, Owner sign-in, Code/Chat draft
+retention, interactive architecture, all five Intelligence tabs, real desktop-worker enrollment
+and toggle persistence, a real CPU cycle requested through the UI, 800×600 resizing, and restored
+Owner credential-vault session and Data-tab navigation after normal close/restart.
 
 The published-compatibility helper now imports its temporary test CA into the isolated runner's
 machine Root store (avoiding an interactive user consent dialog) and explicitly passes a verifying
@@ -149,9 +152,12 @@ API 3 / schema 5, with serving model release 1 retained. The updater agent and i
 source changes. No production model backup/reset/activation was performed by this task.
 
 The real published 0.5.1 and 0.5.4 installers passed their Windows compatibility lifecycle at
-https://github.com/lk5t/moth-code/actions/runs/42478185293. The independent proof step requires the
+https://github.com/lk5t/moth-code/actions/runs/42485985568. The independent proof step requires the
 record written only after signature rejection, verified authentic download, installation on normal
-close, registry upgrade, restarted-client success reporting and account/settings/workspace checks.
+close, registry upgrade, restarted-client success reporting, account-list/workspace sentinel checks
+and preservation of the real configured Cloud setting. This legacy test does not exercise a
+preexisting signed-in credential-vault migration; the native 0.5.7 test separately signs in a real
+isolated Owner and verifies credential-vault restoration after restart.
 This verifies an isolated Windows installation of the original signed binaries, not the user's PC.
 A one-time reinstall is not inherently required: a configured, reachable Cloud endpoint can update
 0.5.1 automatically. Existing staging/halts and local network/TLS failures can still defer an offer.
@@ -162,11 +168,11 @@ verification scripts now write evidence only after their assertions, and separat
 require the evidence before proceeding. A green interpreter exit alone is insufficient.
 
 Local full server verification passed **150 tests**; frontend verification passed **40 tests** plus
-TypeScript checking and a production build. Full CI passed at `4770d22`, including SQLite/PostgreSQL,
-Linux/Windows backend and desktop-shell suites, worker installs, and real Cloud update/recovery.
-The current A/B Windows updater also passed its real close/install/restart/data-preservation test
-(job 128707604113 in run 42472119952). Desktop 0.5.7 publication remains pending its complete signed
-build and native GENESIS UI/control verification.
+TypeScript checking and a production build. Full CI passed on final product source `4760087`,
+including SQLite/PostgreSQL, Linux/Windows backend and desktop-shell suites, worker installs, and
+real Cloud update/recovery. The current A/B Windows updater passed actual close/install/restart
+and data-preservation checks (job 128750317530). Six focused compute cases and two real continued-
+training/growth cases also pass, including the native Windows priority regression.
 
 The first full native Windows GENESIS run reached actual Owner login, retained drafts, interactive
 architecture/tabs and enrolled/disabled a real Desktop participant, then failed waiting for CPU
@@ -182,27 +188,45 @@ reported `AttributeError: module 'os' has no attribute 'nice'` from the trainer.
 Unix priority adjustment now also tolerates an absent API; CPU thread/duty limits and all training,
 checkpoint, optimizer and evaluation behavior are retained. A regression reproduces the missing API
 and then completes actual CPU optimizer steps with a saved optimizer checkpoint. The two focused
-continued-training/growth cases pass. Desktop 0.5.7 remains unpublished until native verification passes.
+continued-training/growth cases and subsequent full installed Windows gate passed before publication.
 
 
 
-## Confirmed 0.5.7 server delivery
+## Confirmed 0.5.7 delivery
 
-Server/Worker 0.5.7 is published at
-https://github.com/lk5t/moth-code/releases/tag/server-v0.5.7 (2026-11-08 13:51:59 UTC).
-The existing signed workflow passed full CI, verified signatures/checksums/bundle contents and
-published all six expected assets. GitHub confirms `draft=false`, every asset uploaded with a
-nonzero size/SHA-256 digest, and tag source `47600879997343fc2785f34f01490688ce086857`.
-Workflow: https://github.com/lk5t/moth-code/actions/runs/42486030096.
-[Machine-readable delivery evidence](GENESIS-DELIVERY-EVIDENCE.json) records the API confirmation
-and the original Windows installer's independently checked receipt. The native Windows backend
-suite passed the new real optimizer regression without `os.nice`.
+Both releases are published (`draft=false`, stable); each tag targets
+`47600879997343fc2785f34f01490688ce086857`:
 
-Desktop 0.5.7 remains pending at
-https://github.com/lk5t/moth-code/actions/runs/42485985568. Its full CI is green and its original
-published-installer gate passed; publication still requires the current A/B updater and full
-installed-app GENESIS gates. The last confirmed live VPS probe was healthy 0.5.6, model release 1;
-publication alone does not prove the VPS or the user's desktop installed 0.5.7.
+- Desktop: https://github.com/lk5t/moth-code/releases/tag/desktop-v0.5.7 — published 2026-11-08
+  14:12:34 UTC; all **5** expected assets uploaded, including the 155,183,867-byte x64 installer,
+  its updater signature, signed desktop manifest and checksums.
+- Server/Worker: https://github.com/lk5t/moth-code/releases/tag/server-v0.5.7 — published 2026-11-08
+  13:51:59 UTC; all **6** expected assets uploaded, including both bundles, worker checksum,
+  signed release manifest and checksums.
+- Desktop workflow: https://github.com/lk5t/moth-code/actions/runs/42485985568 — **success**, with
+  mandatory full CI, original-production-installer compatibility, current A/B update, full frozen
+  backend, installed Windows GENESIS and independent receipt gates.
+- Server workflow: https://github.com/lk5t/moth-code/actions/runs/42486030096 — **success**, with
+  full CI and existing signature/checksum/bundle-content verification before publication.
+
+[Machine-readable delivery evidence](GENESIS-DELIVERY-EVIDENCE.json) records exact asset digests,
+source commits and independent native/legacy Windows receipts. The updater agent, production
+signing keys and their trust requirements have no changes. Publication proves GitHub delivery;
+it does not prove that the user's computer has installed the release. The unchanged agent's
+normal GitHub check interval is 900 seconds, and existing desktop rollout stages remain in force.
+The last live Cloud observation is recorded separately in the delivery evidence.
+The post-publication read-only probe still reported healthy **server 0.5.6**, model release **1**,
+and a signed **desktop 0.5.4** offer to eligible 0.5.1 clients. New 0.5.7 live adoption/relay has
+not been confirmed; protected agent status was not inspected with production Owner credentials.
+The follow-up native test then failed with `ElementAmbiguousError`: two top-level accessibility
+controls matched the same process/title. Its driver now selects the visible Window control;
+this test-only selector repair changes no application binary, signing key or updater behavior.
+
+
+Main integration commits: worker JSON/CPU defaults `f8b0d9b`; reversible GENESIS `2b61ca0`;
+workspace/Intelligence `d26b7d1`; training controls/scheduling `cd8e943`; real approved-reset CPU
+lifecycle `832ea88`; active-lineage comparisons `649c5ca`; native Windows RAM `6fda2c3`;
+continued training on Windows/final product source `4760087`.
 
 ## Tests and activation that remain conditional
 
@@ -240,12 +264,12 @@ Compared with the source at `03331f6` before the carried-forward updater repair.
 | `.github/workflows/desktop-update-test.yml` | Verify original published installers/signatures and actual close-triggered update installation. |
 | `.github/workflows/release.yml` | Add the real installed Windows GENESIS gate and set the release version default. |
 | `.github/workflows/server-release.yml` | Set the coordinated server release version default. |
-| `app/package-lock.json` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
-| `app/package.json` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
+| `app/package-lock.json` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
+| `app/package.json` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
 | `app/src-tauri/Cargo.lock` | Lock the coordinated app version and direct use of the already-locked HTTP/TLS dependencies. |
-| `app/src-tauri/Cargo.toml` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
+| `app/src-tauri/Cargo.toml` | Coordinate app version 0.5.7 and use already-locked HTTP/TLS dependencies to preserve update response errors. |
 | `app/src-tauri/src/updates.rs` | Preserve HTTP update errors and initialize the existing TLS provider; retain signed-version/download/install verification. |
-| `app/src-tauri/tauri.conf.json` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
+| `app/src-tauri/tauri.conf.json` | Coordinate app version 0.5.7 and permit the tested smaller Windows layout. |
 | `app/src/App.tsx` | Keep both Code/Chat workspaces mounted and route AI tools to the consolidated Intelligence view. |
 | `app/src/components/NavRail.tsx` | Remove duplicate primary AI destinations and provide navigation shortcuts. |
 | `app/src/features/chat/ChatPanel.tsx` | Separate general/project history and pass only explicitly attached project context. |
@@ -269,11 +293,11 @@ Compared with the source at `03331f6` before the carried-forward updater repair.
 | `app/src/test/updater.test.ts` | Regress readable validation errors and updater detection/download/rejection/close behavior. |
 | `app/src/test/workspace-modes.test.tsx` | Verify consolidated controls, measured-activity-only animation and retained drafts/unsaved files. |
 | `app/src/views.tsx` | Map legacy AI destinations to the hub and retain the Owner guard. |
-| `backend/moth/__init__.py` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
+| `backend/moth/__init__.py` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
 | `backend/moth/server/routes_hybrid.py` | Resolve request models at module scope to fix PUT /api/participant query.body validation. |
 | `backend/moth/server/routes_model.py` | Enforce project consent/redaction for chat context and filter general history separately. |
 | `backend/moth/training/continue_run.py` | Allow actual continued CPU training when the optional Unix os.nice API is absent on Windows; retain resource limits. |
-| `backend/pyproject.toml` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
+| `backend/pyproject.toml` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
 | `backend/tests/test_continue_v053.py` | Reproduce absent Unix priority support and verify genuine CPU optimizer steps and a resumable optimizer checkpoint. |
 | `backend/tests/test_genesis_chat.py` | Verify real local HTTP consent/history behavior with an explicitly simulated inference transport. |
 | `backend/tests/test_server.py` | Reproduce the exact participant JSON/authentication/persistence error, including optional-worker builds. |
@@ -285,7 +309,7 @@ Compared with the source at `03331f6` before the carried-forward updater repair.
 | `scripts/test-genesis-desktop.py` | Gate release on a real installer/frozen-backend/Cloud UI and training-control smoke test. |
 | `scripts/test-published-desktop-update.py` | Verify published 0.5.1/0.5.4 bytes/signatures and native tamper rejection, close installation and preserved data. |
 | `scripts/windows-desktop-ui.py` | Drive unchanged signed Windows releases through accessibility patterns when release WebView debugging is unavailable. |
-| `server/moth_server/__init__.py` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
+| `server/moth_server/__init__.py` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
 | `server/moth_server/evolution/backends.py` | Use safe CPU defaults/resources, fresh compatible workers and the GPU device that actually fits. |
 | `server/moth_server/evolution/compute.py` | Use safe CPU defaults/resources, fresh compatible workers and the GPU device that actually fits. |
 | `server/moth_server/evolution/distributed.py` | Prefer fitting GPU participants when real distributed training can use them. |
@@ -298,11 +322,11 @@ Compared with the source at `03331f6` before the carried-forward updater repair.
 | `server/moth_server/routes/system.py` | Measure native available Windows RAM for safe CPU admission; preserve Linux measurements and unknown-capacity refusal. |
 | `server/moth_server/routes/updates.py` | Distinguish genuine no-update from rollout, metadata, artifact, signature and compatibility errors. |
 | `server/moth_server/training.py` | Synchronize leases with reset preparation, retire legacy rounds and match GPU preference to each eligible job. |
-| `server/pyproject.toml` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
+| `server/pyproject.toml` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
 | `server/tests/test_autonomous_lifecycle.py` | Verify real CPU progression and rollback from both an empty installation and an approved GENESIS reset. |
 | `server/tests/test_evolution.py` | Regress authenticated training controls, resumption, cancellation recovery and persisted worker settings. |
 | `server/tests/test_genesis_compute.py` | Regress CPU defaults/Owner limits, stale workers, GPU fit and job permissions with explicit simulated hardware. |
 | `server/tests/test_genesis_reset.py` | Verify real weights/optimizer archival, tamper protection, Owner gates, new-lineage metrics and restoration. |
 | `server/tests/test_updates.py` | Regress desktop update HTTP semantics and artifact/channel/version requirements. |
-| `worker/moth_worker/__init__.py` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
-| `worker/pyproject.toml` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
+| `worker/moth_worker/__init__.py` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |
+| `worker/pyproject.toml` | Coordinate the Desktop/backend/server/worker release version 0.5.7. |

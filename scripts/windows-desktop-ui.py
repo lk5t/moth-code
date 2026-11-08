@@ -10,7 +10,8 @@ import re
 class WindowsUI:
     def __init__(self, pid, timeout=120):
         from pywinauto import Desktop
-        self.window = Desktop(backend='uia').window(process=pid, title='MOTH Code')
+        self.window = Desktop(backend='uia').window(process=pid, title='MOTH Code',
+                                                  control_type='Window', visible_only=True)
         self.window.wait('exists', timeout=timeout)
         self.root = self.window.wrapper_object()
 

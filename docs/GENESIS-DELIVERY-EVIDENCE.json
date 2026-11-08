@@ -74,10 +74,133 @@
       "installed_on_close": true,
       "restart_report_received": true,
       "settings_accounts_workspaces_preserved": true
-    }
+    },
+    "data_preservation_scope": "Account-list and workspace sentinel files plus the actual configured Cloud setting; not legacy signed-in vault migration"
   },
   "desktop": {
-    "status": "pending",
-    "workflow_url": "https://github.com/lk5t/moth-code/actions/runs/42485985568"
+    "scope": "Isolated hosted Windows runner; not the user computer or production model activation",
+    "trained_foundation": false,
+    "production_model_reset": false,
+    "desktop_workflow": {
+      "run_id": 42485985568,
+      "url": "https://github.com/lk5t/moth-code/actions/runs/42485985568",
+      "source_commit": "47600879997343fc2785f34f01490688ce086857",
+      "conclusion": "success"
+    },
+    "native_windows": {
+      "job_id": 128752328378,
+      "proof": {
+        "native_windows": true,
+        "real_frozen_backend": true,
+        "real_cloud_api": true,
+        "draft_preserved_across_modes": true,
+        "intelligence_tabs": 5,
+        "owner_session_and_navigation_restored_after_restart": true,
+        "tested_window": [
+          800,
+          600
+        ],
+        "worker_enrollment_id": 1,
+        "training_cycle_id": 1,
+        "production_reset": false,
+        "trained_foundation": false
+      }
+    },
+    "legacy_update": {
+      "job_id": 128750317485,
+      "proof": {
+        "completed": true,
+        "from_version": "0.5.1",
+        "to_version": "0.5.4",
+        "production_signatures": true,
+        "tampered_installer_rejected": true,
+        "verified_download_before_close": true,
+        "installed_on_close": true,
+        "restart_report_received": true,
+        "settings_accounts_workspaces_preserved": true
+      }
+    },
+    "desktop_release": {
+      "tag": "desktop-v0.5.7",
+      "url": "https://github.com/lk5t/moth-code/releases/tag/desktop-v0.5.7",
+      "published_at": "2026-11-08T14:12:34Z",
+      "source_commit": "47600879997343fc2785f34f01490688ce086857",
+      "draft": false,
+      "assets": [
+        {
+          "name": "moth-release-desktop-0.5.7.json",
+          "size": 1455,
+          "state": "uploaded",
+          "digest": "sha256:c228dbf1ab9ce1e8db0047dd96502e63ecf1a0161a38499aa745f049e0c2bac9",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/desktop-v0.5.7/moth-release-desktop-0.5.7.json"
+        },
+        {
+          "name": "moth-release-desktop-0.5.7.json.sig",
+          "size": 89,
+          "state": "uploaded",
+          "digest": "sha256:2a09b4c1500583190c5e40997d16ff71fa7711136b064e3aa8fff09118cfcd59",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/desktop-v0.5.7/moth-release-desktop-0.5.7.json.sig"
+        },
+        {
+          "name": "MOTH.Code_0.5.7_x64-setup.exe",
+          "size": 155183867,
+          "state": "uploaded",
+          "digest": "sha256:7e397686f26d0031a0da8f7700d351307389cbe79a97c0c2fbf5944cbfdda95d",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/desktop-v0.5.7/MOTH.Code_0.5.7_x64-setup.exe"
+        },
+        {
+          "name": "MOTH.Code_0.5.7_x64-setup.exe.sig",
+          "size": 440,
+          "state": "uploaded",
+          "digest": "sha256:cf28f7f327fd569bfdee7ae86984da69a879ffa9d306466cb00361388ca018da",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/desktop-v0.5.7/MOTH.Code_0.5.7_x64-setup.exe.sig"
+        },
+        {
+          "name": "SHA256SUMS",
+          "size": 396,
+          "state": "uploaded",
+          "digest": "sha256:576e0afb5b329302a0ea334fab7878881dc5482c8b16aae32ed23de8804b4ca3",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/desktop-v0.5.7/SHA256SUMS"
+        }
+      ]
+    }
+  },
+  "signing_scope": "Existing updater minisign and release-manifest Ed25519 signatures; Windows Authenticode remains unconfigured",
+  "user_computer_update_verified": false,
+  "current_windows_update": {
+    "job_id": 128750317530,
+    "conclusion": "success",
+    "from_version": "0.5.7",
+    "to_version": "99.0.0",
+    "scope": "Isolated native A/B installers; throw-away test signing keys, loopback HTTP and backend bundle omitted; production installer/signatures tested separately",
+    "checks": [
+      "automatic detection and verified background download",
+      "actual window-close installation",
+      "registry version progression",
+      "restarted-client successful update report",
+      "workspace sentinel retained"
+    ]
+  },
+  "live_cloud": {
+    "workflow_run": 42488852487,
+    "job_id": 128756579343,
+    "health": {
+      "service": "moth-server",
+      "version": "0.5.6",
+      "status": "ok",
+      "api_version": 3,
+      "min_client_versions": {
+        "desktop": "0.2.0",
+        "worker": "0.2.0"
+      },
+      "schema_version": 5,
+      "uptime_s": 10398,
+      "model_version": 1,
+      "email": "outbox",
+      "payments_configured": false
+    },
+    "latest_observed_desktop_offer": "0.5.4",
+    "new_0_5_7_install_or_relay_verified": false,
+    "note": "Read-only public probes succeeded; subsequent isolated legacy GUI automation failed with ElementAmbiguousError. Driver narrowed to the visible Window control and focused rerun required."
   }
 }
