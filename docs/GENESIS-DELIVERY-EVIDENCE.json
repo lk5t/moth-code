@@ -182,11 +182,11 @@
     ]
   },
   "live_cloud": {
-    "workflow_run": 42488852487,
-    "job_id": 128756579343,
+    "workflow_run": 42498005853,
+    "job_id": 128784426158,
     "health": {
       "service": "moth-server",
-      "version": "0.5.6",
+      "version": "0.5.8",
       "status": "ok",
       "api_version": 3,
       "min_client_versions": {
@@ -194,14 +194,17 @@
         "worker": "0.2.0"
       },
       "schema_version": 5,
-      "uptime_s": 10398,
+      "uptime_s": 2859,
       "model_version": 1,
       "email": "outbox",
       "payments_configured": false
     },
-    "latest_observed_desktop_offer": "0.5.4",
-    "new_0_5_7_install_or_relay_verified": false,
-    "note": "Read-only public probes succeeded; subsequent isolated legacy GUI automation failed with ElementAmbiguousError. Driver narrowed to the visible Window control and focused rerun required."
+    "latest_observed_desktop_offer": "0.5.7",
+    "server_0_5_8_confirmed": true,
+    "desktop_0_5_7_metadata_and_availability_confirmed": true,
+    "desktop_full_installer_downloaded_in_live_probe": false,
+    "desktop_rollout_percent": 10,
+    "user_desktop_upgrade_verified": false
   },
   "post_publication_windows_rerun": {
     "workflow_run": 42489618727,
@@ -229,12 +232,13 @@
     "asset_name": "moth-release-desktop-0.3.1.json",
     "error": "HTTP Error 403: rate limit exceeded",
     "patch_candidate": "server-v0.5.8",
-    "live_patch_installation_verified": false,
     "patch_release": "server-v0.5.8",
     "patch_commit": "7438f7fa803c28d6d80d7b07b9131d95d2f095b0",
     "patch_published": true,
     "focused_transport_tests": 10,
-    "full_release_ci": "success"
+    "full_release_ci": "success",
+    "live_server_patch_installation_verified": true,
+    "live_agent_process_version_verified": false
   },
   "agent_patch": {
     "workflow": {
@@ -298,5 +302,87 @@
   "recommended_releases": {
     "desktop": "desktop-v0.5.7",
     "server_and_worker": "server-v0.5.8"
+  },
+  "live_cloud_before_0_5_8_confirmation": {
+    "workflow_run": 42488852487,
+    "job_id": 128756579343,
+    "health": {
+      "service": "moth-server",
+      "version": "0.5.6",
+      "status": "ok",
+      "api_version": 3,
+      "min_client_versions": {
+        "desktop": "0.2.0",
+        "worker": "0.2.0"
+      },
+      "schema_version": 5,
+      "uptime_s": 10398,
+      "model_version": 1,
+      "email": "outbox",
+      "payments_configured": false
+    },
+    "latest_observed_desktop_offer": "0.5.4",
+    "new_0_5_7_install_or_relay_verified": false,
+    "note": "Read-only public probes succeeded; subsequent isolated legacy GUI automation failed with ElementAmbiguousError. Driver narrowed to the visible Window control and focused rerun required."
+  },
+  "live_desktop_diagnostics": {
+    "workflow_url": "https://github.com/lk5t/moth-code/actions/runs/42498005853",
+    "scope": "Public GET-only probes; synthetic first/later rollout IDs, not the user installation ID; one installer byte read; no rollout changes",
+    "installed_version": "0.5.4",
+    "target_version": "0.5.7",
+    "records": [
+      {
+        "probe": "installer-availability",
+        "status": 206,
+        "bytes_read": 1,
+        "content_range": "bytes 0-0/155183867",
+        "content_length": "1",
+        "full_installer_downloaded": false
+      },
+      {
+        "probe": "target-version",
+        "status": 204,
+        "cache_control": "no-store",
+        "response": null
+      },
+      {
+        "probe": "installed-later-stage",
+        "status": 409,
+        "cache_control": "no-store",
+        "response": {
+          "detail": "Desktop 0.5.7 is rolling out to 10% of installations. This installation will retry automatically when its rollout group is eligible."
+        }
+      },
+      {
+        "probe": "installed-first-stage",
+        "status": 200,
+        "cache_control": "no-store",
+        "version": "0.5.7",
+        "url": "https://mothcloud.ddns.net/v1/updates/files/desktop/0.5.7/MOTH.Code_0.5.7_x64-setup.exe",
+        "pub_date": "2026-11-08T14:46:33Z",
+        "signed_version_verified": true,
+        "full_installer_downloaded": false
+      },
+      {
+        "probe": "health",
+        "status": 200,
+        "cache_control": "no-store",
+        "response": {
+          "service": "moth-server",
+          "version": "0.5.8",
+          "status": "ok",
+          "api_version": 3,
+          "min_client_versions": {
+            "desktop": "0.2.0",
+            "worker": "0.2.0"
+          },
+          "schema_version": 5,
+          "uptime_s": 2859,
+          "model_version": 1,
+          "email": "outbox",
+          "payments_configured": false
+        }
+      }
+    ]
   }
 }

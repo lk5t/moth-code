@@ -4,8 +4,8 @@
 initial GENESIS Server/Worker 0.5.7 target `47600879997343fc2785f34f01490688ce086857`.
 The later Owner-requested rate-limit patch targets `7438f7fa803c28d6d80d7b07b9131d95d2f095b0`.
 GitHub publication, asset digests and independent native Windows receipts are recorded in
-[delivery evidence](GENESIS-DELIVERY-EVIDENCE.json). Live installation of the agent patch is
-not confirmed merely by publication.
+[delivery evidence](GENESIS-DELIVERY-EVIDENCE.json). Public health now confirms live Cloud 0.5.8; Desktop 0.5.7 is relayed and reachable.
+The installed 0.5.4 client remains subject to the existing staged rollout; its own upgrade is not confirmed.
 
 Work stays on `claude/jolly-darwin-2qeihd`. The existing ASCENSION engine, trainer,
 checkpoint format, dataset library, signed releases and update agents remain the foundation.
@@ -43,7 +43,7 @@ that Foundation training is complete.
 | 7 UI consistency | Sidebar consolidation, persistent navigation/layout, keyboard shortcuts, collapsible advanced panels, smaller minimum window and reduced-motion support implemented; actual installed Windows 800×600 layout and restored navigation verified |
 | 8 Integration fixes | Worker JSON/control APIs and real browser enrollment/training verified; original 0.5.1 → 0.5.4 Windows lifecycle passed an independent completion guard; 0.5.7 native UI, current updater and signed release gates passed |
 | 9 Real verification | Real CPU optimizer/promotions/rejection/rollback/kill-restart recovery, browser and installed Windows checks passed; no physical GPU available |
-| 10 Delivery | Progress committed/pushed by phase on the Claude branch; signed Desktop 0.5.7 and Server/Worker 0.5.8 published; all 11 latest-release assets confirmed through GitHub; live agent-patch adoption still needs confirmation |
+| 10 Delivery | Progress committed/pushed by phase on the Claude branch; signed Desktop 0.5.7 and Server/Worker 0.5.8 published; all 11 latest-release assets confirmed through GitHub; live Cloud 0.5.8 confirmed; Desktop 0.5.7 offer/installer verified with a 10% staged rollout |
 
 ## Updater work carried forward
 
@@ -218,7 +218,7 @@ source commits and independent native/legacy Windows receipts. Through the 0.5.7
 it does not prove that the user's computer has installed the release. The agent's
 normal GitHub check interval is 900 seconds, and existing desktop rollout stages remain in force.
 The last live Cloud observation is recorded separately in the delivery evidence.
-The post-publication read-only probe still reported healthy **server 0.5.6**, model release **1**,
+An earlier post-publication read-only probe reported healthy **server 0.5.6**, model release **1**,
 and a signed **desktop 0.5.4** offer to eligible 0.5.1 clients. New 0.5.7 live adoption/relay has
 not been confirmed; protected agent status was not inspected with production Owner credentials.
 The follow-up native test then failed with `ElementAmbiguousError`: two top-level accessibility
@@ -271,6 +271,36 @@ for the old-agent bootstrap limitation: a rate-limited installed agent needs one
 update after quota reset (or its existing read-only credential option) before new code can take effect.
 Live patch installation is not claimed until actual agent/server status confirms it.
 
+## Live Desktop 0.5.4 update diagnosis (Cloud 0.5.8)
+
+The Owner confirmed Cloud 0.5.8 and reported the installed Desktop 0.5.4 error
+“could not fetch a valid release … JSON remote”. The GET-only diagnostic workflow
+https://github.com/lk5t/moth-code/actions/runs/42498005853 confirmed:
+
+| Probe | Actual result |
+|---|---|
+| Public health | HTTP 200, Cloud 0.5.8, API 3, schema 5, serving model release 1 |
+| 0.5.4, synthetic first-stage ID | HTTP 200 offering Desktop 0.5.7; updater key ID and signed-version/global signature verified |
+| 0.5.4, synthetic later-stage ID | HTTP 409: “Desktop 0.5.7 is rolling out to 10% of installations…” |
+| Already-installed 0.5.7 | HTTP 204, genuinely current |
+| Installer Range GET | HTTP 206, `bytes 0-0/155183867`; only one byte read, not a full live payload verification |
+
+All metadata responses have `Cache-Control: no-store`. The published 0.5.4 source uses the old
+Tauri `updater.check()` path, which collapses HTTP release-check failures into the generic
+release/JSON error. Desktop 0.5.7's existing fix retains the actual HTTP status and rollout
+explanation. The live service is not missing the 0.5.7 Windows installer; it is restricting
+eligibility under the existing 10% → 50% → 100%, six-hours-per-stage policy. The user's exact
+installation ID was not obtained, so the public probes establish the rollout restriction,
+not their precise group or a successful update of their PC.
+
+For an immediate **Owner-approved** offer to every installation, use
+**Owner Dashboard → Settings → Updates → MOTH Code 0.5.7 → Release to all**, then the desktop's
+**Check now**. This is the existing recently-authenticated Owner release control, not a signing
+or installer-verification bypass. Otherwise retain the existing staged rollout and retry when
+eligible. No production rollout was changed by the diagnostic workflow, and no new application
+release/reinstall is required merely to change eligibility. Actual device download/install
+success still requires observation of the desktop's resulting status/version.
+
 ## Tests and activation that remain conditional
 
 - **Physical GPU execution:** unavailable in this environment. Selection/VRAM/permissions/fallback
@@ -304,6 +334,7 @@ Compared with the source at `03331f6` before the carried-forward updater repair.
 | `.github/desktop-release-notes.md` | Describe GENESIS, preserved data, signed updates and the separate Owner reset approval. |
 | `.github/server-release-notes.md` | Describe GENESIS, preserved data, signed updates and the separate Owner reset approval. |
 | `.github/workflows/ci.yml` | Expose Rust failure details through Actions annotations without changing test exit status. |
+| `.github/workflows/desktop-update-probe.yml` | Read the live desktop metadata/rollout HTTP responses and verify signed-version metadata plus one-byte installer availability without changing production or rerunning full installer tests. |
 | `.github/workflows/desktop-update-test.yml` | Verify original published installers/signatures and actual close-triggered update installation. |
 | `.github/workflows/release.yml` | Add the real installed Windows GENESIS gate and set the release version default. |
 | `.github/workflows/server-release.yml` | Set the Server/Worker 0.5.8 patch release default; preserve full CI and signing/verification gates. |
