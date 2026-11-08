@@ -133,7 +133,7 @@ export function IntelligenceHub() {
       {error && <p role="alert" className="rounded-lg border border-border p-3 text-xs text-danger">{error}</p>}
       <Tabs value={tab} onValueChange={(value) => openIntelligence(value as IntelligenceTab)}>
         <TabsList aria-label="Intelligence sections" className="mb-5 flex w-full flex-wrap justify-start gap-1 border-b border-border pb-2">
-          {TABS.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="gap-2 px-3 py-2 text-xs [&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
+          {TABS.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="inline-flex items-center gap-2 px-3 py-2 text-xs [&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
         </TabsList>
         {(visited.has("overview") || tab === "overview") && <TabsContent forceMount hidden={tab !== "overview"} value="overview" className="flex flex-col gap-5 data-[state=inactive]:hidden">
           <ModelActivity progress={p} resources={resources} /><IntelligenceView embedded />

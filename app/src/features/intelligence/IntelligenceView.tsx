@@ -134,7 +134,7 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat icon={<Brain />} label="Current model" value={cur ? (cur.model_version ? `MOTH ${cur.model_version}` : cur.name) : "None yet"}
             sub={cur ? `${formatNumber(cur.params ?? 0)} parameters · ${METHOD[cur.method] ?? cur.method}` : "Nothing is deployed on MOTH Cloud"} />
-          <Stat icon={<Sparkles />} label="Training" value={p.training.cycle ? p.training.cycle.status.replaceAll("_", " ") : p.training.enabled ? "waiting" : "off"}
+          <Stat icon={<Sparkles />} label="Training" value={!p.training.enabled ? "off" : p.training.paused ? "paused" : p.training.cycle ? p.training.cycle.status.replaceAll("_", " ") : "waiting"}
             sub={<>{p.training.curriculum && `curriculum: ${p.training.curriculum}`}
               {p.training.next_cycle_at_estimate && <> · next cycle {when(p.training.next_cycle_at_estimate)} <i>(estimated)</i></>}</>} />
           <Stat icon={<Cpu />} label="Training network" value={`${p.network.workers_online} online`}

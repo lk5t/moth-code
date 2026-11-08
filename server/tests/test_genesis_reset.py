@@ -44,6 +44,14 @@ def test_verified_fresh_reset_requires_approval_and_restores_legacy(client, sett
     before_package = Path(M.release(ctx, old)['path'], 'model.pt').read_bytes()
     token = register_verified(client, settings, 'not-reset-owner')['token']
     assert client.post('/v1/admin/evolution/genesis/prepare', headers=H(token)).status_code == 403
+    # A historical comparison fixture must remain archived, not become the new lineage's score.
+    with ctx.db.tx() as conn:
+        cid = conn.execute(DB.evolution_cycles.insert().values(status='completed', trigger='manual',
+            base_version=old, created_at=DB.now(), updated_at=DB.now())).inserted_primary_key[0]
+        conn.execute(DB.evolution_experiments.insert().values(cycle_id=cid, status='passed', config='{}',
+            config_hash='historical-comparison', dataset_id=0, base_version=old, base_sha256='0' * 64,
+            metrics=json.dumps({'gates': [{'gate': 'historical', 'passed': True}]}),
+            created_at=DB.now(), updated_at=DB.now()))
     prepared = client.post('/v1/admin/evolution/genesis/prepare', headers=H(owner['token']))
     assert prepared.status_code == 200, prepared.text
     plan = prepared.json()
@@ -69,6 +77,8 @@ def test_verified_fresh_reset_requires_approval_and_restores_legacy(client, sett
     assert new['info']['lineage_totals'] == {'steps': 0, 'tokens': 0, 'cycles': 0}
     assert Path(new['path'], 'model.pt').read_bytes() != before_package
     assert checkpoint.read_bytes() == before
+    status = client.get('/v1/admin/evolution/status', headers=H(owner['token'])).json()
+    assert status['cycle'] is None and status['comparison'] is None
     # An accepted version in the old lineage must not make GENESIS skip to 0.26.
     cand = M.release(ctx, candidate)
     M._set(ctx, candidate, info=json.dumps({**cand['info'], 'lineage_id': plan['lineage_id']}))

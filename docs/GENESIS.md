@@ -121,3 +121,12 @@ uses isolated test services; its result is pending until Windows Actions complet
 The published-compatibility helper now imports its temporary test CA into the isolated runner's
 machine Root store (avoiding an interactive user consent dialog) and explicitly passes a verifying
 TLS context to its Python registration helper. Production TLS/signatures are unchanged.
+
+Chromium verification against an actual isolated Cloud, fresh 0.01 model and local desktop backend
+passed Code/Chat draft retention, real Monaco unsaved edits, interactive architecture selection,
+all five tabs, actual desktop-worker enrollment and persistent worker toggles, navigation restoration
+after reload and an 800×600 layout without horizontal overflow. Screenshots were inspected at
+1280×800 and 800×600. This is browser evidence; native Windows evidence is tracked separately.
+That review corrected tab alignment and a stale “waiting” label while training was explicitly paused.
+The current-lineage comparison now excludes archived legacy evaluations after GENESIS activation;
+an isolated reset regression verifies the old comparison stays archived.

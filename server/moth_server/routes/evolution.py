@@ -85,11 +85,13 @@ def status(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     deployed = M.deployed(ctx)
     active = MEM.active_cycle(ctx)
     last = active or (MEM.cycles(ctx, 1) or [None])[0]
+    ids = None
     if deployed and (deployed['info'] or {}).get('lineage_id'):
         lineage_id = deployed['info']['lineage_id']
         ids = {r['version'] for r in M.list_releases(ctx) if r['info'].get('lineage_id') == lineage_id}
         last = next((c for c in MEM.cycles(ctx, 100) if c['base_version'] in ids), None)
-    latest_eval = next((e for e in MEM.experiments(ctx, limit=20) if (e.get("metrics") or {}).get("gates")), None)
+    latest_eval = next((e for e in MEM.experiments(ctx, limit=100) if (ids is None or e['base_version'] in ids)
+                        and (e.get("metrics") or {}).get("gates")), None)
     return {
         "settings": settings,
         "state": {"enabled": settings["enabled"], "paused": settings["paused"],
