@@ -51,7 +51,7 @@ def main(installer):
     cloud = 'http://127.0.0.1:8910'  # loopback API test; signed HTTPS updates have their own native test
     env = {**os.environ, 'MOTH_SERVER_DATA_DIR': str(out / 'cloud'), 'MOTH_SERVER_PUBLIC_URL': cloud,
            'OMP_NUM_THREADS': '2', 'MKL_NUM_THREADS': '2'}
-    password = 'Native-test-' + secrets.token_urlsafe(24)
+    password = 'N8!' + secrets.token_urlsafe(32)
     subprocess.run([sys.executable, '-m', 'moth_server.cli', 'init-owner', '--email', 'native@test.invalid', '--password-stdin'],
                    input=password + '\n', text=True, env=env, check=True, timeout=60, capture_output=True)
     log = (out / 'cloud.log').open('w')
