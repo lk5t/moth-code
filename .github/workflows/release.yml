@@ -104,6 +104,13 @@ jobs:
         run: |
           $installer = (Get-ChildItem app/src-tauri/target/release/bundle/nsis/*-setup.exe)[0].FullName
           python scripts/test-genesis-desktop.py --installer "$installer"
+      - name: Require independent proof of native GENESIS verification
+        shell: pwsh
+        run: |
+          $path = "$env:RUNNER_TEMP/genesis-desktop-test/evidence.json"
+          if (-not (Test-Path $path)) { throw "Native verification exited without completing its assertions" }
+          $proof = Get-Content -Raw $path | ConvertFrom-Json
+          if (-not $proof.native_windows -or -not $proof.real_frozen_backend -or -not $proof.owner_session_and_navigation_restored_after_restart -or -not $proof.training_cycle_id) { throw "Incomplete native GENESIS verification evidence" }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
