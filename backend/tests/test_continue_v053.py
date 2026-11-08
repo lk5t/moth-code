@@ -68,3 +68,15 @@ def test_mixture_dev_checkpoint_and_growth(tmp_path):
     with pytest.raises(ValueError, match='missing or corrupted'):
         run(_spec(tmp_path, "c3", mix, first["package"], init_checkpoint=first["dev_checkpoint"],
                   init_checkpoint_sha256="0" * 64))
+
+
+def test_continued_training_without_unix_priority_api(tmp_path, monkeypatch):
+    """The real CPU optimizer must run when os.nice is absent (native Windows)."""
+    import os
+    monkeypatch.delattr(os, 'nice', raising=False)
+    mix, base = _mixture(tmp_path)
+    result = run(_spec(tmp_path, 'windows-priority', mix, base, nice=10, threads=2,
+                       steps=2, checkpoint_interval=1, eval_interval=1))
+    assert result['reason'] == 'completed' and result['step'] == 2 and result['tokens'] > 0
+    checkpoint = torch.load(result['dev_checkpoint'], weights_only=False)
+    assert checkpoint['optimizer']['state'] and checkpoint['step'] == 2

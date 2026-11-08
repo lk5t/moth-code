@@ -47,7 +47,7 @@ def _run(spec: dict[str, Any]) -> dict[str, Any]:
     if spec.get("nice"):
         try:
             os.nice(int(spec["nice"]))
-        except OSError:
+        except (AttributeError, OSError):  # optional Unix priority API; thread/duty limits still apply
             pass
     run_dir = Path(spec["run_dir"])
     run_dir.mkdir(parents=True, exist_ok=True)

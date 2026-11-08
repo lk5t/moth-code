@@ -177,6 +177,14 @@ available physical memory without extra dependencies or relaxed limits. The Linu
 failed native readings still return unknown. Six focused compute regressions pass. The installed-app
 release gate remains mandatory and records bounded scheduling/trainer diagnostics on failures.
 
+The next native run measured 13.3 GB available RAM, created a real local training process and
+reported `AttributeError: module 'os' has no attribute 'nice'` from the trainer. The optional
+Unix priority adjustment now also tolerates an absent API; CPU thread/duty limits and all training,
+checkpoint, optimizer and evaluation behavior are retained. A regression reproduces the missing API
+and then completes actual CPU optimizer steps with a saved optimizer checkpoint. The two focused
+continued-training/growth cases pass. Desktop 0.5.7 remains unpublished until native verification passes.
+
+
 ## Tests and activation that remain conditional
 
 - **Physical GPU execution:** unavailable in this environment. Selection/VRAM/permissions/fallback
@@ -245,7 +253,9 @@ Compared with the source at `03331f6` before the carried-forward updater repair.
 | `backend/moth/__init__.py` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
 | `backend/moth/server/routes_hybrid.py` | Resolve request models at module scope to fix PUT /api/participant query.body validation. |
 | `backend/moth/server/routes_model.py` | Enforce project consent/redaction for chat context and filter general history separately. |
+| `backend/moth/training/continue_run.py` | Allow actual continued CPU training when the optional Unix os.nice API is absent on Windows; retain resource limits. |
 | `backend/pyproject.toml` | Coordinate release version 0.5.7; Tauri config also permits the tested smaller window size. |
+| `backend/tests/test_continue_v053.py` | Reproduce absent Unix priority support and verify genuine CPU optimizer steps and a resumable optimizer checkpoint. |
 | `backend/tests/test_genesis_chat.py` | Verify real local HTTP consent/history behavior with an explicitly simulated inference transport. |
 | `backend/tests/test_server.py` | Reproduce the exact participant JSON/authentication/persistence error, including optional-worker builds. |
 | `docs/GENESIS-CPU-EVIDENCE.json` | Record phase status, measured CPU/evaluation/checkpoint evidence, delivery results and limitations. |
