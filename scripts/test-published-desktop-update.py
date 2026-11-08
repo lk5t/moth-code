@@ -171,8 +171,12 @@ def main():
             f.write(bytes([last[0] ^ 1]))
         from moth_server.releases import bucket
         install_id = next(f"published-ci-{i}" for i in range(1000) if bucket(f"published-ci-{i}", "0.5.4") < 10)
+        home = out / "backend-home"
+        home.mkdir(exist_ok=True)
+        app_env = {**os.environ, "MOTH_HOME": str(home), "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--remote-debugging-port=9222"}
         print('::notice title=Published lifecycle stage::Installing the original 0.5.1 desktop', flush=True)
-        run(str(old), "/S", timeout=600)
+        # If the installer starts the app, its first WebView must inherit the test flags.
+        run(str(old), "/S", timeout=600, env=app_env)
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall") as parent:
             for i in range(winreg.QueryInfoKey(parent)[0]):
@@ -189,24 +193,29 @@ def main():
                 return winreg.QueryValueEx(reg, "DisplayVersion")[0]
         assert installed_version() == "0.5.1"
         exe = next(p for p in folder.glob("*.exe") if not p.name.lower().startswith("uninstall"))
+        subprocess.run(['taskkill', '/F', '/T', '/IM', exe.name], capture_output=True, timeout=30)
         appdata.mkdir(exist_ok=True)
         marker = appdata / "workspace-preservation-marker.txt"
         marker.write_text("keep original workspace")
         accounts = appdata / "accounts.json"
         accounts.write_text(json.dumps({"active": None, "accounts": [{"server": "https://localhost:8900", "username": "preserved-ci-account", "last_used": 0}]}))
-        home = out / "backend-home"
-        home.mkdir(exist_ok=True)
         (home / "workspace.txt").write_text("keep workspace content")
-        app_env = {**os.environ, "MOTH_HOME": str(home), "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--remote-debugging-port=9222"}
         print('::notice title=Published lifecycle stage::Starting original desktop and setting the isolated Cloud address', flush=True)
-        subprocess.Popen([str(exe)], env=app_env)
+        desktop_log = (out / 'desktop-process.log').open('w')
+        desktop = subprocess.Popen([str(exe)], env=app_env, stdout=desktop_log, stderr=desktop_log)
         deadline = time.monotonic() + 120
         while True:
             try:
                 evaluate("localStorage.setItem('moth.serverUrl','https://localhost:8900');localStorage.setItem('moth.installId'," + json.dumps(install_id) + ");localStorage.setItem('moth.update-test-preserve','keep settings');location.reload();")
                 break
             except Exception:
-                if time.monotonic() > deadline: raise
+                if desktop.poll() is not None or time.monotonic() > deadline:
+                    desktop_log.flush()
+                    detail = (out / 'desktop-process.log').read_text(errors='replace')[-3000:]
+                    print(f'::notice title=Published desktop launch diagnostics::Executable={exe}; exit={desktop.poll()}; stderr={detail}', flush=True)
+                    run('powershell', '-NoProfile', '-Command',
+                        "Get-CimInstance Win32_Process | Where-Object {$_.Name -match 'moth|webview'} | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath | ConvertTo-Json", timeout=30)
+                    raise
                 time.sleep(1)
         print('::notice title=Published lifecycle stage::Waiting for tampered-download rejection', flush=True)
         deadline = time.monotonic() + 240

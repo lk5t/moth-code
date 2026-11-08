@@ -85,7 +85,9 @@ def main(installer):
         api('/v1/admin/evolution/initialize', {}, 'POST')
         api('/v1/admin/evolution/initialize/activate', {}, 'POST')
         api('/v1/admin/config/flags', {'cloud_inference_enabled': True}, 'PUT')
-        subprocess.run([str(installer.resolve()), '/S'], check=True, timeout=600)
+        appenv = {**env, 'MOTH_HOME': str(out / 'desktop-home'),
+                  'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': '--remote-debugging-port=9222'}
+        subprocess.run([str(installer.resolve()), '/S'], check=True, timeout=600, env=appenv)
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Uninstall') as parent:
             exe = None
             for i in range(winreg.QueryInfoKey(parent)[0]):
@@ -98,8 +100,7 @@ def main(installer):
                     except FileNotFoundError:
                         continue
         assert exe, 'Installed MOTH Code executable was not registered'
-        appenv = {**env, 'MOTH_HOME': str(out / 'desktop-home'),
-                  'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': '--remote-debugging-port=9222'}
+        subprocess.run(['taskkill', '/F', '/T', '/IM', exe.name], capture_output=True, timeout=30)
         app = subprocess.Popen([str(exe)], env=appenv)
         wait(lambda: evaluate('!!window.__TAURI_INTERNALS__'), 'native WebView')
         account = {'server': cloud, 'username': user['username'], 'role': 'owner', 'last_used': time.time()}

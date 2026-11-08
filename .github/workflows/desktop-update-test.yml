@@ -9,6 +9,11 @@ name: Desktop auto-update test (Windows)
 
 on:
   workflow_dispatch:
+    inputs:
+      published_only:
+        description: "Run only original published-installer diagnostics (manual runs only)"
+        type: boolean
+        default: false
   workflow_call:
 
 jobs:
@@ -42,6 +47,8 @@ jobs:
             ${{ runner.temp }}/published-desktop-test/live-cloud-probe.json
 
   update:
+    # Reusable release calls declare no such input, so both release gates always run.
+    if: ${{ !inputs.published_only }}
     runs-on: windows-latest
     timeout-minutes: 90
     env:
