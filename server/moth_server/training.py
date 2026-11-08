@@ -153,10 +153,13 @@ def fits(hw: dict[str, Any], spec: dict[str, Any], limits: dict | None = None) -
 
 
 def gpu_worker_online(conn, spec: dict | None = None) -> bool:
-    for w in conn.execute(select(workers.c.hardware, workers.c.limits).where(workers.c.status == "online", workers.c.paused.is_(False),
+    spec = spec or {}
+    for w in conn.execute(select(workers.c.hardware, workers.c.limits, workers.c.id).where(workers.c.status == "online", workers.c.paused.is_(False),
             workers.c.revoked_at.is_(None), workers.c.last_heartbeat_at >= now() - OFFLINE_AFTER)).all():
+        if spec.get('worker_ids') is not None and w[2] not in spec['worker_ids']:
+            continue
         hw = json.loads(w[0] or '{}')
-        if hw.get("compute") == "gpu" and fits(hw, spec or {}, json.loads(w[1] or '{}')):
+        if hw.get("compute") == "gpu" and fits(hw, spec, json.loads(w[1] or '{}')):
             return True
     return False
 

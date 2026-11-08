@@ -1,0 +1,211 @@
+{
+  "trained_foundation": false,
+  "corpus": "PSF-2.0 Python standard library",
+  "baseline_mode": "approved_genesis",
+  "config": {
+    "name": "moth-0.01",
+    "vocab_size": 272,
+    "d_model": 64,
+    "n_layers": 2,
+    "n_heads": 4,
+    "n_kv_heads": 4,
+    "ffn_hidden": 128,
+    "max_seq_len": 256,
+    "rope_theta": 10000.0,
+    "norm_eps": 1e-05,
+    "dropout": 0.0,
+    "tie_embeddings": true
+  },
+  "versions": [
+    {
+      "release": 4,
+      "model_version": "0.02",
+      "params": 99648,
+      "totals": {
+        "tokens": 10240,
+        "steps": 20,
+        "cycles": 1
+      },
+      "training": {
+        "run": "moth-evolution-e1",
+        "step": 20,
+        "val_loss": 3.7695415914058685,
+        "train_loss": 3.455909490585327,
+        "tokens": 10240,
+        "best_val": 3.7695415914058685
+      },
+      "checkpoint": {
+        "path": "lineage/dev/v00004.pt",
+        "sha256": "0617cce137f414b6cf65f5b304858f3abfe5a6227c1c73e782637f8b2fc68103"
+      },
+      "gates": [
+        {
+          "gate": "release_checks",
+          "passed": true,
+          "detail": "loads with a valid checksum, generates, and is not worse than the deployed model on the general evaluation dataset",
+          "candidate": 4.969585985489433,
+          "baseline": 7.781619862906331
+        },
+        {
+          "gate": "heldout:builtin-python-stdlib",
+          "name": "Built-in: Python standard library sample",
+          "candidate": 4.969585985489433,
+          "baseline": 7.781619862906331,
+          "change": 0.3613687030410454,
+          "passed": true,
+          "detail": "retention: may not get worse by more than 2.0% (changed +36.14%)"
+        },
+        {
+          "gate": "code_syntax",
+          "name": "Python completion validity",
+          "candidate": 0.0,
+          "baseline": 0.0,
+          "change": 0.0,
+          "passed": true,
+          "detail": "valid-Python rate 0% \u2192 0%"
+        },
+        {
+          "gate": "capability:holdout:code",
+          "name": "Held-out code",
+          "candidate": 3.6657545244660366,
+          "baseline": 5.556628452162115,
+          "change": 0.3402915894008225,
+          "passed": true,
+          "detail": "memory protection: held-out loss may not get worse by more than 2.0% (changed +34.03%)"
+        },
+        {
+          "gate": "capability:safety:baseline",
+          "name": "Safety (harmful requests refused)",
+          "candidate": 1.0,
+          "baseline": 1.0,
+          "change": 0.0,
+          "passed": true,
+          "detail": "Safety (harmful requests refused): 100.0% \u2192 100.0% (allowed drop 2.0%)"
+        },
+        {
+          "gate": "target_improvement",
+          "passed": true,
+          "change": 0.3402915894008225,
+          "detail": "the curriculum's held-out loss (weighted over its domains) must improve by \u2265 0.5% (changed +34.03%)"
+        },
+        {
+          "gate": "speed",
+          "passed": true,
+          "candidate": 1822.37,
+          "baseline": 1486.37,
+          "detail": "generation speed 123% of the base model's"
+        },
+        {
+          "gate": "memory",
+          "passed": true,
+          "candidate": 417861632,
+          "baseline": 417861632,
+          "detail": "peak memory 100% of the base model's"
+        }
+      ],
+      "backend": "local CPU trainer"
+    },
+    {
+      "release": 5,
+      "model_version": "0.03",
+      "params": 99648,
+      "totals": {
+        "tokens": 16384,
+        "steps": 32,
+        "cycles": 2
+      },
+      "training": {
+        "run": "moth-evolution-e2",
+        "step": 12,
+        "val_loss": 3.54089617729187,
+        "train_loss": 3.2471964359283447,
+        "tokens": 6144,
+        "best_val": 3.54089617729187
+      },
+      "checkpoint": {
+        "path": "lineage/dev/v00005.pt",
+        "sha256": "8b5e262f1997e2f02a29d7c36e355ce7ba84db1692298e609a7406a260d11a29"
+      },
+      "gates": [
+        {
+          "gate": "release_checks",
+          "passed": true,
+          "detail": "loads with a valid checksum, generates, and is not worse than the deployed model on the general evaluation dataset",
+          "candidate": 4.5397932004711326,
+          "baseline": 4.969585985489433
+        },
+        {
+          "gate": "heldout:builtin-python-stdlib",
+          "name": "Built-in: Python standard library sample",
+          "candidate": 4.5397932004711326,
+          "baseline": 4.969585985489433,
+          "change": 0.08648462593729962,
+          "passed": true,
+          "detail": "retention: may not get worse by more than 2.0% (changed +8.65%)"
+        },
+        {
+          "gate": "code_syntax",
+          "name": "Python completion validity",
+          "candidate": 0.0,
+          "baseline": 0.0,
+          "change": 0.0,
+          "passed": true,
+          "detail": "valid-Python rate 0% \u2192 0%"
+        },
+        {
+          "gate": "capability:holdout:code",
+          "name": "Held-out code",
+          "candidate": 3.4818326549369747,
+          "baseline": 3.6657545244660366,
+          "change": 0.05017299120863867,
+          "passed": true,
+          "detail": "memory protection: held-out loss may not get worse by more than 2.0% (changed +5.02%)"
+        },
+        {
+          "gate": "capability:safety:baseline",
+          "name": "Safety (harmful requests refused)",
+          "candidate": 1.0,
+          "baseline": 1.0,
+          "change": 0.0,
+          "passed": true,
+          "detail": "Safety (harmful requests refused): 100.0% \u2192 100.0% (allowed drop 2.0%)"
+        },
+        {
+          "gate": "target_improvement",
+          "passed": true,
+          "change": 0.05017299120863867,
+          "detail": "the curriculum's held-out loss (weighted over its domains) must improve by \u2265 0.5% (changed +5.02%)"
+        },
+        {
+          "gate": "speed",
+          "passed": true,
+          "candidate": 1290.82,
+          "baseline": 1280.37,
+          "detail": "generation speed 101% of the base model's"
+        },
+        {
+          "gate": "memory",
+          "passed": true,
+          "candidate": 417861632,
+          "baseline": 417861632,
+          "detail": "peak memory 100% of the base model's"
+        }
+      ],
+      "backend": "local CPU trainer"
+    }
+  ],
+  "rollback": "verified original seed bytes",
+  "test": "server/tests/test_autonomous_lifecycle.py::test_empty_install_to_two_real_cpu_upgrades_and_rollback[approved_genesis]",
+  "environment": "isolated Linux cloud container, real PyTorch CPU; no production model reset",
+  "interruption_recovery": {
+    "test": "server/tests/test_evolution.py::test_pause_on_resource_shortage_crash_and_resume",
+    "resumed": true,
+    "step": 400,
+    "tokens": 204800,
+    "best_val": 2.464813470840454,
+    "params": 127296,
+    "device": "cpu",
+    "dev_checkpoint_sha256": "20c11a66838150d75b0c983697e243ca0aed42c6b6a0e289feb10ea763b7c3aa",
+    "note": "Recorded from successful subprocess test result before pytest temporary-directory retention cleanup. Actual trainer killed and new server recovers; reported memory shortage is simulated; separate legacy fixture."
+  }
+}

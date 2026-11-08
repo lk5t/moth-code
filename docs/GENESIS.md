@@ -30,7 +30,7 @@ that Foundation training is complete.
 | 1 Backup and fresh lineage | Owner-gated backup, fresh seed, activation and restoration implemented; 3 isolated regression cases passed; production reset still awaits Owner approval |
 | 2 Quality data | Existing approved-source discovery, provenance/license validation, deduplication, masks and held-out separation retained; data factory regressions passed |
 | 3 CPU/GPU coordination | Automatic CPU fallback, compatible GPU selection and stale-worker checks tested; real CPU optimizer, checkpoint and server-restart recovery verified; physical GPU unverified |
-| 4 Evolution/growth | Real 0.01 → 0.02 → 0.03 promotion/rollback, degraded candidate rejection and growth optimizer preservation verified; approved-reset combined lifecycle verification in progress |
+| 4 Evolution/growth | Real approved GENESIS reset → 0.01 → 0.02 → 0.03 promotion/rollback verified; real degraded candidate rejection, expanded-model training and distributed recovery regressions passed |
 | 5 Code/Chat workspace | Implemented compact switch, retained mounted workspaces, drafts/files, separate general history and consent-gated project excerpts; focused UI and real local API regressions passed |
 | 6 Intelligence control center | Five tabs consolidate existing controls; actual architecture and reported-step activity, selectable layers and timeline; focused UI regressions passed; native Windows verification pending |
 | 7 UI consistency | Sidebar consolidation, persistent navigation/layout, keyboard shortcuts, collapsible advanced panels, smaller minimum window and reduced-motion support implemented; native layout verification pending |
@@ -94,3 +94,16 @@ the same cycle, a new cycle after cancellation, prepared-reset blocking and pres
 CPU disables. Multi-GPU selection now returns the fitting device index; GPU preference considers
 each job's actual memory/worker allowlist and fresh heartbeat rather than delaying CPU work for
 an incompatible GPU. Windows resource discovery handles platforms without `os.getloadavg`.
+
+The combined lifecycle was subsequently run from both an empty installation and an explicitly
+approved GENESIS reset over retained legacy releases: **4 lifecycle cases passed**. The GENESIS
+path verifies zero inherited steps/tokens, both evaluated promotions, preserved ancestry and
+rollback. [Recorded measurements](GENESIS-CPU-EVIDENCE.json) include real training losses,
+checkpoint hashes and every promotion gate. The fresh configuration is 2 layers, width 64,
+4 attention/KV heads, FFN width 128, context 256, tied embeddings, 272 byte/special-token vocabulary
+entries, and 99,648 parameters. Fresh weights have no inherited optimizer state.
+
+Nine additional Evolution 2.0 and discovery cases passed, including actual expanded-parameter
+training after Owner approval, two real CPU worker runners with expired-lease recovery and
+duplicate-shard rejection, continued development checkpoints and trusted-source ingestion.
+GPU hardware declarations in selection tests are explicitly simulated; no GPU execution is claimed.

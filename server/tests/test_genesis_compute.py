@@ -48,3 +48,21 @@ def test_selects_the_gpu_that_actually_fits(client, monkeypatch):
     settings = copy.deepcopy(S.get(ctx))
     monkeypatch.setattr(C, 'local', lambda ctx: {'gpus': [{'memory_free': 0.1 * C.GB}, {'memory_free': 8 * C.GB}]})
     assert C.choose_backend(ctx, settings, C.GB)[0]['device'] == 'cuda:1'
+
+
+def test_gpu_preference_requires_job_permission_and_actual_capacity(client, owner):
+    """Simulated GPU declaration, real enrollment and database eligibility checks."""
+    from conftest import H
+    from moth_server import training
+    from moth_server.db import workers
+    ctx = client.app.state.ctx
+    enrollment = client.post('/v1/training/enrollments', headers=H(owner['token']), json={'name': 'declared GPU'}).json()
+    worker = client.post('/v1/worker/enroll', json={'token': enrollment['token'], 'version': '0.5.5',
+        'hardware': {'compute': 'gpu', 'gpus': [{'memory_gb': 8}], 'ram_gb': 32}}).json()
+    spec = {'requirements': {'memory_bytes': C.GB}, 'worker_ids': [worker['worker_id']]}
+    with ctx.db.tx() as conn:
+        assert training.gpu_worker_online(conn, spec)
+        assert not training.gpu_worker_online(conn, {**spec, 'worker_ids': []})
+        assert not training.gpu_worker_online(conn, {**spec, 'requirements': {'memory_bytes': 100 * C.GB}})
+        conn.execute(workers.update().where(workers.c.id == worker['worker_id']).values(last_heartbeat_at=0))
+        assert not training.gpu_worker_online(conn, spec)

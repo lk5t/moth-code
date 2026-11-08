@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 import torch
+import pytest
 from sqlalchemy import select
 
 from conftest import H
@@ -14,7 +15,8 @@ from test_evolution import FAST, drive
 from test_serving_v053 import _served_version, _two_releases
 
 
-def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner):
+@pytest.mark.parametrize('baseline_mode', ['empty', 'approved_genesis'])
+def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner, tmp_path, monkeypatch, baseline_mode):
     """Real PSF corpus, real training/evaluation/traffic/signatures; no trained quality claim."""
     ctx = client.app.state.ctx
     headers = H(owner['token'])
@@ -22,11 +24,23 @@ def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner):
     S.update(ctx, {**FAST, 'paused': True, 'training': {**FAST['training'], 'steps': 20}, 'growth': {'enabled': False},
                    'rollout': {'canary_percent': 100}, 'monitoring': {'minutes': 0.0, 'min_requests': 1}})
     discovery.update(ctx, {'max_source_chars': 100000})
-    initialized = client.post('/v1/admin/evolution/initialize', headers=headers).json()['model']
+    if baseline_mode == 'approved_genesis':
+        from moth_server.evolution import genesis as G
+        _two_releases(client, owner, tmp_path)
+        # Deterministic random initialization for reproducibility; real model and optimizer throughout.
+        monkeypatch.setattr(G.secrets, 'randbits', lambda bits: 0)
+        plan = G.prepare(ctx, owner['user']['id'])
+        activated = client.post('/v1/admin/evolution/genesis/activate', headers=headers, json={
+            'reset_id': plan['id'], 'confirmation': G.CONFIRMATION, 'start_training': False})
+        assert activated.status_code == 200, activated.text
+        initialized = activated.json()['model']
+        assert initialized['info']['lineage_totals'] == {'steps': 0, 'tokens': 0, 'cycles': 0}
+    else:
+        initialized = client.post('/v1/admin/evolution/initialize', headers=headers).json()['model']
+        activated = client.post('/v1/admin/evolution/initialize/activate', headers=headers)
+        assert activated.status_code == 200, activated.text
+        assert activated.json()['evaluation']['passed']
     seed_bytes = Path(initialized['path'], 'model.pt').read_bytes()
-    activated = client.post('/v1/admin/evolution/initialize/activate', headers=headers)
-    assert activated.status_code == 200, activated.text
-    assert activated.json()['evaluation']['passed']
     assert client.put('/v1/admin/config/flags', headers=headers,
                       json={'cloud_inference_enabled': True}).status_code == 200
     # Start finds no approved data and requests real automatic PSF preparation.
@@ -53,7 +67,8 @@ def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner):
         assert rel['info']['dev_checkpoint']['sha256'] and rel['info']['training']['train_loss'] > 0
         assert Path(rel['path'], 'model-manifest.json.sig').exists()
         versions.append({'release': rel['version'], 'model_version': expected, 'params': rel['info']['params'],
-                         'totals': rel['info']['lineage_totals'], 'gates': exp['metrics']['gates']})
+                         'totals': rel['info']['lineage_totals'], 'training': rel['info']['training'],
+                         'checkpoint': rel['info']['dev_checkpoint'], 'gates': exp['metrics']['gates']})
         if expected == '0.02':
             S.update(ctx, {'training': {'steps': 12}})
             EN.wake(ctx)
@@ -70,7 +85,10 @@ def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner):
     assert len(after_rollback['accepted_versions']) == 3  # rollback does not erase accepted descendants
     target = os.environ.get('MOTH_LIFECYCLE_EVIDENCE')
     if target:
+        if baseline_mode != 'empty':
+            target = str(Path(target).with_stem(Path(target).stem + '-' + baseline_mode))
         Path(target).write_text(json.dumps({'trained_foundation': False, 'test_data_dir': str(ctx.settings.data_dir), 'corpus': 'PSF-2.0 Python standard library',
+                                          'baseline_mode': baseline_mode, 'config': initialized['info']['config'],
                                           'versions': versions, 'rollback': 'verified original seed bytes'}, indent=2))
 
 
