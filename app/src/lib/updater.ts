@@ -70,7 +70,7 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<
     updaterStore.setState({ phase: "unavailable" });
     return updaterStore.getState();
   }
-  if (busy || updaterStore.getState().phase === "ready") return updaterStore.getState();
+  if (busy || ["ready", "installing"].includes(updaterStore.getState().phase)) return updaterStore.getState();
   let server = "";
   try {
     server = normalizeServerUrl(accountStore.getState().serverUrl);
@@ -132,9 +132,9 @@ export function describeUpdateError(raw: string): string {
 export async function installNow() {
   if (updaterStore.getState().phase !== "ready") return;
   updaterStore.setState({ phase: "installing" });
-  const p = JSON.parse(storage(PENDING_KEY) ?? "{}");
-  storage(PENDING_KEY, JSON.stringify({ ...p, installing: true }));
   try {
+    const p = JSON.parse(storage(PENDING_KEY) ?? "{}");
+    storage(PENDING_KEY, JSON.stringify({ ...p, installing: true }));
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("update_install"); // Windows: the installer starts and this app exits
     const { relaunch } = await import("@tauri-apps/plugin-process");
@@ -197,6 +197,9 @@ export function startUpdater() {
     .catch(() => {});
   setTimeout(() => checkForUpdates(), 5000);
   setInterval(() => checkForUpdates(), CHECK_EVERY_MS);
+  // Recover promptly after a relay delay or an offline check, without waiting six hours.
+  setInterval(() => { if (updaterStore.getState().phase === "error") checkForUpdates(); }, 5 * 60 * 1000);
+  window.addEventListener("online", () => checkForUpdates());
   let required = accountStore.getState().updateRequired;
   let server = accountStore.getState().serverUrl;
   accountStore.subscribe(() => {

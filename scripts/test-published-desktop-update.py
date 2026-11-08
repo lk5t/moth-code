@@ -65,8 +65,13 @@ def probe_cloud(manifest, out):
     eligible = next(f"verify-{i}" for i in range(1000) if bucket(f"verify-{i}", "0.5.4") < 10)
     deferred = next(f"verify-{i}" for i in range(1000) if bucket(f"verify-{i}", "0.5.4") >= 50)
     results = []
-    for name, install_id in [("eligible-first-stage", eligible), ("later-stage", deferred)]:
-        req = urllib.request.Request(f"{server}/v1/updates/desktop/windows/x86_64/0.5.1?channel=stable",
+    for name, install_id, path in [
+        ("health", eligible, "/v1/health"),
+        ("eligible-first-stage", eligible, "/v1/updates/desktop/windows/x86_64/0.5.1?channel=stable"),
+        ("later-stage", deferred, "/v1/updates/desktop/windows/x86_64/0.5.1?channel=stable"),
+        ("latest-relayed-desktop", eligible, "/v1/updates/desktop/windows/x86_64/0.0.0?channel=stable"),
+    ]:
+        req = urllib.request.Request(f"{server}{path}",
                                      headers={"X-Moth-Install-Id": install_id, "X-Moth-Client": "desktop/0.5.1", "Cache-Control": "no-cache"})
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
