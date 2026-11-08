@@ -2,7 +2,7 @@
 """Windows regression with the actual published 0.5.1 and 0.5.4 installers and production public keys.
 
 Uses an isolated HTTPS MOTH Server; never changes the production server or release rollout.
-WebView debugging is enabled only in this CI process to set the test Cloud address and data marker.
+Windows accessibility drives the unmodified release through its normal Settings controls.
 """
 from __future__ import annotations
 
@@ -165,6 +165,10 @@ def main():
         harness = runpy.run_path(str(ROOT / "scripts/desktop-update-harness.py"))
         print('::notice title=Published lifecycle stage::Registering verified 0.5.4 on the isolated server', flush=True)
         harness["register"]("https://localhost:8900", data, out / "agent.token", out / "new", ssl_context=tls)
+        # Isolated fixture only: offer the authentic release to every test install ID.
+        # This changes no signed bytes or signature checks and never touches production rollout.
+        with sqlite3.connect(data / 'moth-server.db') as db:
+            db.execute("UPDATE software_releases SET status='complete', rollout_percent=100 WHERE component='desktop' AND version='0.5.4'")
         served = data / "storage/software/desktop/0.5.4" / new.name
         # Corrupt an already relayed installer: the stock client's independent minisign check
         # must reject it, even though the release metadata and signature are authentic.
@@ -177,11 +181,9 @@ def main():
         install_id = next(f"published-ci-{i}" for i in range(1000) if bucket(f"published-ci-{i}", "0.5.4") < 10)
         home = out / "backend-home"
         home.mkdir(exist_ok=True)
-        app_env = {**os.environ, "MOTH_HOME": str(home),
-                   "WEBVIEW2_USER_DATA_FOLDER": str(out / 'webview-profile'),
-                   "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--remote-debugging-port=9222 --remote-debugging-address=127.0.0.1"}
+        app_env = {**os.environ, "MOTH_HOME": str(home)}
         print('::notice title=Published lifecycle stage::Installing the original 0.5.1 desktop', flush=True)
-        # If the installer starts the app, its first WebView must inherit the test flags.
+        # An installer-started app must also use the isolated backend home.
         run(str(old), "/S", timeout=600, env=app_env)
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall") as parent:
@@ -209,24 +211,21 @@ def main():
         print('::notice title=Published lifecycle stage::Starting original desktop and setting the isolated Cloud address', flush=True)
         desktop_log = (out / 'desktop-process.log').open('w')
         desktop = subprocess.Popen([str(exe)], env=app_env, stdout=desktop_log, stderr=desktop_log)
-        deadline = time.monotonic() + 120
-        while True:
-            try:
-                evaluate("localStorage.setItem('moth.serverUrl','https://localhost:8900');localStorage.setItem('moth.installId'," + json.dumps(install_id) + ");localStorage.setItem('moth.update-test-preserve','keep settings');location.reload();")
-                break
-            except Exception:
-                if desktop.poll() is not None or time.monotonic() > deadline:
-                    desktop_log.flush()
-                    detail = (out / 'desktop-process.log').read_text(errors='replace')[-3000:]
-                    print(f'::notice title=Published desktop launch diagnostics::Executable={exe}; exit={desktop.poll()}; stderr={detail}', flush=True)
-                    processes = run('powershell', '-NoProfile', '-Command',
-                        "Get-CimInstance Win32_Process | Where-Object {$_.Name -match 'moth|webview'} | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath,@{Name='DebugArguments';Expression={([regex]::Matches($_.CommandLine,'--remote-debugging-[^ ]+') | ForEach-Object Value) -join ' '}} | ConvertTo-Json -Compress", timeout=30, capture_output=True, text=True)
-                    windows = run('powershell', '-NoProfile', '-Command',
-                        "Get-Process | Where-Object {$_.Name -match 'moth|webview'} | Select-Object ProcessName,Id,MainWindowTitle | ConvertTo-Json -Compress", timeout=30, capture_output=True, text=True)
-                    print('::notice title=Published desktop processes::' + processes.stdout.strip(), flush=True)
-                    print('::notice title=Published desktop windows::' + windows.stdout.strip(), flush=True)
-                    raise
-                time.sleep(1)
+        WindowsUI = runpy.run_path(str(ROOT / 'scripts/windows-desktop-ui.py'))['WindowsUI']
+        ui = WindowsUI(desktop.pid)
+        ui.configure_cloud('https://localhost:8900')
+        # Restart after changing Settings so no in-flight check uses the previous address.
+        time.sleep(3)  # allow the browser's settings transaction to reach disk
+        # Setup only: stop any in-flight request to the previous server before the test begins.
+        # Normal window-close installation is exercised below, after a verified test download.
+        run('taskkill', '/F', '/T', '/PID', str(desktop.pid), capture_output=True)
+        desktop.wait(timeout=30)
+        if update_log.exists():
+            shutil.copy(update_log, out / 'before-update-test.log')
+            update_log.write_text('')
+        desktop = subprocess.Popen([str(exe)], env=app_env, stdout=desktop_log, stderr=desktop_log)
+        ui = WindowsUI(desktop.pid)
+        ui.check_update()
         print('::notice title=Published lifecycle stage::Waiting for tampered-download rejection', flush=True)
         deadline = time.monotonic() + 240
         while time.monotonic() < deadline:
@@ -237,7 +236,7 @@ def main():
         assert installed_version() == "0.5.1", "an invalid signature must never install"
         print('::notice title=Published lifecycle stage::Tampered update rejected; restoring the authentic installer', flush=True)
         shutil.copyfile(new, served)
-        evaluate("location.reload()")
+        ui.check_update()
         deadline = time.monotonic() + 480
         while time.monotonic() < deadline:
             if update_log.exists() and "downloaded and verified 0.5.4" in update_log.read_text(): break
@@ -252,8 +251,10 @@ def main():
         assert installed_version() == "0.5.4", "close did not install the verified update"
         # Installer may relaunch; start it if needed, then require a success report from the app.
         time.sleep(10)
-        try: evaluate("1")
-        except Exception: subprocess.Popen([str(exe)], env=app_env)
+        try: ui = WindowsUI(desktop.pid, timeout=5)
+        except Exception:
+            desktop = subprocess.Popen([str(exe)], env=app_env)
+            ui = WindowsUI(desktop.pid)
         deadline = time.monotonic() + 180
         while time.monotonic() < deadline:
             with sqlite3.connect(data / "moth-server.db") as db:
@@ -264,7 +265,9 @@ def main():
         assert marker.read_text() == "keep original workspace"
         assert (home / "workspace.txt").read_text() == "keep workspace content"
         assert json.loads(accounts.read_text())["accounts"][0]["username"] == "preserved-ci-account"
-        assert evaluate("localStorage.getItem('moth.update-test-preserve')") == "keep settings"
+        ui.click('Settings')
+        ui.click('Account', control_type='TabItem')
+        assert ui.text_value('MOTH Cloud server address') == 'https://localhost:8900'
         print("PASS: actual published 0.5.1 -> 0.5.4 detected, downloaded, signature-verified, installed on close, restarted and reported success; data preserved", flush=True)
     finally:
         server.terminate()
