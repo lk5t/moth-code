@@ -1,0 +1,97 @@
+name: Desktop update endpoint diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      current_version:
+        description: Installed desktop version
+        default: "0.5.4"
+        required: true
+      target_version:
+        description: Published desktop version whose rollout groups should be checked
+        default: "0.5.7"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PROBE_CURRENT_VERSION: ${{ inputs.current_version }}
+      PROBE_TARGET_VERSION: ${{ inputs.target_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read live metadata and one installer byte without changing production state
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64, datetime, hashlib, json, os, pathlib, re, runpy
+          import urllib.error, urllib.parse, urllib.request
+
+          base = 'https://mothcloud.ddns.net'
+          current, target = os.environ['PROBE_CURRENT_VERSION'], os.environ['PROBE_TARGET_VERSION']
+          assert all(re.fullmatch(r'\d+\.\d+\.\d+', v) for v in (current, target))
+          bucket = lambda i: int.from_bytes(hashlib.sha256(f'{target}:{i}'.encode()).digest()[:4], 'big') % 100
+          first = next(f'endpoint-probe-{i}' for i in range(1000) if bucket(f'endpoint-probe-{i}') < 10)
+          later = next(f'endpoint-probe-{i}' for i in range(1000) if bucket(f'endpoint-probe-{i}') >= 50)
+          records = []
+          def notice(record):
+              records.append(record)
+              text = json.dumps(record).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::notice title=Live Desktop update diagnostic::' + text, flush=True)
+          def get(name, path, install):
+              req = urllib.request.Request(base + path, headers={'Accept': 'application/json',
+                  'Cache-Control': 'no-cache', 'X-Moth-Install-Id': install,
+                  'X-Moth-Client': 'desktop/' + current})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      body = response.read(16384)
+                      status, headers = response.status, response.headers
+              except urllib.error.HTTPError as error:
+                  body, status, headers = error.read(16384), error.code, error.headers
+              value = json.loads(body) if body else None
+              record = {'probe': name, 'status': status, 'cache_control': headers.get('Cache-Control')}
+              if value and 'signature' in value:
+                  datetime.datetime.fromisoformat(value['pub_date'].replace('Z', '+00:00'))
+                  lines = base64.b64decode(value['signature']).decode().splitlines()
+                  pub_lines = base64.b64decode(pathlib.Path('app/src-tauri/updater.pub').read_text()).decode().splitlines()
+                  pub, packet = base64.b64decode(pub_lines[1]), base64.b64decode(lines[1])
+                  comment = lines[2].removeprefix('trusted comment: ')
+                  verify = runpy.run_path('deploy/agent/ed25519_verify.py')['verify']
+                  assert packet[2:10] == pub[2:10]
+                  assert verify(pub[10:42], packet[10:] + comment.encode(), base64.b64decode(lines[3]))
+                  assert '\tversion:' + value['version'] in comment
+                  record.update(version=value['version'], url=value['url'], pub_date=value['pub_date'],
+                      signed_version_verified=True, full_installer_downloaded=False)
+              else:
+                  record['response'] = value
+              notice(record)
+              return value if status == 200 and value and 'signature' in value else None
+          get('health', '/v1/health', first)
+          path = '/v1/updates/desktop/windows/x86_64/'
+          offer = get('installed-first-stage', path + current + '?channel=stable', first)
+          get('installed-later-stage', path + current + '?channel=stable', later)
+          get('target-version', path + target + '?channel=stable', first)
+          if offer:
+              url = urllib.parse.urlsplit(offer['url'])
+              assert url.scheme == 'https' and url.netloc == 'mothcloud.ddns.net'
+              assert url.path.startswith('/v1/updates/files/desktop/')
+              request = urllib.request.Request(offer['url'], headers={'Range': 'bytes=0-0'})
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      data = response.read(1)
+                      notice({'probe': 'installer-availability', 'status': response.status,
+                          'bytes_read': len(data), 'content_range': response.headers.get('Content-Range'),
+                          'content_length': response.headers.get('Content-Length'), 'full_installer_downloaded': False})
+              except urllib.error.HTTPError as error:
+                  notice({'probe': 'installer-availability', 'status': error.code, 'detail': error.read(2000).decode()})
+          pathlib.Path('desktop-update-probe.json').write_text(json.dumps(records, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-update-probe
+          path: desktop-update-probe.json
