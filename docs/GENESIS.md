@@ -124,7 +124,8 @@ TLS context to its Python registration helper. Production TLS/signatures are unc
 
 Chromium verification against an actual isolated Cloud, fresh 0.01 model and local desktop backend
 passed Code/Chat draft retention, real Monaco unsaved edits, interactive architecture selection,
-all five tabs, actual desktop-worker enrollment and persistent worker toggles, navigation restoration
+all five tabs, actual desktop-worker enrollment and persistent worker toggles, a CPU cycle requested
+through the actual Resume button with measured training progress, navigation restoration
 after reload and an 800×600 layout without horizontal overflow. Screenshots were inspected at
 1280×800 and 800×600. This is browser evidence; native Windows evidence is tracked separately.
 That review corrected tab alignment and a stale “waiting” label while training was explicitly paused.

@@ -39,7 +39,8 @@ def click(label, role=None):
     expression = f"""(() => {{ const b = [...document.querySelectorAll({json.dumps(selector)})].find(
       b => b.offsetParent !== null && (b.getAttribute('aria-label') === {json.dumps(label)} || b.textContent.trim() === {json.dumps(label)}));
       if (!b || b.disabled) return false;
-      b.dispatchEvent(new MouseEvent('mousedown', {{bubbles:true,button:0}})); b.click(); return true; }})()"""
+      b.dispatchEvent(new MouseEvent('mousedown', {{bubbles:true,button:0}}));
+      b.dispatchEvent(new MouseEvent('click', {{bubbles:true,button:0}})); return true; }})()"""
     wait(lambda: evaluate(expression), f'click {label}')
 
 
