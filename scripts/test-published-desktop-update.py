@@ -270,6 +270,24 @@ def main():
         assert ui.text_value('MOTH Cloud server address') == 'https://localhost:8900'
         print("PASS: actual published 0.5.1 -> 0.5.4 detected, downloaded, signature-verified, installed on close, restarted and reported success; data preserved", flush=True)
     finally:
+        # Semantic diagnostics stay available through the GitHub checks API when artifact/log
+        # download hosts are unavailable. Never include credentials or editable field values.
+        observations = {'log_exists': update_log.exists()}
+        if update_log.exists():
+            observations['updater_log'] = update_log.read_text(errors='replace')[-2000:]
+        try:
+            observations['ui_status'] = [c.element_info.name for c in ui.root.descendants(control_type='Text')
+                                         if any(word in c.element_info.name.lower() for word in ('update', 'checking', 'ready', 'error'))][-20:]
+        except Exception:
+            pass
+        try:
+            observations['update_requests'] = [line for line in (out / 'server.log').read_text(errors='replace').splitlines()
+                                               if '/v1/updates' in line][-20:]
+            with sqlite3.connect(data / 'moth-server.db') as db:
+                observations['reports'] = db.execute("SELECT from_version,to_version,ok,error FROM update_reports WHERE component='desktop'").fetchall()[-10:]
+        except Exception:
+            pass
+        print('::notice title=Published desktop update observations::' + json.dumps(observations), flush=True)
         server.terminate()
         server.wait(timeout=30)
         log.close()
