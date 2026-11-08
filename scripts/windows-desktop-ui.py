@@ -83,5 +83,39 @@ class WindowsUI:
         self.optional_tab('Updates & about')
         self.click('Check now')
 
+    def login(self, username, password):
+        self.click('Sign in', control_type='Button')
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            edits = [c for c in self.root.descendants(control_type='Edit') if c.is_visible() and c.is_enabled()]
+            protected = [c for c in edits if c.element_info._element.CurrentIsPassword]
+            plain = [c for c in edits if not c.element_info._element.CurrentIsPassword
+                     and c.element_info.name != 'MOTH Cloud server address']
+            if protected and plain:
+                plain[0].iface_value.SetValue(username)
+                protected[0].iface_value.SetValue(password)
+                self.click('Sign in', control_type='Button')
+                self.find('Owner tools', ('Button',))
+                return
+            time.sleep(1)
+        raise AssertionError('Native sign-in fields were not available')
+
+    def draft(self, value=None):
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            edits = [c for c in self.root.descendants(control_type='Edit') if c.is_visible() and c.is_enabled()]
+            if edits:
+                if value is not None:
+                    edits[0].iface_value.SetValue(value)
+                return edits[0].iface_value.CurrentValue
+            time.sleep(1)
+        raise AssertionError('Connected chat composer was not available')
+
+    def resize(self, width, height):
+        import win32gui
+        import win32con
+        win32gui.SetWindowPos(self.root.handle, 0, 0, 0, width, height,
+                             win32con.SWP_NOMOVE | win32con.SWP_NOZORDER)
+
     def close(self):
         self.root.close()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Native Windows GENESIS smoke: real installer, frozen backend, isolated Cloud and UI.
 
-The release executable is unchanged. WebView debugging applies only to this test process.
+Windows accessibility drives the unchanged release through its normal account and Settings UI.
 No production account, model, signing key or service is used or modified.
 """
 from __future__ import annotations
@@ -12,13 +12,14 @@ import os
 from pathlib import Path
 import runpy
 import secrets
+import sqlite3
 import subprocess
 import sys
 import time
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-evaluate = runpy.run_path(str(ROOT / 'scripts/test-published-desktop-update.py'))['evaluate']
+WindowsUI = runpy.run_path(str(ROOT / 'scripts/windows-desktop-ui.py'))['WindowsUI']
 
 
 def wait(fn, description, timeout=90):
@@ -34,19 +35,11 @@ def wait(fn, description, timeout=90):
     raise AssertionError(f'Timed out: {description}')
 
 
-def click(label, role=None):
-    selector = f'[role={role}]' if role else 'button'
-    expression = f"""(() => {{ const b = [...document.querySelectorAll({json.dumps(selector)})].find(
-      b => b.offsetParent !== null && (b.getAttribute('aria-label') === {json.dumps(label)} || b.textContent.trim() === {json.dumps(label)}));
-      if (!b || b.disabled) return false;
-      b.dispatchEvent(new MouseEvent('mousedown', {{bubbles:true,button:0}}));
-      b.dispatchEvent(new MouseEvent('click', {{bubbles:true,button:0}})); return true; }})()"""
-    wait(lambda: evaluate(expression), f'click {label}')
-
-
 def main(installer):
     assert sys.platform == 'win32', 'Run this test on Windows'
     import winreg
+    verify = runpy.run_path(str(ROOT / 'scripts/check-release-secrets.py'))['check_updater_signature']
+    assert verify(installer, installer.with_name(installer.name + '.sig')), 'Production installer signature is invalid'
     out = Path(os.environ['RUNNER_TEMP']) / 'genesis-desktop-test'
     out.mkdir(parents=True, exist_ok=True)
     cloud = 'http://127.0.0.1:8910'  # loopback API test; signed HTTPS updates have their own native test
@@ -69,11 +62,11 @@ def main(installer):
         with urllib.request.urlopen(req, timeout=120) as r:
             return json.load(r) if r.status != 204 else None
 
-    def local(path):
-        # Keep the per-launch bearer token inside the WebView; never print/persist it.
-        return evaluate(f"""(async () => {{ const b = await window.__TAURI_INTERNALS__.invoke('backend_info');
-          const r = await fetch(b.url + {json.dumps(path)}, {{headers:{{Authorization:'Bearer '+b.token}}}});
-          if (!r.ok) throw new Error('Local API returned '+r.status); return r.json(); }})()""")
+    def participant_setting():
+        with sqlite3.connect(out / 'desktop-home/moth.db') as db:
+            row = db.execute("SELECT value FROM settings WHERE key='participant'").fetchone()
+        value = json.loads(row[0]) if row else {}
+        return {'enabled': bool(value.get('enabled')), 'worker_id': value.get('worker_id')}
 
     try:
         wait(lambda: api('/v1/health'), 'isolated Cloud health')
@@ -85,9 +78,7 @@ def main(installer):
         api('/v1/admin/evolution/initialize', {}, 'POST')
         api('/v1/admin/evolution/initialize/activate', {}, 'POST')
         api('/v1/admin/config/flags', {'cloud_inference_enabled': True}, 'PUT')
-        appenv = {**env, 'MOTH_HOME': str(out / 'desktop-home'),
-                  'WEBVIEW2_USER_DATA_FOLDER': str(out / 'webview-profile'),
-                  'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': '--remote-debugging-port=9222 --remote-debugging-address=127.0.0.1'}
+        appenv = {**env, 'MOTH_HOME': str(out / 'desktop-home')}
         subprocess.run([str(installer.resolve()), '/S'], check=True, timeout=600, env=appenv)
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Uninstall') as parent:
             exe = None
@@ -103,52 +94,51 @@ def main(installer):
         assert exe, 'Installed MOTH Code executable was not registered'
         subprocess.run(['taskkill', '/F', '/T', '/IM', exe.name], capture_output=True, timeout=30)
         app = subprocess.Popen([str(exe)], env=appenv)
-        wait(lambda: evaluate('!!window.__TAURI_INTERNALS__'), 'native WebView')
-        account = {'server': cloud, 'username': user['username'], 'role': 'owner', 'last_used': time.time()}
-        evaluate(f"""(async () => {{ localStorage.setItem('moth.serverUrl', {json.dumps(cloud)});
-          localStorage.setItem('moth.welcome.done','1'); localStorage.setItem('moth.navigation',JSON.stringify({{view:'chat',workspaceMode:'chat'}}));
-          await window.__TAURI_INTERNALS__.invoke('accounts_remember',{{account:{json.dumps(account)},token:{json.dumps(token)}}}); return true; }})()""")
-        evaluate('location.reload(); true')
-        wait(lambda: evaluate("!!document.querySelector('button[aria-label=Intelligence]')"), 'real app launch and restored Owner session')
-        assert local('/api/participant')['available'], 'Frozen backend omitted MOTH Worker'
-        wait(lambda: evaluate("[...document.querySelectorAll('textarea')].some(t => t.offsetParent !== null && !t.disabled)"), 'chat connected to real model')
-        evaluate("""(() => { const t=[...document.querySelectorAll('textarea')].find(t=>t.offsetParent!==null);
-          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(t,'native unsent draft');
-          t.dispatchEvent(new Event('input',{bubbles:true})); return true; })()""")
-        click('Code')
-        click('Chat')
-        assert evaluate("[...document.querySelectorAll('textarea')].some(t=>t.offsetParent!==null && t.value==='native unsent draft')")
-        click('Intelligence')
-        wait(lambda: evaluate("document.querySelectorAll('[role=tab]').length===5"), 'five Intelligence tabs')
-        wait(lambda: evaluate("!!document.querySelector('[aria-label=\"Inspect layer 2\"]')"), 'real model architecture')
-        click('Inspect layer 2', 'button')
-        assert evaluate("document.querySelector('[aria-label=\"Inspect layer 2\"]').getAttribute('aria-pressed')==='true'")
-        click('Training', 'tab')
+        ui = WindowsUI(app.pid)
+        ui.configure_cloud(cloud)
+        ui.login(user['username'], password)
+        ui.click('Workspace · Code / Chat')
+        ui.draft('native unsent draft')
+        ui.click('Code')
+        ui.click('Chat')
+        assert ui.draft() == 'native unsent draft'
+        ui.click('Intelligence')
+        for label in ('Overview', 'Training', 'Evolution', 'Network', 'Data'):
+            ui.find(label, ('TabItem',))
+        ui.click('Inspect layer 2')
+        ui.find('Layer 2 selected', ('Text',), prefix=True)
+        ui.click('Training', control_type='TabItem')
         for value in (False, True):
-            click('Use cloud workers', 'switch')
+            ui.click('Use cloud workers')
             wait(lambda: api('/v1/admin/evolution/status')['settings']['backends']['workers'] is value, 'worker toggle persisted')
-        click('Contribute this computer', 'switch')
-        participant = wait(lambda: (s if (s := local('/api/participant'))['enabled'] and s['worker_id'] else None), 'real desktop worker enrollment')
-        assert not participant['error'], participant['error']
-        click('Contribute this computer', 'switch')
-        wait(lambda: not local('/api/participant')['enabled'], 'participant disable persisted')
-        click('Resume MOTH training')
+        ui.click('Contribute this computer')
+        participant = wait(lambda: (s if (s := participant_setting())['enabled'] and s['worker_id'] else None), 'real desktop worker enrollment')
+        assert any(w['id'] == participant['worker_id'] and w['hardware'].get('client') == 'moth-code'
+                   for w in api('/v1/training/workers')['workers'])
+        ui.click('Contribute this computer')
+        wait(lambda: not participant_setting()['enabled'], 'participant disable persisted')
+        ui.click('Resume MOTH training')
         cycle = wait(lambda: api('/v1/admin/evolution/status').get('cycle'), 'eligible cycle created by UI', timeout=120)
         wait(lambda: any(e.get('progress', {}).get('step', 0) > 0 or e.get('candidate_version')
                          for e in (api('/v1/admin/evolution/status').get('cycle') or {}).get('experiments', [])),
              'real CPU training progress from requested cycle', timeout=180)
         api('/v1/admin/evolution/pause', {}, 'POST')
+        ui.resize(800, 600)
         for label in ('Evolution', 'Network', 'Data'):
-            click(label, 'tab')
-        click('Workspace · Code / Chat')
-        assert evaluate("[...document.querySelectorAll('textarea')].some(t=>t.offsetParent!==null && t.value==='native unsent draft')")
-        # Navigation/layout are persisted across a real WebView reload; drafts are kept across switches.
-        click('Intelligence')
-        click('Data', 'tab')
-        evaluate('location.reload(); true')
-        wait(lambda: evaluate("document.querySelector('[role=tab][data-state=active]')?.textContent==='Data'"), 'navigation restored after reload')
+            ui.click(label, control_type='TabItem')
+        ui.click('Workspace · Code / Chat')
+        assert ui.draft() == 'native unsent draft'
+        ui.click('Intelligence')
+        ui.click('Data', control_type='TabItem')
+        ui.close()
+        app.wait(timeout=30)
+        app = subprocess.Popen([str(exe)], env=appenv)
+        ui = WindowsUI(app.pid)
+        ui.find('Owner tools', ('Button',))  # actual Windows credential-vault session survived
+        assert ui.find('Data', ('TabItem',)).iface_selection_item.CurrentIsSelected
         evidence = {'native_windows': True, 'real_frozen_backend': True, 'real_cloud_api': True,
                     'draft_preserved_across_modes': True, 'intelligence_tabs': 5,
+                    'owner_session_and_navigation_restored_after_restart': True, 'tested_window': [800, 600],
                     'worker_enrollment_id': participant['worker_id'], 'training_cycle_id': cycle['id'],
                     'production_reset': False, 'trained_foundation': False}
         (out / 'evidence.json').write_text(json.dumps(evidence, indent=2))

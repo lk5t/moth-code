@@ -49,7 +49,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           python -m pip install "./backend[package]" ./worker  # MOTH Code can contribute its computer (0.5.3)
-          python -m pip install ./server websocket-client  # isolated native GENESIS API/UI verification
+          python -m pip install ./server pywinauto  # isolated native GENESIS API/UI verification
           cd backend
           pyinstaller --noconfirm --distpath dist packaging/moth-backend.spec
       - name: Smoke-test the frozen backend
