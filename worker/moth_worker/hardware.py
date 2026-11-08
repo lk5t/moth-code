@@ -65,14 +65,16 @@ def detect() -> dict[str, Any]:
     try:
         ram_gb = round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2**30, 1)
     except (ValueError, OSError, AttributeError):
-        ram_gb = _windows_ram_gb()
+        measured = _windows_memory()
+        ram_gb = round(measured[0] / 2**30, 1) if measured else None
     disk = shutil.disk_usage(Path.home())
     ram_available_gb = None
     if ram_gb is not None:
         try:
             available = os.sysconf('SC_AVPHYS_PAGES') * os.sysconf('SC_PAGE_SIZE')
         except (OSError, ValueError, AttributeError):
-            available = int(ram_gb * 2**30)
+            measured = _windows_memory()
+            available = measured[1] if measured else 0  # unknown is not fully available RAM
         total, available = memory_budget(int(ram_gb * 2**30), available)
         ram_gb, ram_available_gb = round(total / 2**30, 1), round(available / 2**30, 1)
     hw = {"gpus": gpus, "cuda": cuda, "torch": torch_version, "torch_cuda": torch_cuda,
@@ -84,7 +86,7 @@ def detect() -> dict[str, Any]:
     return hw
 
 
-def _windows_ram_gb() -> float | None:
+def _windows_memory() -> tuple[int, int] | None:
     if sys.platform != "win32":
         return None
     try:
@@ -99,10 +101,16 @@ def _windows_ram_gb() -> float | None:
 
         m = MemStatus()
         m.dwLength = ctypes.sizeof(MemStatus)
-        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))  # type: ignore[attr-defined]
-        return round(m.ullTotalPhys / 2**30, 1)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):  # type: ignore[attr-defined]
+            return None
+        return int(m.ullTotalPhys), int(m.ullAvailPhys)
     except Exception:  # noqa: BLE001
         return None
+
+
+def _windows_ram_gb() -> float | None:
+    measured = _windows_memory()
+    return round(measured[0] / 2**30, 1) if measured else None
 
 
 MIN_CPU_CORES = 2

@@ -75,3 +75,13 @@ The older UI/progress work also passed real browser and CPU training checks docu
 12. Full regression/migration verification and gated signed publication.
 
 No production model reset, checkpoint replacement, manual production deployment or release-gate bypass occurred.
+
+### Phase 2 progress — Windows memory admission
+
+`worker/moth_worker/hardware.py` now reads both total and available physical RAM from
+`GlobalMemoryStatusEx`, checks the API return value, and reports unavailable measurements
+conservatively. Previously its Windows fallback used total RAM as available RAM.
+`server/tests/test_worker_memory.py` verifies a 16 GB machine with only 2 GB available
+reports 2 GB available and that scheduling admission respects that limit (passed).
+This is an OS-API simulation; native Windows verification and the remaining adaptive
+hardware work are still required. Phase 2 is not complete.
