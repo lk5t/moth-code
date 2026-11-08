@@ -98,7 +98,7 @@ def evaluate(expression):
     target = next(t for t in targets if t.get("type") == "page")
     ws = websocket.create_connection(target["webSocketDebuggerUrl"], timeout=10, suppress_origin=True)
     try:
-        ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": expression, "returnByValue": True}}))
+        ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": expression, "returnByValue": True, "awaitPromise": True}}))
         while True:
             msg = json.loads(ws.recv())
             if msg.get("id") == 1:
@@ -160,7 +160,7 @@ def main():
         os.environ["SSL_CERT_FILE"] = str(out / "tls.pem")
         harness = runpy.run_path(str(ROOT / "scripts/desktop-update-harness.py"))
         print('::notice title=Published lifecycle stage::Registering verified 0.5.4 on the isolated server', flush=True)
-        harness["register"]("https://localhost:8900", data, out / "agent.token", out / "new")
+        harness["register"]("https://localhost:8900", data, out / "agent.token", out / "new", ssl_context=tls)
         served = data / "storage/software/desktop/0.5.4" / new.name
         # Corrupt an already relayed installer: the stock client's independent minisign check
         # must reject it, even though the release metadata and signature are authentic.

@@ -42,27 +42,27 @@ def bump(version: str) -> None:
     print(f"version set to {version}")
 
 
-def post(server: str, path: str, body: dict, token: str) -> dict:
+def post(server: str, path: str, body: dict, token: str, ssl_context=None) -> dict:
     req = urllib.request.Request(server.rstrip("/") + path, data=json.dumps(body).encode(), method="POST",
                                  headers={"Content-Type": "application/json", "X-Moth-Agent-Token": token})
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with urllib.request.urlopen(req, timeout=120, context=ssl_context) as r:
         return json.loads(r.read() or b"{}")
 
 
-def register(server: str, data_dir: Path, token_file: Path, rel_dir: Path) -> None:
+def register(server: str, data_dir: Path, token_file: Path, rel_dir: Path, ssl_context=None) -> None:
     token = token_file.read_text().strip()
     mf = next(rel_dir.glob("moth-release-desktop-*.json"))
     raw = mf.read_bytes()
     sig = mf.with_name(mf.name + ".sig").read_text().strip()
     m = json.loads(raw)
     print("register:", post(server, "/v1/agent/releases", {"manifest": base64.b64encode(raw).decode(), "signature": sig},
-                            token))
+                            token, ssl_context))
     for entry in m["components"]["desktop"].values():
         incoming = data_dir / "storage" / "software" / "incoming" / entry["file"]
         incoming.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(rel_dir / entry["file"], incoming)
         print("file:", post(server, "/v1/agent/files", {"component": "desktop", "version": m["version"],
-                                                        "path": str(incoming)}, token))
+                                                        "path": str(incoming)}, token, ssl_context))
 
 
 def wait_report(data_dir: Path, version: str, timeout: float) -> int:

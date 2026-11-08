@@ -12,7 +12,7 @@ on:
       tag:
         description: "Desktop release tag (must match the app version, e.g. desktop-v0.3.1)"
         required: true
-        default: "desktop-v0.5.5"
+        default: "desktop-v0.5.6"
       channel:
         description: "Update channel"
         required: true
@@ -49,6 +49,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           python -m pip install "./backend[package]" ./worker  # MOTH Code can contribute its computer (0.5.3)
+          python -m pip install ./server websocket-client  # isolated native GENESIS API/UI verification
           cd backend
           pyinstaller --noconfirm --distpath dist packaging/moth-backend.spec
       - name: Smoke-test the frozen backend
@@ -98,6 +99,18 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Verify native GENESIS launch, workspace, worker controls and CPU scheduling
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem app/src-tauri/target/release/bundle/nsis/*-setup.exe)[0].FullName
+          python scripts/test-genesis-desktop.py --installer "$installer"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: genesis-desktop-verification
+          path: |
+            ${{ runner.temp }}/genesis-desktop-test/evidence.json
+            ${{ runner.temp }}/genesis-desktop-test/cloud.log
       - uses: actions/upload-artifact@v4
         with:
           name: desktop

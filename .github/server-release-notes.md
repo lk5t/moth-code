@@ -4,6 +4,13 @@ The MOTH Cloud server for self-managing operation: one-time installation (no sud
 signed updates, verified backups, health checks with automatic rollback, the fixed model publishing
 workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
+GENESIS adds an Owner-gated, reversible fresh MOTH 0.01 lineage, automatically eligible CPU training,
+compatible GPU preference with CPU fallback, corrected training controls and lineage-aware metrics.
+Existing dataset, growth, distributed training, evaluation and rollback implementations are retained.
+The reset first verifies an archive/restoration and then requires separate explicit Owner approval.
+Installing this release never resets the deployed model or user data. A fresh baseline is untrained;
+neither these smoke tests nor this release establishes completed Foundation training.
+
 | File | What it is |
 | --- | --- |
 | `moth-cloud-__VERSION__.tar.gz` | Server bundle: server, MOTH backend, update agent, installer, templates, backup script, `INSTALL.md` |

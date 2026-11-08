@@ -107,3 +107,17 @@ Nine additional Evolution 2.0 and discovery cases passed, including actual expan
 training after Owner approval, two real CPU worker runners with expired-lease recovery and
 duplicate-shard rejection, continued development checkpoints and trusted-source ingestion.
 GPU hardware declarations in selection tests are explicitly simulated; no GPU execution is claimed.
+
+## Release candidate
+
+The coordinated release candidate is **0.5.6**, because signed server 0.5.5 is already published
+and existing releases are immutable. All application/server/worker version declarations agree.
+Frontend verification passed **40 tests**, TypeScript checking and a production frontend build.
+The existing Desktop release workflow now gates publication on an actual installed Windows UI
+smoke covering launch, Code/Chat draft retention, restored navigation, the five Intelligence tabs,
+real desktop-worker enrollment/toggles and a real CPU cycle requested through the UI. This gate
+uses isolated test services; its result is pending until Windows Actions completes.
+
+The published-compatibility helper now imports its temporary test CA into the isolated runner's
+machine Root store (avoiding an interactive user consent dialog) and explicitly passes a verifying
+TLS context to its Python registration helper. Production TLS/signatures are unchanged.

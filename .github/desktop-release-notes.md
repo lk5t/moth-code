@@ -2,6 +2,17 @@
 
 ## MOTH Code __VERSION__ for Windows
 
+### GENESIS
+
+- One Code/Chat workspace preserves drafts, active tasks and unsaved files when switching modes.
+- Intelligence groups Overview, Training, Evolution, Network and Data, with measured model activity,
+  live backend status and existing advanced controls.
+- Training controls send the correct JSON body and show readable API errors. Signed updates retain
+  network/rollout errors, retry failed checks and install verified downloads on close or restart.
+- A fresh native MOTH 0.01 reset requires a verified archive and a separate, explicit Owner approval.
+  Installing this release does not reset any model. The fresh baseline is untrained; Foundation
+  training is not claimed complete.
+
 ### Install
 
 - **New install, or coming from v0.2.x:** download **`MOTH.Code___VERSION___x64-setup.exe`** below and run it. It
