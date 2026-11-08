@@ -41,3 +41,10 @@ def test_stale_workers_are_not_available_compute(client, monkeypatch):
     cap = C.worker_capacity(ctx, C.GB)
     assert cap['online'] == cap['usable'] == cap['usable_gpu'] == 0
     assert not D.participants(ctx, C.GB)
+
+
+def test_selects_the_gpu_that_actually_fits(client, monkeypatch):
+    ctx = client.app.state.ctx
+    settings = copy.deepcopy(S.get(ctx))
+    monkeypatch.setattr(C, 'local', lambda ctx: {'gpus': [{'memory_free': 0.1 * C.GB}, {'memory_free': 8 * C.GB}]})
+    assert C.choose_backend(ctx, settings, C.GB)[0]['device'] == 'cuda:1'

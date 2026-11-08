@@ -86,7 +86,7 @@ def local(ctx: Ctx) -> dict[str, Any]:
                          'percent': round(100 * (total - avail) / max(1, total), 1)}
     try:
         out["load_average"] = [round(x, 2) for x in os.getloadavg()]
-    except OSError:
+    except (OSError, AttributeError):
         pass
     du = shutil.disk_usage(ctx.settings.data_dir)
     out["disk"] = {"total": du.total, "free": du.free, "used": du.used, "path": "data"}
@@ -145,8 +145,9 @@ def choose_backend(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[dict | No
     hw = local(ctx)
     if be.get("local_gpu") and hw["gpus"]:
         fraction = float(settings["limits"]["gpu_memory_fraction"])
-        if any(g["memory_free"] * fraction >= need_bytes for g in hw["gpus"]):
-            return {"backend": "local", "device": "cuda"}, []
+        for index, gpu in enumerate(hw['gpus']):
+            if gpu["memory_free"] * fraction >= need_bytes:
+                return {"backend": "local", "device": "cuda" if index == 0 else f"cuda:{index}"}, []
         reasons.append(f"the local GPU does not have {need_bytes / GB:.1f} GB of free memory for training")
     elif be.get("local_gpu"):
         reasons.append("this server has no GPU")

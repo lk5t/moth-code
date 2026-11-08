@@ -29,8 +29,8 @@ that Foundation training is complete.
 |---|---|
 | 1 Backup and fresh lineage | Owner-gated backup, fresh seed, activation and restoration implemented; 3 isolated regression cases passed; production reset still awaits Owner approval |
 | 2 Quality data | Existing approved-source discovery, provenance/license validation, deduplication, masks and held-out separation retained; data factory regressions passed |
-| 3 CPU/GPU coordination | Defaults and selection fixes tested; fresh-lineage CPU evidence pending |
-| 4 Evolution/growth | Existing real trainer, research planning, growth and promotion/rollback retained; GENESIS lineage reset integration pending |
+| 3 CPU/GPU coordination | Automatic CPU fallback, compatible GPU selection and stale-worker checks tested; real CPU optimizer, checkpoint and server-restart recovery verified; physical GPU unverified |
+| 4 Evolution/growth | Real 0.01 → 0.02 → 0.03 promotion/rollback, degraded candidate rejection and growth optimizer preservation verified; approved-reset combined lifecycle verification in progress |
 | 5 Code/Chat workspace | Implemented compact switch, retained mounted workspaces, drafts/files, separate general history and consent-gated project excerpts; focused UI and real local API regressions passed |
 | 6 Intelligence control center | Five tabs consolidate existing controls; actual architecture and reported-step activity, selectable layers and timeline; focused UI regressions passed; native Windows verification pending |
 | 7 UI consistency | Sidebar consolidation, persistent navigation/layout, keyboard shortcuts, collapsible advanced panels, smaller minimum window and reduced-motion support implemented; native layout verification pending |
@@ -74,3 +74,23 @@ history separation, plus data factory, optimizer-moment growth and continued-tra
 The chat transport in the consent test is a named simulation, not training or inference-quality evidence.
 No editor contents, account credentials or conversation messages are added to navigation storage.
 Project excerpts are opt-in and use the existing cloud-consent and redaction path with Cloud history storage disabled.
+
+## CPU and control evidence (2026-11-08)
+
+The real CPU lifecycle and Evolution regression suite passed **18 cases**. Automatic preparation
+used licensed PSF standard-library text with a distinct held-out split. The 99,648-parameter seed
+promoted to 0.02 after 20 steps / 10,240 tokens and to 0.03 after 32 cumulative steps / 16,384 tokens.
+General held-out loss measured 7.78162 → 4.96959 → 4.53979. Dataset validation loss measured
+3.76954 and 3.54090. Every promotion gate passed; rollback reproduced the original seed bytes.
+These small-model smoke measurements do not establish general coding/reasoning competence.
+
+A separate real subprocess test paused for a **simulated memory shortage**, checkpointed, resumed,
+was actually killed, then recovered in a new server application and completed 400 steps with
+`resumed=true`, 204,800 tokens and validation loss 2.46481. It uses a 127,296-parameter legacy
+fixture, not a trained Foundation checkpoint. The degraded-candidate rejection regression also passed.
+
+Five focused control/compute cases verify authenticated HTTP worker-setting persistence, resuming
+the same cycle, a new cycle after cancellation, prepared-reset blocking and preserving explicit
+CPU disables. Multi-GPU selection now returns the fitting device index; GPU preference considers
+each job's actual memory/worker allowlist and fresh heartbeat rather than delaying CPU work for
+an incompatible GPU. Windows resource discovery handles platforms without `os.getloadavg`.

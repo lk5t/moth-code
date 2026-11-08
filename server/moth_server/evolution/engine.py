@@ -336,7 +336,7 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
         settings = {**settings, "backends": {**settings["backends"], "workers": False}}
     choice, reasons = C.choose_backend(ctx, settings, need)
     ok, n = D.available(ctx, settings, need)
-    if ok and not (choice and choice.get("device") == "cuda") and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
+    if ok and not (choice and choice.get("device", "").startswith("cuda")) and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
         st = D.start(ctx, exp, settings, need)
         MEM.update_experiment(ctx, exp["id"], status="running", backend="distributed", error=None, started_at=now(),
                               run_dir=str(B.run_dir(ctx, exp)),

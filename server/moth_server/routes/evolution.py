@@ -260,10 +260,31 @@ def resume(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
 
 @router.post("/run")
 def run_now(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    if (ctx.db.get_config('genesis_state', {}) or {}).get('status') in ('preparing', 'prepared'):
+        raise HTTPException(409, 'Finish or cancel the prepared GENESIS reset before resuming training')
+    if not M.deployed(ctx):
+        raise HTTPException(409, 'Activate or deploy a MOTH baseline before requesting training')
+    current = MEM.active_cycle(ctx)
+    if current:
+        # A deliberate Owner action resumes the same checkpointed cycle; no duplicate cycle.
+        S.update(ctx, {'enabled': True, 'paused': False})
+        EN._set_state(ctx, consecutive_failures=0)
+        EN.wake(ctx)
+        return _cycle_summary(ctx, MEM.cycle(ctx, current['id']))
     try:
         cyc = EN.start_cycle(ctx, "manual", auth.uid)
     except EN.EvolutionError as e:
+        from moth_server.intelligence import discovery
+        if MEM.active_cycle(ctx):
+            raise HTTPException(409, str(e)) from None
+        preparation = discovery.ensure_data(ctx)
+        if preparation.get('status') in ('preparing', 'queued', 'running'):
+            S.update(ctx, {'enabled': True, 'paused': False})
+            EN.wake(ctx)
+            return {'requested': True, 'status': 'preparing_data', 'preparation': preparation}
         raise HTTPException(409, str(e)) from None
+    S.update(ctx, {'enabled': True, 'paused': False})
+    EN._set_state(ctx, consecutive_failures=0)
     EN.kick(ctx)
     return _cycle_summary(ctx, cyc)
 

@@ -511,3 +511,35 @@ def test_engine_state_updates_never_erase_each_other(client, settings, world):
     t.join()
     st = EN.state(ctx)
     assert st["next_cycle_at"] == 0 and st["last_tick"] > 0
+
+
+def test_genesis_training_controls_resume_cancelled_cycle_and_persist_limits(client, world):
+    """Real authenticated HTTP controls; compute deliberately disabled to inspect queued work."""
+    ctx, o = world['ctx'], world['o']
+    S.update(ctx, {'paused': True, 'backends': {'local_cpu': False, 'local_gpu': False, 'workers': False}})
+    d = add_dataset(client, o)
+    assert client.post(f"/v1/admin/evolution/datasets/{d['id']}/approve", json={}, headers=o).status_code == 200
+    assert client.post('/v1/admin/evolution/run').status_code == 401
+    for enabled in (True, False):
+        r = client.put('/v1/admin/evolution/settings', headers=o, json={'changes': {
+            'backends': {'workers': enabled}, 'distributed': {'enabled': enabled}}})
+        assert r.status_code == 200, r.text
+        st = client.get('/v1/admin/evolution/status', headers=o).json()['settings']
+        assert st['backends']['workers'] is enabled and st['distributed']['enabled'] is enabled
+        assert st['backends']['local_cpu'] is False  # do not override an explicit Owner disable
+    first = client.post('/v1/admin/evolution/run', headers=o)
+    assert first.status_code == 200, first.text
+    assert not S.get(ctx)['paused']
+    cid = first.json()['id']
+    EN.tick(ctx)
+    assert MEM.cycle(ctx, cid)['status'] == 'waiting_for_compute'
+    assert client.post('/v1/admin/evolution/pause', headers=o).status_code == 200
+    resumed = client.post('/v1/admin/evolution/run', headers=o)
+    assert resumed.status_code == 200 and resumed.json()['id'] == cid
+    assert len(MEM.cycles(ctx)) == 1 and not S.get(ctx)['paused']
+    EN.cancel_cycle(ctx)
+    assert MEM.cycle(ctx, cid)['status'] == 'cancelled'
+    next_cycle = client.post('/v1/admin/evolution/run', headers=o)
+    assert next_cycle.status_code == 200 and next_cycle.json()['id'] != cid
+    ctx.db.set_config('genesis_state', {'status': 'prepared'})
+    assert client.post('/v1/admin/evolution/run', headers=o).status_code == 409

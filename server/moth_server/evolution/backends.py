@@ -84,7 +84,7 @@ def start_local(ctx: Ctx, exp: dict, device: str, settings: dict) -> dict:
             "seq_len": cfg["seq_len"], "weight_decay": cfg["weight_decay"], "seed": cfg["seed"],
             "eval_interval": cfg["eval_interval"], "checkpoint_interval": cfg["checkpoint_interval"],
             "device": device, "threads": int(lim["cpu_threads"]), "nice": 10, "duty_cycle": float(lim["duty_cycle"]),
-            "gpu_memory_fraction": float(lim["gpu_memory_fraction"]) if device == "cuda" else None,
+            "gpu_memory_fraction": float(lim["gpu_memory_fraction"]) if device.startswith("cuda") else None,
             "from_scratch": cfg.get("method") == "from_scratch"}
     spec.update(_v2_spec(base, cfg, exp))
     spec["batch_autotune"] = bool(cfg.get("batch_autotune", True))

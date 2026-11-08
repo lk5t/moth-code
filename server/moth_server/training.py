@@ -152,10 +152,11 @@ def fits(hw: dict[str, Any], spec: dict[str, Any], limits: dict | None = None) -
     return need <= capacity_bytes(hw, limits)
 
 
-def gpu_worker_online(conn) -> bool:
-    for w in conn.execute(select(workers.c.hardware).where(workers.c.status == "online", workers.c.paused.is_(False),
-                                                           workers.c.revoked_at.is_(None))).all():
-        if json.loads(w[0] or "{}").get("compute") == "gpu":
+def gpu_worker_online(conn, spec: dict | None = None) -> bool:
+    for w in conn.execute(select(workers.c.hardware, workers.c.limits).where(workers.c.status == "online", workers.c.paused.is_(False),
+            workers.c.revoked_at.is_(None), workers.c.last_heartbeat_at >= now() - OFFLINE_AFTER)).all():
+        hw = json.loads(w[0] or '{}')
+        if hw.get("compute") == "gpu" and fits(hw, spec or {}, json.loads(w[1] or '{}')):
             return True
     return False
 
@@ -236,7 +237,6 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
         if not job:
             # model-evolution experiments first (one per worker), then training-network rounds
             job = None
-            gpu_online = None
             from moth_server.evolution.remote_eval import _version_ok
 
             if _version_ok(worker.get("version")):
@@ -264,8 +264,7 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
                 if not fits(hw, spec, json.loads(worker['limits'] or '{}')):
                     continue
                 if hw.get("compute") != "gpu" and spec.get("prefer_gpu") and t - cand["created_at"] < GPU_PREFERENCE_SECONDS:
-                    gpu_online = gpu_worker_online(c) if gpu_online is None else gpu_online
-                    if gpu_online:
+                    if gpu_worker_online(c, spec):
                         continue
                 job = cand
                 break
