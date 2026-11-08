@@ -1,6 +1,6 @@
 [package]
 name = "moth-code"
-version = "0.5.4"
+version = "0.5.5"
 description = "MOTH Code — independent AI coding agent"
 authors = ["MOTH Code contributors"]
 edition = "2021"

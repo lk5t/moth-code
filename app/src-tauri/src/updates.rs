@@ -124,6 +124,8 @@ pub async fn update_check(
         .replace("%7B%7Bcurrent_version%7D%7D", &version)).map_err(|e| e.to_string())?;
     let updater = app
         .updater_builder()
+        .endpoints(vec![endpoint.clone()])
+        .map_err(|e| e.to_string())?
         .header("X-Moth-Install-Id", install_id.clone())
         .map_err(|e| e.to_string())?
         .header("X-Moth-Client", format!("desktop/{}", app.package_info().version))
