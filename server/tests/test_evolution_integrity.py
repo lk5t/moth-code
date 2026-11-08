@@ -61,3 +61,22 @@ def test_distributed_start_refuses_corrupted_or_missing_base(client, tiny_model_
     with pytest.raises(ValueError, match="checksum-verified"):
         distributed.start(ctx, exp, {}, need_bytes=1)
     assert not ctx.db.all(select(training_jobs))
+
+
+def test_live_progress_retains_reported_tokens_loss_and_checkpoint(client):
+    """Telemetry-decoder fixture; no invented counts from batch sizes or elapsed time."""
+    from moth_server.evolution import backends as B
+    ctx = client.app.state.ctx
+    experiment = {'id': 99, 'config': {'steps': 20, 'batch_size': 2, 'seq_len': 64}}
+    root = B.run_dir(ctx, experiment)
+    root.mkdir(parents=True)
+    events = [
+        {'kind': 'metrics', 'split': 'train', 'step': 5, 'loss': 3.5, 'tokens_seen': 640, 'tokens_per_sec': 100},
+        {'kind': 'checkpoint', 'step': 5, 'path': str(root / 'checkpoints/step_00000005.pt')},
+        {'kind': 'metrics', 'split': 'val', 'step': 5, 'loss': 3.7, 'tokens_seen': 640},
+    ]
+    (root / 'events.jsonl').write_text('\n'.join(json.dumps(e) for e in events))
+    report = B.progress(ctx, experiment)
+    assert report['step'] == 5 and report['fraction'] == .25
+    assert report['tokens_seen'] == 640 and report['train_loss'] == 3.5 and report['val_loss'] == 3.7
+    assert report['checkpoint'] == {'name': 'step_00000005.pt', 'step': 5}

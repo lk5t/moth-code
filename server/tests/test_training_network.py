@@ -127,7 +127,7 @@ def test_expired_lease_is_requeued_and_reconnect_resumes(client, settings, train
     assert client.get(f"/v1/worker/jobs/{job['id']}/shard", headers=H(a["worker_token"])).status_code == 409
 
 
-def test_pause_and_revoke(client, settings, training_world):
+def test_pause_and_revoke(client, settings, training_world, owner):
     t = register_verified(client, settings, "ctl")["token"]
     _, w = enroll(client, t)
     wt, wid = w["worker_token"], w["worker_id"]
@@ -137,8 +137,13 @@ def test_pause_and_revoke(client, settings, training_world):
     assert client.post("/v1/worker/jobs/claim", headers=H(wt)).status_code == 204
     client.post(f"/v1/training/workers/{wid}/revoke", headers=H(t))
     assert client.post("/v1/worker/heartbeat", json={}, headers=H(wt)).status_code == 401
+    assert all(row['id'] != wid for row in client.get('/v1/training/workers', headers=H(t)).json()['workers'])
+    assert all(row['id'] != wid for row in client.get('/v1/admin/workers', headers=H(owner['token'])).json())
     db = client.app.state.ctx.db
     assert db.one(select(training_jobs.c.status).where(training_jobs.c.id == job["id"]))["status"] == "queued"
+    assert db.one(select(workers).where(workers.c.id == wid))['revoked_at'] is not None  # stable audit identity
+    user_id = db.one(select(workers.c.user_id).where(workers.c.id == wid))['user_id']
+    assert all(row['id'] != wid for row in client.get(f'/v1/admin/users/{user_id}', headers=H(owner['token'])).json()['workers'])
 
 
 def test_tampered_results_are_rejected_without_credit(client, settings, training_world):

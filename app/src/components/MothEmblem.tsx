@@ -1,26 +1,31 @@
 import { cn } from "@/lib/utils";
+import { useId } from "react";
 
 /** The MOTH emblem (source of truth: branding/moth-emblem.svg). */
-export function MothEmblem({ className, glow = false }: { className?: string; glow?: boolean }) {
+export function MothEmblem({ className, glow = false, motion = "none" }: {
+  className?: string; glow?: boolean; motion?: "none" | "idle" | "working";
+}) {
+  const id = `moth-${useId().replace(/:/g, "")}`;
   return (
-    <svg viewBox="0 0 512 512" className={cn(glow && "animate-pulse-glow", className)} aria-hidden>
+    <svg viewBox="0 0 512 512" data-motion={motion}
+      className={cn("moth-emblem", `moth-motion-${motion}`, glow && "animate-pulse-glow", className)} aria-hidden>
       <defs>
-        <linearGradient id="mw" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id={`${id}-mw`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#E23A44" />
           <stop offset="0.55" stopColor="#C1121F" />
           <stop offset="1" stopColor="#5A0810" />
         </linearGradient>
-        <linearGradient id="mh" x1="0" y1="0" x2="0.6" y2="1">
+        <linearGradient id={`${id}-mh`} x1="0" y1="0" x2="0.6" y2="1">
           <stop offset="0" stopColor="#9E0E18" />
           <stop offset="1" stopColor="#2A0407" />
         </linearGradient>
-        <linearGradient id="mb" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={`${id}-mb`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#2C2C2C" />
           <stop offset="1" stopColor="#0B0B0B" />
         </linearGradient>
-        <g id="moth-half">
-          <path d="M244 196 L140 146 L30 162 L74 238 L234 258 Z" fill="url(#mw)" />
-          <path d="M238 266 L112 284 L138 346 L208 378 L244 304 Z" fill="url(#mh)" />
+        <g id={`${id}-half`}>
+          <path d="M244 196 L140 146 L30 162 L74 238 L234 258 Z" fill={`url(#${id}-mw)`} />
+          <path d="M238 266 L112 284 L138 346 L208 378 L244 304 Z" fill={`url(#${id}-mh)`} />
           <g stroke="#080808" strokeWidth="4.5" fill="none" strokeLinecap="square" strokeLinejoin="miter">
             <path d="M232 210 L150 176 L82 176" />
             <path d="M230 230 L168 222 L146 204 L108 206" />
@@ -41,11 +46,11 @@ export function MothEmblem({ className, glow = false }: { className?: string; gl
           </g>
         </g>
       </defs>
-      <use href="#moth-half" />
-      <use href="#moth-half" transform="translate(512 0) scale(-1 1)" />
+      <g className="moth-wing moth-wing-left"><use href={`#${id}-half`} /></g>
+      <g className="moth-wing moth-wing-right"><use href={`#${id}-half`} transform="translate(512 0) scale(-1 1)" /></g>
       <path
         d="M256 168 L268 182 L270 210 L276 240 L268 330 L256 372 L244 330 L236 240 L242 210 L244 182 Z"
-        fill="url(#mb)"
+        fill={`url(#${id}-mb)`}
         stroke="#C1121F"
         strokeWidth="3"
         strokeLinejoin="round"

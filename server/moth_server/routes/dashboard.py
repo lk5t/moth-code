@@ -211,7 +211,8 @@ def user_detail(user_id: int, auth: Auth = Depends(require_owner), ctx: Ctx = De
         "summary": billing.summary(ctx.db, u),
         "subscriptions": ctx.db.all(select(subscriptions).where(subscriptions.c.user_id == user_id)),
         "ledger": ctx.db.all(select(credit_ledger).where(credit_ledger.c.user_id == user_id).order_by(desc(credit_ledger.c.id)).limit(100)),
-        "workers": [T.public_worker(w) for w in ctx.db.all(select(workers).where(workers.c.user_id == user_id))],
+        "workers": [T.public_worker(w) for w in ctx.db.all(select(workers).where(
+            workers.c.user_id == user_id, workers.c.revoked_at.is_(None)))],
         "sessions": ctx.db.one(select(func.count().label("n")).select_from(sessions)
                                .where(sessions.c.user_id == user_id, sessions.c.revoked_at.is_(None),
                                       sessions.c.expires_at > time.time()))["n"],
@@ -221,7 +222,8 @@ def user_detail(user_id: int, auth: Auth = Depends(require_owner), ctx: Ctx = De
 @router.get("/workers")
 def all_workers(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     T.requeue_expired(ctx)
-    rows = ctx.db.all(select(workers, users.c.username).join(users, users.c.id == workers.c.user_id).order_by(workers.c.id))
+    rows = ctx.db.all(select(workers, users.c.username).join(users, users.c.id == workers.c.user_id)
+                      .where(workers.c.revoked_at.is_(None)).order_by(workers.c.id))
     return [{**T.public_worker(r), "owner": r["username"]} for r in rows]
 
 

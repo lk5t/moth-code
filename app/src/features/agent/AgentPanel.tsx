@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Loader2, Play, RotateCcw, Square, Undo2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Play, RotateCcw, Square, Undo2, XCircle } from "lucide-react";
 import { ApiError, get, post, put } from "@/lib/backend";
 import { openAccountDialog } from "@/features/account/AccountDialog";
 import { useEvent } from "@/lib/events";
@@ -121,8 +121,8 @@ export function AgentPanel() {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {!task ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <MothEmblem className="size-12" />
+          <div className="flex flex-col items-start gap-3 pt-5 text-left">
+            <MothEmblem motion="idle" className="size-10" />
             <div className="text-sm">Give MOTH a task in {project.name}</div>
             <div className="max-w-sm text-xs leading-relaxed text-muted">
               MOTH plans, reads and edits files, runs commands and tests, and reports exactly what it did. Destructive or
@@ -130,7 +130,7 @@ export function AgentPanel() {
             </div>
           </div>
         ) : (
-          <div className="mx-auto flex max-w-3xl flex-col gap-3">
+          <div className="flex w-full flex-col gap-3">
             <div className="flex items-start justify-between gap-3">
               <div className="selectable text-[13px] font-medium">{task.goal}</div>
               <Badge variant={tone[task.status]}>{label[task.status] ?? task.status}</Badge>
@@ -157,7 +157,7 @@ export function AgentPanel() {
 
             {running && (
               <div className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent-soft p-3">
-                <div className="flex items-center gap-2 text-xs"><Loader2 className="size-3.5 animate-spin text-accent" />{live.phase || "Working…"}</div>
+                <div className="flex items-center gap-2 text-xs"><MothEmblem motion="working" className="size-5" />{live.phase || "Working…"}</div>
                 {live.output && <pre className="selectable max-h-48 overflow-auto font-mono text-[11px] text-muted">{live.output}</pre>}
               </div>
             )}
@@ -167,10 +167,10 @@ export function AgentPanel() {
         )}
       </div>
 
-      <div className="shrink-0 p-3">
-        <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-xl border border-border bg-surface p-2 focus-within:border-accent/50 focus-within:shadow-glow">
-          <Textarea rows={2} value={goal} placeholder="Describe a task, e.g. “Add input validation to parse_config and run the tests”"
-            className="border-0 bg-transparent focus:shadow-none" onChange={(e) => setGoal(e.target.value)}
+      <div className="shrink-0 px-2 pb-2 pt-1">
+        <div className="flex w-full items-end gap-2 rounded-lg border border-border bg-surface p-1.5 focus-within:border-accent/50 focus-within:shadow-glow">
+          <Textarea rows={1} value={goal} placeholder="Describe a task, e.g. “Add input validation to parse_config and run the tests”"
+            className="min-h-8 border-0 bg-transparent px-2 py-1.5 [field-sizing:content] max-h-40 focus:shadow-none" onChange={(e) => setGoal(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && goal.trim()) start(); }} />
           <Button disabled={!goal.trim() || !!running} onClick={start}><Play /> Start</Button>
         </div>

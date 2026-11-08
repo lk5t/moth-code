@@ -1,3 +1,4 @@
+import { modelLabel } from "@/lib/model-label";
 /** Settings → MOTH on this computer: download the model MOTH Cloud serves and answer without the internet. */
 import { useEffect, useState } from "react";
 import { HardDriveDownload, Laptop, Trash2 } from "lucide-react";
@@ -46,7 +47,7 @@ export function OnDeviceSection() {
       <CardContent className="flex flex-col gap-3 text-xs">
         {inst ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[13px] text-fg">{inst.display_name ?? "MOTH"}</span>
+            <span className="text-[13px] text-fg">{modelLabel(inst)}</span>
             {inst.params && <span className="text-muted">{(inst.params / 1e6).toFixed(1)}M parameters</span>}
             {inst.official && <Badge variant="success">signed by MOTH</Badge>}
             <div className="flex-1" />

@@ -342,7 +342,7 @@ function PolicyAndFlags() {
 
 type OwnerTab = [string, string, React.ComponentType];
 function Sections({ tabs }: { tabs: OwnerTab[] }) {
-  return <Tabs defaultValue={tabs[0][0]}><TabsList className="mb-4 flex-wrap border-b border-border">
+  return <Tabs defaultValue={tabs[0][0]}><TabsList className="mb-3">
     {tabs.map(([v, label]) => <TabsTrigger key={v} value={v}>{label}</TabsTrigger>)}
   </TabsList>{tabs.map(([v, , Panel]) => <TabsContent key={v} value={v}><Panel /></TabsContent>)}</Tabs>;
 }
@@ -364,11 +364,11 @@ export function OwnerDashboard() {
     ["network", "Servers", NetworkSection], ["community", "Community", CommunitySection], ["settings", "Settings", SettingsSection]];
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 p-4 sm:p-6 lg:p-8 animate-rise">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 p-3 sm:p-5 animate-rise">
         <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="flex items-center gap-2 text-lg font-semibold"><Crown className="size-5 text-accent" />Owner Dashboard</h1>
           <Button size="sm" variant="secondary" onClick={() => openIntelligence()}>Open Intelligence</Button></div>
         <Tabs defaultValue="overview">
-          <TabsList aria-label="Owner sections" className="mb-4 flex-wrap border-b border-border">
+          <TabsList aria-label="Owner sections" className="mb-3">
             {tabs.map(([v, l]) => <TabsTrigger key={v} value={v}>{l}</TabsTrigger>)}
           </TabsList>
           {tabs.map(([v, , C]) => <TabsContent key={v} value={v}><C /></TabsContent>)}

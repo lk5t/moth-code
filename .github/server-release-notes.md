@@ -17,6 +17,10 @@ manifest no longer blocks verified newer releases. Private repositories keep aut
 asset requests; manifest signatures, payload checksums, health verification and rollback remain required.
 Desktop 0.5.7 remains the compatible Windows release.
 
+The 0.5.9 follow-up exposes measured live training tokens/loss/checkpoints and removes revoked
+workers from normal user and Owner lists without deleting training history or resetting weights.
+The existing 0.5.8 agent transport fix and signing/rollback requirements are retained.
+
 | File | What it is |
 | --- | --- |
 | `moth-cloud-__VERSION__.tar.gz` | Server bundle: server, MOTH backend, update agent, installer, templates, backup script, `INSTALL.md` |

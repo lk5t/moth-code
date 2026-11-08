@@ -414,7 +414,7 @@ export function WorkersPanel() {
           <Button size="sm" variant="ghost" onClick={() => run(() => post(`/v1/training/workers/${w.id}/${w.paused ? "resume" : "pause"}`), w.paused ? "Worker resumed." : "Worker paused; checkpoint and lease retained.")}>{w.paused ? "Resume" : "Pause"}</Button>
           <Button size="sm" variant="ghost" onClick={() => run(() => post(`/v1/training/workers/${w.id}/stop`), "Worker stopped; job released and progress retained locally.")}>Stop</Button>
         </>}
-        {w.status !== "revoked" && <Button size="sm" variant="ghost" onClick={() => confirm(`Revoke worker #${w.id}?`) && run(() => post(`/v1/training/workers/${w.id}/revoke`), "Worker revoked.")}>Revoke</Button>}
+        {w.status !== "revoked" && <Button size="sm" variant="ghost" onClick={() => confirm(`Remove worker #${w.id} and revoke its access? Training history and checkpoints are kept.`) && run(() => post(`/v1/training/workers/${w.id}/revoke`), "Worker removed and access revoked.")}>Remove worker</Button>}
       </span>
     </div>
   );

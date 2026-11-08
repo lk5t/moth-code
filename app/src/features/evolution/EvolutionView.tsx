@@ -1,3 +1,4 @@
+import { modelLabel } from "@/lib/model-label";
 /**
  * Evolution: one-click improvement of MOTH. A single switch for automatic evolution, what is happening
  * now, and start / pause / resume. Advanced settings stay in Owner tools → Evolution.
@@ -52,7 +53,7 @@ export function EvolutionView() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Sparkles className="size-4 text-accent" />Automatic evolution</CardTitle>
-            <CardDescription>Current model: {p.current ? (p.current.model_version ? `MOTH ${p.current.model_version}` : p.current.name) : "none deployed yet"}</CardDescription>
+            <CardDescription>Current model: {p.current ? (modelLabel(p.current)) : "none deployed yet"}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4 text-xs">
             {isOwner && (

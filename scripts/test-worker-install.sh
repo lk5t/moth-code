@@ -94,10 +94,11 @@ echo "running workers after restart: $N"
 [[ "$(cat "$MOTH_WORKER_HOME/worker.pid")" != "$PID" ]]
 
 echo "== uninstall: stops the worker, removes the cron entries, revokes it, deletes its files"
+REMOVED_WORKER_ID=$(field id)
 "$VENV/bin/moth-worker" uninstall --yes
 sleep 2
 [[ "$(crontab -l 2>/dev/null || true)" == "$CRON_BEFORE" ]] || { echo "cron entries left behind" >&2; exit 1; }
-[[ "$(field status)" == "revoked" ]]
+workers_json | "$PY" -c 'import json,sys; assert all(w["id"] != int(sys.argv[1]) for w in json.load(sys.stdin)["workers"])' "$REMOVED_WORKER_ID"
 [[ ! -e "$MOTH_WORKER_HOME" ]] && [[ ! -e "$VENV" ]]
 ! pgrep -f "bin/python .*moth-worker --home .* run --log-file" >/dev/null
 echo "uninstalled: no cron entries, worker revoked on the server, files removed"

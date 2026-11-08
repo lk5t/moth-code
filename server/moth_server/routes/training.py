@@ -153,7 +153,8 @@ def own_worker(ctx: Ctx, auth: Auth, wid: int) -> dict:
 @router.get("/v1/training/workers")
 def my_workers(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     T.requeue_expired(ctx)
-    rows = ctx.db.all(select(workers).where(workers.c.user_id == auth.uid).order_by(workers.c.id))
+    rows = ctx.db.all(select(workers).where(workers.c.user_id == auth.uid,
+                                          workers.c.revoked_at.is_(None)).order_by(workers.c.id))
     jobs = T.worker_jobs(ctx, [w["id"] for w in rows])
     coord = T.coordinator(ctx)
     return {"workers": [T.public_worker(w) for w in rows], "jobs": jobs,

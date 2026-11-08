@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MothEvent } from "@/lib/events";
 import { ArrowUp, Cloud, LogIn, MessageSquarePlus, RefreshCw, Square } from "lucide-react";
 import { useCloudStatus } from "@/lib/cloud";
@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
 import { AgentPanel } from "@/features/agent/AgentPanel";
 import { AnswerFooter, type AnswerMeta } from "@/features/intelligence/AnswerFooter";
+import { modelLabel } from "@/lib/model-label";
 
 interface ChatMessage {
   id: number | string;
@@ -46,6 +47,23 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const field = composer.current;
+    if (!field) return;
+    const resize = () => {
+      field.style.height = "auto";
+      field.style.height = `${Math.min(field.scrollHeight, 160)}px`;
+    };
+    resize();
+    // Both workspaces stay mounted; resize when this one becomes visible or its panel changes width.
+    let width = field.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (field.clientWidth !== width) { width = field.clientWidth; resize(); }
+    });
+    observer.observe(field);
+    return () => observer.disconnect();
+  }, [input, mode]);
 
   useEffect(() => {
     setCid(null);
@@ -140,7 +158,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2">
         {!general && (
           <div className="flex rounded-md border border-border p-0.5">
             {(["chat", "agent"] as const).map((m) => (
@@ -176,21 +194,21 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
             <MessageSquarePlus />
           </Button>
         )}
-        <span className="flex items-center gap-1 text-[11px] text-faint">
+        {!general && <span className="flex min-w-0 items-center gap-1 text-[11px] text-faint" title={cloud?.model?.name}>
           <Cloud className="size-3" />
-          {cloud?.available ? cloud.model?.name : cloud?.signed_in ? "MOTH Cloud unavailable" : "signed out"}
-        </span>
+          <span className="truncate">{cloud?.available ? modelLabel(cloud.model) : cloud?.signed_in ? "Cloud unavailable" : "signed out"}</span>
+        </span>}
       </div>
 
       {mode === "agent" ? (
         <AgentPanel />
       ) : (
         <>
-          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
             {messages.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-3 text-center animate-fade-in">
-                <MothEmblem className="size-14" />
-                <div className="text-sm font-medium">What should MOTH work on?</div>
+              <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 pt-5 text-left animate-fade-in sm:pt-8">
+                <div className="flex items-center gap-2"><MothEmblem motion="idle" className="size-10 shrink-0" />
+                  <div className="text-sm font-medium">{general ? "What would you like to explore?" : "What should MOTH work on?"}</div></div>
                 {signedOut ? (
                   <div className="max-w-sm text-xs leading-relaxed text-muted">
                     MOTH runs in MOTH Cloud. Sign in to chat with the official MOTH model and use the coding agent.
@@ -205,12 +223,17 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                   </div>
                 ) : (
                   <div className="max-w-sm text-xs text-muted">
-                    Responses come from {cloud?.model?.name} on MOTH Cloud. MOTH is an early, independently trained model — expect limited answers.
+                    {modelLabel(cloud?.model)} on MOTH Cloud · an early, independently trained model.
                   </div>
                 )}
+                {!noModel && <div className="flex flex-wrap gap-1.5">
+                  {(general ? ["Explain a concept", "Help me plan", "Write something"] : ["Explain this project", "Help debug a problem", "Review a change"]).map((prompt) =>
+                    <button key={prompt} className="cursor-pointer rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-accent/50 hover:text-fg"
+                      onClick={() => { setInput(prompt + ": "); composer.current?.focus(); }}>{prompt}</button>)}
+                </div>}
               </div>
             ) : (
-              <div className="mx-auto flex max-w-3xl flex-col gap-4">
+              <div className="flex w-full flex-col gap-3">
                 {messages.map((m) => (
                   <div key={m.id} className={cn("flex animate-rise", m.role === "user" && "justify-end")}>
                     {m.role === "user" ? (
@@ -219,13 +242,13 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                       <div className="max-w-[90%] rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{m.content}</div>
                     ) : (
                       <div className="flex max-w-[95%] gap-2.5">
-                        <MothEmblem className="mt-0.5 size-5 shrink-0" />
+                        <MothEmblem motion={m.streaming ? "working" : "none"} className="mt-0.5 size-5 shrink-0" />
                         <div className="min-w-0 text-[13px] leading-relaxed">
                           {m.content ? <Markdown text={m.content} /> : <span className="text-muted">…</span>}
                           {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-accent" />}
                           {m.meta && (
                             <div className="mt-1 text-[10.5px] text-faint">
-                              {m.meta.model} · {m.meta.tokens} tokens · {m.meta.tokens_per_sec} tok/s
+                              {modelLabel(m.meta.model)} · {m.meta.tokens} tokens · {m.meta.tokens_per_sec} tok/s
                               {m.meta.stop_reason === "max_tokens" && " · stopped at token limit"}
                               {m.meta.stop_reason === "cancelled" && " · cancelled"}
                             </div>
@@ -239,14 +262,16 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
               </div>
             )}
           </div>
-          <div className="shrink-0 p-3">
-            <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-xl border border-border bg-surface p-2 transition-shadow focus-within:border-accent/50 focus-within:shadow-glow">
+          <div className="shrink-0 px-2 pb-2 pt-1 sm:px-3">
+            <div className="flex w-full items-end gap-2 rounded-lg border border-border bg-surface p-1.5 transition-shadow focus-within:border-accent/50 focus-within:shadow-glow">
               <Textarea
-                rows={2}
+                ref={composer}
+                rows={1}
                 value={input}
-                placeholder={signedOut ? "Sign in to chat with MOTH" : noModel ? "MOTH Cloud is unavailable" : "Message MOTH  (Enter to send, Shift+Enter for a new line)"}
+                placeholder={signedOut ? "Sign in to chat with MOTH" : noModel ? "MOTH Cloud is unavailable" : "Message MOTH"}
+                title="Enter to send · Shift+Enter for a new line"
                 disabled={!!noModel}
-                className="max-h-48 min-h-10 border-0 bg-transparent focus:shadow-none"
+                className="max-h-40 min-h-8 border-0 bg-transparent px-2 py-1.5 focus:shadow-none"
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {

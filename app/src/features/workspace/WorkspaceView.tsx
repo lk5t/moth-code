@@ -38,16 +38,16 @@ export function WorkspaceView() {
     if (!p) return;
     if (toolsOpen && p.isCollapsed()) {
       p.expand();
-      if (p.getSize().asPercentage < 30) p.resize("42%");
+      if (p.getSize().asPercentage < 30) p.resize("50%");
     }
     if (!toolsOpen && !p.isCollapsed()) p.collapse();
   }, [toolsOpen]);
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
-      <header className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
+      <header className="flex h-8 shrink-0 items-center gap-1 border-b border-border px-1">
         <Tip label="Toggle explorer" side="bottom">
-          <Button variant="ghost" size="icon" onClick={() => appStore.setState((s) => ({ explorerOpen: !s.explorerOpen }))}>
+          <Button variant="ghost" size="icon-sm" onClick={() => appStore.setState((s) => ({ explorerOpen: !s.explorerOpen }))}>
             <PanelLeft />
           </Button>
         </Tip>
@@ -62,7 +62,7 @@ export function WorkspaceView() {
         <Tip label="Terminal" side="bottom">
           <Button
             variant="ghost"
-            size="icon"
+            size="icon-sm"
             className={terminalOpen ? "text-fg" : ""}
             onClick={() => appStore.setState((s) => ({ terminalOpen: !s.terminalOpen, toolsOpen: true }))}
           >
@@ -70,7 +70,7 @@ export function WorkspaceView() {
           </Button>
         </Tip>
         <Tip label="Toggle tools panel" side="bottom">
-          <Button variant="ghost" size="icon" onClick={() => appStore.setState((s) => ({ toolsOpen: !s.toolsOpen }))}>
+          <Button variant="ghost" size="icon-sm" onClick={() => appStore.setState((s) => ({ toolsOpen: !s.toolsOpen }))}>
             <PanelRight />
           </Button>
         </Tip>
@@ -80,7 +80,7 @@ export function WorkspaceView() {
         <Panel
           id="explorer"
           panelRef={explorer}
-          defaultSize="18%"
+          defaultSize="16%"
           minSize="12%"
           collapsible
           collapsedSize={0}
@@ -93,14 +93,14 @@ export function WorkspaceView() {
           <Explorer onOpenProject={pickProject} />
         </Panel>
         <Separator />
-        <Panel id="conversation" defaultSize="40%" minSize="25%">
+        <Panel id="conversation" defaultSize="34%" minSize="25%">
           <ChatPanel />
         </Panel>
         <Separator />
         <Panel
           id="tools"
           panelRef={tools}
-          defaultSize="42%"
+          defaultSize="50%"
           minSize="20%"
           collapsible
           collapsedSize={0}

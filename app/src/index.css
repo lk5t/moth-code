@@ -77,8 +77,20 @@
 .prose-moth code { font-family: var(--font-mono); font-size: 12px; }
 .prose-moth p { margin: 0 0 8px; line-height: 1.6; }
 
+/* Decorative brand motion; work-state motion is driven by actual request/task state. */
+.moth-wing { transform-box: view-box; transform-origin: 50% 46%; }
+.moth-motion-idle { animation: moth-hover 6s ease-in-out infinite; }
+.moth-motion-idle .moth-wing-left { animation: moth-left 8s ease-in-out infinite; }
+.moth-motion-idle .moth-wing-right { animation: moth-right 8s ease-in-out infinite; }
+.moth-motion-working .moth-wing-left { animation: moth-left 1.2s ease-in-out infinite; }
+.moth-motion-working .moth-wing-right { animation: moth-right 1.2s ease-in-out infinite; }
+@keyframes moth-hover { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes moth-left { 0%, 60%, 100% { transform: none; } 78% { transform: rotate(4deg) scaleX(.9); } }
+@keyframes moth-right { 0%, 60%, 100% { transform: none; } 78% { transform: rotate(-4deg) scaleX(.9); } }
+
 /* Respect the OS preference across existing and GENESIS views. */
 @media (prefers-reduced-motion: reduce) {
+  .moth-emblem, .moth-wing { animation: none !important; transform: none !important; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;

@@ -1,3 +1,4 @@
+import { modelLabel } from "@/lib/model-label";
 /**
  * Intelligence: how capable MOTH is and how it got there — the progress dashboard and the MOTH timeline.
  *
@@ -81,7 +82,7 @@ function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric
       })}
       <path d={d} fill="none" className="stroke-accent" strokeWidth={2} />
       {pts.map((p) => (
-        <g key={p.i} role="button" tabIndex={0} aria-label={`Inspect ${p.v.model_version ? `MOTH ${p.v.model_version}` : p.v.name} ${LABEL[metric] ?? metric}`}
+        <g key={p.i} role="button" tabIndex={0} aria-label={`Inspect ${modelLabel(p.v)} ${LABEL[metric] ?? metric}`}
           onClick={() => onSelect?.(p.v)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.v); } }} className="cursor-pointer">
           <title>{`${p.v.model_version ?? p.v.name}: ${fmt(p.b)}`}</title>
           <circle cx={x(p.i)} cy={y(p.b.value)} r={3.5} className="fill-accent" />
@@ -132,7 +133,7 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
           <p className="mt-1 text-xs text-muted">Recorded model sizes and training progress, with capabilities measured on held-out benchmarks MOTH never trained on.</p>
         </div>}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat icon={<Brain />} label="Current model" value={cur ? (cur.model_version ? `MOTH ${cur.model_version}` : cur.name) : "None yet"}
+          <Stat icon={<Brain />} label="Current model" value={cur ? (modelLabel(cur)) : "None yet"}
             sub={cur ? `${formatNumber(cur.params ?? 0)} parameters · ${METHOD[cur.method] ?? cur.method}` : "Nothing is deployed on MOTH Cloud"} />
           <Stat icon={<Sparkles />} label="Training" value={!p.training.enabled ? "off" : p.training.paused ? "paused" : p.training.cycle ? p.training.cycle.status.replaceAll("_", " ") : "waiting"}
             sub={<>{p.training.curriculum && `curriculum: ${p.training.curriculum}`}
@@ -146,7 +147,7 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
         {cur && (
           <Card>
             <CardHeader>
-              <CardTitle>Capabilities of {cur.model_version ? `MOTH ${cur.model_version}` : cur.name}</CardTitle>
+              <CardTitle>Capabilities of {modelLabel(cur)}</CardTitle>
               <CardDescription>Accuracy: higher is better. Held-out loss: lower is better (how well MOTH predicts unseen text of that kind).</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-1.5 text-xs">
@@ -163,7 +164,7 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
         )}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Stat icon={<GitBranch />} label="Stable model" value={p.stable ? (p.stable.model_version ? `MOTH ${p.stable.model_version}` : p.stable.name) : "—"}
+          <Stat icon={<GitBranch />} label="Stable model" value={p.stable ? (modelLabel(p.stable)) : "—"}
             sub={p.rollout?.length > 1 ? `staged rollout: ${p.rollout.map((r: Any) => `v${r.version} ${r.role}${r.percent ? ` ${r.percent}%` : ""}`).join(", ")}` : "serves everyone"} />
           <Stat icon={<GitBranch />} label="Development checkpoint" value={p.development ? `v${p.development.version}` : "—"}
             sub={p.development ? "full training state kept: the next cycle continues from here" : "created by the first training cycle"} />
@@ -187,7 +188,7 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
             )}
             <TimelineChart versions={chartVersions} metric={metric} onSelect={setSelection} />
             {selection && <div role="status" className="rounded-lg border border-border bg-bg p-3">
-              <div className="font-medium">{selection.model_version ? `MOTH ${selection.model_version}` : selection.name}</div>
+              <div className="font-medium">{modelLabel(selection)}</div>
               <div className="mt-1 text-muted">{formatNumber(selection.params)} parameters · {when(selection.created_at)}
                 {selection.lineage_totals && ` · ${formatNumber(selection.lineage_totals.tokens)} recorded training tokens`}</div>
               <div className="mt-1 text-muted">{selection.benchmarks[metric] ? `${LABEL[metric] ?? metric}: ${fmt(selection.benchmarks[metric])}` : "This metric was not measured for this version."}</div>
@@ -196,7 +197,7 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
               {[...versions].reverse().map((v) => (
                 <li key={v.version} className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[13px] font-medium text-fg">{v.model_version ? `MOTH ${v.model_version}` : v.name}</span>
+                    <span className="text-[13px] font-medium text-fg">{modelLabel(v)}</span>
                     <span className="text-faint">v{v.version}</span>
                     <Badge>{METHOD[v.method] ?? v.method}</Badge>
                     {v.deployed && <Badge variant="success">serving</Badge>}

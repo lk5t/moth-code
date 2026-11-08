@@ -2,6 +2,14 @@
 
 ## MOTH Code __VERSION__ for Windows
 
+### Compact workspace and live training
+
+- The existing legacy model is displayed as **MOTH 0.0.1**; its weights, registry ID and measured parameter count are preserved.
+- Code and Chat use compact toolbars, wider conversations and growing message inputs. Saved layouts, drafts, files and tasks are retained.
+- Main application tabs share a cleaner keyboard-accessible design. Subtle MOTH wing motion respects reduced-motion preferences.
+- Intelligence → Training shows reported steps, tokens, loss, compute and checkpoint status directly. Unknown measurements are labelled.
+- Removing a worker revokes its credential and removes it from normal worker lists while preserving training/audit history.
+
 ### GENESIS
 
 - One Code/Chat workspace preserves drafts, active tasks and unsaved files when switching modes.

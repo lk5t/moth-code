@@ -4,6 +4,7 @@ import { appStore, useApp } from "@/lib/app-state";
 import { cn } from "@/lib/utils";
 import { ChatView } from "@/features/chat/ChatView";
 import { WorkspaceView } from "./WorkspaceView";
+import { MothEmblem } from "@/components/MothEmblem";
 
 /** Both existing workspaces stay mounted: drafts, streams, files and terminals survive a switch. */
 export function WorkspaceShell() {
@@ -20,20 +21,21 @@ export function WorkspaceShell() {
     return () => window.removeEventListener("keydown", keyboard);
   }, []);
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-bg px-3 sm:px-5">
-        <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-1" aria-label="Workspace mode">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-bg px-2 sm:px-3">
+        <MothEmblem motion="idle" className="size-6 shrink-0" />
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-0.5" aria-label="Workspace mode">
           <button aria-pressed={code} onClick={() => appStore.setState({ view: "workspace" })}
-            className={cn("flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors", code ? "bg-surface-2 text-fg" : "text-muted hover:text-fg")}>
+            className={cn("flex cursor-pointer items-center gap-2 rounded-md px-3 py-1 text-xs transition-colors", code ? "bg-accent-soft text-fg shadow-[inset_0_0_0_1px_rgb(193_18_31/0.3)]" : "text-muted hover:text-fg")}>
             <Code2 className="size-3.5" />Code
           </button>
           <ArrowLeftRight aria-hidden className={cn("size-3.5 text-faint transition-transform duration-200 motion-reduce:transition-none", !code && "rotate-180")} />
           <button aria-pressed={!code} onClick={() => appStore.setState({ view: "chat" })}
-            className={cn("flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-xs transition-colors", !code ? "bg-surface-2 text-fg" : "text-muted hover:text-fg")}>
+            className={cn("flex cursor-pointer items-center gap-2 rounded-md px-3 py-1 text-xs transition-colors", !code ? "bg-accent-soft text-fg shadow-[inset_0_0_0_1px_rgb(193_18_31/0.3)]" : "text-muted hover:text-fg")}>
             <MessageSquare className="size-3.5" />Chat
           </button>
         </div>
-        <span className="hidden text-xs text-faint sm:block">{code ? "Projects, agent, editor and terminal" : "Conversations, ideas and research"}</span>
+        <span className="hidden text-[11px] text-faint sm:block">{code ? "Workspace" : "Conversation"}</span>
         <span className="ml-auto hidden text-[11px] text-faint lg:block">Ctrl/⌘ Shift M</span>
       </header>
       <div hidden={!code} className={cn("min-h-0 flex-1", !code && "hidden")}><WorkspaceView /></div>

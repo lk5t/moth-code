@@ -8,7 +8,7 @@ export const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
 >(({ className, ...props }, ref) => (
-  <TabsPrimitive.List ref={ref} className={cn("flex items-center gap-0.5", className)} {...props} />
+  <TabsPrimitive.List ref={ref} className={cn("flex min-w-0 max-w-full flex-nowrap items-center gap-1 overflow-x-auto rounded-lg bg-surface/70 p-1", className)} {...props} />
 ));
 TabsList.displayName = "TabsList";
 
@@ -19,8 +19,8 @@ export const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "relative h-8 px-3 text-xs font-medium text-muted transition-colors hover:text-fg cursor-pointer",
-      "data-[state=active]:text-fg after:absolute after:inset-x-2 after:bottom-0 after:h-px after:bg-transparent data-[state=active]:after:bg-accent data-[state=active]:after:shadow-[0_0_8px_rgb(193_18_31/0.8)]",
+      "relative inline-flex h-7 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 text-xs font-medium text-muted transition-colors hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-50",
+      "data-[state=active]:bg-surface-3 data-[state=active]:text-fg data-[state=active]:shadow-[inset_0_-2px_0_#c1121f] focus-visible:outline focus-visible:outline-accent",
       className,
     )}
     {...props}

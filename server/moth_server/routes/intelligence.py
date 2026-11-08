@@ -463,6 +463,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     from moth_server import serving
     from moth_server.db import workers
     from moth_server.evolution import engine as EN
+    from moth_server.evolution import backends as B
     from moth_server.evolution import memory as MEM
     from moth_server.evolution import settings as ES
     from moth_server.intelligence import curriculum as CU
@@ -529,9 +530,13 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     experiments = MEM.experiments(ctx, cyc["id"]) if cyc else []
     exp = next((e for e in experiments if e["status"] == "running"), exp)
     experiment_history = [{"id": e["id"], "status": e["status"], "backend": e["backend"],
+                          "device": (e.get("resources") or {}).get("device"),
                           "method": e["config"].get("method"), "growth": e["config"].get("grow"),
                           "requires_approval": bool(e["config"].get("requires_approval") and not e["config"].get("approved_by")),
                           "progress": e.get("progress"), "metrics": e.get("metrics"),
+                          "measurement": B.progress(ctx, e)
+                          if e.get('backend') == 'local' and e['status'] in ('running', 'paused')
+                          else (e.get('metrics') or {}).get('progress') or (e.get('metrics') or {}).get('training') or {},
                           "candidate_version": e.get("candidate_version"), "error": e.get("error")}
                          for e in experiments]
     return {

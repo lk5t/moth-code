@@ -85,12 +85,16 @@ def test_lr_schedule():
 
 def test_training_reduces_loss_and_checkpoints(tiny_pipeline, tmp_path):
     events = []
-    result = Trainer(cfg(tiny_pipeline, tmp_path / "run"), on_event=events.append).run()
+    trainer = Trainer(cfg(tiny_pipeline, tmp_path / "run"), on_event=events.append)
+    result = trainer.run()
     train_losses = [e["loss"] for e in events if e["kind"] == "metrics" and e["split"] == "train"]
     val_losses = [e["loss"] for e in events if e["kind"] == "metrics" and e["split"] == "val"]
     assert result["step"] == 60 and result["reason"] == "completed"
     assert train_losses[-1] < train_losses[0] * 0.6, (train_losses[0], train_losses[-1])
     assert val_losses[-1] < val_losses[0]
+    measured_tokens = [e['tokens_seen'] for e in events if e['kind'] == 'metrics' and e['split'] == 'train']
+    assert measured_tokens == sorted(measured_tokens)
+    assert measured_tokens[-1] == trainer.tokens_seen > 0
     ckpts = tmp_path / "run" / "checkpoints"
     assert (ckpts / "best.pt").exists() and (ckpts / "latest.json").exists()
     # metrics also persisted to disk

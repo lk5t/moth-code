@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { appStore, useApp } from "@/lib/app-state";
 import { Switch } from "@/components/ui/switch";
 import { ChatPanel } from "./ChatPanel";
+import { modelLabel } from "@/lib/model-label";
 
 type Any = Record<string, any>;
 const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -24,10 +25,10 @@ function ModelBar() {
   const m = (cloud?.models ?? []).find((x: Any) => x.available);
   const caps = Object.entries((m?.capabilities ?? {}) as Record<string, number>).sort((a, b) => b[1] - a[1]);
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs">
-      <span className="text-fg">{onDevice ? `${local.installed.display_name ?? "MOTH"} · on this computer` : m ? `${m.name} · MOTH Cloud` : "No model available"}</span>
+    <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1 text-xs">
+      <span className="min-w-0 truncate text-fg">{onDevice ? `${modelLabel(local.installed)} · on this computer` : m ? `${modelLabel(m)} · MOTH Cloud` : "No model available"}</span>
       {m?.params && <span className="text-muted">{(m.params / 1e6).toFixed(1)}M parameters</span>}
-      {caps.slice(0, 4).map(([k, v]) => <Badge key={k} title="measured on held-out benchmarks">{k} {pct(v)}</Badge>)}
+      {caps.slice(0, 2).map(([k, v]) => <Badge className="hidden lg:inline-flex" key={k} title="measured on held-out benchmarks">{k} {pct(v)}</Badge>)}
       <div className="flex-1" />
       <button className="flex cursor-pointer items-center gap-1 text-faint hover:text-fg" onClick={() => appStore.setState({ view: "intelligence" })}>
         <Info className="size-3.5" />What MOTH can do
@@ -57,10 +58,10 @@ export function ChatView() {
   return (
     <div className="flex h-full flex-col">
       <ModelBar />
-      {project && <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted">
+      {project && <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1 text-xs text-muted">
         <FolderOpen className="size-3.5" /><span className="min-w-0 truncate">Context from {project.name}</span>
         <Switch aria-label="Attach approved project context" checked={share} onCheckedChange={attach} />
-        <span className="text-faint">{share ? "Relevant excerpts may be shared · not used for training" : "Off · this chat stays separate from your project"}</span>
+        <span className="text-faint">{share ? "Approved excerpts · not used for training" : "Not attached"}</span>
         {error && <span role="alert" className="text-danger">{error}</span>}
       </div>}
       <div className="min-h-0 flex-1"><ChatPanel general contextProjectId={share ? project?.id : null} /></div>

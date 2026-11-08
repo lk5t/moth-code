@@ -21,21 +21,33 @@ export function EditorPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-8 shrink-0 items-stretch overflow-x-auto border-b border-border bg-bg">
-        {files.map((f) => {
+      <div role="tablist" aria-label="Open files" className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-bg px-1">
+        {files.map((f, index) => {
           const dirty = f.content !== f.saved;
           return (
             <div
               key={f.path}
+              role="tab"
+              aria-selected={f.path === active}
+              tabIndex={f.path === active ? 0 : -1}
               onClick={() => appStore.setState({ activeFile: f.path })}
+              onKeyDown={(event) => {
+                const delta = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                if (!delta) return;
+                event.preventDefault();
+                const next = (index + delta + files.length) % files.length;
+                appStore.setState({ activeFile: files[next].path });
+                (event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next])?.focus();
+              }}
               className={cn(
-                "group flex cursor-pointer items-center gap-2 border-r border-border px-3 text-xs text-muted hover:text-fg",
-                f.path === active && "bg-surface text-fg shadow-[inset_0_1px_0_#C1121F]",
+                "group flex h-7 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2.5 text-xs text-muted hover:bg-surface-2 hover:text-fg",
+                f.path === active && "bg-surface-3 text-fg shadow-[inset_0_-2px_0_#C1121F]",
               )}
               title={f.path}
             >
               <span className="max-w-40 truncate">{f.path.split("/").pop()}</span>
               <button
+                aria-label={`Close ${f.path.split("/").pop()}`}
                 className="flex size-4 items-center justify-center rounded hover:bg-surface-3 cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();

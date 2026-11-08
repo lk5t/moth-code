@@ -1,3 +1,4 @@
+import { modelLabel } from "@/lib/model-label";
 import { useEffect, useRef, useState } from "react";
 import { Activity, Brain, Database, GitBranch, Network, ChevronDown } from "lucide-react";
 import { serverApi, useAccount } from "@/lib/account";
@@ -18,6 +19,7 @@ import { EvolutionPanel } from "@/features/owner/evolution";
 import { IntelligencePanel } from "@/features/owner/intelligence";
 import { ModelsPanel, WorkersPanel } from "@/features/owner/ops";
 import { ModelOverview } from "@/features/owner/ModelOverview";
+import { TrainingProgress } from "./TrainingProgress";
 
 type Any = Record<string, any>;
 const TABS: [IntelligenceTab, string, React.ReactNode][] = [
@@ -76,12 +78,12 @@ export function ModelActivity({ progress, resources }: { progress: Any | null; r
         </svg>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 pb-1">
           <MothEmblem className={cn("size-12", recent && "motion-safe:animate-pulse")} />
-          <span className="text-[11px] font-medium">{model?.model_version ? `MOTH ${model.model_version}` : "MOTH"}</span>
+          <span className="text-[11px] font-medium">{model ? modelLabel(model) : "MOTH"}</span>
         </div>
       </div>
       <div className="flex min-w-0 flex-col justify-center gap-4">
         <div><p className="text-[11px] uppercase tracking-[0.18em] text-faint">One native lineage</p>
-          <h2 className="mt-1 text-xl font-medium tracking-tight">{model?.name ?? "No model deployed"}</h2>
+          <h2 className="mt-1 text-xl font-medium tracking-tight">{model ? modelLabel(model) : "No model deployed"}</h2>
           <p className="mt-1 text-xs text-muted">{model?.params != null ? `${formatNumber(model.params)} actual parameters` : "Parameters have not been measured"}</p>
         </div>
         <div className="flex items-center gap-2 text-xs"><span className={cn("size-1.5 rounded-full", recent ? "bg-success" : "bg-faint")} />{recent ? "Training progress received" : status}</div>
@@ -124,21 +126,22 @@ export function IntelligenceHub() {
   }, [signedIn, owner]);
   if (!signedIn) return <EmptyState title="Sign in to Intelligence">MOTH's live training, compute, data and model history appear here.</EmptyState>;
   return <div className="h-full overflow-auto">
-    <div className="mx-auto flex max-w-6xl flex-col gap-5 p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto flex max-w-6xl flex-col gap-3 p-3 sm:p-4 lg:p-5">
       <header className="flex flex-wrap items-end justify-between gap-3"><div>
         <p className="text-[10px] uppercase tracking-[0.22em] text-accent">MOTH / Intelligence</p>
         <h1 className="mt-1 text-2xl font-medium tracking-tight">Intelligence</h1>
         <p className="mt-1 text-xs text-muted">One place for the native model, its training, its computers and the data it learns from.</p>
-      </div><span className="text-xs text-faint">{p?.current?.model_version ? `MOTH ${p.current.model_version}` : "No active baseline"}</span></header>
+      </div><span className="text-xs text-faint">{p?.current ? modelLabel(p.current) : "No active baseline"}</span></header>
       {error && <p role="alert" className="rounded-lg border border-border p-3 text-xs text-danger">{error}</p>}
       <Tabs value={tab} onValueChange={(value) => openIntelligence(value as IntelligenceTab)}>
-        <TabsList aria-label="Intelligence sections" className="mb-5 flex w-full flex-wrap justify-start gap-1 border-b border-border pb-2">
-          {TABS.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="inline-flex items-center gap-2 px-3 py-2 text-xs [&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
+        <TabsList aria-label="Intelligence sections" className="mb-3 w-full justify-start">
+          {TABS.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="[&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
         </TabsList>
         {(visited.has("overview") || tab === "overview") && <TabsContent forceMount hidden={tab !== "overview"} value="overview" className="flex flex-col gap-5 data-[state=inactive]:hidden">
           <ModelActivity progress={p} resources={resources} /><IntelligenceView embedded />
         </TabsContent>}
         {(visited.has("training") || tab === "training") && <TabsContent forceMount hidden={tab !== "training"} value="training" className="flex flex-col gap-4 data-[state=inactive]:hidden">
+          <TrainingProgress progress={p} resources={resources} />
           {owner ? <><NetworkTraining /><GenesisPanel /><Advanced title="Baseline, selected workers and detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced></> : <><EvolutionView /><ParticipantSwitch /></>}
         </TabsContent>}
         {(visited.has("evolution") || tab === "evolution") && <TabsContent forceMount hidden={tab !== "evolution"} value="evolution" className="flex flex-col gap-4 data-[state=inactive]:hidden">

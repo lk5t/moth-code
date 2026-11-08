@@ -12,7 +12,7 @@ import { IntelligenceSection } from "@/features/intelligence/IntelligenceSection
 import { OnDeviceSection } from "@/features/intelligence/OnDeviceSection";
 import { UpdatesSection } from "./UpdatesSection";
 import { ConnectionSection } from "./ConnectionSection";
-import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 /** Settings in a few plain groups instead of one long page (0.5.4). */
 const TABS = ["Account", "Privacy & AI", "Plan & referrals", "Code agent", "Updates & about"] as const;
@@ -57,14 +57,14 @@ export function SettingsView() {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto flex max-w-3xl flex-col gap-5 p-8 animate-rise">
+      <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="mx-auto flex max-w-5xl flex-col gap-3 p-3 animate-rise sm:p-5">
         <h1 className="text-lg font-semibold">Settings</h1>
-        <div className="flex flex-wrap gap-1" role="tablist">
+        <TabsList aria-label="Settings sections">
           {TABS.map((t) => (
-            <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
-              className={cn("cursor-pointer rounded-md px-3 py-1 text-xs", tab === t ? "bg-surface-2 text-fg" : "text-muted hover:text-fg")}>{t}</button>
+            <TabsTrigger key={t} value={t}>{t}</TabsTrigger>
           ))}
-        </div>
+        </TabsList>
+        <TabsContent value={tab} className="flex flex-col gap-3">
         {tab === "Account" && <><AccountSection /><ConnectionSection /></>}
         {tab === "Privacy & AI" && <><IntelligenceSection /><OnDeviceSection /></>}
         {tab === "Plan & referrals" && <><UsageSection /><ReferralsSection /></>}
@@ -115,7 +115,8 @@ export function SettingsView() {
             )}
           </CardContent>
         </Card>}
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

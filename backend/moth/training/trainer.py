@@ -150,7 +150,7 @@ class Trainer:
 
     # ---- helpers -----------------------------------------------------------
     def emit(self, kind: str, **data: Any) -> None:
-        event = {"kind": kind, "run": self.cfg.run_name, "step": self.step, **data}
+        event = {"kind": kind, "run": self.cfg.run_name, "step": self.step, "tokens_seen": self.tokens_seen, **data}
         with open(self.run_dir / "events.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(event) + "\n")
         self.on_event(event)

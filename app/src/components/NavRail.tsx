@@ -36,6 +36,7 @@ export function NavRail() {
           (view === v || (v === "workspace" && view === "chat") || (v === "intelligence" && INTELLIGENCE_VIEWS.includes(view))) && "text-fg bg-surface-2 before:absolute before:-left-[9px] before:h-5 before:w-0.5 before:rounded-full before:bg-accent",
         )}
         aria-label={label}
+        aria-current={(view === v || (v === "workspace" && view === "chat") || (v === "intelligence" && INTELLIGENCE_VIEWS.includes(view))) ? "page" : undefined}
       >
         {icon}
       </button>
@@ -43,7 +44,7 @@ export function NavRail() {
   );
   return (
     <nav className="flex w-[52px] shrink-0 flex-col items-center gap-1 border-r border-border bg-bg py-3">
-      <MothEmblem className="mb-3 size-8 transition-[filter] hover:drop-shadow-[0_0_10px_rgba(193,18,31,0.6)]" />
+      <MothEmblem motion="idle" className="mb-2 size-8 transition-[filter] hover:drop-shadow-[0_0_10px_rgba(193,18,31,0.6)]" />
       {items.filter((i) => !i.owner || isOwner).map((i) => button(i.view, i.label, i.icon))}
       <div className="flex-1" />
       {button("settings", "Settings", <Settings />)}

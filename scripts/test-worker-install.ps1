@@ -55,12 +55,13 @@ try {
   if ($verified -lt 1) { Get-Content (Join-Path $wHome "worker.log") -ErrorAction SilentlyContinue | Select-Object -Last 30; throw "no verified job" }
 
   Write-Host "== uninstall removes the task, revokes the worker and deletes its files"
+  $removedWorkerId = $w.id
   & $mw --home $wHome uninstall --yes
   for ($i = 0; $i -lt 30 -and (Test-Path $wHome); $i++) { Start-Sleep 1 }  # files are deleted right after it exits
   schtasks /Query /TN "MOTH Worker" 2>$null | Out-Null
   if ($LASTEXITCODE -eq 0) { throw "the scheduled task is still there" }
-  $w = (Invoke-RestMethod "$Base/v1/training/workers" -Headers $auth).workers | Select-Object -Last 1
-  if ($w.status -ne "revoked") { throw "the worker was not revoked (status $($w.status))" }
+  $remainingWorkers = (Invoke-RestMethod "$Base/v1/training/workers" -Headers $auth).workers
+  if ($remainingWorkers | Where-Object { $_.id -eq $removedWorkerId }) { throw "the removed worker is still listed" }
   if (Test-Path $wHome) {
     Write-Host "--- left behind:"; Get-ChildItem -Recurse $wHome -ErrorAction SilentlyContinue | Select-Object -First 15 | ForEach-Object { $_.FullName }
     Write-Host "--- processes running from it:"; Get-Process | Where-Object { $_.Path -like "$wHome*" } | Format-Table Id, Path -AutoSize | Out-String | Write-Host
