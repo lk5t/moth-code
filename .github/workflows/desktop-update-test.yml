@@ -126,6 +126,11 @@ jobs:
       - name: Real MOTH Server publishes B; install A, start it, and verify it updates itself to B
         shell: pwsh
         run: |
+          trap {
+            $detail = $_.ToString().Replace("%", "%25").Replace("`r", "%0D").Replace("`n", "%0A")
+            Write-Output "::error title=Windows update lifecycle failure::$detail"
+            exit 1
+          }
           $data = "$env:RUNNER_TEMP\server-data"
           New-Item -ItemType Directory -Force $data | Out-Null
           "agent-token-for-tests" | Set-Content -NoNewline "$env:RUNNER_TEMP\agent.token"
@@ -137,7 +142,7 @@ jobs:
           for ($i = 0; $i -lt 60; $i++) { try { Invoke-RestMethod "$env:SERVER/v1/health" | Out-Null; break } catch { Start-Sleep 2 } }
           # publish B exactly as the update agent does (signed manifest + installer, re-verified by the server)
           python scripts/desktop-update-harness.py register --server $env:SERVER --data-dir $data --agent-token "$env:RUNNER_TEMP\agent.token" --dir "$env:RUNNER_TEMP\B-release"
-          $offer = Invoke-RestMethod "$env:SERVER/v1/updates/desktop/windows/x86_64/0.1.0" -Headers @{"X-Moth-Install-Id"="ci"}
+          $offer = Invoke-RestMethod "$env:SERVER/v1/updates/desktop/windows/x86_64/0.5.1" -Headers @{"X-Moth-Install-Id"="ci"}
           "Server offers: $($offer.version) at $($offer.url)"
           if ($offer.version -ne $env:NEW_VERSION) { throw "the server does not offer $env:NEW_VERSION" }
 
