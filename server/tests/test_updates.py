@@ -85,9 +85,9 @@ def test_desktop_updates_staged_rollout_and_automatic_halt(client, signed):
     assert body["url"].endswith("/v1/updates/files/desktop/0.3.1/MOTH.Code_0.3.1_x64-setup.exe")
     dl = client.get(body["url"].replace("https://moth.test", ""))
     assert dl.status_code == 200 and dl.content.startswith(b"MZ fake installer")
-    # up to date → 204; unknown platforms → 204
+    # Only a genuinely current version gets 204.
     assert client.get("/v1/updates/desktop/windows/x86_64/0.3.1").status_code == 204
-    assert client.get("/v1/updates/desktop/linux/x86_64/0.3.0").status_code == 204
+    assert client.get("/v1/updates/desktop/linux/x86_64/0.3.0").status_code == 422
     # next stage after the interval
     R.advance_rollouts(s["ctx"])
     rel = next(r for r in R.list_releases(s["ctx"], "desktop") if r["version"] == "0.3.1")
@@ -102,7 +102,7 @@ def test_desktop_updates_staged_rollout_and_automatic_halt(client, signed):
     R.advance_rollouts(s["ctx"])
     rel = next(r for r in R.list_releases(s["ctx"], "desktop") if r["version"] == "0.3.1")
     assert rel["status"] == "halted" and rel["reports"]["failed"] == 4
-    assert all(client.get(url, headers={"X-Moth-Install-Id": f"install-{i}"}).status_code == 204 for i in offered)
+    assert all(client.get(url, headers={"X-Moth-Install-Id": f"install-{i}"}).status_code == 409 for i in offered)
     from moth_server.db import error_log
     assert "halted" in s["ctx"].db.all(error_log.select())[-1]["message"]
     # the Owner can resume, set the percentage or promote to everyone (re-authenticated)
@@ -127,7 +127,7 @@ def test_outdated_clients_get_426_but_can_still_update(client, signed, settings)
     # outdated clients can still reach health and the update service
     assert client.get("/v1/health", headers={"X-Moth-Client": "desktop/0.2.1"}).status_code == 200
     assert client.get("/v1/updates/desktop/windows/x86_64/0.2.1",
-                      headers={"X-Moth-Client": "desktop/0.2.1"}).status_code in (200, 204)
+                      headers={"X-Moth-Client": "desktop/0.2.1"}).status_code == 503
     health = client.get("/v1/health").json()
     assert health["api_version"] == 3 and health["min_client_versions"]["desktop"] == "0.3.0"
     # the floor can't be lowered below the built-in minimum
@@ -278,3 +278,52 @@ def test_owner_can_change_the_public_address(client, signed, settings):
 def test_cloud_health_explains_why_nothing_is_served(client, signed):
     h = client.get("/cloud/v1/health").json()
     assert h["models"] == [] and h["status"] == "no_model_deployed" and "Owner Dashboard" in h["message"]
+
+
+def test_desktop_051_to_054_does_not_confuse_unavailable_with_current(client, signed):
+    s = signed
+    url = "/v1/updates/desktop/windows/x86_64/0.5.1?channel=stable"
+    assert client.get(url).status_code == 503
+    raw, sig = release(s["out"], s["key"], "0.5.4", desktop=True,
+                       rollout={"desktop": {"stages": [10, 100]}})
+    register(client, s, raw, sig)
+    r = client.get(url)
+    assert r.status_code == 503 and "installer" in r.json()["detail"]
+    assert r.headers["Cache-Control"] == "no-store"
+    register(client, s, raw, sig, [("desktop", s["out"] / "MOTH.Code_0.5.4_x64-setup.exe")])
+    excluded = next(f"install-{i}" for i in range(100) if R.bucket(f"install-{i}", "0.5.4") >= 10)
+    r = client.get(url, headers={"X-Moth-Install-Id": excluded, "X-Moth-Client": "desktop/0.5.1"})
+    assert r.status_code == 409 and "rolling out to 10%" in r.json()["detail"]
+    R.set_status(s["ctx"], "desktop", "0.5.4", "promote", 1)
+    r = client.get(url)
+    assert r.status_code == 200 and r.json()["version"] == "0.5.4"
+    assert r.json()["signature"].endswith("SIG0.5.4")
+    assert client.get(r.json()["url"]).content == (s["out"] / "MOTH.Code_0.5.4_x64-setup.exe").read_bytes()
+    assert client.get(url.replace("0.5.1", "0.5.4")).status_code == 204
+    assert client.get(url.replace("0.5.1", "0.5.10")).status_code == 204
+    R.set_status(s["ctx"], "desktop", "0.5.4", "pause", 1)
+    r = client.get(url)
+    assert r.status_code == 409 and "paused" in r.json()["detail"]
+
+
+@pytest.mark.parametrize("extra,signature,expected", [
+    ({"min_upgrade_from": "0.5.2"}, True, "requires version 0.5.2"),
+    ({}, False, "no updater signature"),
+])
+def test_desktop_incompatible_or_unsigned_is_never_current(client, signed, extra, signature, expected):
+    s = signed
+    raw, sig = release(s["out"], s["key"], "0.5.4", desktop=True,
+                       rollout={"desktop": {"stages": [100]}}, extra=extra)
+    if not signature:
+        m = json.loads(raw)
+        m["components"]["desktop"]["windows-x86_64"].pop("signature")
+        raw = json.dumps(m).encode()
+        sig = s["key"].sign(raw)
+    register(client, s, raw, sig, [("desktop", s["out"] / "MOTH.Code_0.5.4_x64-setup.exe")])
+    r = client.get("/v1/updates/desktop/windows/x86_64/0.5.1")
+    assert r.status_code in (409, 503) and expected in r.json()["detail"]
+
+
+@pytest.mark.parametrize("suffix", ["windows/arm64/0.5.1", "windows/x86_64/invalid", "windows/x86_64/0.5.1?channel=invalid"])
+def test_desktop_invalid_requests_are_not_current(client, signed, suffix):
+    assert client.get(f"/v1/updates/desktop/{suffix}").status_code == 422

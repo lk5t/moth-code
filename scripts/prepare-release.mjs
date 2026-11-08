@@ -7,8 +7,8 @@
 // - Enables signed automatic updates when the updater key is available. The update endpoint is chosen
 //   at runtime from the connected MOTH Cloud address, so it is not part of the build.
 //   requireSignedVersion rejects an update whose signed version differs from the offered one.
-// - MOTH_UPDATE_TEST_BUILD=1 (CI update test only): allows a loopback http:// server and installs a
-//   downloaded update automatically. Never set for releases.
+// - MOTH_UPDATE_TEST_BUILD=1 (CI update test only): allows a loopback http:// server.
+//   CI closes the real window to install a downloaded update. Never set for releases.
 import { readFileSync, writeFileSync } from "node:fs";
 
 const root = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
@@ -66,7 +66,7 @@ if (pubkey && hasKey) {
     },
   };
   release.bundle.createUpdaterArtifacts = true;
-  console.log(`Signed automatic updates: enabled${test ? " (TEST BUILD: loopback http allowed, auto-install)" : ""}`);
+  console.log(`Signed automatic updates: enabled${test ? " (TEST BUILD: loopback http allowed)" : ""}`);
 } else {
   delete release.plugins;
   release.bundle.createUpdaterArtifacts = false;

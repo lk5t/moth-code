@@ -43,13 +43,47 @@ def desktop_update(target: str, arch: str, current: str, request: Request, chann
                    x_moth_install_id: str | None = Header(default=None), ctx: Ctx = Depends(get_ctx)):
     platform = PLATFORMS.get((target.lower(), arch.lower()))
     if not platform:
-        return Response(status_code=204)
+        raise HTTPException(422, "No signed desktop updates are published for this platform.")
+    try:
+        cur = compat.parse_version(current)
+    except ValueError:
+        raise HTTPException(422, "Invalid installed desktop version.") from None
+    if channel not in ("stable", "beta"):
+        raise HTTPException(422, "Unknown desktop update channel.")
     found = R.eligible(ctx, "desktop", current, _install_id(request, x_moth_install_id), channel[:16], platform)
     if not found:
+        # 204 means genuinely current. In particular, a staged/paused rollout or an installer
+        # still being relayed by the agent is NOT evidence that the installed version is latest.
+        # Older desktops also understand non-2xx as a failed check rather than "up to date".
+        from sqlalchemy import select
+        from moth_server.db import software_releases
+
+        channels = ("stable",) if channel == "stable" else ("stable", channel)
+        rows = ctx.db.all(select(software_releases).where(
+            software_releases.c.component == "desktop", software_releases.c.channel.in_(channels)))
+        rows.sort(key=lambda r: compat.parse_version(r["version"]), reverse=True)
+        if not rows:
+            raise HTTPException(503, "Desktop update metadata is unavailable on MOTH Cloud. "
+                                "The Cloud owner should check desktop release relay in Updates.")
+        newer = [r for r in rows if compat.parse_version(r["version"]) > cur]
+        if newer:
+            rel = newer[0]
+            version = rel["version"]
+            if rel["status"] not in R.ACTIVE:
+                raise HTTPException(409, f"Desktop {version} is {rel['status']}; it is not approved for installation.")
+            if not R.files_ready(ctx, "desktop", version, platform):
+                raise HTTPException(503, f"Desktop {version} is published but its Windows installer is not yet "
+                                    "available on MOTH Cloud. The Cloud owner should check desktop release relay.")
+            raise HTTPException(409, f"Desktop {version} is rolling out to {rel['rollout_percent']}% of installations. "
+                                "This installation will retry automatically when its rollout group is eligible.")
         return Response(status_code=204)
     rel, f = found
     if not f.get("signature"):
-        return Response(status_code=204)  # an update without an updater signature is never offered
+        raise HTTPException(503, f"Desktop {rel['version']} has no updater signature; installation is blocked.")
+    manifest = R.load_manifest(ctx, rel["version"], "desktop")[0]
+    minimum = manifest.get("min_upgrade_from")
+    if minimum and cur < compat.parse_version(minimum):
+        raise HTTPException(409, f"Desktop {rel['version']} requires version {minimum} or newer before upgrading.")
     return {"version": rel["version"], "notes": rel["notes"] or "",
             "pub_date": _rfc3339(rel["created_at"]), "signature": f["signature"],
             "url": f"{request_base(request, ctx)}/v1/updates/files/desktop/{rel['version']}/{f['file']}"}

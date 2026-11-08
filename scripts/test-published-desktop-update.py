@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+"""Windows regression with the actual published 0.5.1 and 0.5.4 installers and production public keys.
+
+Uses an isolated HTTPS MOTH Server; never changes the production server or release rollout.
+WebView debugging is enabled only in this CI process to set the test Cloud address and data marker.
+"""
+from __future__ import annotations
+
+import base64
+import datetime as dt
+import hashlib
+import ipaddress
+import json
+import os
+from pathlib import Path
+import runpy
+import shutil
+import sqlite3
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+ROOT = Path(__file__).resolve().parents[1]
+REPO = "lk5t/moth-code"
+
+
+def run(*args, **kw):
+    return subprocess.run(args, check=True, **kw)
+
+
+def download_release(version, dest):
+    dest.mkdir(parents=True, exist_ok=True)
+    release = json.loads(run("gh", "api", f"repos/{REPO}/releases/tags/desktop-v{version}", capture_output=True).stdout)
+    assert not release["draft"] and not release["prerelease"], release
+    for asset in release["assets"]:
+        assert asset["state"] == "uploaded" and asset["size"] > 0
+        with (dest / asset["name"]).open("wb") as output:
+            run("gh", "api", "-H", "Accept: application/octet-stream", f"repos/{REPO}/releases/assets/{asset['id']}", stdout=output)
+        data = (dest / asset["name"]).read_bytes()
+        assert len(data) == asset["size"]
+        if asset.get("digest"):
+            assert "sha256:" + hashlib.sha256(data).hexdigest() == asset["digest"]
+    run(sys.executable, str(ROOT / "scripts/verify-release.py"), str(dest))
+    exe = dest / f"MOTH.Code_{version}_x64-setup.exe"
+    verifier = runpy.run_path(str(ROOT / "scripts/check-release-secrets.py"))
+    assert verifier["check_updater_signature"](exe, exe.with_name(exe.name + ".sig"))
+    # Authenticate the trusted comment too, including the version required by the installed app.
+    lines = base64.b64decode(exe.with_name(exe.name + ".sig").read_text()).decode().splitlines()
+    packet = base64.b64decode(lines[1])
+    comment = lines[2].removeprefix("trusted comment: ")
+    pub_lines = base64.b64decode((ROOT / "app/src-tauri/updater.pub").read_text()).decode().splitlines()
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    Ed25519PublicKey.from_public_bytes(base64.b64decode(pub_lines[1])[10:]).verify(
+        base64.b64decode(lines[3]), packet[10:] + comment.encode())
+    assert f"\tversion:{version}" in comment
+    print(f"VERIFIED published desktop {version}: SHA-256, manifest signature, installer signature and signed version", flush=True)
+    return exe, json.loads((dest / f"moth-release-desktop-{version}.json").read_text())
+
+
+def probe_cloud(manifest, out):
+    server = "https://mothcloud.ddns.net"
+    from moth_server.releases import bucket
+    eligible = next(f"verify-{i}" for i in range(1000) if bucket(f"verify-{i}", "0.5.4") < 10)
+    deferred = next(f"verify-{i}" for i in range(1000) if bucket(f"verify-{i}", "0.5.4") >= 50)
+    results = []
+    for name, install_id in [("eligible-first-stage", eligible), ("later-stage", deferred)]:
+        req = urllib.request.Request(f"{server}/v1/updates/desktop/windows/x86_64/0.5.1?channel=stable",
+                                     headers={"X-Moth-Install-Id": install_id, "X-Moth-Client": "desktop/0.5.1", "Cache-Control": "no-cache"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                body = r.read().decode()
+                result = {"probe": name, "status": r.status, "body": body, "headers": dict(r.headers)}
+                if r.status == 200:
+                    offer = json.loads(body)
+                    if offer["version"] == "0.5.4":
+                        assert offer["signature"] == manifest["components"]["desktop"]["windows-x86_64"]["signature"]
+        except urllib.error.HTTPError as e:
+            result = {"probe": name, "status": e.code, "body": e.read().decode()[:2000]}
+        except urllib.error.URLError as e:
+            result = {"probe": name, "error": str(e)}
+        results.append(result)
+        print("::notice title=Live Cloud read-only update probe::" + json.dumps(result), flush=True)
+    (out / "live-cloud-probe.json").write_text(json.dumps(results, indent=2))
+
+
+def evaluate(expression):
+    import websocket
+    with urllib.request.urlopen("http://127.0.0.1:9222/json", timeout=5) as r:
+        targets = json.load(r)
+    target = next(t for t in targets if t.get("type") == "page")
+    ws = websocket.create_connection(target["webSocketDebuggerUrl"], timeout=10, suppress_origin=True)
+    try:
+        ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": expression, "returnByValue": True}}))
+        while True:
+            msg = json.loads(ws.recv())
+            if msg.get("id") == 1:
+                assert "error" not in msg and "exceptionDetails" not in msg.get("result", {}), msg
+                return msg["result"]["result"].get("value")
+    finally:
+        ws.close()
+
+
+def main():
+    assert sys.platform == "win32", "Run this native installer test on Windows"
+    out = Path(os.environ["RUNNER_TEMP"]) / "published-desktop-test"
+    out.mkdir(parents=True, exist_ok=True)
+    old, _ = download_release("0.5.1", out / "old")
+    new, manifest = download_release("0.5.4", out / "new")
+    assert run("git", "show", "desktop-v0.5.1:app/src-tauri/updater.pub", capture_output=True).stdout.strip() == (ROOT / "app/src-tauri/updater.pub").read_bytes().strip()
+    probe_cloud(manifest, out)
+
+    # Isolated TLS trust for the stock production installer. No insecure transport or signature bypass.
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(key.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(now - dt.timedelta(minutes=5))
+            .not_valid_after(now + dt.timedelta(days=1)).add_extension(x509.BasicConstraints(ca=True, path_length=None), True)
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost"), x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]), False)
+            .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), False).sign(key, hashes.SHA256()))
+    (out / "tls.pem").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    (out / "tls.der").write_bytes(cert.public_bytes(serialization.Encoding.DER))
+    (out / "tls.key").write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+    run("certutil", "-user", "-addstore", "Root", str(out / "tls.der"))
+    data = out / "server-data"
+    data.mkdir(exist_ok=True)
+    (out / "agent.token").write_text("isolated-desktop-test")
+    env = {**os.environ, "MOTH_SERVER_DATA_DIR": str(data), "MOTH_SERVER_PUBLIC_URL": "https://localhost:8900",
+           "MOTH_AGENT_TOKEN_FILE": str(out / "agent.token"), "MOTH_RELEASE_PUBKEY": (ROOT / "deploy/agent/release-signing.pub").read_text().strip()}
+    # Uvicorn factory reads the ordinary server settings, including the isolated data directory.
+    log = (out / "server.log").open("w")
+    server = subprocess.Popen([sys.executable, "-m", "uvicorn", "moth_server.app:create_app", "--factory", "--port", "8900",
+                               "--ssl-certfile", str(out / "tls.pem"), "--ssl-keyfile", str(out / "tls.key")], env=env, stdout=log, stderr=log)
+    appdata = Path(os.environ["APPDATA"]) / "dev.mothcode.desktop"
+    update_log = appdata / "logs/updates.log"
+    try:
+        import ssl
+        tls = ssl.create_default_context(cafile=str(out / "tls.pem"))
+        for _ in range(60):
+            try:
+                urllib.request.urlopen("https://localhost:8900/v1/health", context=tls, timeout=2).close()
+                break
+            except (urllib.error.URLError, OSError): time.sleep(1)
+        # Trust the isolated CA for the helper; clients still enforce HTTPS and the production keys.
+        os.environ["SSL_CERT_FILE"] = str(out / "tls.pem")
+        harness = runpy.run_path(str(ROOT / "scripts/desktop-update-harness.py"))
+        harness["register"]("https://localhost:8900", data, out / "agent.token", out / "new")
+        served = data / "storage/software/desktop/0.5.4" / new.name
+        # Corrupt an already relayed installer: the stock client's independent minisign check
+        # must reject it, even though the release metadata and signature are authentic.
+        with served.open("r+b") as f:
+            f.seek(-1, 2)
+            last = f.read(1)
+            f.seek(-1, 2)
+            f.write(bytes([last[0] ^ 1]))
+        from moth_server.releases import bucket
+        install_id = next(f"published-ci-{i}" for i in range(1000) if bucket(f"published-ci-{i}", "0.5.4") < 10)
+        run(str(old), "/S")
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall") as parent:
+            for i in range(winreg.QueryInfoKey(parent)[0]):
+                sub = winreg.EnumKey(parent, i)
+                with winreg.OpenKey(parent, sub) as reg:
+                    try:
+                        if winreg.QueryValueEx(reg, "DisplayName")[0] == "MOTH Code":
+                            reg_path = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{sub}"
+                            folder = Path(winreg.QueryValueEx(reg, "UninstallString")[0].strip('"')).parent
+                            break
+                    except FileNotFoundError: pass
+        def installed_version():
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path) as reg:
+                return winreg.QueryValueEx(reg, "DisplayVersion")[0]
+        assert installed_version() == "0.5.1"
+        exe = next(p for p in folder.glob("*.exe") if not p.name.lower().startswith("uninstall"))
+        appdata.mkdir(exist_ok=True)
+        marker = appdata / "workspace-preservation-marker.txt"
+        marker.write_text("keep original workspace")
+        accounts = appdata / "accounts.json"
+        accounts.write_text(json.dumps({"active": None, "accounts": [{"server": "https://localhost:8900", "username": "preserved-ci-account", "last_used": 0}]}))
+        home = out / "backend-home"
+        home.mkdir(exist_ok=True)
+        (home / "workspace.txt").write_text("keep workspace content")
+        app_env = {**os.environ, "MOTH_HOME": str(home), "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--remote-debugging-port=9222"}
+        subprocess.Popen([str(exe)], env=app_env)
+        deadline = time.monotonic() + 120
+        while True:
+            try:
+                evaluate("localStorage.setItem('moth.serverUrl','https://localhost:8900');localStorage.setItem('moth.installId'," + json.dumps(install_id) + ");localStorage.setItem('moth.update-test-preserve','keep settings');location.reload();")
+                break
+            except Exception:
+                if time.monotonic() > deadline: raise
+                time.sleep(1)
+        deadline = time.monotonic() + 240
+        while time.monotonic() < deadline:
+            if update_log.exists() and "update error:" in update_log.read_text(): break
+            time.sleep(2)
+        else: raise AssertionError("Stock 0.5.1 did not report the tampered installer failure")
+        assert "signature" in update_log.read_text().lower(), update_log.read_text()
+        assert installed_version() == "0.5.1", "an invalid signature must never install"
+        shutil.copyfile(new, served)
+        evaluate("location.reload()")
+        deadline = time.monotonic() + 480
+        while time.monotonic() < deadline:
+            if update_log.exists() and "downloaded and verified 0.5.4" in update_log.read_text(): break
+            time.sleep(2)
+        else: raise AssertionError("Stock 0.5.1 did not detect, download and verify stock 0.5.4")
+        assert installed_version() == "0.5.1", "must wait for close, not install during download"
+        # WM_CLOSE exercises the installed app's actual onCloseRequested handler.
+        run("powershell", "-NoProfile", "-Command", f"Get-Process | Where-Object {{ $_.Path -eq '{exe}' }} | ForEach-Object {{ $_.CloseMainWindow() | Out-Null }}")
+        deadline = time.monotonic() + 240
+        while time.monotonic() < deadline and installed_version() != "0.5.4": time.sleep(2)
+        assert installed_version() == "0.5.4", "close did not install the verified update"
+        # Installer may relaunch; start it if needed, then require a success report from the app.
+        time.sleep(10)
+        try: evaluate("1")
+        except Exception: subprocess.Popen([str(exe)], env=app_env)
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            with sqlite3.connect(data / "moth-server.db") as db:
+                reports = db.execute("SELECT ok FROM update_reports WHERE component='desktop' AND from_version='0.5.1' AND to_version='0.5.4'").fetchall()
+            if (1,) in reports: break
+            time.sleep(2)
+        assert (0,) in reports and (1,) in reports, reports
+        assert marker.read_text() == "keep original workspace"
+        assert (home / "workspace.txt").read_text() == "keep workspace content"
+        assert json.loads(accounts.read_text())["accounts"][0]["username"] == "preserved-ci-account"
+        assert evaluate("localStorage.getItem('moth.update-test-preserve')") == "keep settings"
+        print("PASS: actual published 0.5.1 -> 0.5.4 detected, downloaded, signature-verified, installed on close, restarted and reported success; data preserved", flush=True)
+    finally:
+        server.terminate()
+        server.wait(timeout=30)
+        log.close()
+        if update_log.exists(): shutil.copy(update_log, out / "updates.log")
+        run("certutil", "-user", "-delstore", "Root", cert.fingerprint(hashes.SHA1()).hex())
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print(f"::error title=Published desktop update failed::{type(exc).__name__}: {exc}", flush=True)
+        raise

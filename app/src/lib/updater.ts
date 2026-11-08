@@ -79,12 +79,12 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<
   }
   if (!server) {
     ulog("no MOTH Cloud address configured; not checking for updates");
-    updaterStore.setState({ phase: "idle", error: null });
+    updaterStore.setState({ phase: "error", error: "Set your MOTH Cloud address in Settings → Connection to check for updates." });
     return updaterStore.getState();
   }
   busy = true;
   try {
-    updaterStore.setState({ phase: "checking", error: null });
+    updaterStore.setState({ phase: "checking", error: null, version: null, notes: null, progress: 0, lastCheck: Date.now() });
     const { invoke } = await import("@tauri-apps/api/core");
     const found = await invoke<{ version: string; current_version: string; notes: string | null } | null>(
       "update_check", { server, installId: installId(), channel: "stable" });
@@ -99,19 +99,20 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<
         await invoke("update_download"); // the signature is verified before the bytes are accepted
         break;
       } catch (e) {
+        // A bad signature or refused package cannot become safe by downloading it repeatedly.
+        if (/signature|signed version|HTTP (401|403|404)/i.test(String(e))) throw e;
         if (attempt >= 4) throw e;
         await sleep(Math.min(60000, 2000 * 2 ** attempt)); // interrupted download: retry from scratch
       }
     }
     updaterStore.setState({ phase: "ready", progress: 100, dismissed: false });
     storage(PENDING_KEY, JSON.stringify({ from: APP_VERSION, to: found.version, at: Date.now() }));
-    if (import.meta.env.VITE_MOTH_UPDATE_TEST === "1") installNow(); // automated update tests only
   } catch (e) {
     const msg = describeUpdateError(String((e as Error)?.message ?? e));
     ulog(`update error: ${String((e as Error)?.message ?? e)}`);
     updaterStore.setState({ phase: "error", error: msg });
-    if (opts.manual) throw new Error(msg);
     report(false, updaterStore.getState().version, msg);
+    if (opts.manual) throw new Error(msg);
   } finally {
     busy = false;
   }
@@ -119,7 +120,9 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<
 }
 
 export function describeUpdateError(raw: string): string {
+  if (/^Update check failed \(HTTP /i.test(raw)) return raw;
   if (/signature/i.test(raw)) return "The update's signature could not be verified, so it was not installed.";
+  if (/release not found|release not available|Could not fetch a valid release/i.test(raw)) return "MOTH Cloud did not provide desktop update metadata. Check the server address and desktop release relay.";
   if (/error sending request|connect|dns|timed out|timeout/i.test(raw)) return "MOTH Cloud could not be reached to check for updates.";
   if (/https/i.test(raw)) return "Updates are only downloaded over HTTPS; set an https:// MOTH Cloud address.";
   return raw;
@@ -139,6 +142,7 @@ export async function installNow() {
   } catch (e) {
     const msg = describeUpdateError(String((e as Error)?.message ?? e));
     updaterStore.setState({ phase: "error", error: msg });
+    storage(PENDING_KEY, null);
     report(false, updaterStore.getState().version, msg);
   }
 }
@@ -164,7 +168,9 @@ async function report(ok: boolean, to: string | null, error?: string, from: stri
 export function reportPreviousUpdate() {
   const raw = storage(PENDING_KEY);
   if (!raw) return;
-  const p = JSON.parse(raw);
+  let p;
+  try { p = JSON.parse(raw); } catch { storage(PENDING_KEY, null); return; }
+  if (!p || typeof p !== "object") { storage(PENDING_KEY, null); return; }
   if (p.to === APP_VERSION) {
     report(true, p.to, undefined, p.from);
     storage(PENDING_KEY, null);

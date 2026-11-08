@@ -2159,6 +2159,7 @@ version = "0.5.4"
 dependencies = [
  "getrandom 0.3.4",
  "keyring",
+ "reqwest",
  "serde",
  "serde_json",
  "tauri",
