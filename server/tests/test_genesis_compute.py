@@ -66,3 +66,33 @@ def test_gpu_preference_requires_job_permission_and_actual_capacity(client, owne
         assert not training.gpu_worker_online(conn, {**spec, 'requirements': {'memory_bytes': 100 * C.GB}})
         conn.execute(workers.update().where(workers.c.id == worker['worker_id']).values(last_heartbeat_at=0))
         assert not training.gpu_worker_online(conn, spec)
+
+
+def test_windows_memory_is_measured_before_cpu_admission(monkeypatch):
+    """Simulated Win32 API; no invented capacity when native measurement fails."""
+    import ctypes
+    import sys
+    from pathlib import Path
+    from types import SimpleNamespace
+    from moth_server.routes import system
+
+    read_text = Path.read_text
+    def without_proc(path, *args, **kwargs):
+        if str(path) == '/proc/meminfo':
+            raise FileNotFoundError('Windows has no /proc/meminfo')
+        return read_text(path, *args, **kwargs)
+
+    def native_status(pointer):
+        status = pointer._obj
+        assert status.dwLength == 64
+        status.ullTotalPhys, status.ullAvailPhys = 16 * C.GB, 8 * C.GB
+        return 1
+
+    monkeypatch.setattr(Path, 'read_text', without_proc)
+    monkeypatch.setattr(sys, 'platform', 'win32')
+    kernel = SimpleNamespace(GlobalMemoryStatusEx=native_status)
+    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(kernel32=kernel), raising=False)
+    assert system.memory() == {'total': 16 * C.GB, 'available': 8 * C.GB,
+                               'used': 8 * C.GB, 'percent': 50.0}
+    kernel.GlobalMemoryStatusEx = lambda pointer: 0
+    assert system.memory() is None

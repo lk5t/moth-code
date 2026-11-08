@@ -1,13 +1,14 @@
 """Owner Dashboard → Server: health and resource usage of this MOTH Cloud host (no shell access).
 
-Reads ``/proc`` and the filesystem directly (Linux), so it needs no extra dependencies and
-never runs commands. On other platforms the numbers that can't be read are ``null``.
+Reads ``/proc`` and the filesystem directly (Linux), and native memory status on Windows,
+with no extra dependencies or commands. Unavailable measurements remain ``null``.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -50,7 +51,30 @@ def memory() -> dict | None:
         return {"total": total, "used": total - avail, "available": avail,
                 "percent": round(100 * (total - avail) / total, 1)}
     except (OSError, KeyError, ValueError):
+        if sys.platform != 'win32':
+            return None
+    # CPU admission needs measured available RAM on Windows too; never assume total RAM is free.
+    import ctypes
+
+    class MemStatus(ctypes.Structure):
+        _fields_ = [('dwLength', ctypes.c_uint32), ('dwMemoryLoad', ctypes.c_uint32),
+                    ('ullTotalPhys', ctypes.c_uint64), ('ullAvailPhys', ctypes.c_uint64),
+                    ('ullTotalPageFile', ctypes.c_uint64), ('ullAvailPageFile', ctypes.c_uint64),
+                    ('ullTotalVirtual', ctypes.c_uint64), ('ullAvailVirtual', ctypes.c_uint64),
+                    ('ullAvailExtendedVirtual', ctypes.c_uint64)]
+
+    status = MemStatus()
+    status.dwLength = ctypes.sizeof(status)
+    try:
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return None
+    except (AttributeError, OSError):
         return None
+    total, avail = status.ullTotalPhys, status.ullAvailPhys
+    if not total or not 0 <= avail <= total:
+        return None
+    return {'total': total, 'used': total - avail, 'available': avail,
+            'percent': round(100 * (total - avail) / total, 1)}
 
 
 def disk(path: Path) -> dict:

@@ -10,7 +10,7 @@ on:
       tag:
         description: "Server release tag (must match the server version, e.g. server-v0.3.1)"
         required: true
-        default: "server-v0.5.6"
+        default: "server-v0.5.7"
       channel:
         description: "Update channel"
         required: true

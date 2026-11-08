@@ -78,6 +78,8 @@ def main(installer):
         api('/v1/admin/evolution/initialize', {}, 'POST')
         api('/v1/admin/evolution/initialize/activate', {}, 'POST')
         api('/v1/admin/config/flags', {'cloud_inference_enabled': True}, 'PUT')
+        measured = api('/v1/admin/evolution/resources')['local']['memory']
+        assert measured and measured['available'] > 0, 'Native available RAM could not be measured safely'
         appenv = {**env, 'MOTH_HOME': str(out / 'desktop-home')}
         subprocess.run([str(installer.resolve()), '/S'], check=True, timeout=600, env=appenv)
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Uninstall') as parent:
@@ -97,6 +99,7 @@ def main(installer):
         ui = WindowsUI(app.pid)
         ui.configure_cloud(cloud)
         ui.login(user['username'], password)
+        print('::notice title=GENESIS native stage::Signed installer, frozen backend and Owner login passed', flush=True)
         ui.click('Workspace · Code / Chat')
         ui.draft('native unsent draft')
         ui.click('Code')
@@ -108,6 +111,7 @@ def main(installer):
         ui.click('Inspect layer 2')
         wait(lambda: 'Layer 2 selected' in ui.text(), 'selected architecture layer')
         ui.click('Training', control_type='TabItem')
+        print('::notice title=GENESIS native stage::Workspace drafts and interactive Intelligence tabs passed', flush=True)
         for value in (False, True):
             ui.click('Use cloud workers')
             wait(lambda: api('/v1/admin/evolution/status')['settings']['backends']['workers'] is value, 'worker toggle persisted')
@@ -118,6 +122,7 @@ def main(installer):
         ui.click('Contribute this computer')
         wait(lambda: not participant_setting()['enabled'], 'participant disable persisted')
         ui.click('Resume MOTH training')
+        print('::notice title=GENESIS native stage::Cloud worker toggle and actual desktop enrollment passed; waiting for CPU progress', flush=True)
         cycle = wait(lambda: api('/v1/admin/evolution/status').get('cycle'), 'eligible cycle created by UI', timeout=120)
         wait(lambda: any(e.get('progress', {}).get('step', 0) > 0 or e.get('candidate_version')
                          for e in (api('/v1/admin/evolution/status').get('cycle') or {}).get('experiments', [])),
@@ -143,6 +148,21 @@ def main(installer):
                     'production_reset': False, 'trained_foundation': False}
         (out / 'evidence.json').write_text(json.dumps(evidence, indent=2))
         print('::notice title=GENESIS native Windows verification::' + json.dumps(evidence), flush=True)
+    except Exception:
+        # Keep the actual scheduling/optimizer error accessible even when Actions log downloads
+        # are network-restricted. This is the isolated fixture, never the production service.
+        try:
+            status = api('/v1/admin/evolution/status')
+            diagnostic = {key: status.get(key) for key in ('state', 'cycle', 'warnings')}
+            diagnostic['local_resources'] = api('/v1/admin/evolution/resources')['local']
+            diagnostic['trainer_logs'] = [p.read_text(errors='replace')[-3000:]
+                                          for p in sorted((out / 'cloud/evolution/runs').glob('exp-*/train.log'))[-3:]]
+            (out / 'failure.json').write_text(json.dumps(diagnostic, indent=2))
+            detail = json.dumps(diagnostic).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+            print('::notice title=GENESIS native failure diagnostics::' + detail, flush=True)
+        except Exception as error:
+            print('::notice title=GENESIS native diagnostics unavailable::' + type(error).__name__, flush=True)
+        raise
     finally:
         if app:
             subprocess.run(['taskkill', '/PID', str(app.pid), '/T', '/F'], capture_output=True, timeout=30)
