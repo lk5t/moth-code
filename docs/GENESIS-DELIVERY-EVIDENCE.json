@@ -229,6 +229,74 @@
     "asset_name": "moth-release-desktop-0.3.1.json",
     "error": "HTTP Error 403: rate limit exceeded",
     "patch_candidate": "server-v0.5.8",
-    "live_patch_installation_verified": false
+    "live_patch_installation_verified": false,
+    "patch_release": "server-v0.5.8",
+    "patch_commit": "7438f7fa803c28d6d80d7b07b9131d95d2f095b0",
+    "patch_published": true,
+    "focused_transport_tests": 10,
+    "full_release_ci": "success"
+  },
+  "agent_patch": {
+    "workflow": {
+      "run_id": 42491027148,
+      "url": "https://github.com/lk5t/moth-code/actions/runs/42491027148",
+      "source_commit": "7438f7fa803c28d6d80d7b07b9131d95d2f095b0",
+      "conclusion": "success"
+    },
+    "release": {
+      "tag": "server-v0.5.8",
+      "url": "https://github.com/lk5t/moth-code/releases/tag/server-v0.5.8",
+      "published_at": "2026-11-08T14:51:39Z",
+      "source_commit": "7438f7fa803c28d6d80d7b07b9131d95d2f095b0",
+      "draft": false,
+      "assets": [
+        {
+          "name": "moth-cloud-0.5.8.tar.gz",
+          "size": 335585,
+          "state": "uploaded",
+          "digest": "sha256:5b915a618145a5d6562f03bd30e222bffd65c73edb7edc83eadfe266687efb0e",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.8/moth-cloud-0.5.8.tar.gz"
+        },
+        {
+          "name": "moth-release-0.5.8.json",
+          "size": 1108,
+          "state": "uploaded",
+          "digest": "sha256:22a224eb7a0afb0461439044d8aee9968aa43e46169636b192deea98cd5c14c1",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.8/moth-release-0.5.8.json"
+        },
+        {
+          "name": "moth-release-0.5.8.json.sig",
+          "size": 89,
+          "state": "uploaded",
+          "digest": "sha256:56b789dabfb45bb901a0e6d5f006256cbc369372a134c9b5e328acbf649ca81a",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.8/moth-release-0.5.8.json.sig"
+        },
+        {
+          "name": "moth-worker-0.5.8.tar.gz",
+          "size": 158067,
+          "state": "uploaded",
+          "digest": "sha256:297ddad4bae1bc3c5a9a584c0417254da104fa48c771b45dd6cbac3e250e8ab4",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.8/moth-worker-0.5.8.tar.gz"
+        },
+        {
+          "name": "moth-worker-0.5.8.tar.gz.sha256",
+          "size": 91,
+          "state": "uploaded",
+          "digest": "sha256:4add799a3bf88b19298e819dba19ead9e35599249c43bfccdc088ff3a39da4e3",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.8/moth-worker-0.5.8.tar.gz.sha256"
+        },
+        {
+          "name": "SHA256SUMS",
+          "size": 463,
+          "state": "uploaded",
+          "digest": "sha256:283b5a8202602d1581b689b5213cd4828e4159f8f775b7cdaaa0d3049e24725a",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.8/SHA256SUMS"
+        }
+      ]
+    }
+  },
+  "recommended_releases": {
+    "desktop": "desktop-v0.5.7",
+    "server_and_worker": "server-v0.5.8"
   }
 }

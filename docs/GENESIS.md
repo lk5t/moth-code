@@ -1,8 +1,11 @@
 # GENESIS delivery record
 
-**GENESIS 0.5.7 is published for Windows Desktop and Server/Worker.** Both tags target tested
-product source `47600879997343fc2785f34f01490688ce086857`. GitHub publication, asset digests and
-independent native Windows receipts are recorded in [delivery evidence](GENESIS-DELIVERY-EVIDENCE.json).
+**Current published releases: Desktop 0.5.7 and Server/Worker 0.5.8.** Desktop 0.5.7 and the
+initial GENESIS Server/Worker 0.5.7 target `47600879997343fc2785f34f01490688ce086857`.
+The later Owner-requested rate-limit patch targets `7438f7fa803c28d6d80d7b07b9131d95d2f095b0`.
+GitHub publication, asset digests and independent native Windows receipts are recorded in
+[delivery evidence](GENESIS-DELIVERY-EVIDENCE.json). Live installation of the agent patch is
+not confirmed merely by publication.
 
 Work stays on `claude/jolly-darwin-2qeihd`. The existing ASCENSION engine, trainer,
 checkpoint format, dataset library, signed releases and update agents remain the foundation.
@@ -40,7 +43,7 @@ that Foundation training is complete.
 | 7 UI consistency | Sidebar consolidation, persistent navigation/layout, keyboard shortcuts, collapsible advanced panels, smaller minimum window and reduced-motion support implemented; actual installed Windows 800×600 layout and restored navigation verified |
 | 8 Integration fixes | Worker JSON/control APIs and real browser enrollment/training verified; original 0.5.1 → 0.5.4 Windows lifecycle passed an independent completion guard; 0.5.7 native UI, current updater and signed release gates passed |
 | 9 Real verification | Real CPU optimizer/promotions/rejection/rollback/kill-restart recovery, browser and installed Windows checks passed; no physical GPU available |
-| 10 Delivery | Progress committed/pushed by phase on the Claude branch; signed Desktop and Server/Worker 0.5.7 published and all 11 assets confirmed through GitHub |
+| 10 Delivery | Progress committed/pushed by phase on the Claude branch; signed Desktop 0.5.7 and Server/Worker 0.5.8 published; all 11 latest-release assets confirmed through GitHub; live agent-patch adoption still needs confirmation |
 
 ## Updater work carried forward
 
@@ -228,7 +231,7 @@ original-installer completion receipt after this repair.
 Main integration commits: worker JSON/CPU defaults `f8b0d9b`; reversible GENESIS `2b61ca0`;
 workspace/Intelligence `d26b7d1`; training controls/scheduling `cd8e943`; real approved-reset CPU
 lifecycle `832ea88`; active-lineage comparisons `649c5ca`; native Windows RAM `6fda2c3`;
-continued training on Windows/final product source `4760087`.
+continued training on Windows/GENESIS product source `4760087`; rate-limit patch `7438f7f`.
 
 ## Targeted Cloud agent rate-limit repair (0.5.8)
 
@@ -252,7 +255,16 @@ The network GitHub service in the new cases is an explicit test double; cryptogr
 and downloaded-byte validation are real. The existing real-process Cloud update/recovery CI gates
 remain mandatory for publication.
 
-Server/Worker **0.5.8** is the patch candidate; Desktop **0.5.7** is unchanged. The builder requires
+Server/Worker **0.5.8** is published; Desktop **0.5.7** is unchanged.
+
+- Release: https://github.com/lk5t/moth-code/releases/tag/server-v0.5.8 — published 2026-11-08
+  14:51:39 UTC, stable, `draft=false`, all six expected assets uploaded with SHA-256 digests.
+- Workflow: https://github.com/lk5t/moth-code/actions/runs/42491027148 — **success**, including full
+  SQLite/PostgreSQL, Windows/Linux backend/worker/shell, frontend and real-process Cloud
+  install/update/rollback/recovery CI, followed by signature/checksum/bundle-content verification.
+- Tag/source: `7438f7fa803c28d6d80d7b07b9131d95d2f095b0`. The existing signing keys are retained.
+
+ The builder requires
 backend/server/worker version declarations to match, so only those package versions and the server
 workflow default advance. Existing releases are immutable. See [recovery steps](SERVER.md#github-api-rate-limit-recovery-agent-058)
 for the old-agent bootstrap limitation: a rate-limited installed agent needs one successful signed
