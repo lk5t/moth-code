@@ -185,6 +185,25 @@ and then completes actual CPU optimizer steps with a saved optimizer checkpoint.
 continued-training/growth cases pass. Desktop 0.5.7 remains unpublished until native verification passes.
 
 
+
+## Confirmed 0.5.7 server delivery
+
+Server/Worker 0.5.7 is published at
+https://github.com/lk5t/moth-code/releases/tag/server-v0.5.7 (2026-11-08 13:51:59 UTC).
+The existing signed workflow passed full CI, verified signatures/checksums/bundle contents and
+published all six expected assets. GitHub confirms `draft=false`, every asset uploaded with a
+nonzero size/SHA-256 digest, and tag source `47600879997343fc2785f34f01490688ce086857`.
+Workflow: https://github.com/lk5t/moth-code/actions/runs/42486030096.
+[Machine-readable delivery evidence](GENESIS-DELIVERY-EVIDENCE.json) records the API confirmation
+and the original Windows installer's independently checked receipt. The native Windows backend
+suite passed the new real optimizer regression without `os.nice`.
+
+Desktop 0.5.7 remains pending at
+https://github.com/lk5t/moth-code/actions/runs/42485985568. Its full CI is green and its original
+published-installer gate passed; publication still requires the current A/B updater and full
+installed-app GENESIS gates. The last confirmed live VPS probe was healthy 0.5.6, model release 1;
+publication alone does not prove the VPS or the user's desktop installed 0.5.7.
+
 ## Tests and activation that remain conditional
 
 - **Physical GPU execution:** unavailable in this environment. Selection/VRAM/permissions/fallback
@@ -259,6 +278,7 @@ Compared with the source at `03331f6` before the carried-forward updater repair.
 | `backend/tests/test_genesis_chat.py` | Verify real local HTTP consent/history behavior with an explicitly simulated inference transport. |
 | `backend/tests/test_server.py` | Reproduce the exact participant JSON/authentication/persistence error, including optional-worker builds. |
 | `docs/GENESIS-CPU-EVIDENCE.json` | Record phase status, measured CPU/evaluation/checkpoint evidence, delivery results and limitations. |
+| `docs/GENESIS-DELIVERY-EVIDENCE.json` | Record public GitHub publication, exact asset digests/source commits and independent Windows completion receipts. |
 | `docs/GENESIS.md` | Record phase status, measured CPU/evaluation/checkpoint evidence, delivery results and limitations. |
 | `scripts/desktop-update-harness.py` | Allow an explicitly verifying TLS context for isolated signed-release registration. |
 | `scripts/prepare-release.mjs` | Document that the update test exercises actual window-close installation; preserve release signing configuration. |

@@ -1,0 +1,83 @@
+{
+  "product_source_commit": "47600879997343fc2785f34f01490688ce086857",
+  "scope": "Public GitHub delivery and isolated Windows runner evidence; not the user computer",
+  "production_model_reset": false,
+  "trained_foundation": false,
+  "server": {
+    "workflow": {
+      "run_id": 42486030096,
+      "url": "https://github.com/lk5t/moth-code/actions/runs/42486030096",
+      "source_commit": "47600879997343fc2785f34f01490688ce086857",
+      "conclusion": "success"
+    },
+    "release": {
+      "tag": "server-v0.5.7",
+      "url": "https://github.com/lk5t/moth-code/releases/tag/server-v0.5.7",
+      "published_at": "2026-11-08T13:51:59Z",
+      "source_commit": "47600879997343fc2785f34f01490688ce086857",
+      "draft": false,
+      "assets": [
+        {
+          "name": "moth-cloud-0.5.7.tar.gz",
+          "size": 334583,
+          "state": "uploaded",
+          "digest": "sha256:896c208e026b3055b3ddec81bbc1d0438380ff35f67198351941dee6ee8134cc",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.7/moth-cloud-0.5.7.tar.gz"
+        },
+        {
+          "name": "moth-release-0.5.7.json",
+          "size": 1108,
+          "state": "uploaded",
+          "digest": "sha256:e1a034197f225c06feb41cb0ec441e40190bd6c6f21deae7f431552e90d5da19",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.7/moth-release-0.5.7.json"
+        },
+        {
+          "name": "moth-release-0.5.7.json.sig",
+          "size": 89,
+          "state": "uploaded",
+          "digest": "sha256:e7f1b8d49a29da4531a22e5dd0bb031f2f3894ac96b5216a1607169f24bb8f92",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.7/moth-release-0.5.7.json.sig"
+        },
+        {
+          "name": "moth-worker-0.5.7.tar.gz",
+          "size": 158071,
+          "state": "uploaded",
+          "digest": "sha256:52543fc71856c4cd309310dc053431756be0545a1bd42b0d39432303ba44fb20",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.7/moth-worker-0.5.7.tar.gz"
+        },
+        {
+          "name": "moth-worker-0.5.7.tar.gz.sha256",
+          "size": 91,
+          "state": "uploaded",
+          "digest": "sha256:0050181a5d6f7bc6a78499b4b7aab21081105b321e8a0ab87a43f1f4a09f32ad",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.7/moth-worker-0.5.7.tar.gz.sha256"
+        },
+        {
+          "name": "SHA256SUMS",
+          "size": 463,
+          "state": "uploaded",
+          "digest": "sha256:c520fd8cdc81a4290cd22251067fcda8f90a862fde3bfb79cfd3ce2a0fb5e465",
+          "browser_download_url": "https://github.com/lk5t/moth-code/releases/download/server-v0.5.7/SHA256SUMS"
+        }
+      ]
+    }
+  },
+  "original_windows_update": {
+    "job_id": 128750317485,
+    "proof": {
+      "completed": true,
+      "from_version": "0.5.1",
+      "to_version": "0.5.4",
+      "production_signatures": true,
+      "tampered_installer_rejected": true,
+      "verified_download_before_close": true,
+      "installed_on_close": true,
+      "restart_report_received": true,
+      "settings_accounts_workspaces_preserved": true
+    }
+  },
+  "desktop": {
+    "status": "pending",
+    "workflow_url": "https://github.com/lk5t/moth-code/actions/runs/42485985568"
+  }
+}
