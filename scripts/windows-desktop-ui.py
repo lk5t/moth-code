@@ -78,11 +78,26 @@ class WindowsUI:
     def text_value(self, name):
         return self.field(name).iface_value.CurrentValue
 
+    def await_workspace(self, timeout=90):
+        """First launch may render the skippable introduction after backend startup.
+
+        Wait for an actionable intro or Settings, rather than assuming the guide
+        has appeared within two seconds. Invoke the real skip control when present.
+        """
+        deadline = time.monotonic() + timeout
+        skip = ('Continue without signing in (editor, terminal and Git work offline)', 'Skip for now')
+        while time.monotonic() < deadline:
+            buttons = [c for c in self.root.descendants(control_type='Button') if c.is_visible() and c.is_enabled()]
+            intro = next((c.element_info.name for c in buttons if c.element_info.name in skip), None)
+            if intro:
+                self.click(intro, timeout=5)
+            elif any(c.element_info.name == 'Settings' for c in buttons):
+                return
+            time.sleep(1)
+        raise AssertionError('First-launch introduction or Settings did not become actionable')
+
     def configure_cloud(self, url):
-        try:
-            self.click('Continue without signing in (editor, terminal and Git work offline)', timeout=2)
-        except AssertionError:
-            pass
+        self.await_workspace()
         self.click('Settings')
         self.optional_tab('Account')
         self.set_text('MOTH Cloud server address', url)
