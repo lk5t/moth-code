@@ -98,3 +98,19 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* LIVING activity is decorative feedback on real operation stages, not a neural simulation. */
+.moth-motion-thinking .moth-wing-left { animation: moth-left 2.2s ease-in-out infinite; }
+.moth-motion-thinking .moth-wing-right { animation: moth-right 2.2s ease-in-out infinite; }
+.moth-motion-generating .moth-wing-left { animation: moth-left 1.4s ease-in-out infinite; }
+.moth-motion-generating .moth-wing-right { animation: moth-right 1.4s ease-in-out infinite; }
+.moth-motion-training .moth-wing-left { animation: moth-left 3s ease-in-out infinite; }
+.moth-motion-training .moth-wing-right { animation: moth-right 3s ease-in-out infinite; }
+.moth-motion-evaluating { animation: moth-evaluate 3s ease-in-out infinite; }
+.moth-motion-deploying { animation: moth-deploy 1.5s ease-out 1; }
+.moth-motion-error { opacity: .7; }
+.moth-motion-offline { opacity: .45; }
+@keyframes moth-evaluate { 0%,100% {opacity:.75} 50% {opacity:1} }
+@keyframes moth-deploy { from {transform:scale(.96);opacity:.6} to {transform:scale(1);opacity:1} }
+.moth-emblem[data-visible="false"], .moth-emblem[data-visible="false"] .moth-wing { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) { .moth-emblem, .moth-wing { animation:none !important; transform:none !important; } }

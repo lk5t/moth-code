@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchBackendInfo, get, restartBackend, type BackendInfo } from "@/lib/backend";
+import { startLivingActivity } from "@/lib/living-activity";
 import { startEvents, useEvent } from "@/lib/events";
 import { appStore, useApp, type Project } from "@/lib/app-state";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -45,6 +46,7 @@ export default function App() {
         const i = await fetchBackendInfo().catch((e) => ({ status: "failed", url: "", token: "", error: String(e) }) as BackendInfo);
         setInfo(i);
         if (i.status === "ready") {
+          startLivingActivity();
           startEvents();
           initAccounts().catch(() => {}).finally(() => startConnectionMonitor());
           const projects = await loadProjects().catch(() => [] as Project[]);

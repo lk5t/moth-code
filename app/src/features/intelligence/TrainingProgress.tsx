@@ -44,7 +44,7 @@ export function TrainingProgress({ progress, resources }: { progress: Any | null
       const pct = fraction != null && Number.isFinite(fraction) ? Math.max(0, Math.min(100, fraction * 100)) : null;
       const active = experiment.status === "running" && !training.paused && (step > 0 || (pct ?? 0) > 0);
       return <section key={experiment.id} aria-label={`Experiment ${experiment.id} progress`} className="rounded-lg border border-border bg-bg p-3">
-        <div className="mb-2 flex items-center gap-2 text-xs"><MothEmblem motion={active ? "working" : "none"} className="size-5 shrink-0" />
+        <div className="mb-2 flex items-center gap-2 text-xs"><MothEmblem motion={active ? "training" : "none"} className="size-5 shrink-0" />
           <span className="font-medium">Experiment #{experiment.id}</span>
           <span className="text-muted">{experiment.backend ?? "Compute not assigned"}{experiment.device ? ` · ${experiment.device}` : ""}</span>
           <span className="ml-auto text-muted">{training.paused && experiment.status === "running" ? "pausing" : experiment.status}</span>

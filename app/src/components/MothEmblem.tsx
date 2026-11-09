@@ -1,13 +1,23 @@
 import { cn } from "@/lib/utils";
-import { useId } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 /** The MOTH emblem (source of truth: branding/moth-emblem.svg). */
 export function MothEmblem({ className, glow = false, motion = "none" }: {
-  className?: string; glow?: boolean; motion?: "none" | "idle" | "working";
+  className?: string; glow?: boolean; motion?: "none" | "idle" | "working" | "thinking" | "generating" | "training" | "evaluating" | "deploying" | "error" | "offline";
 }) {
+  const ref = useRef<SVGSVGElement>(null);
+  const [onScreen, setOnScreen] = useState(true);
+  const [pageVisible, setPageVisible] = useState(() => !document.hidden);
+  useEffect(() => {
+    const changed = () => setPageVisible(!document.hidden);
+    document.addEventListener("visibilitychange", changed);
+    const observer = typeof IntersectionObserver !== "undefined" ? new IntersectionObserver(([entry]) => setOnScreen(entry.isIntersecting)) : null;
+    if(ref.current) observer?.observe(ref.current);
+    return () => {observer?.disconnect();document.removeEventListener("visibilitychange", changed);};
+  }, []);
   const id = `moth-${useId().replace(/:/g, "")}`;
   return (
-    <svg viewBox="0 0 512 512" data-motion={motion}
+    <svg ref={ref} viewBox="0 0 512 512" data-motion={motion} data-visible={onScreen && pageVisible}
       className={cn("moth-emblem", `moth-motion-${motion}`, glow && "animate-pulse-glow", className)} aria-hidden>
       <defs>
         <linearGradient id={`${id}-mw`} x1="0" y1="0" x2="1" y2="1">
