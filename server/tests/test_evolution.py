@@ -174,7 +174,10 @@ def test_full_cycle_continued_training_to_deployment(client, settings, world):
 # ---- 3, 4, 12: pausing for resources, crash/restart, resumption from the checkpoint ----------------------
 def test_pause_on_resource_shortage_crash_and_resume(client, settings, world, monkeypatch):
     ctx, o = world["ctx"], world["o"]
-    S.update(ctx, {"training": {"steps": 400, "checkpoint_interval": 10}})
+    # This verifies recovery rather than convergence. Keep enough real steps for interruption
+    # while bounding compute on shared CI runners (the whole test has a 300s deadline).
+    target_steps = 100
+    S.update(ctx, {"training": {"steps": target_steps, "checkpoint_interval": 10}})
     d = add_dataset(client, o)
     client.post(f"/v1/admin/evolution/datasets/{d['id']}/approve", json={}, headers=o)
     drive(ctx, lambda c: c["status"] == "training", timeout=60)
@@ -210,7 +213,7 @@ def test_pause_on_resource_shortage_crash_and_resume(client, settings, world, mo
         cyc = drive(ctx2, lambda c: c["status"] in MEM.TERMINAL_CYCLE or c["status"] in ("evaluating", "deploying",
                                                                                       "monitoring"), timeout=300)
         result = json.loads((run_dir / "result.json").read_text())
-        assert result["resumed"] is True and result["step"] == 400
+        assert result["resumed"] is True and result["step"] == target_steps
         events = [e["kind"] for e in MEM.events(ctx2, 200)]
         assert "experiment.paused" in events and "experiment.interrupted" in events and "experiment.resumed" in events
         assert cyc["id"]
