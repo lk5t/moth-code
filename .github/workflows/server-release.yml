@@ -10,7 +10,12 @@ on:
       tag:
         description: "Server release tag (must match the server version, e.g. server-v0.3.1)"
         required: true
-        default: "server-v0.5.9"
+        default: "server-v0.6.0"
+      publish:
+        description: "Publish to GitHub Releases (requires explicit Owner approval; false builds verified candidates only)"
+        type: boolean
+        required: true
+        default: false
       channel:
         description: "Update channel"
         required: true
@@ -54,7 +59,13 @@ jobs:
         run: python scripts/verify-release.py dist
       - name: SHA256SUMS
         run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-server-worker-candidate
+          path: dist/*
+          if-no-files-found: error
       - name: Publish the GitHub release
+        if: inputs.publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

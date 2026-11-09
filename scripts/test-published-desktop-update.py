@@ -45,6 +45,10 @@ def download_release(version, dest):
         assert len(data) == asset["size"]
         if asset.get("digest"):
             assert "sha256:" + hashlib.sha256(data).hexdigest() == asset["digest"]
+    return verify_bundle(version,dest)
+
+
+def verify_bundle(version,dest):
     run(sys.executable, str(ROOT / "scripts/verify-release.py"), str(dest))
     exe = dest / f"MOTH.Code_{version}_x64-setup.exe"
     verifier = runpy.run_path(str(ROOT / "scripts/check-release-secrets.py"))
@@ -58,7 +62,7 @@ def download_release(version, dest):
     Ed25519PublicKey.from_public_bytes(base64.b64decode(pub_lines[1])[10:]).verify(
         base64.b64decode(lines[3]), packet[10:] + comment.encode())
     assert f"\tversion:{version}" in comment
-    print(f"VERIFIED published desktop {version}: SHA-256, manifest signature, installer signature and signed version", flush=True)
+    print(f"VERIFIED signed desktop {version}: SHA-256, manifest signature, installer signature and signed version", flush=True)
     return exe, json.loads((dest / f"moth-release-desktop-{version}.json").read_text())
 
 
@@ -115,13 +119,29 @@ def evaluate(expression):
 
 
 def main():
+    import argparse
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--from-version',default='0.5.1')
+    parser.add_argument('--candidate-dir',type=Path)
+    args=parser.parse_args()
+    assert re.fullmatch(r'\d+\.\d+\.\d+',args.from_version),'Invalid source version'
+    old_version=args.from_version
     assert sys.platform == "win32", "Run this native installer test on Windows"
     out = Path(os.environ["RUNNER_TEMP"]) / "published-desktop-test"
     out.mkdir(parents=True, exist_ok=True)
-    old, _ = download_release("0.5.1", out / "old")
-    new, manifest = download_release("0.5.4", out / "new")
-    assert run("git", "show", "desktop-v0.5.1:app/src-tauri/updater.pub", capture_output=True).stdout.strip() == (ROOT / "app/src-tauri/updater.pub").read_bytes().strip()
-    probe_cloud(manifest, out)
+    old, _ = download_release(old_version, out / "old")
+    if args.candidate_dir:
+        assert old_version=='0.5.9','Candidate upgrade verification starts at the published 0.5.9 release'
+        manifest_path=next(args.candidate_dir.glob('moth-release-desktop-*.json'))
+        target_version=json.loads(manifest_path.read_text())['version']
+        assert re.fullmatch(r'\d+\.\d+\.\d+',target_version)
+        shutil.copytree(args.candidate_dir,out/'new',dirs_exist_ok=True)
+        new,manifest=verify_bundle(target_version,out/'new')
+    else:
+        target_version='0.5.4'
+        new,manifest=download_release(target_version,out/'new')
+    assert run("git", "show", f"desktop-v{old_version}:app/src-tauri/updater.pub", capture_output=True).stdout.strip() == (ROOT / "app/src-tauri/updater.pub").read_bytes().strip()
+    if not args.candidate_dir:probe_cloud(manifest, out)
 
     # Isolated TLS trust for the stock production installer. No insecure transport or signature bypass.
     from cryptography import x509
@@ -165,13 +185,13 @@ def main():
         # Trust the isolated CA for the helper; clients still enforce HTTPS and the production keys.
         os.environ["SSL_CERT_FILE"] = str(out / "tls.pem")
         harness = runpy.run_path(str(ROOT / "scripts/desktop-update-harness.py"))
-        print('::notice title=Published lifecycle stage::Registering verified 0.5.4 on the isolated server', flush=True)
+        print(f'::notice title=Published lifecycle stage::Registering verified {target_version} on the isolated server', flush=True)
         harness["register"]("https://localhost:8900", data, out / "agent.token", out / "new", ssl_context=tls)
         # Isolated fixture only: offer the authentic release to every test install ID.
         # This changes no signed bytes or signature checks and never touches production rollout.
         with sqlite3.connect(data / 'moth-server.db') as db:
-            db.execute("UPDATE software_releases SET status='complete', rollout_percent=100 WHERE component='desktop' AND version='0.5.4'")
-        served = data / "storage/software/desktop/0.5.4" / new.name
+            db.execute("UPDATE software_releases SET status='complete', rollout_percent=100 WHERE component='desktop' AND version=?",(target_version,))
+        served = data / "storage/software/desktop" / target_version / new.name
         # Corrupt an already relayed installer: the stock client's independent minisign check
         # must reject it, even though the release metadata and signature are authentic.
         with served.open("r+b") as f:
@@ -180,11 +200,11 @@ def main():
             f.seek(-1, 2)
             f.write(bytes([last[0] ^ 1]))
         from moth_server.releases import bucket
-        install_id = next(f"published-ci-{i}" for i in range(1000) if bucket(f"published-ci-{i}", "0.5.4") < 10)
+        install_id = next(f"published-ci-{i}" for i in range(1000) if bucket(f"published-ci-{i}", target_version) < 10)
         home = out / "backend-home"
         home.mkdir(exist_ok=True)
         app_env = {**os.environ, "MOTH_HOME": str(home)}
-        print('::notice title=Published lifecycle stage::Installing the original 0.5.1 desktop', flush=True)
+        print(f'::notice title=Published lifecycle stage::Installing the original {old_version} desktop', flush=True)
         # An installer-started app must also use the isolated backend home.
         run(str(old), "/S", timeout=600, env=app_env)
         import winreg
@@ -201,10 +221,11 @@ def main():
         def installed_version():
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path) as reg:
                 return winreg.QueryValueEx(reg, "DisplayVersion")[0]
-        assert installed_version() == "0.5.1"
+        assert installed_version() == old_version
         exe = next(p for p in folder.glob("*.exe") if not p.name.lower().startswith("uninstall"))
         subprocess.run(['taskkill', '/F', '/T', '/IM', exe.name], capture_output=True, timeout=30)
         appdata.mkdir(exist_ok=True)
+        update_log.unlink(missing_ok=True)  # generated runner logs from a preceding isolated test
         marker = appdata / "workspace-preservation-marker.txt"
         marker.write_text("keep original workspace")
         accounts = appdata / "accounts.json"
@@ -225,25 +246,25 @@ def main():
         while time.monotonic() < deadline:
             if update_log.exists() and "update error:" in update_log.read_text(): break
             time.sleep(2)
-        else: raise AssertionError("Stock 0.5.1 did not report the tampered installer failure")
+        else: raise AssertionError(f"Stock {old_version} did not report the tampered installer failure")
         assert "signature" in update_log.read_text().lower(), update_log.read_text()
-        assert installed_version() == "0.5.1", "an invalid signature must never install"
+        assert installed_version() == old_version, "an invalid signature must never install"
         print('::notice title=Published lifecycle stage::Tampered update rejected; restoring the authentic installer', flush=True)
         shutil.copyfile(new, served)
         ui.check_update()
         print('::notice title=Published lifecycle stage::Valid update check requested; waiting for verification', flush=True)
         deadline = time.monotonic() + 480
         while time.monotonic() < deadline:
-            if update_log.exists() and "downloaded and verified 0.5.4" in update_log.read_text(): break
+            if update_log.exists() and f"downloaded and verified {target_version}" in update_log.read_text(): break
             time.sleep(2)
-        else: raise AssertionError("Stock 0.5.1 did not detect, download and verify stock 0.5.4")
-        assert installed_version() == "0.5.1", "must wait for close, not install during download"
+        else: raise AssertionError(f"Stock {old_version} did not detect, download and verify signed {target_version}")
+        assert installed_version() == old_version, "must wait for close, not install during download"
         # WM_CLOSE exercises the installed app's actual onCloseRequested handler.
         print('::notice title=Published lifecycle stage::Closing original desktop to install its verified update', flush=True)
         run("powershell", "-NoProfile", "-Command", f"Get-Process | Where-Object {{ $_.Path -eq '{exe}' }} | ForEach-Object {{ $_.CloseMainWindow() | Out-Null }}")
         deadline = time.monotonic() + 240
-        while time.monotonic() < deadline and installed_version() != "0.5.4": time.sleep(2)
-        assert installed_version() == "0.5.4", "close did not install the verified update"
+        while time.monotonic() < deadline and installed_version() != target_version: time.sleep(2)
+        assert installed_version() == target_version, "close did not install the verified update"
         # Installer may relaunch; start it if needed, then require a success report from the app.
         time.sleep(10)
         try: ui = WindowsUI(desktop.pid, timeout=5)
@@ -253,7 +274,7 @@ def main():
         deadline = time.monotonic() + 180
         while time.monotonic() < deadline:
             with sqlite3.connect(data / "moth-server.db") as db:
-                reports = db.execute("SELECT ok FROM update_reports WHERE component='desktop' AND from_version='0.5.1' AND to_version='0.5.4'").fetchall()
+                reports = db.execute("SELECT ok FROM update_reports WHERE component='desktop' AND from_version=? AND to_version=?",(old_version,target_version)).fetchall()
             if (1,) in reports: break
             time.sleep(2)
         assert (0,) in reports and (1,) in reports, reports
@@ -263,13 +284,13 @@ def main():
         ui.click('Settings')
         ui.optional_tab('Account')
         assert ui.text_value('MOTH Cloud server address') == 'https://localhost:8900'
-        evidence = {'completed': True, 'from_version': '0.5.1', 'to_version': installed_version(),
+        evidence = {'completed': True, 'from_version': old_version, 'to_version': installed_version(),
                     'production_signatures': True, 'tampered_installer_rejected': True,
                     'verified_download_before_close': True, 'installed_on_close': True,
                     'restart_report_received': True, 'settings_accounts_workspaces_preserved': True}
         (out / 'evidence.json').write_text(json.dumps(evidence, indent=2))
         print('::notice title=Published desktop lifecycle completed::' + json.dumps(evidence), flush=True)
-        print("PASS: actual published 0.5.1 -> 0.5.4 detected, downloaded, signature-verified, installed on close, restarted and reported success; data preserved", flush=True)
+        print(f"PASS: actual signed {old_version} -> {target_version} detected, downloaded, signature-verified, installed on close, restarted and reported success; data preserved", flush=True)
     finally:
         # Semantic diagnostics stay available through the GitHub checks API when artifact/log
         # download hosts are unavailable. Never include credentials or editable field values.

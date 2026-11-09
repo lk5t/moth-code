@@ -12,7 +12,12 @@ on:
       tag:
         description: "Desktop release tag (must match the app version, e.g. desktop-v0.3.1)"
         required: true
-        default: "desktop-v0.5.9"
+        default: "desktop-v0.6.0"
+      publish:
+        description: "Publish to GitHub Releases (requires explicit Owner approval; false builds verified candidates only)"
+        type: boolean
+        required: true
+        default: false
       channel:
         description: "Update channel"
         required: true
@@ -110,7 +115,7 @@ jobs:
           $path = "$env:RUNNER_TEMP/genesis-desktop-test/evidence.json"
           if (-not (Test-Path $path)) { throw "Native verification exited without completing its assertions" }
           $proof = Get-Content -Raw $path | ConvertFrom-Json
-          if (-not $proof.native_windows -or -not $proof.real_frozen_backend -or -not $proof.owner_session_and_navigation_restored_after_restart -or -not $proof.training_cycle_id) { throw "Incomplete native GENESIS verification evidence" }
+          if (-not $proof.native_windows -or -not $proof.real_frozen_backend -or -not $proof.owner_session_and_navigation_restored_after_restart -or -not $proof.training_cycle_id -or -not $proof.isolated_full_reset_verified -or -not $proof.fresh_initialization_after_reset) { throw "Incomplete native GENESIS verification evidence" }
           Write-Output "::notice title=Independent native GENESIS proof::$($proof | ConvertTo-Json -Compress)"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -120,6 +125,33 @@ jobs:
             ${{ runner.temp }}/genesis-desktop-test/evidence.json
             ${{ runner.temp }}/genesis-desktop-test/cloud.log
             ${{ runner.temp }}/genesis-desktop-test/failure.json
+      - name: Build and verify signed upgrade candidate
+        shell: pwsh
+        env:
+          MOTH_RELEASE_SIGNING_KEY: ${{ secrets.MOTH_RELEASE_SIGNING_KEY }}
+        run: |
+          $installer = (Get-ChildItem app/src-tauri/target/release/bundle/nsis/*-setup.exe)[0].FullName
+          python scripts/build-release.py --kind desktop --desktop "$installer" --out "$env:RUNNER_TEMP/desktop-candidate" --channel stable
+          if ($LASTEXITCODE -ne 0) { throw "Candidate manifest build failed" }
+          python scripts/verify-release.py "$env:RUNNER_TEMP/desktop-candidate"
+          if ($LASTEXITCODE -ne 0) { throw "Candidate signature verification failed" }
+      - name: Verify published 0.5.9 upgrades to the signed candidate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/test-published-desktop-update.py --from-version 0.5.9 --candidate-dir "$env:RUNNER_TEMP/desktop-candidate"
+          if ($LASTEXITCODE -ne 0) { throw "Published-to-candidate upgrade failed" }
+          $proof = Get-Content -Raw "$env:RUNNER_TEMP/published-desktop-test/evidence.json" | ConvertFrom-Json
+          if (-not $proof.completed -or $proof.from_version -ne '0.5.9' -or $proof.to_version -ne '${{ inputs.tag }}'.Replace('desktop-v','') -or -not $proof.production_signatures -or -not $proof.installed_on_close -or -not $proof.settings_accounts_workspaces_preserved) { throw "Incomplete candidate upgrade evidence" }
+          Write-Output "::notice title=Independent v0.6 candidate upgrade proof::$($proof | ConvertTo-Json -Compress)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: candidate-upgrade-verification
+          path: |
+            ${{ runner.temp }}/published-desktop-test/evidence.json
+            ${{ runner.temp }}/published-desktop-test/*.log
       - uses: actions/upload-artifact@v4
         with:
           name: desktop
@@ -150,7 +182,13 @@ jobs:
           python scripts/build-release.py --kind desktop --desktop "$EXE" --out dist --channel "$RELEASE_CHANNEL" --notes "MOTH Code ${RELEASE_TAG#desktop-v}"
           python scripts/verify-release.py dist
           cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-desktop-candidate
+          path: dist/*
+          if-no-files-found: error
       - name: Publish the GitHub release (never replaces an existing one)
+        if: inputs.publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

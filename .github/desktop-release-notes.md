@@ -2,24 +2,18 @@
 
 ## MOTH Code __VERSION__ for Windows
 
-### Compact workspace and live training
+### LIVING INTELLIGENCE
 
-- The existing legacy model is displayed as **MOTH 0.0.1**; its weights, registry ID and measured parameter count are preserved.
-- Code and Chat use compact toolbars, wider conversations and growing message inputs. Saved layouts, drafts, files and tasks are retained.
-- Main application tabs share a cleaner keyboard-accessible design. Subtle MOTH wing motion respects reduced-motion preferences.
-- Intelligence → Training shows reported steps, tokens, loss, compute and checkpoint status directly. Unknown measurements are labelled.
-- Removing a worker revokes its credential and removes it from normal worker lists while preserving training/audit history.
+- Eight focused workspaces: Overview, Chat, Code, Intelligence, Data, Network, Activity and Settings.
+- Authoritative model/status synchronization, real activity-driven MOTH motion, keyboard feature search and reopenable beginner guidance.
+- Searchable/paged conversation history, copy/regenerate, safe project switching and preservation of newer unsaved edits.
+- Local profile-scoped Project Intelligence: incremental structure/import/dependency evidence, relevant files, confirmed decisions and explicit index deletion.
+- Dataset Quality Studio: licensed source inspection, import diagnostics, duplicate/repetition/overlap warnings, cleaning previews, tokenizer preview and prepared-file integrity checks. Sampling limits remain explicit.
+- Existing controlled evolution, real parameter growth, worker consent, signed updates and rollback are preserved. Reference-based capability/consistency evaluation does not equate training loss with answer quality.
+- Separate Owner-only **Genesis Reset — Delete All Native AI Data**, with reauthentication, reviewed inventory, typed confirmation, recovery fences and separately confirmed backup scope. It never runs during an upgrade or creates a replacement model automatically. Offline/retained copies are disclosed.
 
-### GENESIS
-
-- One Code/Chat workspace preserves drafts, active tasks and unsaved files when switching modes.
-- Intelligence groups Overview, Training, Evolution, Network and Data, with measured model activity,
-  live backend status and existing advanced controls.
-- Training controls send the correct JSON body and show readable API errors. Signed updates retain
-  network/rollout errors, retry failed checks and install verified downloads on close or restart.
-- A fresh native MOTH 0.01 reset requires a verified archive and a separate, explicit Owner approval.
-  Installing this release does not reset any model. The fresh baseline is untrained; Foundation
-  training is not claimed complete.
+Installing this update preserves existing accounts, settings, projects, datasets, tokenizers, models and checkpoints.
+Foundation training is **not** claimed complete. Physical GPU verification requires compatible hardware.
 
 ### Install
 

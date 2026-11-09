@@ -3,6 +3,20 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.6.0 — LIVING INTELLIGENCE (release candidate; not published)
+
+- Eight workspaces with focused pages, progressive controls, keyboard feature search and optional guidance.
+- Shared account-scoped live model status and real simultaneous activity animations with reduced-motion/visibility handling.
+- Searchable/paged Chat, copy/regenerate, recent projects and response-order protections for unsaved editor changes.
+- Private incremental Project Intelligence reusing existing retrieval/memory, explicit Cloud sharing and refresh/delete controls.
+- Dataset Quality Studio with non-destructive previews, source/license/import evidence, compatibility and prepared artifact checks.
+- Existing evolution lifecycle extended with capability-labeled reference suites and bounded paired consistency scoring.
+- Owner-only full native AI reset: inventory, reauthentication, typed confirmation, worker fencing/acknowledgement, retryable failures, verified empty state and separately confirmed backup scope. Never triggered by upgrades.
+- Unified filtered activity/history and quiet deduplicated notices.
+- Release workflows retain signing/tests and default to verified candidate artifacts; publishing requires an explicit dispatch choice and Owner approval.
+
+Normal updates preserve existing data. Reset testing is isolated only. Foundation training completion and physical GPU execution are not claimed. Phase evidence and limits: [LIVING-INTELLIGENCE](docs/LIVING-INTELLIGENCE.md).
+
 ## 0.5.4 — ASCENSION, milestones 3–5: FOUNDATION, EVOLUTION 2.0, EXPERIENCE
 
 MOTH Cloud, MOTH Code and MOTH Worker 0.5.4. Milestones 0.5.2 (FOUNDATION), 0.5.3 (EVOLUTION 2.0) and 0.5.4
