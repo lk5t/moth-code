@@ -1,3 +1,5 @@
+Current continuation results and remaining verification: [INTELLIGENT-EVOLUTION-VERIFICATION.md](INTELLIGENT-EVOLUTION-VERIFICATION.md). The phase notes below are historical progress records.
+
 # Intelligent Evolution — phased implementation
 
 Branch: `claude/jolly-darwin-2qeihd`. Prior UI/progress changes are saved at `c867035`.
