@@ -31,7 +31,11 @@ def initialize(ctx: Ctx, actor_id: int | None = None) -> dict:
         allowed = {checkpoint, root / "packages" / "moth-0.01" / "model.pt"} if checkpoint.exists() else {checkpoint}
         if recovering:
             allowed.add(M.releases_dir(ctx) / f"v{existing['version']:05d}" / 'model.pt')
-        if any(p not in allowed for p in Path(ctx.settings.data_dir).rglob("*.pt")):
+        from moth_server.evolution.native_reset import state as reset_state
+        retained_backup=Path(ctx.settings.data_dir)/'genesis'
+        def preserved_backup(path):
+            return reset_state(ctx).get('status')=='completed' and retained_backup in path.parents
+        if any(p not in allowed and not preserved_backup(p) for p in Path(ctx.settings.data_dir).rglob("*.pt")):
             raise ValueError("Existing unregistered weights found; import that checkpoint before initializing a lineage")
         tok_path = root / "tokenizer.json"
         if not checkpoint.exists():

@@ -32,7 +32,8 @@ def setup(ctx: Ctx) -> None:
     def loop() -> None:
         while not stop.wait(PIPELINE_INTERVAL):
             try:
-                M.auto_pipeline(ctx)
+                from moth_server.evolution.native_reset import spawn
+                spawn(ctx,lambda:M.auto_pipeline(ctx),"model-pipeline-work").join()
             except Exception:  # noqa: BLE001
                 M.log.exception("model pipeline failed")
 
@@ -44,7 +45,8 @@ def kick_pipeline(ctx: Ctx) -> None:
     if ctx.extras.get("synchronous_jobs"):
         M.auto_pipeline(ctx)
     else:
-        threading.Thread(target=lambda: M.auto_pipeline(ctx), daemon=True, name="model-pipeline-kick").start()
+        from moth_server.evolution.native_reset import spawn
+        spawn(ctx,lambda:M.auto_pipeline(ctx),"model-pipeline-kick")
 
 
 @router.get("/v1/models/current")
@@ -52,8 +54,9 @@ def current_model(ctx: Ctx = Depends(get_ctx)):
     """Public: which official MOTH model MOTH Cloud is serving (no weights are distributed)."""
     from moth_server.routes.admin import flags
 
+    from moth_server.evolution.native_reset import fenced
     d = M.deployed(ctx)
-    return {"available": bool(d and flags(ctx).get("cloud_inference_enabled") and ctx.extras.get("inference_engine")),
+    return {"available": bool(not fenced(ctx) and d and flags(ctx).get("cloud_inference_enabled") and ctx.extras.get("inference_engine")),
             "release": {k: d[k] for k in ("version", "name", "published_at")} | {"params": d["info"].get("params")}
             if d else None}
 

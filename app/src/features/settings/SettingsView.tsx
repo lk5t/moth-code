@@ -1,6 +1,7 @@
 import { reopenWelcome } from "@/features/onboarding/Welcome";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { useSavedSection } from "@/lib/use-saved-section";
+import { NativeResetPanel } from "@/features/intelligence/NativeResetPanel";
 import { GenesisPanel } from "@/features/intelligence/GenesisPanel";
 import { useEffect, useState } from "react";
 import { Info, RotateCcw, Shield } from "lucide-react";
@@ -81,7 +82,8 @@ export function SettingsView() {
         {tab === "Account" && <><Button variant="secondary" onClick={reopenWelcome}>Show the quick introduction</Button><AccountSection /><ConnectionSection />{owner && <details className="rounded-lg border border-danger/40 p-3">
           <summary className="cursor-pointer text-sm text-danger">Advanced · Native AI operations</summary>
           <p className="my-3 text-xs text-muted">Separate from everyday settings. Legacy lineage recovery retains previous models and backups.</p>
-          <GenesisPanel />
+          <NativeResetPanel />
+          <details className="mt-4"><summary>Legacy reversible lineage recovery (retains models)</summary><GenesisPanel /></details>
         </details>}</>}
         {tab === "Privacy & AI" && <><IntelligenceSection /><OnDeviceSection /></>}
         {tab === "Plan & referrals" && <><UsageSection /><ReferralsSection /></>}

@@ -30,6 +30,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from moth_server.evolution.native_reset import next_job_values
 from moth_server.context import Ctx
 from moth_server.db import now, training_jobs, workers
 from moth_server.evolution import memory as MEM
@@ -172,7 +173,7 @@ def _create_round_jobs(ctx: Ctx, exp: dict, base: dict, st: dict, need_bytes: in
                               "batch_autotune": bool(cfg.get("batch_autotune", True)),
                               "seq_len": cfg["seq_len"], "weight_decay": cfg["weight_decay"]},
                     "protocol": PROTOCOL, "requirements": {"memory_bytes": int(need_bytes)}, "prefer_gpu": True}
-            jid = c.execute(training_jobs.insert().values(kind="dist_shard", status="queued", spec=json.dumps(spec),
+            jid = c.execute(training_jobs.insert().values(**next_job_values(ctx,c), kind="dist_shard", status="queued", spec=json.dumps(spec),
                                                           attempts=0, max_attempts=3, created_at=now(),
                                                           updated_at=now())).inserted_primary_key[0]
             jobs[str(i)] = jid

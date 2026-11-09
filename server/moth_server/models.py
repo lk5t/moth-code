@@ -65,7 +65,7 @@ def releases_dir(ctx: Ctx) -> Path:
 
 def _next_version(ctx: Ctx, conn=None) -> int:
     q = select(func.max(model_releases.c.version).label("v"))
-    return int(((ctx.db.one(q, conn) or {}).get("v") or 0) + 1)
+    return max(int(((ctx.db.one(q, conn) or {}).get("v") or 0) + 1), int(ctx.db.get_config("native_version_floor",1) or 1))
 
 
 def release(ctx: Ctx, version: int) -> dict:
@@ -374,7 +374,8 @@ def evaluate_in_background(ctx: Ctx, version: int, actor_id: int | None = None) 
     if ctx.extras.get("synchronous_jobs"):
         run()
     else:
-        threading.Thread(target=run, name=f"evaluate-v{version}", daemon=True).start()
+        from moth_server.evolution.native_reset import spawn
+        spawn(ctx,run,f"evaluate-v{version}")
 
 
 def publish(ctx: Ctx, version: int, actor_id: int, override_regression: bool = False) -> dict:
@@ -550,6 +551,8 @@ def recover_interrupted(ctx: Ctx) -> list[int]:
 
 def restore_on_startup(ctx: Ctx) -> None:
     recover_interrupted(ctx)
+    from moth_server.evolution.native_reset import fenced
+    if fenced(ctx):return
     version = ctx.db.get_config("deployed_release")
     if version and "inference_engine" not in ctx.extras:
         try:
@@ -579,6 +582,8 @@ def auto_pipeline(ctx: Ctx) -> dict[str, Any]:
     from moth_server import evalsets
     from moth_server.routes.admin import flags
 
+    from moth_server.evolution.native_reset import fenced, empty
+    if fenced(ctx) or empty(ctx):return {"state":"native_reset"}
     created = sync_candidates(ctx)
     results: dict[str, Any] = {"created": created, "evaluated": [], "passed": [], "deployed": None}
     def evolution(v: int) -> bool:  # evolution candidates are evaluated by their own cycle

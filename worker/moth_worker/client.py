@@ -42,12 +42,12 @@ class WorkerClient:
         return self._check(self.http.post("/v1/worker/enroll", headers=self._headers(),
                                           json={"token": token, "hardware": hardware, "version": version})).json()
 
-    def heartbeat(self, hardware: dict | None, job_id: int | None, progress: float | None, metrics: dict | None = None) -> dict:
+    def heartbeat(self, hardware: dict | None, job_id: int | None, progress: float | None, metrics: dict | None = None, reset_ack: int | None = None, reset_retained: int = 0) -> dict:
         from moth_worker import __version__
 
         return self._check(self.http.post("/v1/worker/heartbeat", headers=self._headers(),
                                           json={"hardware": hardware, "job_id": job_id, "progress": progress,
-                                                "version": __version__, "metrics": metrics})).json()
+                                                "version": __version__, "metrics": metrics,"reset_ack":reset_ack,"reset_retained":reset_retained})).json()
 
     def check_update(self, channel: str = "stable") -> dict | None:
         return self._check(self.http.get("/v1/worker/update", params={"channel": channel},

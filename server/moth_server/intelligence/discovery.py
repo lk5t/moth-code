@@ -69,6 +69,8 @@ def ensure_data(ctx: Ctx, wait: bool = False) -> dict:
     from moth.training.checkpoint import RunLock
     from moth_server.intelligence import library
 
+    from moth_server.evolution.native_reset import fenced,empty
+    if fenced(ctx) or empty(ctx):return {"status":"native_reset"}
     with RunLock(library.root(ctx) / "discovery", "automatic data preparation"):
         p = policy(ctx)
         st = ctx.db.get_config(KEY + "_state", {}) or {}
@@ -99,7 +101,8 @@ def ensure_data(ctx: Ctx, wait: bool = False) -> dict:
                     library.check_updates(ctx, sources=remote)
                 finally:
                     ctx.extras['discovery_scan'] = False
-            threading.Thread(target=scan, name='trusted-dataset-discovery', daemon=True).start()
+            from moth_server.evolution.native_reset import spawn
+            spawn(ctx,scan,'trusted-dataset-discovery')
         sig = hashlib.sha256(json.dumps({"sources": approved, "pins": library.pins(ctx),
                                         "factory_policy": 2, "policy": p, "tokenizer": str(library._lineage_tokenizer(ctx))},
                                        sort_keys=True).encode()).hexdigest()

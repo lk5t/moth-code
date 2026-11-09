@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import math
 import os
 import threading
@@ -49,6 +50,9 @@ class WorkerRunner:
         self.device: str | None = None
         self.bench: dict[str, Any] | None = None
         self.hardware_lock = threading.Lock()
+        self.reset_generation = None
+        self.reset_retained = 0
+        self.reset_lock = threading.Lock()
 
     def hardware(self) -> dict[str, Any]:
         """Detected hardware plus the measured benchmark (taken once, cached for a week)."""
@@ -61,7 +65,14 @@ class WorkerRunner:
 
     # ---- heartbeat -----------------------------------------------------------------------
     def beat(self) -> None:
-        resp = self.client.heartbeat(self.hardware(), self.current_job, self.progress, self.training_metrics)
+        kwargs={} if self.reset_generation is None else {'reset_ack':self.reset_generation,'reset_retained':self.reset_retained}
+        resp = self.client.heartbeat(self.hardware(), self.current_job, self.progress, self.training_metrics,**kwargs)
+        generation=resp.get('reset_generation',0)
+        if generation and generation!=self.reset_generation:
+            if self.current_job is not None:
+                self.cancelled_job=self.current_job
+            else:
+                self.clean_reset_cache(generation)
         from moth.training.resources import pressure, pressure_reason
         self.paused, self.revoked, self.limits = bool(resp["paused"] or pressure_reason(pressure())), resp["revoked"], resp.get("limits") or {}
         if resp.get("job_cancelled"):
@@ -75,6 +86,36 @@ class WorkerRunner:
                 self.client.report_update(done.get("from"), __version__, True)
             except Exception:  # noqa: BLE001 — reporting is best effort
                 pass
+
+    def cache_scope(self):
+        import hashlib
+        return hashlib.sha256((str(getattr(self.client,'server',''))+'\0'+str(getattr(self.client,'token',''))).encode()).hexdigest()
+
+    def clean_reset_cache(self,generation):
+        """Only delete checkpoint filenames with a matching local deployment ownership marker.
+
+        Legacy/unbound caches are retained and reported for manual review, never guessed owned.
+        Caller waits until current_job is None; heartbeats only request cancellation during training.
+        """
+        with self.reset_lock:
+            if self.current_job is not None:return
+            root=self.state_dir/'jobs'
+            if root.is_symlink():raise RuntimeError('Worker job cache is a symbolic link; reset cleanup requires review')
+            scope=self.cache_scope()
+            for marker in root.glob('*.owner.json'):
+                if marker.is_symlink():continue
+                try:owner=json.loads(marker.read_text())
+                except (OSError,ValueError):continue
+                jid=marker.name.split('.')[0]
+                if not jid.isdigit() or owner.get('scope')!=scope:continue
+                for suffix in ('.pt','.pt.sha256','.pt.corrupt','.pt.tmp','.pt.sha256.tmp'):
+                    file=root/(jid+suffix)
+                    if file.is_symlink():continue
+                    file.unlink(missing_ok=True)
+                marker.unlink()
+            self.reset_retained=sum(1 for p in root.glob('*.pt*'))
+            self.reset_generation=generation
+            self.log(f'Native reset {generation}: owned cached checkpoints removed; {self.reset_retained} unverified/other-scope cache files retained.')
 
     def maybe_update(self) -> bool:
         """Between jobs only: install a newer verified worker if MOTH Cloud offers one."""
@@ -205,6 +246,9 @@ class WorkerRunner:
         self.cancelled_job = None
         self.training_metrics = None
         self.current_job, self.progress = jid, 0.0
+        owner_path=self.state_dir/'jobs'/f'{jid}.owner.json'
+        if not (self.state_dir/'jobs'/f'{jid}.pt').exists():
+            owner_path.write_text(json.dumps({'scope':self.cache_scope()}))
         self.log(f"job {jid}: round {spec['round']}, shard {spec['shard_id']}")
         try:
             weights = self.client.download(jid, "weights", spec["base_sha256"])

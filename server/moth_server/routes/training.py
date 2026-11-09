@@ -59,6 +59,8 @@ class HeartbeatIn(BaseModel):
     progress: float | None = None
     version: str | None = Field(default=None, max_length=32)
     metrics: TrainingMetrics | None = None
+    reset_ack: int | None = Field(default=None,ge=0)
+    reset_retained: int = Field(default=0,ge=0,le=1000000)
 
 
 class ProgressIn(BaseModel):
@@ -242,7 +244,7 @@ def worker_leave(w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx))
 @router.post("/v1/worker/heartbeat")
 def worker_heartbeat(body: HeartbeatIn, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
     return T.heartbeat(ctx, w, body.hardware, body.job_id, body.progress, body.version,
-                       body.metrics.model_dump() if body.metrics else None)
+                       body.metrics.model_dump() if body.metrics else None,body.reset_ack,body.reset_retained)
 
 
 @router.post("/v1/worker/jobs/claim")

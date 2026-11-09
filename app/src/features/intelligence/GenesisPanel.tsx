@@ -29,7 +29,7 @@ export function GenesisPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Sprout className="size-4 text-accent" />GENESIS · fresh MOTH 0.01</CardTitle>
+        <CardTitle className="flex items-center gap-2"><Sprout className="size-4 text-accent" />Legacy lineage recovery · fresh MOTH 0.01</CardTitle>
         <CardDescription>Start a new native lineage with fresh weights. Preparation pauses training, archives existing models and checkpoints, and verifies a complete restoration. Your accounts and projects are kept.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 text-xs">

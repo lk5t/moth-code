@@ -532,3 +532,29 @@ async def upload_suite(name: str = Form(..., max_length=80), capability: str = F
         return EV.add_task_suite(ctx, name, capability, data)
     except (ValueError, UnicodeDecodeError) as e:
         raise _bad(e) from None
+
+
+class NativeResetPreviewIn(BaseModel):
+    include_managed_backups: bool = False
+
+class NativeResetExecuteIn(BaseModel):
+    reset_id: str
+    confirmation: str
+    backup_confirmation: str = ""
+
+@router.get('/native-reset')
+def native_reset_status(auth:Auth=Depends(require_owner),ctx:Ctx=Depends(get_ctx)):
+    from moth_server.evolution.native_reset import status
+    return status(ctx)
+
+@router.post('/native-reset/preview')
+def native_reset_preview(body:NativeResetPreviewIn,auth:Auth=Depends(owner_reauthed),ctx:Ctx=Depends(get_ctx)):
+    from moth_server.evolution.native_reset import preview
+    try:return preview(ctx,auth.uid,body.include_managed_backups)
+    except ValueError as error:raise _bad(error) from None
+
+@router.post('/native-reset/execute')
+def native_reset_execute(body:NativeResetExecuteIn,auth:Auth=Depends(owner_reauthed),ctx:Ctx=Depends(get_ctx)):
+    from moth_server.evolution.native_reset import execute
+    try:return execute(ctx,body.reset_id,body.confirmation,auth.uid,body.backup_confirmation)
+    except ValueError as error:raise _bad(error) from None

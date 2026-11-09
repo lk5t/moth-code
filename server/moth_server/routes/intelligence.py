@@ -571,10 +571,12 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
         import math
         if gates and all(g.get('passed') for g in gates) and type(value) in (int,float) and math.isfinite(value):
             improvement = {'verified': True, 'primary_improvement': value, 'experiment_id': measured['id']}
-    accepting = bool(loaded and flags(ctx).get('cloud_inference_enabled'))
+    from moth_server.evolution import native_reset as NR
+    reset_fenced=NR.fenced(ctx)
+    accepting = bool(loaded and flags(ctx).get('cloud_inference_enabled') and not reset_fenced)
     return {
         "observed_at": now(), "serving": {'loaded': bool(loaded), 'accepting_requests': accepting,
-            'reason': 'Ready to answer' if accepting else 'Cloud answering is turned off' if loaded else 'No native model is loaded'},
+            'reason': 'Native reset recovery is required' if reset_fenced else 'Ready to answer' if accepting else 'Cloud answering is turned off' if loaded else 'No native model is loaded'},
         "checkpoint": checkpoint, "improvement": improvement,
         "current": current, "stable": next((v for v in versions if v["stable"]), None),
         "development": dev, "rollout": serving.loaded_versions(ctx), "timeline": versions,

@@ -73,6 +73,8 @@ def start_cycle(ctx: Ctx, trigger: str = "manual", actor_id: int | None = None) 
     """Start a cycle now (Owner: "Run now"), if none is active and its prerequisites exist."""
     from moth_server import models as M
 
+    from moth_server.evolution.native_reset import fenced
+    if fenced(ctx):return {"state":"native_reset"}
     settings = S.runtime(ctx)
     base = M.deployed(ctx)
     if not base:

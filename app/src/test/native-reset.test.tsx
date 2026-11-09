@@ -1,0 +1,20 @@
+import {fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {expect,it,vi} from 'vitest';
+const mock=vi.hoisted(()=>({api:vi.fn()}));
+vi.mock('@/lib/account',()=>({serverApi:mock.api,useAccount:(fn:any)=>fn({token:'owner',serverUrl:'https://isolated.test',user:{role:'owner'}})}));
+vi.mock('@/features/owner/ops',()=>({secure:(fn:any)=>fn(),formatBytes:(n:number)=>n+' bytes'}));
+vi.mock('@/lib/cloud-progress',()=>({refreshCloudProgress:vi.fn()}));
+import {NativeResetPanel} from '@/features/intelligence/NativeResetPanel';
+it('requires a preview and separate exact deletion confirmations',async()=>{
+ let plan:any={status:'idle'};
+ mock.api.mockImplementation((path:string)=>{if(path.endsWith('/preview'))plan={id:'isolated-reset',status:'preview',backups:true,inventory:{roots:[{category:'lineage',files:2,bytes:10}],records:{model_releases:2},managed_backup_files:1,external_references:[],disclosure:'Fixture only'}};return Promise.resolve(plan);});
+ render(<NativeResetPanel/>);
+ expect(screen.queryByText('Permanently delete reviewed native AI data')).toBeNull();
+ fireEvent.click(screen.getByLabelText(/Include managed GENESIS/));
+ fireEvent.click(screen.getByText('Inspect deletion inventory'));
+ const execute=await screen.findByText('Permanently delete reviewed native AI data');expect(execute).toBeDisabled();
+ fireEvent.change(screen.getByLabelText('Confirm all native AI deletion'),{target:{value:'DELETE ALL NATIVE AI DATA'}});expect(execute).toBeDisabled();
+ fireEvent.change(screen.getByLabelText('Confirm managed AI backup deletion'),{target:{value:'DELETE MANAGED AI BACKUPS'}});
+ fireEvent.click(execute);
+ await waitFor(()=>expect(mock.api).toHaveBeenCalledWith('/v1/admin/evolution/native-reset/execute',expect.objectContaining({json:{reset_id:'isolated-reset',confirmation:'DELETE ALL NATIVE AI DATA',backup_confirmation:'DELETE MANAGED AI BACKUPS'}})));
+});

@@ -26,6 +26,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from moth_server.evolution.native_reset import next_job_values
 from moth_server.context import Ctx
 from moth_server.db import now, training_jobs
 from moth_server.evolution import datasets as DS
@@ -348,7 +349,7 @@ def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0, worker_ids: list
             # assignment: only workers with enough memory get it; a GPU worker is preferred briefly
             "requirements": {"memory_bytes": int(need_bytes)}, "prefer_gpu": True}
     with ctx.db.tx() as c:
-        res = c.execute(training_jobs.insert().values(kind="evolve_train", status="queued", spec=json.dumps(spec),
+        res = c.execute(training_jobs.insert().values(**next_job_values(ctx,c), kind="evolve_train", status="queued", spec=json.dumps(spec),
                                                       attempts=0, max_attempts=int(exp["max_attempts"]),
                                                       created_at=now(), updated_at=now()))
         return res.inserted_primary_key[0]

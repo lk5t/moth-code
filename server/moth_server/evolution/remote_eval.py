@@ -18,6 +18,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from moth_server.evolution.native_reset import next_job_values
 from moth_server.context import Ctx
 from moth_server.db import now, training_jobs, workers
 from moth_server.evolution import memory as MEM
@@ -124,7 +125,7 @@ def ensure(ctx: Ctx, exp: dict, cand: dict, settings: dict) -> bool:
                             "round": -1, "base_sha256": cand["sha256"], "model_config": cfg,
                             "shard_id": s["id"], "shard_sha256": _sha(data), "job_id": f"eval-{cand['version']}-{s['id']}-{replica}",
                             "requirements": {"memory_bytes": 0}, "prefer_cpu": True}
-                    jid = c.execute(training_jobs.insert().values(kind="eval_loss", status="queued",
+                    jid = c.execute(training_jobs.insert().values(**next_job_values(ctx,c), kind="eval_loss", status="queued",
                                                                   spec=json.dumps(spec), attempts=0, max_attempts=2,
                                                                   created_at=now(), updated_at=now())).inserted_primary_key[0]
                     jobs.setdefault(s["id"], []).append(jid)

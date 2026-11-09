@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import and_, func, or_, select
 
 from moth_server.audit import audit
+from moth_server.evolution.native_reset import next_job_values
 from moth_server.context import Ctx
 from moth_server.db import enrollment_tokens, now, training_jobs, workers
 from moth_server.hooks import run_hook
@@ -212,7 +213,7 @@ def ensure_jobs(ctx: Ctx) -> None:
                           .values(status="cancelled", error="superseded by a newer round", updated_at=now()))
                 open_jobs -= 1
         for _ in range(max(0, MAX_QUEUED - open_jobs)):
-            c.execute(training_jobs.insert().values(kind="train_round", status="queued",
+            c.execute(training_jobs.insert().values(**next_job_values(ctx,c), kind="train_round", status="queued",
                                                     spec=json.dumps({"round": cfg_round}), attempts=0, max_attempts=3,
                                                     created_at=now(), updated_at=now()))
 
@@ -241,6 +242,9 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
     a job is offered only if its memory requirement fits the worker (GPU memory, else RAM); jobs that
     benefit from a GPU wait briefly for an online GPU worker before a CPU worker takes them.
     ``allow_cpu`` is kept for compatibility and no longer restricts anything."""
+    from moth_server.evolution import native_reset as NR
+    generation=NR.state(ctx).get("generation",0)
+    if NR.fenced(ctx) or (generation and ctx.db.get_config("native_reset_ack:"+str(worker["id"]),0)!=generation):return None
     if not worker_allowed(ctx, worker) or worker["paused"] or (ctx.db.get_config('genesis_state', {}) or {}).get('status') in ('preparing', 'prepared'):
         return None
     hw = json.loads(worker["hardware"] or "{}")
@@ -419,7 +423,12 @@ def fail_job(ctx: Ctx, worker: dict, job_id: int, error: str) -> None:
 
 
 def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None, progress: float | None,
-              version: str | None = None, metrics: dict | None = None) -> dict:
+              version: str | None = None, metrics: dict | None = None, reset_ack: int | None = None,reset_retained: int = 0) -> dict:
+    from moth_server.evolution import native_reset as NR
+    generation=NR.state(ctx).get("generation",0)
+    if reset_ack is not None and reset_ack==generation and job_id is None:
+        ctx.db.set_config("native_reset_ack:"+str(worker["id"]),generation)
+        ctx.db.set_config("native_reset_retained:"+str(worker["id"]),reset_retained)
     t = now()
     values: dict[str, Any] = {"last_heartbeat_at": t, "status": "online"}
     if version:
@@ -444,7 +453,7 @@ def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None,
                                                            training_jobs.c.status == 'leased',
                                                            training_jobs.c.worker_id == worker['id'])
                               .values(result=json.dumps({'progress': metrics})))
-    return {"paused": bool(worker["paused"]) or not worker_allowed(ctx, worker), "revoked": worker["revoked_at"] is not None,
+    return {"reset_generation":generation,"paused": NR.fenced(ctx) or bool(worker["paused"]) or not worker_allowed(ctx, worker), "revoked": worker["revoked_at"] is not None,
             "job_cancelled": job_cancelled,
             "limits": json.loads(worker["limits"] or "{}"), "server_time": t}
 

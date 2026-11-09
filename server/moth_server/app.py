@@ -102,6 +102,35 @@ def create_app(settings: Settings | None = None, extras: dict | None = None) -> 
                                               "Access-Control-Expose-Headers": "X-Moth-Reason"})
         return await call_next(request)
 
+    @app.middleware("http")
+    async def native_reset_fence(request:Request,call_next):
+        from moth_server.evolution import native_reset as NR
+        import anyio
+        path=request.url.path
+        native=(path.startswith(("/v1/worker/jobs/","/cloud/v1/")) or path=="/v1/chat" or
+                (request.method not in ("GET","HEAD","OPTIONS") and path.startswith(("/v1/admin/models","/v1/admin/eval-datasets","/v1/admin/library","/v1/admin/evolution"))))
+        if path.startswith('/v1/admin/evolution/native-reset'):native=False
+        if not native:return await call_next(request)
+        def enter():
+            with NR.lock(ctx):
+                if NR.fenced(ctx):return False
+                ctx.extras['native_http_active']=ctx.extras.get('native_http_active',0)+1
+                return True
+        def leave():
+            with NR.lock(ctx):ctx.extras['native_http_active']=max(0,ctx.extras.get('native_http_active',0)-1)
+        if not await anyio.to_thread.run_sync(enter):
+            return JSONResponse({'detail':'Native AI reset requires recovery. New native work is paused.'},status_code=503,headers={'X-Moth-Reason':'native_reset'})
+        try:response=await call_next(request)
+        except BaseException:
+            await anyio.to_thread.run_sync(leave);raise
+        original=response.body_iterator
+        async def finish():
+            try:
+                async for chunk in original:yield chunk
+            finally:await anyio.to_thread.run_sync(leave)
+        response.body_iterator=finish()
+        return response
+
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=False,
                        allow_methods=["*"], allow_headers=["*"], expose_headers=["Retry-After", "X-Moth-Reason"])
 

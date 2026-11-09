@@ -117,8 +117,8 @@ def start_build(ctx: Ctx, actor_id: int | None, config: dict[str, Any] | None = 
         return running["id"]
     with ctx.db.tx() as c:
         bid = c.execute(library_builds.insert().values(status="queued", created_at=now())).inserted_primary_key[0]
-    t = threading.Thread(target=_run_build, args=(ctx, bid, config or {}), name=f"library-build-{bid}", daemon=True)
-    t.start()
+    from moth_server.evolution.native_reset import spawn
+    t=spawn(ctx,lambda:_run_build(ctx,bid,config or {}),f"library-build-{bid}")
     if wait:
         t.join()
     from moth_server.audit import audit
