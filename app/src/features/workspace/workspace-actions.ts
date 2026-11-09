@@ -8,6 +8,7 @@ export async function openFile(path: string) {
   if (!s.project) return;
   if (!s.openFiles.some((f) => f.path === path)) {
     const res = await get<{ content: string }>(`/api/projects/${s.project.id}/file?path=${encodeURIComponent(path)}`);
+    if (appStore.getState().project?.id !== s.project.id) return;
     const file: OpenFile = { path, content: res.content, saved: res.content, language: languageFromPath(path) };
     appStore.setState((st) => ({ openFiles: [...st.openFiles, file] }));
   }
@@ -25,7 +26,8 @@ export async function saveFile(path: string) {
   const f = s.openFiles.find((x) => x.path === path);
   if (!s.project || !f) return;
   await put(`/api/projects/${s.project.id}/file`, { path, content: f.content });
-  appStore.setState((st) => ({ openFiles: st.openFiles.map((x) => (x.path === path ? { ...x, saved: x.content } : x)) }));
+  if(appStore.getState().project?.id!==s.project.id)return;
+  appStore.setState((st) => ({ openFiles: st.openFiles.map((x) => (x.path === path ? { ...x, saved: f.content } : x)) }));
 }
 
 export function closeFile(path: string) {
@@ -43,10 +45,11 @@ export async function refreshOpenFile(path: string) {
   if (!s.project || !f || f.content !== f.saved) return;
   try {
     const res = await get<{ content: string }>(`/api/projects/${s.project.id}/file?path=${encodeURIComponent(path)}`);
+    if(appStore.getState().project?.id!==s.project.id)return;
     appStore.setState((st) => ({
-      openFiles: st.openFiles.map((x) => (x.path === path ? { ...x, content: res.content, saved: res.content } : x)),
+      openFiles: st.openFiles.map((x) => (x.path === path && x.content === x.saved ? { ...x, content: res.content, saved: res.content } : x)),
     }));
   } catch {
-    closeFile(path); // deleted
+    if(appStore.getState().project?.id===s.project.id && appStore.getState().openFiles.find(x=>x.path===path)?.content===f.content) closeFile(path); // deleted; keep newer edits
   }
 }

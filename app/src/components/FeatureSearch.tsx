@@ -1,3 +1,4 @@
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { WORKSPACES, navigate } from "@/lib/navigation";
@@ -28,9 +29,8 @@ export function FeatureSearch() {
       className="flex h-9 w-full items-center justify-center gap-2 rounded-lg px-2 text-xs text-muted hover:bg-surface-2 focus-visible:outline focus-visible:outline-accent">
       <Search className="size-4 shrink-0" /><span className="hidden md:inline">Find a feature</span>
     </button>
-    {open && <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[15vh]" onMouseDown={(e) => {if(e.target === e.currentTarget) setOpen(false);}}>
-      <div role="dialog" aria-label="Find a feature" aria-modal="true" className="w-full max-w-lg rounded-xl border border-border bg-bg p-3 shadow-xl"
-        onKeyDown={(e) => {if(e.key === "Escape") {e.preventDefault(); setOpen(false);} if(e.key === "Tab") {e.preventDefault(); input.current?.focus();}}}>
+    <Dialog open={open} onOpenChange={setOpen}><DialogContent className="w-full max-w-lg p-3">
+        <DialogTitle className="sr-only">Find a feature</DialogTitle><DialogDescription className="sr-only">Search workspaces. Use arrows and Enter, or Tab to a result. Escape closes this dialog.</DialogDescription>
         <input ref={input} aria-label="Search features" role="combobox" aria-expanded="true" aria-controls="feature-results" aria-activedescendant={matches.length ? `feature-${active}` : undefined}
           placeholder="Search workspaces and features…" value={query} className="w-full rounded-lg border border-border bg-surface p-3 text-sm outline-accent"
           onChange={(e) => {setQuery(e.target.value); setActive(0);}}
@@ -43,7 +43,6 @@ export function FeatureSearch() {
         </div>
         {!matches.length && <p className="p-3 text-xs text-muted">No matching feature. Try “training”, “dataset” or “updates”.</p>}
         <button className="mt-2 text-xs text-muted hover:text-fg" onClick={() => setOpen(false)}>Close · Escape</button>
-      </div>
-    </div>}
+      </DialogContent></Dialog>
   </>;
 }

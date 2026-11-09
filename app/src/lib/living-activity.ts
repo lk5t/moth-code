@@ -8,8 +8,9 @@ export const livingActivity = createStore(initial);
 const requests = new Map<string, "thinking" | "generating">();
 const jobs = new Map<string, Pulse>();
 let started = false;
+let revision=0;
 function publish() { livingActivity.setState({local: [...new Set([...requests.values(), ...jobs.values()])]}); }
-export function clearLocalActivity() { requests.clear(); jobs.clear(); livingActivity.setState({...initial,local:[],cloud:[]}); }
+export function clearLocalActivity() { revision++; requests.clear(); jobs.clear(); livingActivity.setState({...initial,local:[],cloud:[]}); }
 export function setCloudActivity(cloud: Pulse[]) { livingActivity.setState({cloud}); }
 export function markActivityError() { livingActivity.setState({error:true}); }
 export function dismissActivityError() { livingActivity.setState({error:false}); }
@@ -27,10 +28,11 @@ function jobActivity(job: Record<string, any>) {
   publish();
 }
 export function observeActivity(event: MothEvent) {
+  if(event.topic === "connection" || event.topic === "job") revision++;
   if (event.topic === "connection") {
     livingActivity.setState({connected:!!event.connected});
     if (!event.connected) {requests.clear();jobs.clear();publish();}
-    else get<Record<string,any>[]>("/api/jobs").then((all) => all.forEach(jobActivity)).catch(() => {});
+    else {const captured=revision; get<Record<string,any>[]>("/api/jobs").then((all) => {if(captured===revision)all.forEach(jobActivity);}).catch(() => {});}
   }
   if (event.topic === "job" && event.job) jobActivity(event.job);
   if (event.topic !== "chat") return;
