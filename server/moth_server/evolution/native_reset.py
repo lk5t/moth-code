@@ -17,7 +17,7 @@ from moth_server import db as D
 KEY='native_reset'
 CONFIRM='DELETE ALL NATIVE AI DATA'
 BACKUP_CONFIRM='DELETE MANAGED AI BACKUPS'
-ROOTS=('storage/models','storage/uploads','lineage','evolution','coordinator','library','eval')
+ROOTS=('storage/models','storage/uploads','storage/staging','lineage','evolution','coordinator','library','eval')
 TABLES=('training_jobs','evolution_experiments','evolution_cycles','evaluation_reports','model_lineage','evolution_events','training_datasets','library_builds','uploads','model_releases')
 CONFIGS=('deployed_release','evolution_state','curriculum','library_pins','library_updates','eval_dataset_pinned','genesis_state','library_discovery_state','library_discovery_scan_at')
 NATIVE_AUDIT=('models.','evolution.','library.','training.')

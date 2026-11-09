@@ -14,7 +14,7 @@ def test_full_erasure_preserves_platform_and_requires_separate_backup_scope(clie
     unrelated=ctx.settings.data_dir/'projects'/'keep.txt';unrelated.parent.mkdir();unrelated.write_text('user project')
     (ctx.settings.data_dir/'keys').mkdir(exist_ok=True);key=ctx.settings.data_dir/'keys'/'keep.key';key.write_text('security configuration')
     software=ctx.settings.storage_dir/'software'/'keep.zip';software.parent.mkdir(exist_ok=True);software.write_bytes(b'installed software')
-    for relative in ('evolution/datasets/d1','lineage/custom-tokenizers/v1','library/builds/1','eval/datasets/one','coordinator/checkpoints'):
+    for relative in ('evolution/datasets/d1','lineage/custom-tokenizers/v1','library/builds/1','eval/datasets/one','coordinator/checkpoints','storage/staging/orphaned-native-package'):
         root=ctx.settings.data_dir/relative;root.mkdir(parents=True,exist_ok=True);(root/'data.bin').write_bytes(b'native owned data')
     backup=ctx.settings.data_dir/'genesis'/'old'/'archive';backup.mkdir(parents=True);(backup/'old.pt').write_bytes(b'backup copy')
     worker_id,worker_token=training.enroll_worker(ctx,training.create_enrollment(ctx,owner['user'],'Reset worker',None),{},'0.6.0')
@@ -137,6 +137,7 @@ def test_new_explicit_model_can_train_after_reset_with_retained_backups(client,o
     backup=ctx.settings.data_dir/'genesis'/'old';backup.mkdir(parents=True);(backup/'archive.pt').write_bytes(b'retained backup')
     plan=R.preview(ctx,uid);R.execute(ctx,plan['id'],R.CONFIRM,uid)
     assert M.list_releases(ctx)==[]
+    unrelated=ctx.settings.data_dir/'projects'/'retained.pt';unrelated.parent.mkdir();unrelated.write_bytes(b'unrelated project weights')
     fresh=initialize(ctx,uid)['model'];model,tok,_=load_model(Path(fresh['path']),device='cpu')
     original={key:value.clone() for key,value in model.state_dict().items()}
     optimizer=model.configure_optimizer(0.001,0,device_type='cpu')
@@ -144,7 +145,7 @@ def test_new_explicit_model_can_train_after_reset_with_retained_backups(client,o
     for _ in range(2):
         _,loss=model(x,x.roll(-1,1));optimizer.zero_grad();loss.backward();optimizer.step()
     assert torch.isfinite(loss) and any(not torch.equal(original[key],value) for key,value in model.state_dict().items())
-    assert backup.exists() and S.get(ctx)['paused']
+    assert backup.exists() and unrelated.read_bytes()==b'unrelated project weights' and S.get(ctx)['paused']
 
 
 def test_actual_local_training_stops_before_owned_checkpoint_erasure(client,owner,tmp_path,monkeypatch):

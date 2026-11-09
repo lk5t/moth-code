@@ -31,11 +31,14 @@ def initialize(ctx: Ctx, actor_id: int | None = None) -> dict:
         allowed = {checkpoint, root / "packages" / "moth-0.01" / "model.pt"} if checkpoint.exists() else {checkpoint}
         if recovering:
             allowed.add(M.releases_dir(ctx) / f"v{existing['version']:05d}" / 'model.pt')
-        from moth_server.evolution.native_reset import state as reset_state
-        retained_backup=Path(ctx.settings.data_dir)/'genesis'
-        def preserved_backup(path):
-            return reset_state(ctx).get('status')=='completed' and retained_backup in path.parents
-        if any(p not in allowed and not preserved_backup(p) for p in Path(ctx.settings.data_dir).rglob("*.pt")):
+        from moth_server.evolution.native_reset import state as reset_state, ROOTS
+        reset_completed=reset_state(ctx).get('status')=='completed'
+        owned_roots=[Path(ctx.settings.data_dir)/relative for relative in ROOTS]
+        def preserved_copy(path):
+            # The reviewed reset deliberately preserved external/project/backup copies.
+            # They must not block explicit initialization in the now-empty owned roots.
+            return reset_completed and not any(root in path.parents for root in owned_roots)
+        if any(p not in allowed and not preserved_copy(p) for p in Path(ctx.settings.data_dir).rglob("*.pt")):
             raise ValueError("Existing unregistered weights found; import that checkpoint before initializing a lineage")
         tok_path = root / "tokenizer.json"
         if not checkpoint.exists():
