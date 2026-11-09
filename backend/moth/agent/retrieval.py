@@ -33,16 +33,18 @@ class CodeIndex:
     def __init__(self, db: Database):
         self.db = db
 
-    def update(self, project_id: int, root: Path) -> dict:
+    def update(self, project_id: int, root: Path, paths=None) -> dict:
         """Index new/changed files, drop deleted ones. Returns counts."""
-        root = Path(root)
+        root = Path(root).resolve()
         known = {r["path"]: r["mtime"] for r in self.db.query(
             "SELECT path, MAX(mtime) AS mtime FROM code_chunks WHERE project_id=? GROUP BY path", (project_id,))}
         seen, added, updated = set(), 0, 0
-        for rel, path in iter_files(root):
+        for rel, path in (iter_files(root) if paths is None else paths):
             if path.suffix.lower() not in INDEXED_EXT or is_secret_path(rel):
                 continue
             try:
+                if path.is_symlink() or root not in path.resolve().parents:
+                    continue
                 st = path.stat()
                 if st.st_size > MAX_FILE_BYTES:
                     continue

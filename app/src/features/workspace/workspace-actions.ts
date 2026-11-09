@@ -1,5 +1,6 @@
 import { get, put } from "@/lib/backend";
 import { appStore, type OpenFile } from "@/lib/app-state";
+import { projectApi } from "@/lib/project-intelligence";
 import { languageFromPath } from "@/lib/utils";
 
 export async function openFile(path: string) {
@@ -10,6 +11,8 @@ export async function openFile(path: string) {
     const file: OpenFile = { path, content: res.content, saved: res.content, language: languageFromPath(path) };
     appStore.setState((st) => ({ openFiles: [...st.openFiles, file] }));
   }
+  if (appStore.getState().project?.id !== s.project.id) return;
+  void projectApi(`/api/projects/${s.project.id}/intelligence/inspected`, "POST", {path}).catch(() => {});
   appStore.setState({ activeFile: path, toolsOpen: true, rightTab: "editor" });
 }
 

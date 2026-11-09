@@ -113,6 +113,7 @@ class CloudAgentLLM:
 
     def __init__(self, router: InferenceRouter, project_id: int | None):
         self.router = router
+        self.endpoint = router.endpoint()
         self.project_id = project_id
         m = router.cloud().default_model()
         self.name = f"{m['name']} (MOTH Cloud)"
@@ -122,6 +123,8 @@ class CloudAgentLLM:
         return sum(len(m.content.encode()) for m in messages) // 3 + 4 * len(messages)
 
     def generate(self, messages: list[Message], params: GenerationParams, cancel: threading.Event) -> str:
+        if self.router.endpoint() != self.endpoint:
+            raise NotSignedIn("The account changed. Start the coding task again in the selected account.")
         parts: list[str] = []
         self.router.chat(messages, params, parts.append, cancel, project_id=self.project_id, project_data=True)
         return "".join(parts)

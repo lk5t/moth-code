@@ -11,6 +11,7 @@ import importlib
 import traceback
 
 SUBSYSTEMS: list[str] = [
+    "moth.server.routes_project_intelligence",
     "moth.server.routes_model",
     "moth.server.routes_training",
     "moth.server.routes_agent",

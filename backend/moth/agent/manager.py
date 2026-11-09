@@ -70,7 +70,8 @@ class TaskManager:
 
     # ---- execution -----------------------------------------------------------------
     def start(self, project_id: int, workspace: Workspace, goal: str, llm: AgentLLM, permissions: PermissionEngine,
-              base_prompt: str, config: EngineConfig | None = None, task_id: str | None = None) -> str:
+              base_prompt: str, config: EngineConfig | None = None, task_id: str | None = None,
+              memory: MemoryStore | None = None, index: CodeIndex | None = None) -> str:
         if any(t.is_alive() for t in self._threads.values()):
             raise RuntimeError("another task is running; cancel it or wait for it to finish")
         if task_id:
@@ -87,7 +88,7 @@ class TaskManager:
         def emit(event: dict[str, Any]) -> None:
             self.bus.publish("task", {"project_id": project_id, **event, "task_id": state.id})
 
-        ctx = AgentContext(workspace, project_id, permissions, self.approvals, self.memory, self.index, cancel, emit,
+        ctx = AgentContext(workspace, project_id, permissions, self.approvals, memory or self.memory, index or self.index, cancel, emit,
                            task_id=state.id)
         engine = AgentEngine(llm, ctx, base_prompt, config, on_update=lambda s: self._save(project_id, s))
         state.status = "queued"

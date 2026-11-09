@@ -65,7 +65,8 @@ def register(app: FastAPI, svc: Services, deps) -> None:
             raise HTTPException(503, str(e)) from None
         try:
             tid = manager.start(project_id, svc.workspace(project_id), goal, llm, svc.permission_engine(),
-                                "", cfg, task_id=task_id)
+                                "", cfg, task_id=task_id, memory=svc.extras["project_intelligence"].memory(),
+                                index=svc.extras["project_intelligence"].index())
         except RuntimeError as e:
             raise HTTPException(409, str(e)) from None
         return manager.get(tid)

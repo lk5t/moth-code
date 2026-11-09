@@ -102,12 +102,12 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         context = []
         if body.context_project_id is not None:
             workspace = svc.workspace(body.context_project_id)
-            if body.context_project_id not in (svc.db.get_setting('cloud_workspace_consent') or []):
+            if not svc.extras['account_scope'].consented(body.context_project_id):
                 raise HTTPException(412, 'Approve sharing this project with MOTH Cloud before attaching its context.',
                                     headers={'X-Moth-Reason': 'workspace_consent_required'})
-            index = svc.extras['tasks'].index
-            index.update(body.context_project_id, workspace.root)
-            context = index.search(body.context_project_id, body.message, limit=4)
+            graph = svc.extras['project_intelligence']
+            try:context = graph.search(body.context_project_id,workspace,body.message,limit=4)['matches']
+            except ValueError as error:raise HTTPException(409,str(error)) from None
         ondevice = svc.extras.get("ondevice")
         on_device = bool(ondevice and ondevice.installed() and
                          (svc.db.get_setting("ondevice") or {}).get("answer_on_device"))

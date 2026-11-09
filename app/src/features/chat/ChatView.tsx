@@ -1,4 +1,5 @@
 /** Chat: a clean, full-page conversation with MOTH (everyday questions, explanations, writing, code). */
+import { useAccount } from "@/lib/account";
 import { useEffect, useState } from "react";
 import { Info, FolderOpen } from "lucide-react";
 import { useCloudProgress } from "@/lib/cloud-progress";
@@ -35,17 +36,19 @@ function ModelBar() {
 
 export function ChatView() {
   const project = useApp((s) => s.project);
+  const accountToken = useAccount(s => s.token);
+  const accountServer = useAccount(s => s.serverUrl);
   const [shareProjectId, setShareProjectId] = useState<number | null>(null);
   const share = !!project && shareProjectId === project.id;
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { setShareProjectId(null); setError(null); }, [project?.id]);
+  useEffect(() => { setShareProjectId(null); setError(null); }, [project?.id, accountToken, accountServer]);
   const attach = async (enabled: boolean) => {
     if (!project || !enabled) { setShareProjectId(null); return; }
     setError(null);
     try {
       const consent = await get<{ granted: boolean }>(`/api/projects/${project.id}/cloud-consent`);
       if (!consent.granted) {
-        if (!confirm(`Allow relevant excerpts from ${project.name} to be sent to MOTH Cloud for chat? They are not added to training data. Conversation history stays on this computer.`)) return;
+        if (!confirm(`Allow relevant excerpts from ${project.name} to be sent to MOTH Cloud at ${accountServer} for chat? They are not added to training data. Conversation history stays on this computer.`)) return;
         await put(`/api/projects/${project.id}/cloud-consent`, { granted: true });
       }
       setShareProjectId(project.id);

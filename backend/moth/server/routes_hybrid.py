@@ -43,7 +43,7 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         return InferenceSettings.from_dict(svc.db.get_setting("inference"))
 
     def consented(project_id: int | None) -> bool:
-        return project_id is not None and project_id in (svc.db.get_setting("cloud_workspace_consent") or [])
+        return svc.extras["account_scope"].consented(project_id)
 
     router = InferenceRouter(inference_settings, account=lambda: svc.extras.get("account"), consent=consented)
     svc.extras["inference_router"] = router
@@ -122,9 +122,9 @@ def register(app: FastAPI, svc: Services, deps) -> None:
     @app.put("/api/projects/{pid}/cloud-consent", dependencies=deps)
     def set_consent(pid: int, body: ConsentIn):
         project = svc.project(pid)
-        ids = set(svc.db.get_setting("cloud_workspace_consent") or [])
-        ids = ids | {pid} if body.granted else ids - {pid}
-        svc.db.set_setting("cloud_workspace_consent", sorted(ids))
+        if body.granted and not (svc.extras.get('account') or {}).get('token'):
+            raise HTTPException(401,'Sign in before approving project sharing.')
+        svc.extras['account_scope'].consent(pid,body.granted)
         svc.db.log_activity("cloud", f"{'Allowed' if body.granted else 'Revoked'} MOTH Cloud access for {project['name']}", pid)
         return {"granted": body.granted}
 

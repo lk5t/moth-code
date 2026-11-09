@@ -11,7 +11,7 @@ import { EditorPanel } from "./EditorPanel";
 import { TerminalPanel } from "./TerminalPanel";
 import { ChangesPanel } from "./ChangesPanel";
 import { ActivityPanel } from "./ActivityPanel";
-import { MemoryPanel } from "@/features/agent/MemoryPanel";
+import { ProjectIntelligencePanel } from "@/features/agent/ProjectIntelligencePanel";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { Select } from "@/components/ui/select";
 import { pickProject, openProjectPath } from "./project-actions";
@@ -123,17 +123,17 @@ export function WorkspaceView() {
         >
           <Group orientation="vertical">
             <Panel defaultSize="65%" minSize="20%">
-              <Tabs value={rightTab} onValueChange={(v) => appStore.setState({ rightTab: v })} className="flex h-full flex-col">
+              <Tabs value={rightTab === "memory" ? "project" : rightTab} onValueChange={(v) => appStore.setState({ rightTab: v })} className="flex h-full flex-col">
                 <TabsList className="h-9 shrink-0 border-b border-border px-1">
                   <TabsTrigger value="editor">Editor</TabsTrigger>
                   <TabsTrigger value="changes">Changes</TabsTrigger>
                   <TabsTrigger value="activity">Activity</TabsTrigger>
-                  <TabsTrigger value="memory">Memory</TabsTrigger>
+                  <TabsTrigger value="project">Project</TabsTrigger>
                 </TabsList>
                 <TabsContent value="editor" className="min-h-0 flex-1"><EditorPanel /></TabsContent>
                 <TabsContent value="changes" className="min-h-0 flex-1"><ChangesPanel /></TabsContent>
                 <TabsContent value="activity" className="min-h-0 flex-1"><ActivityPanel /></TabsContent>
-                <TabsContent value="memory" className="min-h-0 flex-1"><MemoryPanel /></TabsContent>
+                <TabsContent value="project" className="min-h-0 flex-1"><ProjectIntelligencePanel /></TabsContent>
               </Tabs>
             </Panel>
             {terminalOpen && <Separator />}
