@@ -320,6 +320,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                 ref={composer}
                 rows={1}
                 value={input}
+                aria-label="Message MOTH"
                 placeholder={signedOut ? "Sign in to chat with MOTH" : noModel ? "MOTH Cloud is unavailable" : "Message MOTH"}
                 title="Enter to send · Shift+Enter for a new line"
                 disabled={!!noModel}

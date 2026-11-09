@@ -135,7 +135,7 @@ class WindowsUI:
     def draft(self, value=None):
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
-            edits = [c for c in self.root.descendants(control_type='Edit') if c.is_visible() and c.is_enabled()]
+            edits = [c for c in self.root.descendants(control_type='Edit') if c.is_visible() and c.is_enabled() and c.element_info.name == 'Message MOTH']
             if edits:
                 if value is not None:
                     edits[0].iface_value.SetValue(value)

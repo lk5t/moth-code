@@ -35,3 +35,17 @@ def test_published_key_check_does_not_require_local_git_tags(monkeypatch):
     monkeypatch.setattr(module['subprocess'],'run',run)
     assert module['published_updater_key']('0.5.9')==b'pinned-public-key'
     assert calls==[('gh','api','repos/lk5t/moth-code/contents/app/src-tauri/updater.pub?ref=desktop-v0.5.9')]
+
+
+def test_draft_targets_composer_instead_of_conversation_search():
+    module=runpy.run_path(str(Path(__file__).resolve().parents[2]/'scripts/windows-desktop-ui.py'))
+    ui=object.__new__(module['WindowsUI'])
+    def edit(name,value):
+        field=SimpleNamespace(CurrentValue=value)
+        field.SetValue=lambda text:setattr(field,'CurrentValue',text)
+        return SimpleNamespace(element_info=SimpleNamespace(name=name),iface_value=field,is_visible=lambda:True,is_enabled=lambda:True)
+    search=edit('Search conversations','search unchanged');composer=edit('Message MOTH','')
+    ui.root=SimpleNamespace(descendants=lambda **kw:[search,composer])
+    ui.draft('synthetic unsent draft')
+    assert ui.draft()=='synthetic unsent draft'
+    assert search.iface_value.CurrentValue=='search unchanged'

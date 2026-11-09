@@ -104,7 +104,7 @@ def main(installer):
         ui.draft('native unsent draft')
         ui.click('Code')
         ui.click('Chat')
-        assert ui.draft() == 'native unsent draft'
+        wait(lambda:ui.draft() == 'native unsent draft','actual Chat composer draft retained across Code/Chat navigation')
         ui.click('Intelligence')
         for label in ('Overview','Chat','Code','Intelligence','Data','Network','Activity','Settings'):
             ui.find(label, ('Button',))
@@ -140,7 +140,7 @@ def main(installer):
         for label in ('Network','Data','Activity'):
             ui.click(label, control_type='Button')
         ui.click('Chat')
-        assert ui.draft() == 'native unsent draft'
+        wait(lambda:ui.draft() == 'native unsent draft','actual Chat composer draft retained across Code/Chat navigation')
         ui.click('Data')
         ui.close()
         app.wait(timeout=30)
