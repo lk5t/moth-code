@@ -32,3 +32,7 @@ Branch: `claude/jolly-darwin-2qeihd`. This report distinguishes implementation f
 - Tests changed only for these requirements, real import/training regressions, privacy/permission checks and revised public-version semantics. Distributed test fixtures use a smaller learning rate because deduplication reduces the tiny corpus; production acceptance gates are unchanged.
 
 No model weights, existing checkpoints, accounts or production data were reset. No production deployment or signing bypass was performed.
+
+## Follow-up integration
+
+PostgreSQL CI exposed enrollment metadata keys longer than the existing 64-character column. The new compact key retains 240 bits of the credential hash; previously stored SQLite keys are readable for pending enrollments. No schema change is needed. Sixteen PostgreSQL worker permission, growth and training-network tests passed against a real local PostgreSQL 16 container. The deployment history now reads only timestamp/action/target from backend audit records, excluding credentials and user details. Eligible distributed workers are ordered by verified reliability while new devices remain eligible. Frontend tests and typecheck passed for these additions.

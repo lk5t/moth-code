@@ -53,6 +53,8 @@ def participants(ctx: Ctx, need_bytes: int, worker_ids: list[int] | None = None)
         hw = json.loads(w["hardware"] or "{}")
         if fits(hw, {"requirements": {"memory_bytes": need_bytes}}, json.loads(w['limits'] or '{}')):
             out.append({**w, "hw": hw})
+    # Prefer workers with a history of verified useful work; new and slower devices remain eligible.
+    out.sort(key=lambda w: (w['verified_jobs'] + 1) / (w['verified_jobs'] + w['failed_jobs'] + 2), reverse=True)
     # Keep work on compatible GPUs when they exist; CPU participants remain the fallback.
     gpu = [w for w in out if w["hw"].get("compute") == "gpu"]
     return gpu or out

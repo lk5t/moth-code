@@ -34,3 +34,12 @@ def test_revocation_between_authentication_and_claim_blocks_assignment(client, o
     stale = ctx.db.one(select(workers).where(workers.c.id == w['worker_id']))
     assert client.post(f"/v1/training/workers/{w['worker_id']}/revoke", headers=H(owner['token'])).status_code == 200
     assert T.claim_job(ctx, stale, True) is None
+
+
+def test_enrollment_metadata_keys_fit_postgres_schema(client, owner):
+    from sqlalchemy import select
+    from moth_server.db import server_config
+    response = client.post('/v1/training/enrollments', json={'kind': 'cloud'}, headers=H(owner['token']))
+    assert response.status_code == 200
+    keys = client.app.state.ctx.db.all(select(server_config.c.key))
+    assert all(len(row['key']) <= 64 for row in keys)

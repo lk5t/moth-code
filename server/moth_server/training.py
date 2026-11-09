@@ -63,7 +63,7 @@ def create_enrollment(ctx: Ctx, user: dict, name: str | None, referral_code: str
                                                     referral_code=(referral_code or "").strip().upper() or None,
                                                     worker_name=(name or "")[:64] or None, created_at=t,
                                                     expires_at=t + ENROLL_TTL))
-        ctx.db.set_config("enrollment_kind:" + token_hash(token), kind, conn=c)
+        ctx.db.set_config("ek:" + token_hash(token)[:60], kind, conn=c)
         audit(ctx.db, "training.enrollment_created", user["id"], f"user:{user['id']}", conn=c)
     return token
 
@@ -85,7 +85,8 @@ def enroll_worker(ctx: Ctx, token: str, hardware: dict[str, Any], version: str |
         referrer = find_referrer(c, row["referral_code"])
         referrer_id = referrer["id"] if referrer and referrer["id"] != row["user_id"] else None  # no self-referral
         hw = _clean_hw(hardware)
-        hw["worker_kind"] = ctx.db.get_config("enrollment_kind:" + token_hash(token), "personal")
+        hw["worker_kind"] = ctx.db.get_config("ek:" + token_hash(token)[:60],
+            ctx.db.get_config("enrollment_kind:" + token_hash(token), "personal"))
         mid = hw.get("machine_id")
         replaced = []
         if mid:  # the same computer enrolled again by the same account replaces its old registration

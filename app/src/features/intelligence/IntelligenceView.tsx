@@ -132,6 +132,13 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
           <h1 className="text-lg font-semibold">Intelligence</h1>
           <p className="mt-1 text-xs text-muted">Recorded model sizes and training progress, with capabilities measured on held-out benchmarks MOTH never trained on.</p>
         </div>}
+        {p.deployment_events?.length > 0 && <Card><CardHeader><CardTitle>Deployment history</CardTitle>
+          <CardDescription>Recorded promotions and rollbacks</CardDescription></CardHeader>
+          <CardContent><ol className="max-h-48 space-y-2 overflow-auto text-xs">
+            {p.deployment_events.map((event: Any, index: number) => <li key={`${event.ts}-${index}`} className="flex flex-wrap gap-x-3 gap-y-1 border-l-2 border-accent pl-3">
+              <time className="text-muted">{when(event.ts)}</time><span>{event.action.replaceAll('.', ' · ')}</span><span className="font-mono text-muted">{event.target}</span>
+            </li>)}
+          </ol></CardContent></Card>}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat icon={<Brain />} label="Current model" value={cur ? (modelLabel(cur)) : "None yet"}
             sub={cur ? `${formatNumber(cur.params ?? 0)} parameters · ${METHOD[cur.method] ?? cur.method}` : "Nothing is deployed on MOTH Cloud"} />

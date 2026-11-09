@@ -461,7 +461,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
 
     from moth_server import models as M
     from moth_server import serving
-    from moth_server.db import workers
+    from moth_server.db import workers, audit_log
     from moth_server.evolution import engine as EN
     from moth_server.evolution import backends as B
     from moth_server.evolution import memory as MEM
@@ -543,6 +543,9 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     return {
         "current": next((v for v in versions if v["deployed"]), None), "stable": next((v for v in versions if v["stable"]), None),
         "development": dev, "rollout": serving.loaded_versions(ctx), "timeline": versions,
+        "deployment_events": ctx.db.all(_select(audit_log.c.ts, audit_log.c.action, audit_log.c.target)
+            .where(audit_log.c.action.in_(("models.deployed", "models.rollback", "evolution.rollback")))
+            .order_by(audit_log.c.id.desc()).limit(30)),
         "training": {"enabled": s["enabled"], "paused": s["paused"], "cycle": {
             "id": cyc["id"], "status": cyc["status"], "waiting_reason": (cyc.get("result") or {}).get("waiting_reason")}
             if cyc else None, "experiment_progress": exp.get("progress") if exp else None,
