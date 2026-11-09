@@ -165,12 +165,15 @@ def progress(ctx: Ctx, exp: dict) -> dict[str, Any]:
         return out
     starts: list[tuple[float, int]] = []
     last_train = last_val = None
+    history = []
     with open(p, encoding="utf-8") as f:
         for line in f:
             try:
                 e = json.loads(line)
             except ValueError:
                 continue
+            if e.get("kind") == "metrics" and e.get("loss") is not None:
+                history.append({"step": e.get("step"), "loss": e['loss'], "split": e.get('split')})
             if e.get("kind") == "metrics" and e.get("split") == "train":
                 last_train = e
                 starts.append((e.get("_ts") or 0, e["step"]))
@@ -189,6 +192,7 @@ def progress(ctx: Ctx, exp: dict) -> dict[str, Any]:
         out["val_loss"] = last_val.get("loss")
         if last_val.get("tokens_seen") is not None and "tokens_seen" not in out:
             out["tokens_seen"] = last_val["tokens_seen"]
+    out["history"] = history[-120:]
     steps = out.get("max_steps") or 0
     if steps:
         out["fraction"] = min(1.0, out["step"] / steps)
@@ -266,6 +270,10 @@ def worker_training_supported(ctx: Ctx, exp: dict) -> bool:
     """The existing token-only worker protocol cannot preserve assistant-only loss masks."""
     import numpy as np
 
+    dataset = DS.get(ctx, exp.get('dataset_id')) if exp.get('dataset_id') else None
+    if dataset and dataset.get('contains_user_data'):
+        return False  # training consent is not permission to redistribute private source data
+    private_shas = {d['sha256'] for d in DS.all_(ctx) if d.get('contains_user_data')}
     mix = exp["config"].get("mixture")
     if mix:
         root = Path(mix["path"])
@@ -274,6 +282,9 @@ def worker_training_supported(ctx: Ctx, exp: dict) -> bool:
     else:
         paths = [Path(DS.get(ctx, exp["dataset_id"])["path"])]
     for path in paths:
+        from moth.model.registry import sha256_file
+        if private_shas and sha256_file(path / "train.bin") in private_shas:
+            return False
         mask = np.memmap(path / "train.mask", dtype=np.uint8, mode="r")
         if any(np.any(mask[i:i + 1048576] == 0) for i in range(0, len(mask), 1048576)):
             return False

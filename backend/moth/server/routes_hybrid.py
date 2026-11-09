@@ -70,6 +70,13 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         except ParticipantError as e:
             raise HTTPException(409, str(e)) from None
 
+    @app.post("/api/participant/{action}", dependencies=deps)
+    def participant_control(action: str):
+        try:
+            return participant.control(action)
+        except ParticipantError as e:
+            raise HTTPException(409, str(e)) from None
+
     # ---- MOTH on this computer (0.5.2) ----------------------------------------------------------------
     from moth.inference.ondevice import OnDevice, OnDeviceError
 

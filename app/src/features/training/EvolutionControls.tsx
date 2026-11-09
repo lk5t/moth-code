@@ -13,7 +13,7 @@ export function EvolutionControls({ settings: s, onChange }: { settings: Setting
   return <div className="flex flex-col gap-3 text-xs">
     {toggle("Automatic Evolution", !!s.enabled, (enabled) => ({ enabled }))}
     {select("Training Mode", "training_mode", "automatic", [["automatic", "Automatic"], ["maximum", "Maximum Performance"], ["eco", "Eco"]])}
-    {toggle("Use cloud workers", !!(s.backends?.workers && s.distributed?.enabled), (workers) => ({ backends: { workers }, distributed: { enabled: workers } }))}
+    {toggle("Use cloud workers", s.cloud_workers !== false, (cloud_workers) => ({ cloud_workers }))}
     {select("Training Priority", "training_priority", "balanced", [["balanced", "Balanced"], ["training_first", "Training First"]])}
     {toggle("Automatic Model Promotion", !!s.auto_deploy, (auto_deploy) => ({ auto_deploy }))}
     <p className="text-muted">Modes stay within configured resource limits. Training First still protects inference, memory and compute budgets. Paused training requires an explicit resume.</p>

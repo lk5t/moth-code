@@ -53,7 +53,9 @@ def coordinator(ctx: Ctx):
 
 
 # ---- enrollment ------------------------------------------------------------------------------
-def create_enrollment(ctx: Ctx, user: dict, name: str | None, referral_code: str | None) -> str:
+def create_enrollment(ctx: Ctx, user: dict, name: str | None, referral_code: str | None, kind: str = "personal") -> str:
+    if kind not in ("personal", "cloud") or (kind == "cloud" and user.get("role") != "owner"):
+        raise TrainingError("Only the platform owner can authorize cloud infrastructure")
     token = "me_" + new_token(24)
     t = now()
     with ctx.db.tx() as c:
@@ -61,6 +63,7 @@ def create_enrollment(ctx: Ctx, user: dict, name: str | None, referral_code: str
                                                     referral_code=(referral_code or "").strip().upper() or None,
                                                     worker_name=(name or "")[:64] or None, created_at=t,
                                                     expires_at=t + ENROLL_TTL))
+        ctx.db.set_config("enrollment_kind:" + token_hash(token), kind, conn=c)
         audit(ctx.db, "training.enrollment_created", user["id"], f"user:{user['id']}", conn=c)
     return token
 
@@ -82,6 +85,7 @@ def enroll_worker(ctx: Ctx, token: str, hardware: dict[str, Any], version: str |
         referrer = find_referrer(c, row["referral_code"])
         referrer_id = referrer["id"] if referrer and referrer["id"] != row["user_id"] else None  # no self-referral
         hw = _clean_hw(hardware)
+        hw["worker_kind"] = ctx.db.get_config("enrollment_kind:" + token_hash(token), "personal")
         mid = hw.get("machine_id")
         replaced = []
         if mid:  # the same computer enrolled again by the same account replaces its old registration
@@ -212,12 +216,31 @@ def ensure_jobs(ctx: Ctx) -> None:
                                                     created_at=now(), updated_at=now()))
 
 
+def worker_allowed(ctx: Ctx, worker: dict) -> bool:
+    hw = json.loads(worker.get('hardware') or '{}')
+    settings = ctx.db.get_config('evolution_settings', {}) or {}
+    return hw.get('worker_kind', 'personal') != 'cloud' or settings.get('cloud_workers', True)
+
+
+def job_shareable(ctx: Ctx, job: dict) -> bool:
+    """Recheck existing queued jobs too: training consent never grants redistribution."""
+    spec = json.loads(job['spec'])
+    if job.get('kind') == 'eval_loss':
+        from moth_server.evolution.remote_eval import public_evaluation
+        return public_evaluation(ctx)
+    if spec.get('evolution_experiment'):
+        from moth_server.evolution import memory as MEM, backends as B
+        exp = MEM.experiment(ctx, int(spec['evolution_experiment']))
+        return bool(exp and B.worker_training_supported(ctx, exp))
+    return True
+
+
 def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
     """Give the worker a job its hardware can run. CPU and GPU workers are both production workers:
     a job is offered only if its memory requirement fits the worker (GPU memory, else RAM); jobs that
     benefit from a GPU wait briefly for an online GPU worker before a CPU worker takes them.
     ``allow_cpu`` is kept for compatibility and no longer restricts anything."""
-    if worker["paused"] or (ctx.db.get_config('genesis_state', {}) or {}).get('status') in ('preparing', 'prepared'):
+    if not worker_allowed(ctx, worker) or worker["paused"] or (ctx.db.get_config('genesis_state', {}) or {}).get('status') in ('preparing', 'prepared'):
         return None
     hw = json.loads(worker["hardware"] or "{}")
     requeue_expired(ctx)
@@ -225,6 +248,14 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
     coord = coordinator(ctx)
     t = now()
     with ctx.db.tx() as c:
+        query = select(workers).where(workers.c.id == worker['id'])
+        if not ctx.db.is_sqlite:
+            query = query.with_for_update()
+        fresh = c.execute(query).mappings().first()
+        if not fresh or fresh['revoked_at'] or fresh['paused'] or not worker_allowed(ctx, dict(fresh)):
+            return None
+        worker = dict(fresh)
+        hw = json.loads(worker['hardware'] or '{}')
         # Resume: a job this worker still holds comes back first (e.g. after a reconnect).
         # Serialize lease issuance with GENESIS preparation. Once its pause is committed,
         # a backup sees every earlier lease and no new one can race the checkpoint snapshot.
@@ -251,6 +282,8 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
                 for cand in c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
                                                                   training_jobs.c.kind == "eval_loss")
                                       .order_by(training_jobs.c.id)).mappings().all():
+                    if not job_shareable(ctx, cand):
+                        continue
                     ev = json.loads(cand["spec"])["eval"]
                     if mine.get(ev["suite_id"]) == ev["version"]:
                         continue
@@ -261,6 +294,8 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
             for cand in ([] if job else c.execute(select(training_jobs).where(
                     training_jobs.c.status == "queued", training_jobs.c.kind.in_(("evolve_train", "dist_shard")))
                     .order_by(training_jobs.c.id)).mappings().all()):
+                if not job_shareable(ctx, cand):
+                    continue
                 spec = json.loads(cand["spec"])
                 if spec.get("worker_ids") is not None and worker['id'] not in spec['worker_ids']:
                     continue
@@ -293,6 +328,8 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
             if res.rowcount != 1:
                 return None
             job = c.execute(select(training_jobs).where(training_jobs.c.id == job["id"])).mappings().first()
+        if not job_shareable(ctx, job):
+            return None
         return {"id": job["id"], "kind": job["kind"], "spec": json.loads(job["spec"]),
                 "limits": json.loads(worker["limits"] or "{}"), "lease_seconds": LEASE_SECONDS}
 
@@ -301,6 +338,10 @@ def leased_job(ctx: Ctx, worker: dict, job_id: int) -> dict:
     j = ctx.db.one(select(training_jobs).where(training_jobs.c.id == job_id))
     if not j or j["worker_id"] != worker["id"] or j["status"] != "leased":
         raise TrainingError("job is not leased to this worker")
+    if (j['lease_expires_at'] or 0) < now():
+        raise TrainingError("job lease expired")
+    if not job_shareable(ctx, j):
+        raise TrainingError("dataset is not authorized for external workers")
     return j
 
 
@@ -384,6 +425,7 @@ def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None,
         values["version"] = version[:32]
     if hardware:
         hw = _clean_hw(hardware)
+        hw["worker_kind"] = json.loads(worker.get("hardware") or "{}").get("worker_kind", "personal")
         values["hardware"] = json.dumps(hw)
         if hw.get("machine_id"):
             values["machine_id"] = hw["machine_id"]
@@ -401,7 +443,7 @@ def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None,
                                                            training_jobs.c.status == 'leased',
                                                            training_jobs.c.worker_id == worker['id'])
                               .values(result=json.dumps({'progress': metrics})))
-    return {"paused": bool(worker["paused"]), "revoked": worker["revoked_at"] is not None,
+    return {"paused": bool(worker["paused"]) or not worker_allowed(ctx, worker), "revoked": worker["revoked_at"] is not None,
             "job_cancelled": job_cancelled,
             "limits": json.loads(worker["limits"] or "{}"), "server_time": t}
 
@@ -419,7 +461,7 @@ def leave(ctx: Ctx, worker: dict) -> None:
 
 
 def public_worker(w: dict) -> dict:
-    return {"id": w["id"], "name": w["name"], "status": "revoked" if w["revoked_at"] else
+    return {"id": w["id"], "kind": json.loads(w.get("hardware") or "{}").get("worker_kind", "personal"), "name": w["name"], "status": "revoked" if w["revoked_at"] else
             ("paused" if w["paused"] else w["status"]), "paused": bool(w["paused"]),
             "hardware": json.loads(w["hardware"] or "{}"), "limits": json.loads(w["limits"] or "{}"),
             "version": w["version"], "verified_jobs": w["verified_jobs"], "failed_jobs": w["failed_jobs"],

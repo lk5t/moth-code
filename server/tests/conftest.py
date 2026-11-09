@@ -166,6 +166,6 @@ def training_world(client, settings, owner, tmp_path):
                 "tokenizer_fingerprint": tok.fingerprint(), "step": 0}, tmp_path / "base.pt")
     info = export_model(tmp_path / "base.pt", tmp_path / "models", "moth-base", dtype="float32")
     init_coordinator(settings.data_dir / "coordinator", Path(info["path"]), tmp_path / "ds", shards=4,
-                     train=TrainSpec(steps=6, lr=1e-3, batch_size=4, seq_len=32), min_contributions=2)
+                     train=TrainSpec(steps=6, lr=1e-4, batch_size=4, seq_len=32), min_contributions=2)
     client.put("/v1/admin/config/flags", json={"allow_cpu_workers": True}, headers=H(owner["token"]))
     return {"owner": owner, "base_model": Path(info["path"]), "tokenizer": tmp_path / "tok.json", "dataset": tmp_path / "ds"}

@@ -498,8 +498,9 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
         reps = capability_reports(ctx, row["version"])
         versions.append({
             "version": row["version"], "model_version": info.get("model_version"),
+            "revision": info.get("revision"), "milestone": info.get("milestone"), "deployed_at": r.get("deployed_at"),
             "name": info.get("display_name") or r["name"], "params": info.get("params"), "method": row["method"],
-            "architecture": info.get("architecture"),
+            "architecture": info.get("architecture"), "tokenizer_fingerprint": info.get("tokenizer_fingerprint"),
             "config": info.get("config"), "initialization": info.get("initialization"),
             "training": {k: (info.get("training") or {}).get(k) for k in
                          ("step", "steps", "best_val", "val_loss", "train_loss", "tokens", "backend")},

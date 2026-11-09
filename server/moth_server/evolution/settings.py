@@ -13,11 +13,12 @@ KEY = "evolution_settings"
 DEFAULTS: dict[str, Any] = {
     # Automatic evolution is on by default, but a cycle only starts once its prerequisites exist: a
     # deployed model, an Owner-approved training dataset for it, and a compute backend that can train.
+    "cloud_workers": True,
     "training_mode": "automatic",
     "training_priority": "balanced",
     "enabled": True,
     "paused": False,
-    "interval_hours": 24.0,          # time between the end of one cycle and the start of the next
+    "interval_hours": 0.01,          # time between the end of one cycle and the start of the next
     "auto_deploy": True,             # deploy a candidate that passed every gate (then monitor it)
     "max_experiments_per_cycle": 2,
     "training": {"steps": 200, "lr": 3e-4, "batch_size": 8, "seq_len": 256, "weight_decay": 0.0,
@@ -102,7 +103,7 @@ def validate(s: dict[str, Any]) -> None:
             continue
         if not isinstance(node, (int, float)) or isinstance(node, bool) or not (lo <= node <= hi):
             raise SettingsError(f"{path} must be a number between {lo} and {hi}")
-    for b in ("enabled", "paused", "auto_deploy", "allow_from_scratch"):
+    for b in ("enabled", "paused", "auto_deploy", "allow_from_scratch", "cloud_workers"):
         if not isinstance(s.get(b), bool):
             raise SettingsError(f"{b} must be true or false")
     ids = s.get("worker_ids")

@@ -41,10 +41,19 @@ def _version_ok(v: str | None) -> bool:
         return False
 
 
+def public_evaluation(ctx: Ctx) -> bool:
+    from moth_server.intelligence import library
+    build = library.latest_ready(ctx)
+    manifest = json.loads(build.get('manifest') or '{}') if build else {}
+    return not any(s.get('id') == 'feedback' or s.get('license') == 'user-consented'
+                   for s in manifest.get('sources', []))
+
+
 def eligible_workers(ctx: Ctx) -> list[dict]:
+    from moth_server.training import worker_allowed
     t = now()
     return [w for w in ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
-            if (w["last_heartbeat_at"] or 0) >= t - 180 and not w["paused"] and _version_ok(w["version"])]
+            if (w["last_heartbeat_at"] or 0) >= t - 180 and not w["paused"] and _version_ok(w["version"]) and worker_allowed(ctx, w)]
 
 
 def prepare_data(suite_path: Path, tokenizer, max_seq_len: int, dest: Path, limit: int = 200,
@@ -89,7 +98,7 @@ def ensure(ctx: Ctx, exp: dict, cand: dict, settings: dict) -> bool:
     from moth_server.evolution.evaluation import capability_suites
 
     d = settings.get("distributed") or {}
-    if not d.get("eval_on_workers", True):
+    if not d.get("eval_on_workers", True) or not public_evaluation(ctx):
         return False
     state = (exp.get("metrics") or {}).get("remote_eval")
     if state is None:

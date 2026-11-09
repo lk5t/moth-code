@@ -62,7 +62,8 @@ class WorkerRunner:
     # ---- heartbeat -----------------------------------------------------------------------
     def beat(self) -> None:
         resp = self.client.heartbeat(self.hardware(), self.current_job, self.progress, self.training_metrics)
-        self.paused, self.revoked, self.limits = resp["paused"], resp["revoked"], resp.get("limits") or {}
+        from moth.training.resources import pressure, pressure_reason
+        self.paused, self.revoked, self.limits = bool(resp["paused"] or pressure_reason(pressure())), resp["revoked"], resp.get("limits") or {}
         if resp.get("job_cancelled"):
             self.cancelled_job = self.current_job
         from moth_worker import updater

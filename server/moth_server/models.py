@@ -496,19 +496,24 @@ def _swap_in(ctx: Ctx, version: int, rel: dict, engine, actor_id: int | None, se
         current = deployed(ctx)
         if not current or current['version'] != expected_parent:
             raise ReleaseError('The stable parent changed before the atomic model swap')
+    info = release(ctx, version)['info']
+    if not info.get('revision'):
+        revisions = [int(r['info'].get('revision') or 0) for r in list_releases(ctx)
+                     if r['info'].get('lineage_id') == info.get('lineage_id')]
+        info = {**info, 'revision': max(revisions, default=0) + 1}
     previous = ctx.extras.get("inference_engine")
-    ctx.extras["inference_engine"] = engine  # atomic swap for new requests
-    ctx.extras["deployed_version"] = version
     t = now()
     with ctx.db.tx() as c:
         c.execute(model_releases.update().where(model_releases.c.status == "deployed",
                                                 model_releases.c.version != version)
                   .values(status="published", previously_deployed=True, state_changed_at=t))
         _set(ctx, version, "deployed", conn=c, deployed_at=t, published_by=actor_id, error=None,
-             info=json.dumps({**release(ctx, version)["info"], "serving": serving}))
+             info=json.dumps({**info, "serving": serving}))
         ctx.db.set_config("deployed_release", version, conn=c)
         audit(ctx.db, "models.deployed", actor_id, f"release:{version}",
               {"previous": getattr(previous, "model_id", None), "device": serving.get("device")}, conn=c)
+    ctx.extras["inference_engine"] = engine  # only expose a deployment after its transaction commits
+    ctx.extras["deployed_version"] = version
     return release(ctx, version)
 
 

@@ -39,11 +39,13 @@ ONLINE_SECONDS = 180
 
 
 def participants(ctx: Ctx, need_bytes: int, worker_ids: list[int] | None = None) -> list[dict]:
-    from moth_server.training import fits
+    from moth_server.training import fits, worker_allowed
 
     t = now()
     out = []
     for w in ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None))):
+        if not worker_allowed(ctx, w):
+            continue
         if worker_ids is not None and w['id'] not in worker_ids:
             continue
         if (w.get("last_heartbeat_at") or 0) < t - ONLINE_SECONDS or w.get("paused"):

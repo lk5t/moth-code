@@ -8,7 +8,7 @@ import { EvolutionControls } from "./EvolutionControls";
  */
 import { useEffect, useState } from "react";
 import { Cloud, Cpu, Laptop, Play } from "lucide-react";
-import { get, put } from "@/lib/backend";
+import { get, put, post } from "@/lib/backend";
 import { serverApi } from "@/lib/account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,12 @@ export function ParticipantSwitch({ compact = false }: { compact?: boolean }) {
             st.paused_by_owner ? "Paused by the Owner" : "Waiting for work"} · {st.completed_jobs} job(s) done this session
         </div>
       )}
+      {st.worker_id && <div className="flex flex-wrap gap-2">
+        {(["pause", "stop", "revoke"] as const).map((action) => <Button key={action} size="sm" variant="outline"
+          onClick={() => { setErr(null); post(`/api/participant/${action}`, {}).then(reload).catch((e) => setErr(e.message)); }}>
+          {action === "pause" ? "Pause" : action === "stop" ? "Stop and release job" : "Revoke this computer"}
+        </Button>)}
+      </div>}
       {!st.available && <div className="text-xs text-muted">This build cannot train for the network.</div>}
       {(err || st.error) && <div className="text-xs text-danger">{err || st.error}</div>}
     </div>

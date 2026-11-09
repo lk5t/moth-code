@@ -76,10 +76,10 @@ def activity(ctx: Ctx) -> Activity:
 # ---- local hardware ------------------------------------------------------------------------------------
 def local(ctx: Ctx) -> dict[str, Any]:
     from moth_server.routes.system import memory
-    from moth.training.resources import cpu_count, memory_budget
+    from moth.training.resources import cpu_count, memory_budget, pressure
 
     out: dict[str, Any] = {"cpu_count": cpu_count(), "load_average": None, "memory": memory(), "gpus": [],
-                           "backends": ["cpu"]}
+                           "backends": ["cpu"], "pressure": pressure()}
     if out['memory']:
         total, avail = memory_budget(out['memory']['total'], out['memory']['available'])
         out['memory'] = {'total': total, 'available': avail, 'used': total - avail,
@@ -105,12 +105,12 @@ def local(ctx: Ctx) -> dict[str, Any]:
 
 def worker_capacity(ctx: Ctx, need_bytes: int = 0, worker_ids: list[int] | None = None) -> dict[str, Any]:
     """Online MOTH workers (CPU and GPU) and how many can take a job needing ``need_bytes``."""
-    from moth_server.training import capacity_bytes
+    from moth_server.training import capacity_bytes, worker_allowed
 
     rows = ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
     if worker_ids is not None:
         rows = [w for w in rows if w['id'] in worker_ids]
-    online = [w for w in rows if w["status"] == "online" and not w["paused"]
+    online = [w for w in rows if worker_allowed(ctx, w) and w["status"] == "online" and not w["paused"]
               and (w.get("last_heartbeat_at") or 0) >= time.time() - 180]
     hws = [json.loads(w["hardware"] or "{}") for w in online]
     gpu = [h for h in hws if h.get("compute") == "gpu" or (h.get("compute") is None and h.get("gpus"))]
@@ -182,6 +182,10 @@ def local_blockers(ctx: Ctx, settings: dict, device: str, need_disk: int = 0) ->
     out = []
     lim = settings["limits"]
     hw = local(ctx)
+    from moth.training.resources import pressure_reason
+    reason = pressure_reason(hw.get("pressure") or {})
+    if reason:
+        out.append(reason)
     mem = hw["memory"] or {}
     if mem and mem.get("available", 0) < float(lim["min_free_memory_gb"]) * GB:
         out.append(f"free memory is below the {lim['min_free_memory_gb']} GB reserve")

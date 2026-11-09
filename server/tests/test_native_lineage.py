@@ -34,11 +34,11 @@ def test_existing_larger_checkpoint_preserved_and_version_migrates(client, tiny_
     assert v2.assign_model_version(ctx, rel['version']) == '0.01'
     assert rel['info']['params'] > 100000
     assert sha256_file(Path(rel['path']) / 'model.pt') == before
-    # A historical label is retained; new accepted descendants use padded increments.
+    # Routine descendants retain the historical public label until a milestone is earned.
     M._set(ctx, rel['version'], info=json.dumps({**M.release(ctx, rel['version'])['info'], 'model_version': '0.1'}))
     next_v = M.reserve(ctx, 'candidate', {'type': 'evolution'}, None)
     MEM.record_lineage(ctx, next_v, rel['version'], 'continue')
-    assert v2.assign_model_version(ctx, next_v) == '0.02'
+    assert v2.assign_model_version(ctx, next_v) == '0.1'
     assert M.release(ctx, rel['version'])['info']['model_version'] == '0.1'
 
 

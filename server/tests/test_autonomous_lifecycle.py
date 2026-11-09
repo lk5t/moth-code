@@ -47,7 +47,8 @@ def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner, tmp_
     start = client.post('/v1/admin/evolution/training/start', headers=headers, json={'server_cpu': True})
     assert start.status_code == 200, start.text
     versions = []
-    for expected in ('0.02', '0.03'):
+    for revision in (2, 3):
+        expected = '0.01'
         cyc = drive(ctx, lambda c: c['status'] in ('monitoring', *MEM.TERMINAL_CYCLE), timeout=240)
         assert cyc['status'] == 'monitoring', [(e['status'], e.get('error'), e.get('metrics')) for e in MEM.experiments(ctx, cyc['id'])]
         candidate = cyc['candidate_version']
@@ -69,7 +70,8 @@ def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner, tmp_
         versions.append({'release': rel['version'], 'model_version': expected, 'params': rel['info']['params'],
                          'totals': rel['info']['lineage_totals'], 'training': rel['info']['training'],
                          'checkpoint': rel['info']['dev_checkpoint'], 'gates': exp['metrics']['gates']})
-        if expected == '0.02':
+        assert rel['info']['revision'] == revision
+        if revision == 2:
             S.update(ctx, {'training': {'steps': 12}})
             EN.wake(ctx)
     assert versions[-1]['totals']['steps'] == 32
@@ -77,7 +79,7 @@ def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner, tmp_
     b = library.latest_ready(ctx)
     assert b and 'PSF-2.0' in b['manifest']
     overview = client.get('/v1/admin/model-overview', headers=headers).json()
-    assert [r['model_version'] for r in overview['accepted_versions']] == ['0.01', '0.02', '0.03']
+    assert [r['model_version'] for r in overview['accepted_versions']] == ['0.01', '0.01', '0.01']
     assert overview['checkpoint']['valid']
     assert EN.rollback_to(ctx, initialized['version'], owner['user']['id'])['version'] == initialized['version']
     assert Path(initialized['path'], 'model.pt').read_bytes() == seed_bytes

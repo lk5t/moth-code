@@ -12,6 +12,7 @@ import { cn, timeAgo } from "@/lib/utils";
 
 interface Worker {
   id: number;
+  kind?: "personal" | "cloud";
   name: string;
   status: "online" | "offline" | "paused" | "revoked";
   paused: boolean;
@@ -51,6 +52,7 @@ export function NetworkView() {
   const user = useAccount((s) => s.user);
   const [data, setData] = useState<Listing | null>(null);
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<"personal" | "cloud">("personal");
   const [referral, setReferral] = useState("");
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [os, setOs] = useState<"unix" | "windows">(navigator.userAgent.includes("Windows") ? "windows" : "unix");
@@ -127,10 +129,11 @@ export function NetworkView() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
+            {user.role === "owner" && <label className="text-xs">Computer type <select aria-label="Computer type" value={kind} onChange={(e) => setKind(e.target.value as "personal" | "cloud")} className="ml-2 rounded border border-border bg-bg p-1"><option value="personal">Personal computer</option><option value="cloud">Cloud infrastructure</option></select></label>}
             <div className="grid grid-cols-[1fr_200px_auto] items-end gap-2">
               <div><Label>Name</Label><Input className="mt-1" placeholder="home-server" value={name} onChange={(e) => setName(e.target.value)} /></div>
               <div><Label>Referral code (optional)</Label><Input className="mt-1 uppercase" placeholder="someone else's code" value={referral} onChange={(e) => setReferral(e.target.value.toUpperCase())} /></div>
-              <Button onClick={act(async () => setEnrollment(await serverApi<Enrollment>("/v1/training/enrollments", { method: "POST", json: { name: name || null, referral_code: referral || null } })))}>
+              <Button onClick={act(async () => setEnrollment(await serverApi<Enrollment>("/v1/training/enrollments", { method: "POST", json: { kind, name: name || null, referral_code: referral || null } })))}>
                 Get the command
               </Button>
             </div>
@@ -172,7 +175,7 @@ export function NetworkView() {
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 text-[13px] font-medium">
-                      {w.name} <Badge variant={statusTone[w.status]}>{w.status}</Badge>
+                      {w.name} <Badge>{w.kind === "cloud" ? "Cloud worker" : "Personal PC"}</Badge> <Badge variant={statusTone[w.status]}>{w.status}</Badge>
                       {w.referred && <Badge>referred</Badge>}
                     </div>
                     <div className="mt-0.5 truncate text-[11px] text-muted">
@@ -195,7 +198,7 @@ export function NetworkView() {
                         ? <Button size="sm" variant="secondary" onClick={act(() => serverApi(`/v1/training/workers/${w.id}/resume`, { method: "POST" }))}><Play /> Resume</Button>
                         : <Button size="sm" variant="secondary" onClick={act(() => serverApi(`/v1/training/workers/${w.id}/pause`, { method: "POST" }))}><Pause /> Pause</Button>}
                       <Button size="icon-sm" variant="ghost" title="Remove this worker"
-                        onClick={() => confirm(`Remove ${w.name}? It stops and can't reconnect. To also delete it from that computer, run there:  moth-worker uninstall`) && act(() => serverApi(`/v1/training/workers/${w.id}/revoke`, { method: "POST" }))()}>
+                        onClick={() => confirm(`Remove ${w.name} <Badge>{w.kind === "cloud" ? "Cloud worker" : "Personal PC"}</Badge>? It stops and can't reconnect. To also delete it from that computer, run there:  moth-worker uninstall`) && act(() => serverApi(`/v1/training/workers/${w.id}/revoke`, { method: "POST" }))()}>
                         <Trash2 />
                       </Button>
                     </div>

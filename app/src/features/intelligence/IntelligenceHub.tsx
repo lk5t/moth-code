@@ -84,11 +84,13 @@ export function ModelActivity({ progress, resources }: { progress: Any | null; r
       <div className="flex min-w-0 flex-col justify-center gap-4">
         <div><p className="text-[11px] uppercase tracking-[0.18em] text-faint">One native lineage</p>
           <h2 className="mt-1 text-xl font-medium tracking-tight">{model ? modelLabel(model) : "Model status unavailable"}</h2>
+          <p className="mt-1 text-xs text-muted">Revision {model?.revision ?? "not recorded"} · Step {model?.training?.step ?? model?.training?.steps ?? "not reported"}</p>
           <p className="mt-1 text-xs text-muted">{model?.params != null ? `${formatNumber(model.params)} actual parameters` : "Parameters have not been measured"}</p>
         </div>
         <div className="flex items-center gap-2 text-xs"><span className={cn("size-1.5 rounded-full", recent ? "bg-success" : "bg-faint")} />{recent ? "Training progress received" : status}</div>
         {model?.initialization === "random-untrained" && <p className="text-xs text-warning">Fresh, untrained baseline. Training and evaluations determine its capabilities.</p>}
         <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="min-w-0"><p className="text-faint">Tokenizer identity</p><p className="mt-1 truncate font-mono text-fg" title={model?.tokenizer_fingerprint}>{model?.tokenizer_fingerprint ?? "Not recorded"}</p></div>
           <div><p className="text-faint">Architecture</p><p className="mt-1 text-fg">{layers ? `${layers} layers · ${model.config.d_model} dimensions` : "Not available"}</p></div>
           <div><p className="text-faint">Connected workers</p><p className="mt-1 text-fg">{progress?.network ? `${progress.network.gpu_online} GPU · ${progress.network.cpu_online} CPU` : "Not available"}</p></div>
           {resources?.local && <>
@@ -96,6 +98,7 @@ export function ModelActivity({ progress, resources }: { progress: Any | null; r
             <div><p className="text-faint">Free memory</p><p className="mt-1 text-fg">{resources.local.memory?.available != null ? `${(resources.local.memory.available / 1024 ** 3).toFixed(1)} GB` : "Not measured"}</p></div>
           </>}
         </div>
+        {model?.milestone?.reasons?.length > 0 && <div className="text-xs text-muted"><p>Next public milestone requirements</p><ul className="mt-1 list-inside list-disc">{model.milestone.reasons.slice(0, 4).map((reason: string) => <li key={reason}>{reason}</li>)}</ul></div>}
         {visible > 0 && <p className="text-xs text-muted">Layer {selectedStart}{selectedEnd > selectedStart && `–${selectedEnd}`} selected · {model.config.n_heads} attention heads per layer. A pulse means reported training steps increased.</p>}
         {progress?.training?.cycle?.waiting_reason && <p role="status" className="rounded-lg border border-border bg-bg p-3 text-xs text-muted">{progress.training.cycle.waiting_reason}</p>}
       </div>

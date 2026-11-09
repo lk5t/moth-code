@@ -14,6 +14,7 @@ MOTH Code updates itself.
 
 from __future__ import annotations
 
+import hashlib
 import threading
 import time
 from collections import deque
@@ -113,6 +114,11 @@ class Participant:
             self.set_setting("participant", cfg)
         if cfg.get("server") != server or not cfg.get("worker_token"):
             cfg = self._enroll(server, acct["token"])
+        with self.http_factory(server) as http:
+            response = http.post(f"/v1/training/workers/{cfg['worker_id']}/resume",
+                                 headers={"Authorization": f"Bearer {acct['token']}"})
+            if response.status_code != 200:
+                raise ParticipantError(f"Could not authorize this device (HTTP {response.status_code}).")
         self.set_setting("participant", {**cfg, **identity, "enabled": True})
         self.authorized_session = (server, acct["token"])
         self.start()
@@ -132,7 +138,8 @@ class Participant:
         from moth_worker.runner import WorkerRunner
 
         client = WorkerClient(cfg["server"], cfg["worker_token"])
-        self.runner = WorkerRunner(client, self.dir, log=self.log, heartbeat_seconds=30.0, update_check_seconds=None)
+        namespace = hashlib.sha256(f"{cfg['server']}:{cfg.get('account_id')}:{cfg.get('device_id')}".encode()).hexdigest()[:24]
+        self.runner = WorkerRunner(client, self.dir / namespace, log=self.log, heartbeat_seconds=30.0, update_check_seconds=None)
         detected = self.runner.hardware
         self.runner.hardware = lambda: {**detected(), "client": "moth-code"}  # shown as "this app" to the Owner
         self.error = None
@@ -152,6 +159,24 @@ class Participant:
 
         self.thread = threading.Thread(target=loop, daemon=True, name="moth-participant")
         self.thread.start()
+
+    def control(self, action: str) -> dict[str, Any]:
+        if action not in ("pause", "stop", "revoke"):
+            raise ParticipantError("Unknown contribution action.")
+        self.disable()  # stop local compute even if the network is unavailable
+        cfg, acct = self._cfg(), self.account() or {}
+        if not cfg.get('worker_id'):
+            return self.status()
+        if cfg.get('server') != (acct.get('server_url') or '').rstrip('/') or not acct.get('token'):
+            raise ParticipantError("Compute stopped locally. Sign in to its account to revoke the server authorization.")
+        with self.http_factory(cfg['server']) as http:
+            response = http.post(f"/v1/training/workers/{cfg['worker_id']}/{action}",
+                                 headers={"Authorization": f"Bearer {acct['token']}"})
+        if response.status_code != 200:
+            raise ParticipantError(f"Compute stopped locally; server {action} failed (HTTP {response.status_code}). Retry when connected.")
+        if action == 'revoke':
+            self.set_setting('participant', {'enabled': False})
+        return self.status()
 
     def disable(self) -> dict[str, Any]:
         self.authorized_session = None

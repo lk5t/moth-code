@@ -12,5 +12,5 @@ it("sends only the selected policy and never resumes paused training implicitly"
   fireEvent.click(screen.getByRole("switch", { name: "Automatic Evolution" }));
   expect(change).toHaveBeenLastCalledWith({ enabled: true });
   fireEvent.click(screen.getByRole("switch", { name: "Use cloud workers" }));
-  expect(change).toHaveBeenLastCalledWith({ backends: { workers: true }, distributed: { enabled: true } });
+  expect(change).toHaveBeenLastCalledWith({ cloud_workers: false });
 });

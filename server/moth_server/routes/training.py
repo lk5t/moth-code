@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import shlex
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
@@ -27,6 +28,7 @@ router = APIRouter(tags=["training"])
 
 
 class EnrollmentIn(BaseModel):
+    kind: Literal["personal", "cloud"] = "personal"
     name: str | None = Field(default=None, max_length=64)
     referral_code: str | None = Field(default=None, max_length=16)
 
@@ -130,7 +132,9 @@ def new_enrollment(body: EnrollmentIn, auth: Auth = Depends(current_auth), ctx: 
     from moth_server.routes.auth import limit
 
     limit(ctx, f"enroll:user:{auth.uid}", 10, 3600)
-    token = T.create_enrollment(ctx, auth.user, body.name, body.referral_code)
+    if body.kind == "cloud" and not auth.is_owner:
+        raise HTTPException(403, "Only the Owner may authorize cloud infrastructure workers")
+    token = T.create_enrollment(ctx, auth.user, body.name, body.referral_code, body.kind)
     release = worker_release(ctx)
     return {
         "token": token, "expires_at": now() + T.ENROLL_TTL, "single_use": True,
@@ -186,6 +190,8 @@ def control_worker(wid: int, action: str, auth: Auth = Depends(current_auth), ct
 @router.put("/v1/training/workers/{wid}/limits")
 def set_limits(wid: int, body: LimitsIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     w = own_worker(ctx, auth, wid)
+    if w["user_id"] != auth.uid:
+        raise HTTPException(403, "Only the enrolled account may change device resource limits")
     limits = {**json.loads(w["limits"] or "{}"), **body.model_dump(exclude_none=True)}
     with ctx.db.tx() as c:
         c.execute(workers.update().where(workers.c.id == wid).values(limits=json.dumps(limits)))

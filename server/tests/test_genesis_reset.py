@@ -82,7 +82,7 @@ def test_verified_fresh_reset_requires_approval_and_restores_legacy(client, sett
     # An accepted version in the old lineage must not make GENESIS skip to 0.26.
     cand = M.release(ctx, candidate)
     M._set(ctx, candidate, info=json.dumps({**cand['info'], 'lineage_id': plan['lineage_id']}))
-    assert v2.assign_model_version(ctx, candidate) == '0.02'
+    assert v2.assign_model_version(ctx, candidate) == '0.01'
     assert training.coordinator(ctx) is None  # retired rounds cannot auto-restart
     checkpoint.unlink()  # exercise restoration from the verified archive, not only a pointer switch
     restored = client.post(f"/v1/admin/evolution/genesis/{plan['id']}/restore", headers=H(owner['token']))

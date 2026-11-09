@@ -6,6 +6,19 @@ type Any = Record<string, any>;
 const measured = (value: unknown, digits = 0) => typeof value === "number" && Number.isFinite(value)
   ? value.toLocaleString(undefined, { maximumFractionDigits: digits }) : "Not reported";
 
+function LossHistory({ points }: { points: Any[] }) {
+  const values = points.filter((p) => Number.isFinite(p.step) && Number.isFinite(p.loss));
+  if (values.length < 2) return null;
+  const low = Math.min(...values.map((p) => p.loss)), high = Math.max(...values.map((p) => p.loss));
+  const first = Math.min(...values.map((p) => p.step)), last = Math.max(...values.map((p) => p.step));
+  return <figure className="mt-3"><figcaption className="text-[11px] text-muted">Measured loss · training (red), validation (gray)</figcaption>
+    <svg viewBox="0 0 600 90" role="img" aria-label={`Loss history from step ${first} to ${last}`} className="mt-1 h-24 w-full">
+      {['train', 'val'].map((split) => <polyline key={split} fill="none" stroke={split === 'train' ? '#C1121F' : '#999'} strokeWidth="2"
+        points={values.filter((p) => p.split === split).map((p) => `${5 + (p.step - first) / Math.max(1, last - first) * 590},${80 - (p.loss - low) / Math.max(.00001, high - low) * 70}`).join(' ')} />)}
+      <text x="5" y="89" fontSize="8" fill="currentColor">Step {first} → {last} · loss {low.toFixed(3)}–{high.toFixed(3)}</text>
+    </svg></figure>;
+}
+
 /** Counts come from trainer events or worker reports, never elapsed-time animation. */
 export function TrainingProgress({ progress, resources }: { progress: Any | null; resources: Any | null }) {
   const training = progress?.training;
@@ -45,7 +58,9 @@ export function TrainingProgress({ progress, resources }: { progress: Any | null
           <div><dt className="text-faint">Training loss</dt><dd className="mt-0.5 font-mono">{measured(report.train_loss, 4)}</dd></div>
           <div><dt className="text-faint">Validation loss</dt><dd className="mt-0.5 font-mono">{measured(report.val_loss ?? report.best_val, 4)}</dd></div>
         </dl>
+        <LossHistory points={report.history ?? []} />
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
+          {active && report.eta_seconds > 0 && <span>Estimated remaining: {Math.ceil(report.eta_seconds / 60)} min (current measured rate)</span>}
           {report.tokens_per_sec != null && <span>{measured(report.tokens_per_sec)} tokens/s</span>}
           <span>Checkpoint: {report.checkpoint?.name ? `${report.checkpoint.name} · step ${report.checkpoint.step}` : "Not reported yet"}</span>
           {pct != null && <span className="ml-auto">{pct.toFixed(1)}%</span>}
