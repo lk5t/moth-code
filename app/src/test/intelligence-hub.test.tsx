@@ -34,9 +34,9 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Intelligence consolidation", () => {
-  it("provides the five functional tabs and retains existing controls in their new home", async () => {
+  it("keeps training/evolution focused and supports the Data workspace adapter", async () => {
     render(<IntelligenceHub />);
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Overview", "Training", "Evolution", "Network", "Data"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Training", "Evolution"]);
     await screen.findByRole("button", { name: "Inspect layer 2" });
     fireEvent.click(screen.getByRole("button", { name: "Inspect layer 2" }));
     expect(screen.getByRole("button", { name: "Inspect layer 2" })).toHaveAttribute("aria-pressed", "true");
@@ -45,7 +45,7 @@ describe("Intelligence consolidation", () => {
     expect(screen.getByRole("switch", { name: "Contribute this computer" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Training Mode" })).toHaveValue("automatic");
     expect(screen.getByRole("button", { name: "Prepare and verify backup" })).toBeInTheDocument();
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Data" }), { button: 0 });
+    act(() => appStore.setState({view:"data", intelligenceTab:"data"}));
     await screen.findByText("Approved dataset controls");
     expect(screen.getByText("PSF-2.0 · 60 retained samples")).toBeInTheDocument();
     expect(appStore.getState().intelligenceTab).toBe("data");

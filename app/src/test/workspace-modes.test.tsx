@@ -10,10 +10,10 @@ describe("unified Code/Chat workspace", () => {
   it("preserves both mode drafts and unsaved files while switching", () => {
     render(<WorkspaceShell />);
     fireEvent.change(screen.getByLabelText("Unsaved code"), { target: { value: "edited code" } });
-    fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to Chat" }));
     fireEvent.change(screen.getByLabelText("Chat draft"), { target: { value: "unfinished question" } });
     expect(screen.getByLabelText("Unsaved code")).not.toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Code" }));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to Code" }));
     expect(screen.getByLabelText("Unsaved code")).toHaveValue("edited code");
     expect(screen.getByLabelText("Chat draft")).toHaveValue("unfinished question");
     expect(appStore.getState().openFiles[0].content).toBe("unsaved");
@@ -23,7 +23,7 @@ describe("unified Code/Chat workspace", () => {
     render(<WorkspaceShell />);
     fireEvent.keyDown(window, { key: "M", ctrlKey: true, shiftKey: true });
     expect(appStore.getState().view).toBe("chat");
-    expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Switch to Code" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "M", metaKey: true, shiftKey: true });
     expect(appStore.getState().view).toBe("workspace");
   });

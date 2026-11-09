@@ -1,0 +1,35 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { NavRail } from "@/components/NavRail";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { appStore, openIntelligence } from "@/lib/app-state";
+import { navigate, workspaceOf } from "@/lib/navigation";
+vi.mock("@/lib/account", () => ({useAccount: (fn: (s:any) => unknown) => fn({user:{role:"owner"}})}));
+vi.mock("@/features/account/AccountMenu", () => ({AccountMenu: () => <span>Account</span>}));
+afterEach(cleanup);
+it("exposes eight direct workspaces with an active indicator and persistent navigation", () => {
+  appStore.setState({view:"overview"});
+  render(<TooltipProvider><NavRail /></TooltipProvider>);
+  const nav=screen.getByRole("navigation",{name:"Main workspaces"});
+  for(const label of ["Overview","Chat","Code","Intelligence","Data","Network","Activity","Settings"]) expect(within(nav).getByRole("button",{name:label})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button",{name:"Data"}));
+  expect(appStore.getState().view).toBe("data");
+  expect(screen.getByRole("button",{name:"Data"})).toHaveAttribute("aria-current","page");
+  expect(JSON.parse(localStorage.getItem("moth.navigation")!).view).toBe("data");
+});
+it("supports keyboard feature search and legacy route adapters", () => {
+  render(<TooltipProvider><NavRail /></TooltipProvider>);
+  fireEvent.keyDown(window,{key:"k",ctrlKey:true});
+  const search=screen.getByRole("combobox",{name:"Search features"});
+  fireEvent.change(search,{target:{value:"Evolution"}});
+  fireEvent.keyDown(search,{key:"Enter"});
+  expect(appStore.getState().view).toBe("intelligence");
+  expect(appStore.getState().intelligenceTab).toBe("evolution");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  openIntelligence("network"); expect(appStore.getState().view).toBe("network");
+  openIntelligence("data"); expect(appStore.getState().view).toBe("data");
+  expect(workspaceOf("training")).toBe("intelligence");
+  expect(workspaceOf("models")).toBe("intelligence");
+  expect(workspaceOf("owner")).toBe("settings");
+  navigate("intelligence");expect(appStore.getState().intelligenceTab).toBe("training");
+});

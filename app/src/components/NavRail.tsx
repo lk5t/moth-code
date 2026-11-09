@@ -1,54 +1,32 @@
 import { useEffect } from "react";
-import { Brain, Crown, Settings, SquareTerminal } from "lucide-react";
-import { useAccount } from "@/lib/account";
-import { appStore, useApp, type View } from "@/lib/app-state";
+import { Activity, Brain, Code2, Database, Home, MessageSquare, Network, Settings } from "lucide-react";
+import { appStore, useApp } from "@/lib/app-state";
+import { WORKSPACES, navigate, workspaceOf } from "@/lib/navigation";
 import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { MothEmblem } from "./MothEmblem";
 import { AccountMenu } from "@/features/account/AccountMenu";
+import { FeatureSearch } from "./FeatureSearch";
 
-// Code/Chat share one workspace; all native AI tools live in Intelligence.
-const items: { view: View; label: string; icon: React.ReactNode; owner?: boolean }[] = [
-  { view: "workspace", label: "Workspace · Code / Chat", icon: <SquareTerminal /> },
-  { view: "intelligence", label: "Intelligence", icon: <Brain /> },
-  { view: "owner", label: "Owner tools", icon: <Crown />, owner: true },
-];
-const INTELLIGENCE_VIEWS: View[] = ["intelligence", "evolution", "network", "training", "models"];
-
+const icons = [Home, MessageSquare, Code2, Brain, Database, Network, Activity, Settings];
 export function NavRail() {
   const view = useApp((s) => s.view);
-  const isOwner = useAccount((s) => s.user?.role === "owner");
   useEffect(() => {
     const shortcut = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || !e.altKey) return;
-      const target = ({ w: "workspace", i: "intelligence", s: "settings" } as const)[e.key.toLowerCase() as "w" | "i" | "s"];
-      if (target) { e.preventDefault(); appStore.setState({ view: target === "workspace" && appStore.getState().workspaceMode === "chat" ? "chat" : target }); }
+      const target = ({w: "workspace", i: "intelligence", s: "settings"} as const)[e.key.toLowerCase() as "w" | "i" | "s"];
+      if(target) {e.preventDefault(); navigate(target === "workspace" && appStore.getState().workspaceMode === "chat" ? "chat" : target);}
     };
-    window.addEventListener("keydown", shortcut);
-    return () => window.removeEventListener("keydown", shortcut);
+    window.addEventListener("keydown", shortcut);return () => window.removeEventListener("keydown", shortcut);
   }, []);
-  const button = (v: View, label: string, icon: React.ReactNode) => (
-    <Tip key={v} label={label}>
-      <button
-        onClick={() => appStore.setState({ view: v === "workspace" && appStore.getState().workspaceMode === "chat" ? "chat" : v })}
-        className={cn(
-          "relative flex size-9 cursor-pointer items-center justify-center rounded-lg text-faint transition-all hover:bg-surface-2 hover:text-fg [&_svg]:size-[18px]",
-          (view === v || (v === "workspace" && view === "chat") || (v === "intelligence" && INTELLIGENCE_VIEWS.includes(view))) && "text-fg bg-surface-2 before:absolute before:-left-[9px] before:h-5 before:w-0.5 before:rounded-full before:bg-accent",
-        )}
-        aria-label={label}
-        aria-current={(view === v || (v === "workspace" && view === "chat") || (v === "intelligence" && INTELLIGENCE_VIEWS.includes(view))) ? "page" : undefined}
-      >
-        {icon}
-      </button>
-    </Tip>
-  );
-  return (
-    <nav className="flex w-[52px] shrink-0 flex-col items-center gap-1 border-r border-border bg-bg py-3">
-      <MothEmblem motion="idle" className="mb-2 size-8 transition-[filter] hover:drop-shadow-[0_0_10px_rgba(193,18,31,0.6)]" />
-      {items.filter((i) => !i.owner || isOwner).map((i) => button(i.view, i.label, i.icon))}
-      <div className="flex-1" />
-      {button("settings", "Settings", <Settings />)}
-      <div className="mt-2"><AccountMenu /></div>
-    </nav>
-  );
+  return <nav aria-label="Main workspaces" className="flex w-[52px] shrink-0 flex-col items-stretch gap-1 border-r border-border bg-bg p-2 md:w-[148px]">
+    <div className="mb-2 flex h-9 items-center justify-center gap-2"><MothEmblem motion="idle" className="size-7" /><span className="hidden text-sm font-medium tracking-widest md:inline">MOTH</span></div>
+    {WORKSPACES.map((item, index) => {const Icon=icons[index], selected=workspaceOf(view) === item.view;
+      return <Tip key={item.view} label={item.description}><button aria-label={item.label} aria-current={selected ? "page" : undefined} onClick={() => navigate(item.view)}
+        className={cn("flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg px-2 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline focus-visible:outline-accent md:justify-start", selected && "bg-surface-2 text-fg ring-1 ring-inset ring-accent/40")}>
+        <Icon className="size-4 shrink-0"/><span className="hidden md:inline">{item.label}</span>
+      </button></Tip>;
+    })}
+    <div className="flex-1"/><FeatureSearch /><div className="mt-1 flex justify-center"><AccountMenu /></div>
+  </nav>;
 }

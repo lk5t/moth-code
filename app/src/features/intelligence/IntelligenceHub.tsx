@@ -8,7 +8,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty";
 import { Card, CardContent } from "@/components/ui/card";
 import { MothEmblem } from "@/components/MothEmblem";
-import { IntelligenceView } from "./IntelligenceView";
 import { GenesisPanel } from "./GenesisPanel";
 import { EvolutionView } from "@/features/evolution/EvolutionView";
 import { NetworkView } from "@/features/network/NetworkView";
@@ -112,7 +111,10 @@ export function IntelligenceHub() {
   const owner = useAccount((s) => s.user?.role === "owner");
   const view = useApp((s) => s.view);
   const storedTab = useApp((s) => s.intelligenceTab);
-  const tab: IntelligenceTab = view === "evolution" ? "evolution" : view === "network" ? "network" : view === "training" || view === "models" ? "training" : storedTab ?? "overview";
+  const standalone = ["overview", "data", "network"].includes(view);
+  const heading = view === "overview" ? "Overview" : view === "data" ? "Data" : view === "network" ? "Network" : "Intelligence";
+  const visibleTabs = TABS.filter(([value]) => value === "training" || value === "evolution");
+  const tab: IntelligenceTab = view === "overview" ? "overview" : view === "data" ? "data" : view === "evolution" ? "evolution" : view === "network" ? "network" : view === "training" || view === "models" ? "training" : storedTab ?? "overview";
   const [visited, setVisited] = useState<Set<string>>(() => new Set([tab]));
   const [p, setP] = useState<Any | null>(null);
   const [resources, setResources] = useState<Any | null>(null);
@@ -134,16 +136,16 @@ export function IntelligenceHub() {
     <div className="mx-auto flex max-w-6xl flex-col gap-3 p-3 sm:p-4 lg:p-5">
       <header className="flex flex-wrap items-end justify-between gap-3"><div>
         <p className="text-[10px] uppercase tracking-[0.22em] text-accent">MOTH / Intelligence</p>
-        <h1 className="mt-1 text-2xl font-medium tracking-tight">Intelligence</h1>
-        <p className="mt-1 text-xs text-muted">One place for the native model, its training, its computers and the data it learns from.</p>
+        <h1 className="mt-1 text-2xl font-medium tracking-tight">{heading}</h1>
+        <p className="mt-1 text-xs text-muted">{heading === "Overview" ? "The model currently serving MOTH, with measured status and important warnings." : heading === "Data" ? "Prepare and inspect licensed datasets with the intended tokenizer." : heading === "Network" ? "Manage trusted workers and your own computer’s voluntary contribution." : "Train, evaluate and safely improve the native MOTH model."}</p>
       </div><span className="text-xs text-faint">{p?.current ? modelLabel(p.current) : "Model status unavailable"}</span></header>
       {error && <p role="alert" className="rounded-lg border border-border p-3 text-xs text-danger">{error}</p>}
       <Tabs value={tab} onValueChange={(value) => openIntelligence(value as IntelligenceTab)}>
-        <TabsList aria-label="Intelligence sections" className="mb-3 w-full justify-start">
-          {TABS.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="[&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
-        </TabsList>
+        {!standalone && <TabsList aria-label="Intelligence sections" className="mb-3 w-full justify-start">
+          {visibleTabs.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="[&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
+        </TabsList>}
         {(visited.has("overview") || tab === "overview") && <TabsContent forceMount hidden={tab !== "overview"} value="overview" className="flex flex-col gap-5 data-[state=inactive]:hidden">
-          <ModelActivity progress={p} resources={resources} /><IntelligenceView embedded />
+          <ModelActivity progress={p} resources={resources} />
         </TabsContent>}
         {(visited.has("training") || tab === "training") && <TabsContent forceMount hidden={tab !== "training"} value="training" className="flex flex-col gap-4 data-[state=inactive]:hidden">
           <TrainingProgress progress={p} resources={resources} />
@@ -153,7 +155,7 @@ export function IntelligenceHub() {
           <EvolutionView />{owner && <Advanced title="Research, growth approvals, evaluations and rollback"><EvolutionPanel /></Advanced>}
         </TabsContent>}
         {(visited.has("network") || tab === "network") && <TabsContent forceMount hidden={tab !== "network"} value="network" className="flex flex-col gap-4 data-[state=inactive]:hidden">
-          <NetworkView />{owner && <Advanced title="Worker assignments, permissions and resource limits"><WorkersPanel /></Advanced>}
+          <ParticipantSwitch /><NetworkView />{owner && <Advanced title="Worker assignments, permissions and resource limits"><WorkersPanel /></Advanced>}
         </TabsContent>}
         {(visited.has("data") || tab === "data") && <TabsContent forceMount hidden={tab !== "data"} value="data" className="flex flex-col gap-4 data-[state=inactive]:hidden">
           <Card><CardContent className="flex flex-col gap-3 py-5 text-xs"><h2 className="text-sm font-medium">Approved training sources</h2>

@@ -96,7 +96,7 @@ export default function App() {
               <ErrorBoundary label="The workspace"><WorkspaceShell /></ErrorBoundary>
             </div>
             {view === "settings" && <ErrorBoundary label="Settings"><SettingsView /></ErrorBoundary>}
-            {Extra && <ErrorBoundary key={["intelligence", "evolution", "network", "training", "models"].includes(view) ? "intelligence" : view} label="This view"><Extra /></ErrorBoundary>}
+            {Extra && <ErrorBoundary key={["intelligence", "evolution", "training", "models"].includes(view) ? "intelligence" : view} label="This view"><Extra /></ErrorBoundary>}
           </main>
         </div>
         <StatusBar />

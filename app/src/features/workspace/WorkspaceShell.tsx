@@ -24,19 +24,11 @@ export function WorkspaceShell() {
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-bg px-2 sm:px-3">
         <MothEmblem motion="idle" className="size-6 shrink-0" />
-        <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-0.5" aria-label="Workspace mode">
-          <button aria-pressed={code} onClick={() => appStore.setState({ view: "workspace" })}
-            className={cn("flex cursor-pointer items-center gap-2 rounded-md px-3 py-1 text-xs transition-colors", code ? "bg-accent-soft text-fg shadow-[inset_0_0_0_1px_rgb(193_18_31/0.3)]" : "text-muted hover:text-fg")}>
-            <Code2 className="size-3.5" />Code
-          </button>
-          <ArrowLeftRight aria-hidden className={cn("size-3.5 text-faint transition-transform duration-200 motion-reduce:transition-none", !code && "rotate-180")} />
-          <button aria-pressed={!code} onClick={() => appStore.setState({ view: "chat" })}
-            className={cn("flex cursor-pointer items-center gap-2 rounded-md px-3 py-1 text-xs transition-colors", !code ? "bg-accent-soft text-fg shadow-[inset_0_0_0_1px_rgb(193_18_31/0.3)]" : "text-muted hover:text-fg")}>
-            <MessageSquare className="size-3.5" />Chat
-          </button>
-        </div>
-        <span className="hidden text-[11px] text-faint sm:block">{code ? "Workspace" : "Conversation"}</span>
-        <span className="ml-auto hidden text-[11px] text-faint lg:block">Ctrl/⌘ Shift M</span>
+        <span className="flex items-center gap-2 text-xs font-medium">{code ? <Code2 className="size-3.5" /> : <MessageSquare className="size-3.5" />}{code ? "Code" : "Chat"}</span>
+        <button className="ml-auto flex items-center gap-2 rounded px-2 py-1 text-xs text-muted hover:text-fg focus-visible:outline focus-visible:outline-accent"
+          onClick={() => appStore.setState({view: code ? "chat" : "workspace"})} aria-label={code ? "Switch to Chat" : "Switch to Code"}>
+          <ArrowLeftRight className="size-3.5" /><span className="hidden sm:inline">Ctrl/⌘ Shift M</span>
+        </button>
       </header>
       <div hidden={!code} className={cn("min-h-0 flex-1", !code && "hidden")}><WorkspaceView /></div>
       <div hidden={code} className={cn("min-h-0 flex-1", code && "hidden")}><ChatView /></div>

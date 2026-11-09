@@ -33,3 +33,5 @@ Navigation target: Overview, Chat, Code, Intelligence, Data, Network, Activity, 
 ## Implementation record
 
 Phase1 completed: inspected navigation/view state, workspace, onboarding/settings, training/data/network/Owner panels, existing reset and backend storage/table structure. Existing regression tests validate the baseline navigation contracts before adapters change. Subsequent phases must update this record with actual tests and limitations.
+
+Phase2 implemented: eight labelled workspace entries, active indicators, keyboard feature search (Ctrl/CommandK), legacy view adapters, direct Data/Network/Overview homes and owner administration reachable from Settings. Existing Chat/Code components stay mounted; compact switch header removes duplicate primary navigation. Added navigation/persistence/search adapter regressions and retained draft/unsaved-editor checks. Validation:49 UI tests and TypeScript project build passed. Remaining page simplification and new feature backends belong to the following phases; no0.6.0 release was published.

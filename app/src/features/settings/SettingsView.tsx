@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Info, RotateCcw, Shield } from "lucide-react";
+import { appStore } from "@/lib/app-state";
+import { useAccount } from "@/lib/account";
 import { get, put, restartBackend } from "@/lib/backend";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -38,6 +40,7 @@ export function Row({ title, desc, children }: { title: string; desc?: string; c
 }
 
 export function SettingsView() {
+  const owner = useAccount((s) => s.user?.role === "owner");
   const [perms, setPerms] = useState<Permissions>(DEFAULT_PERMS);
   const [system, setSystem] = useState<any>(null);
   const [version, setVersion] = useState("");
@@ -58,7 +61,7 @@ export function SettingsView() {
   return (
     <div className="h-full overflow-auto">
       <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="mx-auto flex max-w-5xl flex-col gap-3 p-3 animate-rise sm:p-5">
-        <h1 className="text-lg font-semibold">Settings</h1>
+        <header className="flex items-center justify-between gap-3"><h1 className="text-lg font-semibold">Settings</h1>{owner && <Button size="sm" variant="secondary" onClick={() => appStore.setState({view:"owner"})}>Administration</Button>}</header>
         <TabsList aria-label="Settings sections">
           {TABS.map((t) => (
             <TabsTrigger key={t} value={t}>{t}</TabsTrigger>

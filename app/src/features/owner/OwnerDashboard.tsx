@@ -366,7 +366,7 @@ export function OwnerDashboard() {
     <div className="h-full overflow-auto">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 p-3 sm:p-5 animate-rise">
         <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="flex items-center gap-2 text-lg font-semibold"><Crown className="size-5 text-accent" />Owner Dashboard</h1>
-          <Button size="sm" variant="secondary" onClick={() => openIntelligence()}>Open Intelligence</Button></div>
+          <Button size="sm" variant="secondary" onClick={() => openIntelligence()}>View active model</Button></div>
         <Tabs defaultValue="overview">
           <TabsList aria-label="Owner sections" className="mb-3">
             {tabs.map(([v, l]) => <TabsTrigger key={v} value={v}>{l}</TabsTrigger>)}

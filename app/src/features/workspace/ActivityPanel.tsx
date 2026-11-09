@@ -13,14 +13,14 @@ interface Item {
   message: string;
 }
 
-export function ActivityPanel() {
+export function ActivityPanel({ all = false }: { all?: boolean }) {
   const project = useApp((s) => s.project);
   const [items, setItems] = useState<Item[]>([]);
   const load = () =>
-    get<Item[]>(`/api/activity${project ? `?project_id=${project.id}` : ""}`).then(setItems).catch(() => {});
+    get<Item[]>(`/api/activity${!all && project ? `?project_id=${project.id}` : ""}`).then(setItems).catch(() => {});
   useEffect(() => {
     load();
-  }, [project?.id]);
+  }, [project?.id, all]);
   useEvent("files", load);
   useEvent("activity", load);
   useEvent("task", (e) => {
