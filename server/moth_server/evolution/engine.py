@@ -136,6 +136,8 @@ def rollback_to(ctx: Ctx, version: int, actor_id: int | None) -> dict:
                              "Models if this is intended")
     cyc = MEM.active_cycle(ctx)
     rel = M.deploy(ctx, version, actor_id)
+    from moth_server.audit import audit
+    audit(ctx.db, "models.rollback", actor_id, f"release:{version}")
     if cyc and cyc["status"] in ("deploying", "monitoring"):
         MEM.update_cycle(ctx, cyc["id"], status="rolled_back", finished_at=now(),
                          error=f"the Owner switched to v{version}")

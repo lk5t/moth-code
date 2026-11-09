@@ -107,7 +107,8 @@ export function ModelActivity({ progress, resources }: { progress: Any | null; r
 }
 
 export function IntelligenceHub() {
-  const signedIn = useAccount((s) => !!s.token);
+  const sessionToken = useAccount((s) => s.token);
+  const signedIn = !!sessionToken;
   const owner = useAccount((s) => s.user?.role === "owner");
   const view = useApp((s) => s.view);
   const storedTab = useApp((s) => s.intelligenceTab);
@@ -118,6 +119,7 @@ export function IntelligenceHub() {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { setVisited((s) => new Set([...s, tab])); }, [tab]);
   useEffect(() => {
+    setP(null); setResources(null);
     if (!signedIn) return;
     let alive = true;
     const load = () => {
@@ -126,7 +128,7 @@ export function IntelligenceHub() {
     };
     load(); const timer = setInterval(load, owner ? 5000 : 20000);
     return () => { alive = false; clearInterval(timer); };
-  }, [signedIn, owner]);
+  }, [sessionToken, owner]);
   if (!signedIn) return <EmptyState title="Sign in to Intelligence">MOTH's live training, compute, data and model history appear here.</EmptyState>;
   return <div className="h-full overflow-auto">
     <div className="mx-auto flex max-w-6xl flex-col gap-3 p-3 sm:p-4 lg:p-5">

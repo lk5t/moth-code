@@ -96,18 +96,21 @@ function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric
 }
 
 export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
-  const signedIn = useAccount((s) => !!s.token);
+  const sessionToken = useAccount((s) => s.token);
+  const signedIn = !!sessionToken;
   const [p, setP] = useState<Any | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [metric, setMetric] = useState<string>("holdout_language");
   const [selection, setSelection] = useState<Any | null>(null);
   useEffect(() => {
+    setP(null);
     if (!signedIn) return;
-    const load = () => serverApi<Any>("/v1/intelligence/progress").then((d) => { setP(d); setErr(null); }).catch((e) => { setP(null); setErr("Live status unavailable: " + e.message); });
+    let alive = true;
+    const load = () => serverApi<Any>("/v1/intelligence/progress").then((d) => { if (alive) { setP(d); setErr(null); } }).catch((e) => { if (alive) { setP(null); setErr("Live status unavailable: " + e.message); } });
     load();
     const t = setInterval(load, 20000);
-    return () => clearInterval(t);
-  }, [signedIn]);
+    return () => { alive = false; clearInterval(t); };
+  }, [sessionToken]);
   const versions: Any[] = p?.timeline ?? [];
   const chartVersions = useMemo(() => versions.map((v) => {
     const benchmarks = { ...v.benchmarks };
