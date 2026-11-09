@@ -110,7 +110,7 @@ class WindowsUI:
                 plain[0].iface_value.SetValue(username)
                 protected[0].iface_value.SetValue(password)
                 self.click('Sign in', control_type='Button')
-                self.find('Owner tools', ('Button',))
+                self.find(username, ('Text',), contains=True)
                 return
             time.sleep(1)
         raise AssertionError('Native sign-in fields were not available')

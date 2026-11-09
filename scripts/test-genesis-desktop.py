@@ -100,16 +100,19 @@ def main(installer):
         ui.configure_cloud(cloud)
         ui.login(user['username'], password)
         print('::notice title=GENESIS native stage::Signed installer, frozen backend and Owner login passed', flush=True)
-        ui.click('Workspace · Code / Chat')
+        ui.click('Chat')
         ui.draft('native unsent draft')
         ui.click('Code')
         ui.click('Chat')
         assert ui.draft() == 'native unsent draft'
         ui.click('Intelligence')
-        for label in ('Overview', 'Training', 'Evolution', 'Network', 'Data'):
-            ui.find(label, ('TabItem',))
+        for label in ('Overview','Chat','Code','Intelligence','Data','Network','Activity','Settings'):
+            ui.find(label, ('Button',))
+        ui.click('Overview')
+        ui.click('Model details')
         ui.click('Inspect layer 2')
         wait(lambda: 'Layer 2 selected' in ui.text(), 'selected architecture layer')
+        ui.click('Intelligence')
         ui.click('Training', control_type='TabItem')
         print('::notice title=GENESIS native stage::Workspace drafts and interactive Intelligence tabs passed', flush=True)
         worker_backend = api('/v1/admin/evolution/status')['settings']['backends']['workers']
@@ -133,20 +136,32 @@ def main(installer):
              'real CPU training progress from requested cycle', timeout=180)
         api('/v1/admin/evolution/pause', {}, 'POST')
         ui.resize(800, 600)
-        for label in ('Evolution', 'Network', 'Data'):
-            ui.click(label, control_type='TabItem')
-        ui.click('Workspace · Code / Chat')
+        ui.click('Evolution', control_type='TabItem')
+        for label in ('Network','Data','Activity'):
+            ui.click(label, control_type='Button')
+        ui.click('Chat')
         assert ui.draft() == 'native unsent draft'
-        ui.click('Intelligence')
-        ui.click('Data', control_type='TabItem')
+        ui.click('Data')
         ui.close()
         app.wait(timeout=30)
         app = subprocess.Popen([str(exe)], env=appenv)
         ui = WindowsUI(app.pid)
-        ui.find('Owner tools', ('Button',))  # actual Windows credential-vault session survived
-        assert ui.find('Data', ('TabItem',)).iface_selection_item.CurrentIsSelected
+        ui.find('Dataset Quality Studio', ('Text',))  # persisted Data workspace
+        ui.click('Settings');ui.optional_tab('Account')
+        ui.find(user['username'],('Text',),contains=True)  # actual Windows credential-vault session survived
+        ui.click('Advanced · Native AI operations')
+        ui.click('Inspect deletion inventory')
+        reset=wait(lambda:(r if (r:=api('/v1/admin/evolution/native-reset')).get('status')=='preview' else None),'native reset preview')
+        assert reset['inventory']['records']['model_releases']>0
+        ui.set_text('Confirm all native AI deletion','DELETE ALL NATIVE AI DATA')
+        ui.click('Permanently delete reviewed native AI data')
+        wait(lambda:api('/v1/admin/evolution/native-reset').get('status')=='completed','isolated native reset',timeout=120)
+        assert api('/v1/intelligence/progress')['current'] is None
+        ui.click('Overview');ui.find('No native model available',('Text',))
+        api('/v1/admin/evolution/initialize',{},'POST')
+        assert api('/v1/admin/evolution/versions'), 'Explicit fresh initialization failed after isolated reset'
         evidence = {'native_windows': True, 'real_frozen_backend': True, 'real_cloud_api': True,
-                    'draft_preserved_across_modes': True, 'intelligence_tabs': 5,
+                    'draft_preserved_across_modes': True, 'main_workspaces': 8, 'isolated_full_reset_verified': True, 'fresh_initialization_after_reset': True,
                     'owner_session_and_navigation_restored_after_restart': True, 'tested_window': [800, 600],
                     'worker_enrollment_id': participant['worker_id'], 'training_cycle_id': cycle['id'],
                     'production_reset': False, 'trained_foundation': False}

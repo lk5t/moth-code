@@ -90,10 +90,15 @@ class InferenceRouter:
 
     def chat(self, messages: list[Message], params: GenerationParams, on_text: Callable[[str], None],
              cancel: threading.Event | None = None, project_id: int | None = None,
-             project_data: bool = False) -> GenerationStats:
+             project_data: bool = False, expected_endpoint: tuple[str,str|None] | None = None) -> GenerationStats:
+        endpoint=self.endpoint()
+        if expected_endpoint is not None and endpoint!=expected_endpoint:
+            raise NotSignedIn("The account changed. Retry in the selected account.")
         if project_data and not self.consent(project_id):
             raise WorkspaceConsentRequired(project_id)
-        return self.cloud().chat(self._sanitize(messages), params, on_text, cancel)
+        if self.endpoint()!=endpoint:
+            raise NotSignedIn("The account changed while checking project consent.")
+        return self.client_factory(*endpoint).chat(self._sanitize(messages), params, on_text, cancel)
 
     def describe(self) -> str:
         try:
@@ -126,5 +131,5 @@ class CloudAgentLLM:
         if self.router.endpoint() != self.endpoint:
             raise NotSignedIn("The account changed. Start the coding task again in the selected account.")
         parts: list[str] = []
-        self.router.chat(messages, params, parts.append, cancel, project_id=self.project_id, project_data=True)
+        self.router.chat(messages, params, parts.append, cancel, project_id=self.project_id, project_data=True,expected_endpoint=self.endpoint)
         return "".join(parts)

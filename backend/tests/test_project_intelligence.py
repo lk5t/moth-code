@@ -19,7 +19,10 @@ def test_incremental_graph_memory_and_explicit_deletion(paths, project, tmp_path
     (project/'main.ts').write_text("import {add} from './demo/math_utils';\nimport x from './missing';")
     (project/'demo'/'consumer.py').write_text('from .math_utils import add\n')
     outside=tmp_path/'external.py';outside.write_text('PRIVATE_OUTSIDE=1')
-    (project/'external.py').symlink_to(outside)
+    try:(project/'external.py').symlink_to(outside)
+    except OSError:
+        import os
+        if os.name!='nt':raise  # Windows CI may not grant symbolic-link creation privileges.
     ws=Workspace(project)
     first=graph.refresh(1,ws)
     assert 'React' in first['frameworks']
@@ -89,3 +92,15 @@ def test_routes_auth_project_boundary_and_profile_binding(paths, project):
         assert client.get(base+'/search?q=add',headers=h).status_code==409
         assert client.post(base+'/refresh',headers=h).status_code==200
         assert client.get(base+'/search?q=add',headers=h).json()['matches']
+
+
+def test_account_switch_during_consent_never_sends_context_to_new_account():
+    from moth.inference.router import InferenceRouter,InferenceSettings,NotSignedIn
+    from moth.model.chat_format import Message
+    from moth.model.generation import GenerationParams
+    account={'server_url':'https://alice.test','token':'alice'};sent=[]
+    def consent(pid):
+        account.update(server_url='https://bob.test',token='bob');return True
+    router=InferenceRouter(lambda:InferenceSettings(),lambda:account,consent=consent,client_factory=lambda *args:sent.append(args))
+    with pytest.raises(NotSignedIn):router.chat([Message('user','Alice private context')],GenerationParams(),lambda _:None,project_id=1,project_data=True)
+    assert not sent

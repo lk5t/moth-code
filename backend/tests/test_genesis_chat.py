@@ -28,7 +28,7 @@ def test_project_context_requires_consent_and_general_history_stays_separate(pat
         assert result.status_code == 200, result.text
         assert done.wait(2)
         msgs, opts = captured[-1]
-        assert opts == {'project_id': pid, 'project_data': True}
+        assert opts == {'project_id': pid, 'project_data': True,'expected_endpoint':('https://example.test/cloud','test-session')}
         assert 'def add' in msgs[-1].content and 'SECRET=1' not in msgs[-1].content
         svc = app.state.services
         project_cid = svc.db.execute('INSERT INTO conversations(project_id,title,created_at) VALUES (?,?,?)', (pid, 'Code history', 1)).lastrowid

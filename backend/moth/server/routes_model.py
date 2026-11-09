@@ -100,11 +100,13 @@ def register(app: FastAPI, svc: Services, deps) -> None:
             raise HTTPException(422, "Enter a message first")
         params = GenerationParams.from_dict({"max_new_tokens": 256, "temperature": 0.7, **(body.params or {})})
         context = []
+        context_endpoint=None
         if body.context_project_id is not None:
             workspace = svc.workspace(body.context_project_id)
             if not svc.extras['account_scope'].consented(body.context_project_id):
                 raise HTTPException(412, 'Approve sharing this project with MOTH Cloud before attaching its context.',
                                     headers={'X-Moth-Reason': 'workspace_consent_required'})
+            context_endpoint=router.endpoint()
             graph = svc.extras['project_intelligence']
             try:context = graph.search(body.context_project_id,workspace,body.message,limit=4)['matches']
             except ValueError as error:raise HTTPException(409,str(error)) from None
@@ -194,7 +196,7 @@ def register(app: FastAPI, svc: Services, deps) -> None:
                     try:
                         if context:
                             stats = router.chat(msgs, params, on_text, cancel,
-                                                project_id=body.context_project_id, project_data=True)
+                                                project_id=body.context_project_id, project_data=True,expected_endpoint=context_endpoint)
                         else:
                             stats = router.chat(msgs, params, on_text, cancel)
                     except CloudUnavailable:
