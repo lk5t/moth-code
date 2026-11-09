@@ -13,7 +13,6 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { LossChart, type MetricPoint } from "@/components/LossChart";
 import { cn, formatNumber, timeAgo } from "@/lib/utils";
 import { SourcePicker, type SourceSel } from "./SourcePicker";
-import { NetworkTraining } from "./NetworkTraining";
 
 interface Job { id: string; kind: string; title: string; status: string; progress: number | null; message: string; error: string | null; created: number }
 interface TokenizerInfo { name: string; vocab_size: number; fingerprint: string }
@@ -25,7 +24,7 @@ const statusTone: Record<string, "success" | "warning" | "danger" | "accent" | "
   running: "accent", completed: "success", stopped: "warning", interrupted: "warning", failed: "danger", created: "default",
 };
 
-export function TrainingView() {
+export function TrainingView({ scope = "all" }: { scope?: "all" | "data" | "training" }) {
   const { data: jobs } = useResource<Job[]>("/api/jobs", ["job"], []);
   const { data: tokenizers } = useResource<TokenizerInfo[]>("/api/tokenizers", ["job"], []);
   const { data: datasets } = useResource<DatasetInfo[]>("/api/datasets", ["job"], []);
@@ -50,15 +49,15 @@ export function TrainingView() {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="mx-auto flex max-w-6xl flex-col gap-5 p-8 animate-rise">
+      <div className="mx-auto flex max-w-6xl flex-col gap-3 p-3 sm:p-4">
         <div className="flex items-end justify-between">
           <div>
-            <h1 className="text-lg font-semibold">Model training</h1>
-            <p className="mt-1 text-xs text-muted">Improve MOTH together with MOTH Cloud and its workers, or run your own local experiments on this PC.</p>
+            <h1 className="text-lg font-semibold">{scope === "data" ? "Local datasets and tokenizers" : "Local training runs"}</h1>
+            <p className="mt-1 text-xs text-muted">{scope === "data" ? "Prepare licensed sources on this computer. Original files are preserved." : "Advanced local experiments, with resumable checkpoints. Cloud training has its own controls above."}</p>
           </div>
         </div>
         {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
-        <NetworkTraining />
+
 
         {activeJobs.length > 0 && (
           <Card>
@@ -78,8 +77,8 @@ export function TrainingView() {
           </Card>
         )}
 
-        <div className="grid grid-cols-3 gap-4">
-          <StepCard n={1} icon={<Type />} title="Tokenizer" desc="Learns MOTH's vocabulary (custom BPE)." onNew={() => setDialog("tokenizer")}>
+        <div className={`grid gap-3 ${scope === "data" ? "sm:grid-cols-2" : scope === "all" ? "lg:grid-cols-3" : "grid-cols-1"}`}>
+          {scope !== "training" && <><StepCard n={1} icon={<Type />} title="Tokenizer" desc="Learns MOTH's vocabulary (custom BPE)." onNew={() => setDialog("tokenizer")}>
             {tokenizers?.length ? tokenizers.map((t) => (
               <Item key={t.name} title={t.name} sub={`${formatNumber(t.vocab_size, 1)} tokens · ${t.fingerprint.slice(0, 8)}`} />
             )) : <Empty text="No tokenizer yet" />}
@@ -87,19 +86,20 @@ export function TrainingView() {
           <StepCard n={2} icon={<Database />} title="Dataset" desc="Tokenised, license-tracked training data." onNew={() => setDialog("dataset")} disabled={!tokenizers?.length}>
             {datasets?.length ? datasets.map((d) => (
               <Item key={d.name} title={d.name} sub={`${formatNumber(d.tokens.train)} train · ${formatNumber(d.tokens.val)} val tokens`}
-                action={<Button size="icon-sm" variant="ghost" onClick={act(() => del(`/api/datasets/${d.name}`))}><Trash2 /></Button>} />
+                action={<Button size="icon-sm" variant="ghost" onClick={act(() => (confirm(`Delete the prepared dataset ${d.name}? Original sources are kept.`) ? del(`/api/datasets/${encodeURIComponent(d.name)}`) : Promise.resolve()))}><Trash2 /></Button>} />
             )) : <Empty text="No dataset yet" />}
           </StepCard>
-          <StepCard n={3} icon={<Brain />} title="Training runs" desc="Real forward/backward passes and weight updates." onNew={() => setDialog("run")} disabled={!datasets?.length}>
+          </>}
+          {scope !== "data" && <StepCard n={3} icon={<Brain />} title="Training runs" desc={datasets?.length ? "Real forward/backward passes and weight updates." : "Prepare a dataset in Data before starting a run."} onNew={() => setDialog("run")} disabled={!datasets?.length}>
             {runs?.length ? runs.map((r) => (
               <button key={r.id} onClick={() => setSelected(r.id)} className={cn("w-full cursor-pointer text-left", run?.id === r.id && "[&>div]:border-accent/60")}>
                 <Item title={r.name} sub={`${r.config.preset} · step ${r.step}/${r.config.max_steps}`} action={<Badge variant={statusTone[r.status]}>{r.status}</Badge>} />
               </button>
             )) : <Empty text="No runs yet" />}
-          </StepCard>
+          </StepCard>}
         </div>
 
-        {run && <RunDetail run={run} act={act} />}
+        {scope !== "data" && run && <RunDetail run={run} act={act} />}
       </div>
 
       <TokenizerDialog open={dialog === "tokenizer"} onClose={() => setDialog(null)} onError={setError} />
@@ -181,7 +181,7 @@ function RunDetail({ run, act }: { run: Run; act: (fn: () => Promise<unknown>) =
         {run.error && <div className="mt-1 rounded border border-danger/30 bg-danger/10 px-2 py-1 text-[11px] text-danger">{run.error}</div>}
       </CardHeader>
       <CardContent>
-        <div className="mb-4 grid grid-cols-5 gap-3">
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
           <Stat label="Step" value={`${run.step} / ${run.config.max_steps}`} />
           <Stat label="Train loss" value={lastTrain ? lastTrain.loss.toFixed(3) : "—"} />
           <Stat label="Val loss" value={lastVal ? lastVal.loss.toFixed(3) : "—"} />

@@ -1,3 +1,5 @@
+import { useSavedSection } from "@/lib/use-saved-section";
+import { GenesisPanel } from "@/features/intelligence/GenesisPanel";
 import { useEffect, useState } from "react";
 import { Info, RotateCcw, Shield } from "lucide-react";
 import { appStore } from "@/lib/app-state";
@@ -44,7 +46,7 @@ export function SettingsView() {
   const [perms, setPerms] = useState<Permissions>(DEFAULT_PERMS);
   const [system, setSystem] = useState<any>(null);
   const [version, setVersion] = useState("");
-  const [tab, setTab] = useState<Tab>("Account");
+  const [tab, setTab] = useSavedSection<Tab>("settings", TABS, "Account");
 
   useEffect(() => {
     get<Record<string, any>>("/api/settings").then((s) => setPerms({ ...DEFAULT_PERMS, ...(s.permissions ?? {}) }));
@@ -68,7 +70,11 @@ export function SettingsView() {
           ))}
         </TabsList>
         <TabsContent value={tab} className="flex flex-col gap-3">
-        {tab === "Account" && <><AccountSection /><ConnectionSection /></>}
+        {tab === "Account" && <><AccountSection /><ConnectionSection />{owner && <details className="rounded-lg border border-danger/40 p-3">
+          <summary className="cursor-pointer text-sm text-danger">Advanced · Native AI operations</summary>
+          <p className="my-3 text-xs text-muted">Separate from everyday settings. Legacy lineage recovery retains previous models and backups.</p>
+          <GenesisPanel />
+        </details>}</>}
         {tab === "Privacy & AI" && <><IntelligenceSection /><OnDeviceSection /></>}
         {tab === "Plan & referrals" && <><UsageSection /><ReferralsSection /></>}
         {tab === "Updates & about" && <UpdatesSection />}

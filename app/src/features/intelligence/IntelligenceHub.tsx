@@ -1,4 +1,5 @@
 import { modelLabel } from "@/lib/model-label";
+import { useSavedSection } from "@/lib/use-saved-section";
 import { useEffect, useRef, useState } from "react";
 import { Activity, Brain, Database, GitBranch, Network, ChevronDown } from "lucide-react";
 import { serverApi, useAccount } from "@/lib/account";
@@ -8,7 +9,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty";
 import { Card, CardContent } from "@/components/ui/card";
 import { MothEmblem } from "@/components/MothEmblem";
-import { GenesisPanel } from "./GenesisPanel";
 import { EvolutionView } from "@/features/evolution/EvolutionView";
 import { NetworkView } from "@/features/network/NetworkView";
 import { NetworkTraining, ParticipantSwitch } from "@/features/training/NetworkTraining";
@@ -115,6 +115,7 @@ export function IntelligenceHub() {
   const heading = view === "overview" ? "Overview" : view === "data" ? "Data" : view === "network" ? "Network" : "Intelligence";
   const visibleTabs = TABS.filter(([value]) => value === "training" || value === "evolution");
   const tab: IntelligenceTab = view === "overview" ? "overview" : view === "data" ? "data" : view === "evolution" ? "evolution" : view === "network" ? "network" : view === "training" || view === "models" ? "training" : storedTab ?? "overview";
+  const [dataSection, setDataSection] = useSavedSection<"local" | "cloud">("data", ["local", "cloud"], "local");
   const [visited, setVisited] = useState<Set<string>>(() => new Set([tab]));
   const [p, setP] = useState<Any | null>(null);
   const [resources, setResources] = useState<Any | null>(null);
@@ -149,20 +150,27 @@ export function IntelligenceHub() {
         </TabsContent>}
         {(visited.has("training") || tab === "training") && <TabsContent forceMount hidden={tab !== "training"} value="training" className="flex flex-col gap-4 data-[state=inactive]:hidden">
           <TrainingProgress progress={p} resources={resources} />
-          {owner ? <><NetworkTraining /><GenesisPanel /><Advanced title="Baseline, selected workers and detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced></> : <><EvolutionView /><ParticipantSwitch /></>}
+          {owner ? <><NetworkTraining /><Advanced title="Baseline, selected workers and detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView scope="training" /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced></> : <><EvolutionView /><ParticipantSwitch /></>}
         </TabsContent>}
         {(visited.has("evolution") || tab === "evolution") && <TabsContent forceMount hidden={tab !== "evolution"} value="evolution" className="flex flex-col gap-4 data-[state=inactive]:hidden">
           <EvolutionView />{owner && <Advanced title="Research, growth approvals, evaluations and rollback"><EvolutionPanel /></Advanced>}
+          {owner && <Advanced title="Weaknesses, feedback and shared knowledge"><IntelligencePanel sections={["weak", "feedback", "knowledge"]} /></Advanced>}
         </TabsContent>}
         {(visited.has("network") || tab === "network") && <TabsContent forceMount hidden={tab !== "network"} value="network" className="flex flex-col gap-4 data-[state=inactive]:hidden">
           <ParticipantSwitch /><NetworkView />{owner && <Advanced title="Worker assignments, permissions and resource limits"><WorkersPanel /></Advanced>}
         </TabsContent>}
         {(visited.has("data") || tab === "data") && <TabsContent forceMount hidden={tab !== "data"} value="data" className="flex flex-col gap-4 data-[state=inactive]:hidden">
+          <Tabs value={dataSection} onValueChange={(value) => setDataSection(value as "local" | "cloud")}>
+            <TabsList aria-label="Data sections"><TabsTrigger value="local">This computer</TabsTrigger><TabsTrigger value="cloud">Cloud library</TabsTrigger></TabsList>
+            <TabsContent value="local"><TrainingView scope="data" /></TabsContent>
+            <TabsContent value="cloud">
           <Card><CardContent className="flex flex-col gap-3 py-5 text-xs"><h2 className="text-sm font-medium">Approved training sources</h2>
             <p className="text-muted">Training and held-out evaluation data stay separate. Private projects and conversations require explicit consent.</p>
             {p?.datasets?.sources?.length ? p.datasets.sources.map((s: Any) => <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2"><span>{s.name}</span><span className="text-muted">{s.license}{s.records != null && ` · ${formatNumber(s.records)} retained samples`}</span></div>) : <p className="text-faint">No prepared source measurements are available yet.</p>}
           </CardContent></Card>
-          {owner && <IntelligencePanel />}
+          {owner && <IntelligencePanel sections={["library"]} />}
+            </TabsContent>
+          </Tabs>
         </TabsContent>}
       </Tabs>
     </div>

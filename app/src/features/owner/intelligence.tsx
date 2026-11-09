@@ -3,6 +3,7 @@
  * and the (optional, off by default) external provider. Every number comes from MOTH Cloud.
  */
 import { useState } from "react";
+import { useSavedSection } from "@/lib/use-saved-section";
 import { BookOpen, Brain, Check, Database, Download, RefreshCw, Target, ThumbsDown, X } from "lucide-react";
 import { serverApi } from "@/lib/account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,17 +18,18 @@ type Any = Record<string, any>;
 const post = (path: string, json?: unknown) => serverApi(path, { method: "POST", json });
 const pct = (x?: number | null) => (x == null ? "—" : `${(x * 100).toFixed(1)}%`);
 
-export function IntelligencePanel() {
-  const [tab, setTab] = useState<"library" | "feedback" | "weak" | "knowledge">("library");
+type Section = "library" | "feedback" | "weak" | "knowledge";
+export function IntelligencePanel({ sections = ["library", "weak", "feedback", "knowledge"] }: {sections?: Section[]}) {
+  const [tab, setTab] = useSavedSection(`intelligence-${sections[0]}`, sections, sections[0]);
   const tabs: [typeof tab, string][] = [["library", "Dataset library"], ["weak", "Weaknesses & curriculum"],
     ["feedback", "Feedback"], ["knowledge", "Shared knowledge"]];
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex gap-1">
-        {tabs.map(([k, l]) => (
+      {sections.length > 1 && <div className="flex flex-wrap gap-1">
+        {tabs.filter(([k]) => sections.includes(k)).map(([k, l]) => (
           <Button key={k} size="sm" variant={tab === k ? "default" : "ghost"} onClick={() => setTab(k)}>{l}</Button>
         ))}
-      </div>
+      </div>}
       {tab === "library" && <Library />}
       {tab === "weak" && <Weaknesses />}
       {tab === "feedback" && <Feedback />}

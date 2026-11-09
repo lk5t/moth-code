@@ -44,8 +44,9 @@ describe("Intelligence consolidation", () => {
     await screen.findByRole("button", { name: "Train MOTH now" });
     expect(screen.getByRole("switch", { name: "Contribute this computer" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Training Mode" })).toHaveValue("automatic");
-    expect(screen.getByRole("button", { name: "Prepare and verify backup" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Prepare and verify backup" })).not.toBeInTheDocument();
     act(() => appStore.setState({view:"data", intelligenceTab:"data"}));
+    fireEvent.mouseDown(screen.getByRole("tab", {name:"Cloud library"}), {button:0});
     await screen.findByText("Approved dataset controls");
     expect(screen.getByText("PSF-2.0 · 60 retained samples")).toBeInTheDocument();
     expect(appStore.getState().intelligenceTab).toBe("data");
