@@ -571,6 +571,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
         import math
         if gates and all(g.get('passed') for g in gates) and type(value) in (int,float) and math.isfinite(value):
             improvement = {'verified': True, 'primary_improvement': value, 'experiment_id': measured['id']}
+    from moth_server.intelligence.activity import feed as recent_activity
     from moth_server.evolution import native_reset as NR
     reset_fenced=NR.fenced(ctx)
     accepting = bool(loaded and flags(ctx).get('cloud_inference_enabled') and not reset_fenced)
@@ -578,6 +579,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
         "observed_at": now(), "serving": {'loaded': bool(loaded), 'accepting_requests': accepting,
             'reason': 'Native reset recovery is required' if reset_fenced else 'Ready to answer' if accepting else 'Cloud answering is turned off' if loaded else 'No native model is loaded'},
         "checkpoint": checkpoint, "improvement": improvement,
+        "activity": recent_activity(ctx,auth.uid,auth.user["role"]=="owner",limit=25),
         "current": current, "stable": next((v for v in versions if v["stable"]), None),
         "development": dev, "rollout": serving.loaded_versions(ctx), "timeline": versions,
         "deployment_events": ctx.db.all(_select(audit_log.c.ts, audit_log.c.action, audit_log.c.target)
@@ -596,3 +598,10 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                                                             .label("t")))["t"])},
         "measured": "every value is a measurement on held-out data or a recorded count, except fields named *_estimate",
     }
+
+
+@router.get('/v1/intelligence/activity')
+def activity_feed(category:str='all',cursor:str|None=None,limit:int=50,auth:Auth=Depends(current_auth),ctx:Ctx=Depends(get_ctx)):
+    from moth_server.intelligence.activity import feed
+    try:return feed(ctx,auth.uid,auth.user['role']=='owner',category,cursor,limit)
+    except ValueError as error:raise HTTPException(422,str(error)) from None

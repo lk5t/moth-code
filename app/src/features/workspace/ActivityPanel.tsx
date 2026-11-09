@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
 import { Activity } from "lucide-react";
-import { get } from "@/lib/backend";
+import { useResource } from "@/lib/hooks";
 import { useApp } from "@/lib/app-state";
 import { useEvent } from "@/lib/events";
 import { EmptyState } from "@/components/ui/empty";
@@ -15,18 +14,12 @@ interface Item {
 
 export function ActivityPanel({ all = false }: { all?: boolean }) {
   const project = useApp((s) => s.project);
-  const [items, setItems] = useState<Item[]>([]);
-  const load = () =>
-    get<Item[]>(`/api/activity${!all && project ? `?project_id=${project.id}` : ""}`).then(setItems).catch(() => {});
-  useEffect(() => {
-    load();
-  }, [project?.id, all]);
-  useEvent("files", load);
-  useEvent("activity", load);
+  const {data:items=[],error,reload:load}=useResource<Item[]>(`/api/activity${!all && project ? `?project_id=${project.id}` : ""}`,["files","activity"],[]);
   useEvent("task", (e) => {
     if (e.kind === "status") load();
   });
 
+  if(error)return <p role="alert" className="p-3 text-xs">Activity could not be loaded: {error}</p>;
   if (!items.length) return <EmptyState icon={<Activity />} title="No activity yet" />;
   return (
     <div className="h-full overflow-auto p-2">
