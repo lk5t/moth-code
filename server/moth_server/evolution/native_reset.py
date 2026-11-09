@@ -6,6 +6,7 @@ Failures remain fenced and resumable. Offline copies/backups are disclosed, neve
 from __future__ import annotations
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import threading
@@ -65,9 +66,16 @@ def inventory(ctx,backups=False):
     counts={name:int(ctx.db.one(select(func.count().label('n')).select_from(getattr(D,name)))['n']) for name in TABLES}
     backup=owned(ctx,'genesis');copies=sum(1 for p in backup.rglob('*') if p.is_file()) if backup.exists() else 0
     external=[];base=Path(ctx.settings.data_dir).resolve()
+    live_roots=[base/relative for relative in (*ROOTS,*(('genesis',) if backups else ()))]
+    def retained(path):
+        path=Path(path).resolve()
+        return not any(path==root or root in path.parents for root in live_roots)
     for table,column in ((D.model_releases,'path'),(D.training_datasets,'path'),(D.library_builds,'path')):
         for row in ctx.db.all(select(table.c[column])):
-            if row[column] and base not in Path(row[column]).resolve().parents:external.append(str(row[column]))
+            if row[column] and retained(row[column]):external.append(str(row[column]))
+    legacy=os.environ.get('MOTH_SERVER_INFERENCE_MODEL')
+    if legacy and retained(legacy):external.append(str(legacy))
+    external=sorted(set(external))
     return {'roots':roots,'records':counts,'managed_backup_files':copies,'backups_included':backups,'external_references':external,
         'disclosure':'Only deployment-owned roots are erased. Managed GENESIS backups are retained unless separately confirmed. Infrastructure snapshots, exported packages, external paths and offline Desktop/Worker copies cannot be certified erased here. Accounts, credentials, billing, chat, projects, settings, consent, security keys and software binaries are preserved.'}
 

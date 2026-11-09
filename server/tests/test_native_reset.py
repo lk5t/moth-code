@@ -169,3 +169,31 @@ def test_actual_local_training_stops_before_owned_checkpoint_erasure(client,owne
     assert result['status']=='completed' and proc.poll() is not None
     assert not (ctx.settings.data_dir/'evolution').exists()
     assert client.get('/v1/intelligence/progress',headers=H(owner['token'])).json()['current'] is None
+
+
+def test_reset_never_restores_legacy_environment_model_after_fresh_initialization(client,owner,tmp_path,monkeypatch):
+    from moth_server.routes import inference
+    from moth.inference.local import LocalInference
+    ctx=client.app.state.ctx;uid=owner['user']['id']
+    legacy=ctx.settings.data_dir/'projects'/'legacy-native-package';legacy.mkdir(parents=True);(legacy/'model.pt').write_bytes(b'preserved external copy')
+    monkeypatch.setenv('MOTH_SERVER_INFERENCE_MODEL',str(legacy))
+    preview=R.preview(ctx,uid)
+    assert str(legacy) in preview['inventory']['external_references']
+    result=R.execute(ctx,preview['id'],R.CONFIRM,uid)
+    assert result['retained_external_copies']==1 and legacy.exists()
+    M.reserve(ctx,'Explicit fresh initialization',{'type':'native-initialization'},uid)
+    assert not R.empty(ctx)  # registry entry exists, but no fresh model is deployed yet
+    loaded=[];monkeypatch.setattr(LocalInference,'load',lambda *args:loaded.append(True))
+    inference.setup(ctx)
+    assert not loaded and ctx.extras.get('inference_engine') is None
+
+
+def test_inventory_counts_only_copies_outside_the_selected_deletion_scope(client,monkeypatch):
+    ctx=client.app.state.ctx
+    native=ctx.settings.data_dir/'storage'/'models';native.mkdir(exist_ok=True);(native/'model.pt').write_bytes(b'owned root package')
+    monkeypatch.setenv('MOTH_SERVER_INFERENCE_MODEL',str(native))
+    assert R.inventory(ctx)['external_references']==[]
+    backup=ctx.settings.data_dir/'genesis'/'archive';backup.mkdir(parents=True);(backup/'model.pt').write_bytes(b'managed backup')
+    monkeypatch.setenv('MOTH_SERVER_INFERENCE_MODEL',str(backup))
+    assert R.inventory(ctx,backups=False)['external_references']==[str(backup)]
+    assert R.inventory(ctx,backups=True)['external_references']==[]

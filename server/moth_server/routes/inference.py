@@ -28,8 +28,8 @@ MAX_NEW_TOKENS = 2048
 
 
 def setup(ctx: Ctx) -> None:
-    from moth_server.evolution.native_reset import fenced, empty
-    if fenced(ctx) or empty(ctx):return
+    from moth_server.evolution.native_reset import fenced, state
+    if fenced(ctx) or state(ctx).get('generation',0):return  # reset retires the legacy environment fallback; registry activation remains explicit
     model_dir = os.environ.get("MOTH_SERVER_INFERENCE_MODEL")
     if model_dir:
         from moth.inference.local import LocalInference
