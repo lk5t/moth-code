@@ -1,3 +1,5 @@
+import { reopenWelcome } from "@/features/onboarding/Welcome";
+import { ErrorNotice } from "@/components/ErrorNotice";
 import { useSavedSection } from "@/lib/use-saved-section";
 import { GenesisPanel } from "@/features/intelligence/GenesisPanel";
 import { useEffect, useState } from "react";
@@ -46,31 +48,37 @@ export function SettingsView() {
   const [perms, setPerms] = useState<Permissions>(DEFAULT_PERMS);
   const [system, setSystem] = useState<any>(null);
   const [version, setVersion] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [tab, setTab] = useSavedSection<Tab>("settings", TABS, "Account");
 
   useEffect(() => {
-    get<Record<string, any>>("/api/settings").then((s) => setPerms({ ...DEFAULT_PERMS, ...(s.permissions ?? {}) }));
+    get<Record<string, any>>("/api/settings").then((s) => {setPerms({ ...DEFAULT_PERMS, ...(s.permissions ?? {}) }); setLoaded(true);}).catch((e) => setError(e.message));
     get("/api/system").then(setSystem).catch(() => {});
-    get<{ version: string }>("/api/health").then((h) => setVersion(h.version));
+    get<{ version: string }>("/api/health").then((h) => setVersion(h.version)).catch((e) => setError(e.message));
   }, []);
 
-  const setPerm = (k: keyof Permissions, v: boolean) => {
+  const setPerm = async (k: keyof Permissions, v: boolean) => {
+    if (!loaded || saving) return;
     const next = { ...perms, [k]: v };
-    setPerms(next);
-    put("/api/settings", { permissions: next });
+    setSaving(true); setError(null);
+    try { await put("/api/settings", {permissions: next}); setPerms(next); }
+    catch (e) {setError((e as Error).message);} finally {setSaving(false);}
   };
 
   return (
     <div className="h-full overflow-auto">
       <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)} className="mx-auto flex max-w-5xl flex-col gap-3 p-3 animate-rise sm:p-5">
         <header className="flex items-center justify-between gap-3"><h1 className="text-lg font-semibold">Settings</h1>{owner && <Button size="sm" variant="secondary" onClick={() => appStore.setState({view:"owner"})}>Administration</Button>}</header>
+        <ErrorNotice error={error} />
         <TabsList aria-label="Settings sections">
           {TABS.map((t) => (
             <TabsTrigger key={t} value={t}>{t}</TabsTrigger>
           ))}
         </TabsList>
         <TabsContent value={tab} className="flex flex-col gap-3">
-        {tab === "Account" && <><AccountSection /><ConnectionSection />{owner && <details className="rounded-lg border border-danger/40 p-3">
+        {tab === "Account" && <><Button variant="secondary" onClick={reopenWelcome}>Show the quick introduction</Button><AccountSection /><ConnectionSection />{owner && <details className="rounded-lg border border-danger/40 p-3">
           <summary className="cursor-pointer text-sm text-danger">Advanced · Native AI operations</summary>
           <p className="my-3 text-xs text-muted">Separate from everyday settings. Legacy lineage recovery retains previous models and backups.</p>
           <GenesisPanel />
@@ -89,13 +97,13 @@ export function SettingsView() {
           </CardHeader>
           <CardContent>
             <Row title="Create and edit files without asking" desc="Inside the open workspace only.">
-              <Switch checked={perms.auto_write} onCheckedChange={(v) => setPerm("auto_write", v)} />
+              <Switch disabled={!loaded || saving} checked={perms.auto_write} onCheckedChange={(v) => setPerm("auto_write", v)} />
             </Row>
             <Row title="Run ordinary commands without asking" desc="Builds and tests. Destructive commands still ask.">
-              <Switch checked={perms.auto_execute} onCheckedChange={(v) => setPerm("auto_execute", v)} />
+              <Switch disabled={!loaded || saving} checked={perms.auto_execute} onCheckedChange={(v) => setPerm("auto_execute", v)} />
             </Row>
             <Row title="Make local Git commits without asking">
-              <Switch checked={perms.auto_git_commit} onCheckedChange={(v) => setPerm("auto_git_commit", v)} />
+              <Switch disabled={!loaded || saving} checked={perms.auto_git_commit} onCheckedChange={(v) => setPerm("auto_git_commit", v)} />
             </Row>
           </CardContent>
         </Card>}

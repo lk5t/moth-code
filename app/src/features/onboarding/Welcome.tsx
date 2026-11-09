@@ -10,6 +10,7 @@ import { useConnection } from "@/lib/connection";
 import { openAccountDialog } from "@/features/account/AccountDialog";
 import { pickProject } from "@/features/workspace/project-actions";
 import { MothEmblem } from "@/components/MothEmblem";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { createStore } from "@/lib/store";
@@ -24,7 +25,7 @@ function readDone(): boolean {
   }
 }
 
-const welcomeStore = createStore({ done: readDone() });
+const welcomeStore = createStore({ done: readDone(), reopened: false });
 
 /** Shown on first launch until the user has signed in and opened a workspace (or skipped). */
 export function useWelcomeVisible(): boolean {
@@ -33,9 +34,13 @@ export function useWelcomeVisible(): boolean {
   const hasSaved = useAccount((s) => s.accounts.length > 0);
   const project = useApp((s) => s.project);
   const isDone = welcomeStore.useStore((s) => s.done);
+  const reopened = welcomeStore.useStore((s) => s.reopened);
+  if (ready && reopened) return true;
   if (!ready || isDone) return false;
   return !user ? !hasSaved : !project;
 }
+
+export function reopenWelcome() { welcomeStore.setState({ reopened: true }); }
 
 function finish() {
   try {
@@ -43,7 +48,7 @@ function finish() {
   } catch {
     /* storage unavailable */
   }
-  welcomeStore.setState({ done: true });
+  welcomeStore.setState({ done: true, reopened: false });
 }
 
 function StepDot({ n, active, complete }: { n: number; active: boolean; complete: boolean }) {
@@ -62,12 +67,12 @@ export function Welcome() {
   const step = user ? 2 : 1;
 
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-bg/95 backdrop-blur-sm animate-fade-in">
-      <div className="flex w-[440px] flex-col items-center gap-6 text-center">
+    <Dialog open onOpenChange={(open) => {if (!open) finish();}}><DialogContent className="max-h-[90vh] overflow-auto">
+      <div className="flex w-full flex-col items-center gap-5 text-center">
         <MothEmblem className="size-16 drop-shadow-[0_0_18px_rgba(193,18,31,0.45)]" />
         <div>
-          <h1 className="text-xl font-semibold">Welcome to MOTH Code</h1>
-          <p className="mt-1 text-sm text-muted">Chat and code with MOTH — an AI that keeps improving itself, trained on licensed data by MOTH Cloud and its community of computers.</p>
+          <DialogTitle className="text-xl">Welcome to MOTH Code</DialogTitle>
+          <DialogDescription>Chat, work on projects and inspect MOTH’s training and evaluation. You choose when to contribute your computer.</DialogDescription>
         </div>
         <div className="flex w-full items-center justify-center gap-3 text-xs text-muted">
           <StepDot n={1} active={step === 1} complete={step > 1} /> Sign in
@@ -90,7 +95,8 @@ export function Welcome() {
             <ul className="flex flex-col gap-1 text-left text-xs text-muted">
               <li><b className="text-fg">Chat</b> — ask questions, write and explain things.</li>
               <li><b className="text-fg">Code</b> — open a folder and let MOTH help with your project.</li>
-              <li><b className="text-fg">Intelligence</b> and <b className="text-fg">Evolution</b> — see what MOTH can do and how it improves.</li>
+              <li><b className="text-fg">Overview</b> — find the active model and its current status.</li>
+              <li><b className="text-fg">Intelligence</b> — inspect training, evaluations and safe improvements.</li>
               <li><b className="text-fg">Network</b> — lend this computer's spare power to train MOTH.</li>
             </ul>
             <Button size="lg" onClick={() => { appStore.setState({ view: "chat" }); finish(); }}><MessageSquare /> Start chatting</Button>
@@ -109,6 +115,6 @@ export function Welcome() {
           {step === 1 ? "Continue without signing in (editor, terminal and Git work offline)" : "Skip for now"}
         </button>
       </div>
-    </div>
+    </DialogContent></Dialog>
   );
 }
