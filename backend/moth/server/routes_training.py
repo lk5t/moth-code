@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from moth.jobs import Job, JobManager
 from moth.model.config import PRESETS
@@ -41,6 +41,16 @@ class DatasetIn(BaseModel):
     tokenizer: str
     sources: list[SourceIn]
     val_fraction: float = 0.02
+
+
+class QualityIn(BaseModel):
+    tokenizer: str
+    sources: list[SourceIn] = Field(min_length=1,max_length=8)
+    validation_sources: list[SourceIn] = Field(default_factory=list,max_length=8)
+
+class TokenPreviewIn(BaseModel):
+    tokenizer: str
+    text: str = Field(max_length=4000)
 
 
 class RunIn(BaseModel):
@@ -124,6 +134,24 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         svc.db.log_activity("training", f"Started tokenizer training: {name}")
         return job.public()
 
+    @app.post("/api/datasets/quality",dependencies=deps)
+    def quality(body:QualityIn):
+        from moth.training.quality import inspect
+        tok=svc.paths.tokenizers/f"{_slug(body.tokenizer)}.json"
+        if not tok.exists():raise NotFound("Selected tokenizer is missing")
+        try:
+            report=inspect(specs(body.sources),Tokenizer.load(tok),specs(body.validation_sources))
+            report.pop('cleaned_records',None)
+            return report
+        except (ValueError,OSError,RuntimeError) as error:raise HTTPException(422,str(error)) from None
+
+    @app.post("/api/tokenizers/preview",dependencies=deps)
+    def token_preview(body:TokenPreviewIn):
+        path=svc.paths.tokenizers/f"{_slug(body.tokenizer)}.json"
+        if not path.exists():raise NotFound("Selected tokenizer is missing")
+        tok=Tokenizer.load(path);ids=tok.encode(body.text)
+        return {'ids':ids,'count':len(ids),'decoded':tok.decode(ids),'fingerprint':tok.fingerprint()}
+
     # ---- datasets -------------------------------------------------------------------
     @app.get("/api/datasets", dependencies=deps)
     def datasets():
@@ -133,6 +161,31 @@ def register(app: FastAPI, svc: Services, deps) -> None:
             if mf.exists():
                 out.append({"name": d.name, "path": str(d), **json.loads(mf.read_text())})
         return out
+
+    @app.get("/api/datasets/{name}/quality",dependencies=deps)
+    def prepared_quality(name:str):
+        import numpy as np
+        root=svc.paths.datasets/_slug(name)
+        if not (root/'meta.json').exists():raise NotFound("Prepared dataset not found")
+        try:
+            meta=json.loads((root/'meta.json').read_text());dtype=np.dtype(meta.get('dtype','uint32'))
+            if dtype.name not in ('uint16','uint32'):raise ValueError('Unsupported prepared token encoding')
+            issues=[];windows={};actual={}
+            for split in ('train','val'):
+                file=root/f'{split}.bin';mask=root/f'{split}.mask'
+                if not file.exists() or not mask.exists():raise ValueError(f'Missing {split} tokens or loss mask')
+                count=file.stat().st_size//dtype.itemsize;actual[split]=count
+                if file.stat().st_size%dtype.itemsize or count!=mask.stat().st_size or count!=(meta.get('tokens') or {}).get(split):issues.append(f'{split}: token, mask and metadata sizes disagree')
+                sample=np.fromfile(file,dtype=dtype,count=100000)
+                if len(sample) and int(sample.max())>=int(meta['vocab_size']):issues.append(f'{split}: token id exceeds tokenizer vocabulary')
+                windows[split]={sample[i:i+64].tobytes() for i in range(0,max(0,len(sample)-63),64)}
+            overlap=len(windows['train'] & windows['val'])
+            if overlap:issues.append('Identical sampled 64-token windows occur in both splits; review possible contamination')
+            available=any(Tokenizer.load(p).fingerprint()==meta.get('tokenizer_fingerprint') for p in svc.paths.tokenizers.glob('*.json'))
+            return {'metadata':meta,'actual_tokens':actual,'tokenizer_available':available,'issues':issues,'sampled_overlap_windows':overlap,
+                    'status':'needs_review' if issues or not available else 'checked_sample',
+                    'limitations':'Integrity checks use whole file sizes. Token-id and overlap checks sample the first 100,000 tokens per split; overlap is a warning, not proof of contamination.'}
+        except (ValueError,KeyError,OSError) as error:raise HTTPException(422,str(error)) from None
 
     @app.post("/api/datasets", dependencies=deps)
     def prepare(body: DatasetIn):

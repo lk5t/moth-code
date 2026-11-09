@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { LossChart, type MetricPoint } from "@/components/LossChart";
 import { cn, formatNumber, timeAgo } from "@/lib/utils";
+import { DatasetQualityStudio } from "./DatasetQualityStudio";
 import { SourcePicker, type SourceSel } from "./SourcePicker";
 
 interface Job { id: string; kind: string; title: string; status: string; progress: number | null; message: string; error: string | null; created: number }
@@ -85,7 +86,7 @@ export function TrainingView({ scope = "all" }: { scope?: "all" | "data" | "trai
           </StepCard>
           <StepCard n={2} icon={<Database />} title="Dataset" desc="Tokenised, license-tracked training data." onNew={() => setDialog("dataset")} disabled={!tokenizers?.length}>
             {datasets?.length ? datasets.map((d) => (
-              <Item key={d.name} title={d.name} sub={`${formatNumber(d.tokens.train)} train · ${formatNumber(d.tokens.val)} val tokens`}
+              <Item key={d.name} title={d.name} sub={`${(d.documents?.train || 0) + (d.documents?.val || 0)} examples · ${formatNumber(d.tokens.train)} train · ${formatNumber(d.tokens.val)} val tokens · ${tokenizers?.some(t => t.fingerprint === d.tokenizer_fingerprint) ? "tokenizer available" : "tokenizer unavailable"}`}
                 action={<Button size="icon-sm" variant="ghost" onClick={act(() => (confirm(`Delete the prepared dataset ${d.name}? Original sources are kept.`) ? del(`/api/datasets/${encodeURIComponent(d.name)}`) : Promise.resolve()))}><Trash2 /></Button>} />
             )) : <Empty text="No dataset yet" />}
           </StepCard>
@@ -102,6 +103,7 @@ export function TrainingView({ scope = "all" }: { scope?: "all" | "data" | "trai
         {scope !== "data" && run && <RunDetail run={run} act={act} />}
       </div>
 
+      {scope !== "training" && <DatasetQualityStudio tokenizers={tokenizers ?? []} datasets={datasets ?? []} />}
       <TokenizerDialog open={dialog === "tokenizer"} onClose={() => setDialog(null)} onError={setError} />
       <DatasetDialog open={dialog === "dataset"} onClose={() => setDialog(null)} onError={setError} tokenizers={tokenizers ?? []} />
       <RunDialog open={dialog === "run"} onClose={() => setDialog(null)} onError={setError} datasets={datasets ?? []} presets={presets ?? []}
