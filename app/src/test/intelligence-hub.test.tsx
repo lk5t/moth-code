@@ -37,6 +37,7 @@ describe("Intelligence consolidation", () => {
   it("keeps training/evolution focused and supports the Data workspace adapter", async () => {
     render(<IntelligenceHub />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Training", "Evolution"]);
+    fireEvent.click(screen.getByText("Model details and measured architecture"));
     await screen.findByRole("button", { name: "Inspect layer 2" });
     fireEvent.click(screen.getByRole("button", { name: "Inspect layer 2" }));
     expect(screen.getByRole("button", { name: "Inspect layer 2" })).toHaveAttribute("aria-pressed", "true");
@@ -66,6 +67,8 @@ it("clears model activity after a failed refresh instead of showing stale state 
   vi.useFakeTimers();
   try {
     await act(async () => { render(<IntelligenceHub />); });
+    fireEvent.click(screen.getByText("Model details and measured architecture"));
+    await act(async () => {await vi.advanceTimersByTimeAsync(0);});
     expect(screen.getByRole("button", { name: "Inspect layer 2" })).toBeInTheDocument();
     mocks.api.mockRejectedValue(new Error("connection lost"));
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });

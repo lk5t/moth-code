@@ -1,7 +1,9 @@
+import { useCloudProgress } from "@/lib/cloud-progress";
 import { MothEmblem } from "./MothEmblem";
 import { livingActivity, pulses, dismissActivityError } from "@/lib/living-activity";
 
 export function LivingMoth({ className }: {className?: string}) {
+  useCloudProgress();
   const state=livingActivity.useStore((s) => s);
   const active=pulses(state);
   // Decorative activity reflects recorded stages, never individual neural calculations.

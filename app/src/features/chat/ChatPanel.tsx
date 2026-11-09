@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
 import { AgentPanel } from "@/features/agent/AgentPanel";
 import { AnswerFooter, type AnswerMeta } from "@/features/intelligence/AnswerFooter";
+import { useCloudProgress } from "@/lib/cloud-progress";
 import { modelLabel } from "@/lib/model-label";
 
 interface ChatMessage {
@@ -37,6 +38,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
   const project = general ? null : workspaceProject;
   const [mode, setMode] = useState<"chat" | "agent">("chat");
   const { status: cloud, reload: reloadCloud } = useCloudStatus();
+  const {data: liveModel} = useCloudProgress();
   const { data: conversations, reload: reloadConversations } = useResource<Conversation[]>(
     `/api/conversations${project ? `?project_id=${project.id}` : "?scope=general"}`,
     [],
@@ -151,10 +153,15 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     }
   };
 
-  const { data: onDevice } = useResource<{ installed: unknown; answer_on_device: boolean } | null>("/api/ondevice", ["ondevice"], null);
+  const { data: onDevice } = useResource<{ installed: Record<string,any> | null; answer_on_device: boolean } | null>("/api/ondevice", ["ondevice"], null);
   const local = !!onDevice?.installed;
   const signedOut = cloud && !local ? !cloud.signed_in : false;
-  const noModel = !!cloud && (!cloud.signed_in || !cloud.available) && !local;
+  const noModel = !local && (typeof liveModel?.serving?.accepting_requests === "boolean" && !cloud?.available
+    ? !liveModel.serving.accepting_requests : !!cloud && (!cloud.signed_in || !cloud.available));
+  const usingLocal = local && (onDevice?.answer_on_device || !cloud?.available);
+  const currentLabel = usingLocal ? `${modelLabel(onDevice?.installed)} · this computer`
+    : liveModel ? liveModel.current ? `${modelLabel(liveModel.current)} · Cloud` : "No native model deployed"
+    : cloud?.available ? modelLabel(cloud.model) : cloud?.signed_in ? "Cloud unavailable" : "signed out";
 
   return (
     <div className="flex h-full flex-col">
@@ -196,7 +203,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
         )}
         {!general && <span className="flex min-w-0 items-center gap-1 text-[11px] text-faint" title={cloud?.model?.name}>
           <Cloud className="size-3" />
-          <span className="truncate">{cloud?.available ? modelLabel(cloud.model) : cloud?.signed_in ? "Cloud unavailable" : "signed out"}</span>
+          <span className="truncate">{currentLabel}</span>
         </span>}
       </div>
 
@@ -223,7 +230,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                   </div>
                 ) : (
                   <div className="max-w-sm text-xs text-muted">
-                    {modelLabel(cloud?.model)} on MOTH Cloud · an early, independently trained model.
+                    {liveModel?.current ? modelLabel(liveModel.current) : modelLabel(cloud?.model)} on MOTH Cloud · an early, independently trained model.
                   </div>
                 )}
                 {!noModel && <div className="flex flex-wrap gap-1.5">

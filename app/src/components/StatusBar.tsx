@@ -1,3 +1,5 @@
+import { useCloudProgress } from "@/lib/cloud-progress";
+import { modelLabel } from "@/lib/model-label";
 import { useState } from "react";
 import { useEvent } from "@/lib/events";
 import { useApp } from "@/lib/app-state";
@@ -9,6 +11,7 @@ import { cn } from "@/lib/utils";
 
 /** One quiet line of status. Nothing here ever opens a popup by itself. */
 export function StatusBar() {
+  const {data: live} = useCloudProgress();
   const project = useApp((s) => s.project);
   const [backendUp, setBackendUp] = useState(true);
   const { status: cloud } = useCloudStatus();
@@ -29,7 +32,7 @@ export function StatusBar() {
       : conn === "offline" ? "MOTH Cloud offline · retrying"
         : conn === "reconnecting" || conn === "connecting" ? "MOTH Cloud · connecting…"
           : !signedIn ? "MOTH Cloud · signed out"
-            : cloud?.available ? `MOTH Cloud · ${cloud.model?.name ?? "ready"}`
+            : cloud?.available ? `MOTH Cloud · ${live ? live.current ? modelLabel(live.current) : "no native model deployed" : cloud.model?.name ?? "ready"}`
               : cloud?.reason === "inference_disabled" ? "MOTH Cloud · inference turned off"
                 : cloud?.reason === "not_moth" ? "not a MOTH Cloud server"
                   : cloud?.reason === "unreachable" ? "MOTH Cloud unreachable · retrying"

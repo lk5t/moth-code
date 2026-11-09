@@ -5,9 +5,10 @@ import { modelLabel } from "@/lib/model-label";
  * Every number is a measurement from MOTH Cloud (held-out benchmarks never trained on, recorded counts).
  * The only estimate shown — when the next training cycle starts — is labelled "estimated".
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, Brain, Cpu, Database, GitBranch, Layers, Minus, Sparkles } from "lucide-react";
-import { serverApi, useAccount } from "@/lib/account";
+import { useCloudProgress } from "@/lib/cloud-progress";
+import { useAccount } from "@/lib/account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty";
@@ -98,19 +99,9 @@ function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric
 export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
   const sessionToken = useAccount((s) => s.token);
   const signedIn = !!sessionToken;
-  const [p, setP] = useState<Any | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const {data:p,error:err} = useCloudProgress();
   const [metric, setMetric] = useState<string>("holdout_language");
   const [selection, setSelection] = useState<Any | null>(null);
-  useEffect(() => {
-    setP(null);
-    if (!signedIn) return;
-    let alive = true;
-    const load = () => serverApi<Any>("/v1/intelligence/progress").then((d) => { if (alive) { setP(d); setErr(null); } }).catch((e) => { if (alive) { setP(null); setErr("Live status unavailable: " + e.message); } });
-    load();
-    const t = setInterval(load, 20000);
-    return () => { alive = false; clearInterval(t); };
-  }, [sessionToken]);
   const versions: Any[] = p?.timeline ?? [];
   const chartVersions = useMemo(() => versions.map((v) => {
     const benchmarks = { ...v.benchmarks };

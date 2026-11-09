@@ -1,3 +1,6 @@
+import { useCloudProgress, refreshCloudProgress } from "@/lib/cloud-progress";
+import { ErrorNotice } from "@/components/ErrorNotice";
+import { OverviewSummary } from "./OverviewSummary";
 import { modelLabel } from "@/lib/model-label";
 import { useSavedSection } from "@/lib/use-saved-section";
 import { useEffect, useRef, useState } from "react";
@@ -83,12 +86,15 @@ export function ModelActivity({ progress, resources }: { progress: Any | null; r
       <div className="flex min-w-0 flex-col justify-center gap-4">
         <div><p className="text-[11px] uppercase tracking-[0.18em] text-faint">One native lineage</p>
           <h2 className="mt-1 text-xl font-medium tracking-tight">{model ? modelLabel(model) : "Model status unavailable"}</h2>
+          <p className="mt-1 text-xs text-muted">Identifier: {model?.model_id ?? model?.name ?? "Not available"}</p>
           <p className="mt-1 text-xs text-muted">Revision {model?.revision ?? "not recorded"} · Step {model?.training?.step ?? model?.training?.steps ?? "not reported"}</p>
           <p className="mt-1 text-xs text-muted">{model?.params != null ? `${formatNumber(model.params)} actual parameters` : "Parameters have not been measured"}</p>
         </div>
         <div className="flex items-center gap-2 text-xs"><span className={cn("size-1.5 rounded-full", recent ? "bg-success" : "bg-faint")} />{recent ? "Training progress received" : status}</div>
         {model?.initialization === "random-untrained" && <p className="text-xs text-warning">Fresh, untrained baseline. Training and evaluations determine its capabilities.</p>}
         <div className="grid grid-cols-2 gap-3 text-xs">
+          <div><p className="text-faint">Deployed</p><p>{model?.deployed_at ? new Date(model.deployed_at*1000).toLocaleString() : "Not recorded"}</p></div>
+          <div><p className="text-faint">Last checkpoint</p><p>{progress?.checkpoint ? progress.checkpoint.available ? `Available · step ${progress.checkpoint.step ?? "not recorded"}` : "Recorded checkpoint is missing" : "Not recorded"}</p></div>
           <div className="min-w-0"><p className="text-faint">Tokenizer identity</p><p className="mt-1 truncate font-mono text-fg" title={model?.tokenizer_fingerprint}>{model?.tokenizer_fingerprint ?? "Not recorded"}</p></div>
           <div><p className="text-faint">Architecture</p><p className="mt-1 text-fg">{layers ? `${layers} layers · ${model.config.d_model} dimensions` : "Not available"}</p></div>
           <div><p className="text-faint">Connected workers</p><p className="mt-1 text-fg">{progress?.network ? `${progress.network.gpu_online} GPU · ${progress.network.cpu_online} CPU` : "Not available"}</p></div>
@@ -117,21 +123,20 @@ export function IntelligenceHub() {
   const tab: IntelligenceTab = view === "overview" ? "overview" : view === "data" ? "data" : view === "evolution" ? "evolution" : view === "network" ? "network" : view === "training" || view === "models" ? "training" : storedTab ?? "overview";
   const [dataSection, setDataSection] = useSavedSection<"local" | "cloud">("data", ["local", "cloud"], "local");
   const [visited, setVisited] = useState<Set<string>>(() => new Set([tab]));
-  const [p, setP] = useState<Any | null>(null);
+  const {data:p,error,updatedAt} = useCloudProgress();
   const [resources, setResources] = useState<Any | null>(null);
-  const [error, setError] = useState<string | null>(null);
   useEffect(() => { setVisited((s) => new Set([...s, tab])); }, [tab]);
   useEffect(() => {
-    setP(null); setResources(null);
-    if (!signedIn) return;
+    setResources(null);
+    if (!signedIn || !owner || !["overview", "training"].includes(tab)) return;
     let alive = true;
     const load = () => {
-      serverApi<Any>("/v1/intelligence/progress").then((data) => { if (alive) { setP(data); setError(null); } }).catch((e) => { if (alive) { setP(null); setResources(null); setError("Live status unavailable: " + e.message); } });
+      if(document.hidden) return;
       if (owner) serverApi<Any>("/v1/admin/evolution/resources").then((data) => { if (alive) setResources(data); }).catch(() => { if (alive) setResources(null); });
     };
     load(); const timer = setInterval(load, owner ? 5000 : 20000);
     return () => { alive = false; clearInterval(timer); };
-  }, [sessionToken, owner]);
+  }, [sessionToken, owner, tab]);
   if (!signedIn) return <EmptyState title="Sign in to Intelligence">MOTH's live training, compute, data and model history appear here.</EmptyState>;
   return <div className="h-full overflow-auto">
     <div className="mx-auto flex max-w-6xl flex-col gap-3 p-3 sm:p-4 lg:p-5">
@@ -140,13 +145,13 @@ export function IntelligenceHub() {
         <h1 className="mt-1 text-2xl font-medium tracking-tight">{heading}</h1>
         <p className="mt-1 text-xs text-muted">{heading === "Overview" ? "The model currently serving MOTH, with measured status and important warnings." : heading === "Data" ? "Prepare and inspect licensed datasets with the intended tokenizer." : heading === "Network" ? "Manage trusted workers and your own computer’s voluntary contribution." : "Train, evaluate and safely improve the native MOTH model."}</p>
       </div><span className="text-xs text-faint">{p?.current ? modelLabel(p.current) : "Model status unavailable"}</span></header>
-      {error && <p role="alert" className="rounded-lg border border-border p-3 text-xs text-danger">{error}</p>}
+      {error && <div className="space-y-2"><ErrorNotice error={`Live status unavailable: ${error}`} /><button className="text-xs text-accent" onClick={() => refreshCloudProgress()}>Retry connection</button></div>}
       <Tabs value={tab} onValueChange={(value) => openIntelligence(value as IntelligenceTab)}>
         {!standalone && <TabsList aria-label="Intelligence sections" className="mb-3 w-full justify-start">
           {visibleTabs.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="[&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
         </TabsList>}
         {(visited.has("overview") || tab === "overview") && <TabsContent forceMount hidden={tab !== "overview"} value="overview" className="flex flex-col gap-5 data-[state=inactive]:hidden">
-          <ModelActivity progress={p} resources={resources} />
+          <OverviewSummary progress={p} updatedAt={updatedAt} /><Advanced title="Model details and measured architecture"><ModelActivity progress={p} resources={resources} /></Advanced>
         </TabsContent>}
         {(visited.has("training") || tab === "training") && <TabsContent forceMount hidden={tab !== "training"} value="training" className="flex flex-col gap-4 data-[state=inactive]:hidden">
           <TrainingProgress progress={p} resources={resources} />

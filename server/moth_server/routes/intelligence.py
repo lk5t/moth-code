@@ -461,7 +461,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
 
     from moth_server import models as M
     from moth_server import serving
-    from moth_server.db import workers, audit_log
+    from moth_server.db import workers, audit_log, evolution_experiments
     from moth_server.evolution import engine as EN
     from moth_server.evolution import backends as B
     from moth_server.evolution import memory as MEM
@@ -471,7 +471,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
 
     rels = {r["version"]: r for r in M.list_releases(ctx)}
     lineage = MEM.lineage(ctx)
-    deployed = ctx.extras.get("deployed_version")
+    deployed = ctx.extras.get("deployed_version") if ctx.extras.get("inference_engine") is not None else None
     st = EN.state(ctx)
     stable = st.get("stable_version") or deployed
     active_lineage = (rels.get(deployed) or {}).get('info', {}).get('lineage_id')
@@ -540,8 +540,43 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                           else (e.get('metrics') or {}).get('progress') or (e.get('metrics') or {}).get('training') or {},
                           "candidate_version": e.get("candidate_version"), "error": e.get("error")}
                          for e in experiments]
+    current = next((v for v in versions if v["deployed"]), None)
+    loaded = rels.get(deployed)
+    # Legacy uploads may predate lineage registration. The loaded engine remains authoritative.
+    if loaded and not current:
+        info = loaded['info'] or {}
+        current = {"version": loaded['version'], "model_version": info.get('model_version'),
+                   "revision": info.get('revision'), "name": info.get('display_name') or loaded['name'],
+                   "params": info.get('params'), "config": info.get('config'), "training": info.get('training') or {},
+                   "tokenizer_fingerprint": info.get('tokenizer_fingerprint'), "deployed_at": loaded.get('deployed_at'),
+                   "benchmarks": capability_reports(ctx, loaded['version']), "deployed": True, "stable": True}
+        versions.append(current)
+    checkpoint = None
+    if loaded and current:
+        from pathlib import Path
+        info = loaded['info'] or {}
+        current['model_id'] = getattr(ctx.extras.get('inference_engine'), 'model_id', loaded['name'])
+        dev_checkpoint = info.get('dev_checkpoint') or {}
+        if dev_checkpoint.get('path'):
+            checkpoint = {'available': Path(dev_checkpoint['path']).is_file(),
+                          'step': (info.get('training') or {}).get('step'), 'sha256': dev_checkpoint.get('sha256')}
+    improvement = None
+    measured = ctx.db.one(_select(evolution_experiments.c.id, evolution_experiments.c.metrics)
+        .where(evolution_experiments.c.candidate_version == deployed, evolution_experiments.c.status == 'passed')
+        .order_by(evolution_experiments.c.id.desc()).limit(1)) if deployed else None
+    if measured:
+        metrics = _json.loads(measured.get('metrics') or '{}')
+        gates = metrics.get('gates') or []
+        value = metrics.get('primary_improvement')
+        import math
+        if gates and all(g.get('passed') for g in gates) and type(value) in (int,float) and math.isfinite(value):
+            improvement = {'verified': True, 'primary_improvement': value, 'experiment_id': measured['id']}
+    accepting = bool(loaded and flags(ctx).get('cloud_inference_enabled'))
     return {
-        "current": next((v for v in versions if v["deployed"]), None), "stable": next((v for v in versions if v["stable"]), None),
+        "observed_at": now(), "serving": {'loaded': bool(loaded), 'accepting_requests': accepting,
+            'reason': 'Ready to answer' if accepting else 'Cloud answering is turned off' if loaded else 'No native model is loaded'},
+        "checkpoint": checkpoint, "improvement": improvement,
+        "current": current, "stable": next((v for v in versions if v["stable"]), None),
         "development": dev, "rollout": serving.loaded_versions(ctx), "timeline": versions,
         "deployment_events": ctx.db.all(_select(audit_log.c.ts, audit_log.c.action, audit_log.c.target)
             .where(audit_log.c.action.in_(("models.deployed", "models.rollback", "evolution.rollback")))
