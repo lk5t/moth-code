@@ -110,10 +110,14 @@ def tasks_suite(model, tok, path: Path) -> dict[str, Any]:
         raise EvalError("the task suite is empty")
     correct = 0
     for it in items:
-        out, _ = _complete(model, tok, str(it["prompt"]), int(it.get("max_tokens", TASK_TOKENS)))
+        out, _ = _complete(model, tok, str(it["prompt"]), min(256, max(1, int(it.get("max_tokens", TASK_TOKENS)))))
         ans = str(it["answer"]).strip()
         got = out.strip()
         hit = (ans in got) if it.get("match") == "contains" else got.split("\n")[0].strip() == ans
+        if it.get("paraphrase"):
+            second, _ = _complete(model, tok, str(it["paraphrase"]), min(256, max(1, int(it.get("max_tokens", TASK_TOKENS)))))
+            second = second.strip()
+            hit = hit and ((ans in second) if it.get("match") == "contains" else second.split("\n")[0].strip() == ans)
         correct += hit
     acc = correct / len(items)
     return {"metric": "accuracy", "value": acc, "error_rate": 1 - acc, "n": len(items), "higher_is_better": True}
@@ -159,7 +163,7 @@ def run(package: Path, suites: list[dict[str, Any]]) -> dict[str, Any]:
             r["ok"] = math.isfinite(float(r["value"]))
         except EvalError as e:
             r = {"ok": False, "error": str(e)}
-        out["suites"][s["id"]] = {**r, "kind": s["kind"], "name": s.get("name", s["id"])}
+        out["suites"][s["id"]] = {**r, "kind": s["kind"], "capability": s.get("capability"), "name": s.get("name", s["id"])}
     for p in ("def ", "import "):
         _, stats = _complete(model, tok, p, 32)
         if stats.generated_tokens:

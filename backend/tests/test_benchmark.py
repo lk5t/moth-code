@@ -24,3 +24,15 @@ def test_release_criteria_reject_nonfinite_measurements(suite, op, value):
     result = check(report, [{"id": "invalid", "suite": suite, "op": op, "value": 1.0}])
     assert not result["passed"]
     assert result["criteria"][0]["measured"] is None
+
+
+def test_consistency_requires_both_reference_answers(tmp_path,monkeypatch):
+    """Evaluator contract test with deterministic supplied completions; not a quality claim."""
+    import json
+    from moth.model import benchmark as bench
+    path=tmp_path/'pairs.jsonl'
+    path.write_text(json.dumps({'prompt':'2+2?','paraphrase':'Sum two and two','answer':'4'})+'\n')
+    replies=iter(['4','5']);monkeypatch.setattr(bench,'_complete',lambda *args:(next(replies),None))
+    assert bench.tasks_suite(None,None,path)['value']==0
+    replies=iter(['4','4'])
+    assert bench.tasks_suite(None,None,path)['value']==1

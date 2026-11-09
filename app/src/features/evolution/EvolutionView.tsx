@@ -1,9 +1,10 @@
+import { useCloudProgress, refreshCloudProgress } from "@/lib/cloud-progress";
 import { modelLabel } from "@/lib/model-label";
 /**
  * Evolution: one-click improvement of MOTH. A single switch for automatic evolution, what is happening
  * now, and start / pause / resume. Advanced settings stay in Owner tools → Evolution.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Pause, Play, Settings2, Sparkles } from "lucide-react";
 import { serverApi, useAccount } from "@/lib/account";
 import { appStore } from "@/lib/app-state";
@@ -13,7 +14,6 @@ import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty";
-import { NetworkTraining, ParticipantSwitch } from "@/features/training/NetworkTraining";
 import { secure } from "@/features/owner/ops";
 
 type Any = Record<string, any>;
@@ -27,17 +27,11 @@ const STATE: Record<string, string> = {
 export function EvolutionView() {
   const signedIn = useAccount((s) => !!s.token);
   const isOwner = useAccount((s) => s.user?.role === "owner");
-  const [p, setP] = useState<Any | null>(null);
+  const {data:p,error} = useCloudProgress();
   const [msg, setMsg] = useState<string | null>(null);
-  const load = () => serverApi<Any>("/v1/intelligence/progress").then(setP).catch(() => {});
-  useEffect(() => {
-    if (!signedIn) return;
-    load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
-  }, [signedIn]);
+  const load = () => refreshCloudProgress();
   if (!signedIn) return <EmptyState title="Sign in to follow MOTH's evolution">Evolution runs on MOTH Cloud.</EmptyState>;
-  if (!p) return null;
+  if (!p) return <p role="status" className="p-4 text-sm">{error || "Loading verified evolution status…"}</p>;
   const tr = p.training;
   const cyc = tr.cycle;
   const busy = cyc && !["completed", "rejected", "failed", "cancelled", "rolled_back"].includes(cyc.status);
@@ -48,7 +42,7 @@ export function EvolutionView() {
       <div className="mx-auto flex max-w-3xl flex-col gap-5 p-8 animate-rise">
         <div>
           <h1 className="text-lg font-semibold">Evolution</h1>
-          <p className="mt-1 text-xs text-muted">MOTH improves itself: it trains a new version, tests it against the current one on held-out benchmarks, and only keeps it if it is better.</p>
+          <p className="mt-1 text-xs text-muted">MOTH improves itself: it trains a candidate, compares it on independent held-out checks, and promotes it only when the configured gates and Owner permissions allow. Lower training loss alone does not prove better answers.</p>
         </div>
         <Card>
           <CardHeader>
@@ -117,7 +111,7 @@ export function EvolutionView() {
             </CardContent>
           </Card>
         )}
-        {isOwner ? <NetworkTraining /> : <Card><CardContent><ParticipantSwitch /></CardContent></Card>}
+        <p className="px-1 text-xs text-muted">Manage training computers and device consent in Network. Missing capability measurements are shown in Advanced evaluation details.</p>
       </div>
     </div>
   );

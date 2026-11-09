@@ -43,11 +43,13 @@ def capability_reports(ctx: Ctx, version: int | None) -> dict[str, dict[str, Any
     out: dict[str, dict[str, Any]] = {}
     for r in ctx.db.all(select(evaluation_reports).where(evaluation_reports.c.model_version == version)
                         .order_by(evaluation_reports.c.id)):
-        if not r["suite"].startswith("capability:"):
-            continue
-        parts = r["suite"].split(":")
-        cap = parts[1] if parts[1] != "holdout" else f"holdout_{parts[2]}"
         m = json.loads(r["metrics"])
+        if r["suite"].startswith("capability:"):
+            parts = r["suite"].split(":")
+            cap = parts[1] if parts[1] != "holdout" else f"holdout_{parts[2]}"
+        elif r["suite"].startswith("tasks:") and m.get("capability"):
+            cap = m["capability"]
+        else:continue
         if m.get("ok"):
             out[cap] = m
     return out
@@ -88,7 +90,7 @@ def analyse(ctx: Ctx, version: int | None, parent: int | None = None,
         hit["weakness"] = round(min(1.0, (hit["weakness"] or 0.0) + 0.5 * w["negative_rate"]), 3)
     ranked = sorted([r for r in rows if r.get("weakness") is not None], key=lambda r: -r["weakness"])
     measured = {r["capability"] for r in rows}
-    not_measured = [c for c in ("math", "reasoning", "code", "instruction", "safety") if c not in measured]
+    not_measured = [c for c in ("conversation", "code", "reasoning", "math", "knowledge", "instruction", "consistency", "safety") if c not in measured]
     return {"version": version, "parent": parent, "capabilities": rows, "ranked": ranked,
             "regressions": [r for r in rows if r.get("regression")], "not_measured": not_measured,
             "recommendations": recommend(ranked)}

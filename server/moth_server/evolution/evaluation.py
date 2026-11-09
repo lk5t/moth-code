@@ -61,9 +61,16 @@ def add_task_suite(ctx: Ctx, name: str, capability: str, data: bytes) -> dict[st
     items = [json.loads(line) for line in data.decode("utf-8").splitlines() if line.strip()]
     if not items:
         raise ValueError("the task suite is empty")
-    for i, it in enumerate(items[:1000]):
+    if len(items)>200:raise ValueError("task suites support at most 200 items")
+    for i, it in enumerate(items):
         if not isinstance(it, dict) or "prompt" not in it or "answer" not in it:
             raise ValueError(f"line {i + 1}: each line needs \"prompt\" and \"answer\"")
+        if not all(isinstance(it[k],str) and it[k].strip() for k in ("prompt","answer")):
+            raise ValueError(f"line {i + 1}: prompt and answer must be non-empty text")
+        if capability == "consistency" and not (isinstance(it.get("paraphrase"),str) and it["paraphrase"].strip()):
+            raise ValueError(f"line {i + 1}: consistency needs a paraphrase and reference answer")
+        if "max_tokens" in it and (type(it["max_tokens"]) is not int or not 1 <= it["max_tokens"] <= 256):
+            raise ValueError(f"line {i + 1}: max_tokens must be between 1 and 256")
     sha = hashlib.sha256(data).hexdigest()
     sid = "".join(c if c.isalnum() else "-" for c in name.lower()).strip("-")[:40] or sha[:12]
     (suites_root(ctx) / f"{sid}.jsonl").write_bytes(data)
@@ -144,7 +151,7 @@ def build_suites(ctx: Ctx, release: dict) -> list[dict[str, Any]]:
     suites += capability_suites(ctx)
     for t in task_suites(ctx):
         suites.append({"id": f"tasks:{t['id']}", "kind": "tasks", "name": f"{t['name']} ({t['capability']})",
-                       "path": t["path"], "capability": t["capability"], "sha": _sha(f"tasks/v1:{t['sha256']}")})
+                       "path": t["path"], "capability": t["capability"], "sha": _sha(f"tasks/v2:{t['sha256']}:{t['capability']}")})
     return suites
 
 
