@@ -1,10 +1,11 @@
 /** Chat: a clean, full-page conversation with MOTH (everyday questions, explanations, writing, code). */
 import { useEffect, useState } from "react";
 import { Info, FolderOpen } from "lucide-react";
-import { serverApi, useAccount } from "@/lib/account";
+import { useCloudProgress } from "@/lib/cloud-progress";
+import { useResource } from "@/lib/hooks";
 import { get, put } from "@/lib/backend";
 import { Badge } from "@/components/ui/badge";
-import { appStore, useApp } from "@/lib/app-state";
+import { openIntelligence, useApp } from "@/lib/app-state";
 import { Switch } from "@/components/ui/switch";
 import { ChatPanel } from "./ChatPanel";
 import { modelLabel } from "@/lib/model-label";
@@ -14,24 +15,19 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 /** The active model, where it runs and what it was measured to do well — so expectations are honest. */
 function ModelBar() {
-  const signedIn = useAccount((s) => !!s.token);
-  const [cloud, setCloud] = useState<Any | null>(null);
-  const [local, setLocal] = useState<Any | null>(null);
-  useEffect(() => {
-    if (signedIn) serverApi<Any>("/v1/intelligence/status").then(setCloud).catch(() => setCloud(null));
-    get<Any>("/api/ondevice").then(setLocal).catch(() => setLocal(null));
-  }, [signedIn]);
-  const onDevice = local?.installed && local?.answer_on_device;
-  const m = (cloud?.models ?? []).find((x: Any) => x.available);
-  const caps = Object.entries((m?.capabilities ?? {}) as Record<string, number>).sort((a, b) => b[1] - a[1]);
+  const {data:cloud}=useCloudProgress();
+  const {data:local}=useResource<Any|null>("/api/ondevice",["ondevice","settings"],null);
+  const onDevice=local?.installed && local?.answer_on_device;
+  const m=cloud?.current;
+  const caps=Object.entries((m?.benchmarks ?? {}) as Record<string,Any>).filter(([,value])=>value.higher_is_better && Number.isFinite(value.value)).sort((a,b)=>b[1].value-a[1].value);
   return (
     <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1 text-xs">
       <span className="min-w-0 truncate text-fg">{onDevice ? `${modelLabel(local.installed)} · on this computer` : m ? `${modelLabel(m)} · MOTH Cloud` : "No model available"}</span>
       {m?.params && <span className="text-muted">{(m.params / 1e6).toFixed(1)}M parameters</span>}
-      {caps.slice(0, 2).map(([k, v]) => <Badge className="hidden lg:inline-flex" key={k} title="measured on held-out benchmarks">{k} {pct(v)}</Badge>)}
+      {caps.slice(0, 2).map(([k, v]) => <Badge className="hidden lg:inline-flex" key={k} title="measured on held-out benchmarks">{k} {pct(v.value)}</Badge>)}
       <div className="flex-1" />
-      <button className="flex cursor-pointer items-center gap-1 text-faint hover:text-fg" onClick={() => appStore.setState({ view: "intelligence" })}>
-        <Info className="size-3.5" />What MOTH can do
+      <button className="flex cursor-pointer items-center gap-1 text-faint hover:text-fg" onClick={() => openIntelligence("overview")}>
+        <Info className="size-3.5" />Model details
       </button>
     </div>
   );

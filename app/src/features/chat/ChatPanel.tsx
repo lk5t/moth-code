@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MothEvent } from "@/lib/events";
 import { ArrowUp, Cloud, LogIn, MessageSquarePlus, RefreshCw, Square } from "lucide-react";
 import { useCloudStatus } from "@/lib/cloud";
@@ -12,7 +12,8 @@ import { Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { MothEmblem } from "@/components/MothEmblem";
 import { cn } from "@/lib/utils";
-import { Markdown } from "./Markdown";
+import { Markdown, CopyText } from "./Markdown";
+import { ErrorNotice } from "@/components/ErrorNotice";
 import { AgentPanel } from "@/features/agent/AgentPanel";
 import { AnswerFooter, type AnswerMeta } from "@/features/intelligence/AnswerFooter";
 import { useCloudProgress } from "@/lib/cloud-progress";
@@ -39,12 +40,18 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
   const [mode, setMode] = useState<"chat" | "agent">("chat");
   const { status: cloud, reload: reloadCloud } = useCloudStatus();
   const {data: liveModel} = useCloudProgress();
+  const [search, setSearch] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  useEffect(()=>{const timer=setTimeout(()=>setSearchQuery(search),200);return()=>clearTimeout(timer);},[search]);
   const { data: conversations, reload: reloadConversations } = useResource<Conversation[]>(
-    `/api/conversations${project ? `?project_id=${project.id}` : "?scope=general"}`,
+    `/api/conversations${project ? `?project_id=${project.id}` : "?scope=general"}&q=${encodeURIComponent(searchQuery)}`,
     [],
     [],
   );
   const [cid, setCid] = useState<number | null>(null);
+  const [hasOlder, setHasOlder] = useState(false);
+  const followTail = useRef(true);
+  const conversationLoad = useRef(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,18 +75,39 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
   }, [input, mode]);
 
   useEffect(() => {
+    if (cidRef.current !== null) void post(`/api/chat/${cidRef.current}/cancel`).catch(() => {});
     setCid(null);
+    setBusy(false);
+    setHasOlder(false);
     setMessages([]);
   }, [project?.id]);
 
   useEffect(() => {
+    const load=++conversationLoad.current;
     if (cid === null || skipFetch.current === cid) return;
-    get<ChatMessage[]>(`/api/conversations/${cid}/messages`).then((m) => setMessages((cur) => (cur.some((x) => x.streaming) ? cur : m)));
+    setHasOlder(false);followTail.current=true;
+    get<ChatMessage[]>(`/api/conversations/${cid}/messages?limit=100`).then((history) => {
+      if(load !== conversationLoad.current) return;
+      setMessages((current) => current.some((x)=>x.streaming) ? current : history);setHasOlder(history.length === 100);
+    }).catch((error) => {if(load === conversationLoad.current) setMessages([{id:"history-error",role:"error",content:error.message}]);});
+    return () => {conversationLoad.current++;};
   }, [cid]);
 
   useEffect(() => {
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
+    if(followTail.current) scroller.current?.scrollTo({top:scroller.current.scrollHeight,behavior:"auto"});
   }, [messages]);
+  const loadOlder = async () => {
+    const first=messages.find((message)=>typeof message.id === "number");
+    const node=scroller.current, conversation=cid;
+    if(!first || !node || cid === null) return;
+    const oldHeight=node.scrollHeight;
+    try {
+      const older=await get<ChatMessage[]>(`/api/conversations/${cid}/messages?limit=100&before_id=${first.id}`);
+      if(cidRef.current !== conversation) return;
+      followTail.current=false;setMessages((current)=>[...older,...current]);setHasOlder(older.length === 100);
+      requestAnimationFrame(()=>{node.scrollTop+=node.scrollHeight-oldHeight;});
+    } catch(error) {setMessages((current)=>[...current,{id:`older-${Date.now()}`,role:"error",content:(error as Error).message}]);}
+  };
 
   // Refs avoid a race: for a new conversation, streaming events can arrive
   // before POST /api/chat returns the conversation id.
@@ -104,11 +132,12 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
       const rest = cur.slice(0, -1);
       if (e.kind === "token") return [...rest, { ...streaming, content: streaming.content + e.text }];
       if (e.kind === "replace") return [...rest, { ...streaming, content: e.text }];
-      if (e.kind === "done") return [...rest, { ...streaming, content: e.text, meta: e.meta, streaming: false }];
+      if (e.kind === "done") return [...rest, { ...streaming, id:e.message_id ?? streaming.id, content: e.text, meta: e.meta, streaming: false }];
       if (e.kind === "error") return [...rest, { id: streaming.id, role: "error", content: e.error }];
       return cur;
     });
     if (e.kind === "done" || e.kind === "error") setBusy(false);
+    if(e.kind === "done") reloadConversations();
   };
 
   useEvent("chat", (e) => {
@@ -119,12 +148,11 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     if (e.conversation_id === cidRef.current) apply(e);
   });
 
-  const send = async () => {
-    const text = input.trim();
+  const send = async (regenerate = false) => {
+    const text = regenerate ? [...messages].reverse().find((m)=>m.role === "user")?.content ?? "" : input.trim();
     if (!text || busy) return;
-    setInput("");
-    setBusy(true);
-    setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: text }]);
+    if(!regenerate) {setInput("");setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: text }]);}
+    followTail.current=true;setBusy(true);
     const isNew = cid === null;
     if (isNew) {
       sendingNew.current = true;
@@ -132,7 +160,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     }
     try {
       const r = await post<{ conversation_id: number }>("/api/chat", {
-        message: text,
+        message: text, regenerate,
         conversation_id: cid,
         project_id: project?.id ?? null,
         context_project_id: contextProjectId,
@@ -149,11 +177,19 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     } catch (e) {
       sendingNew.current = false;
       setBusy(false);
+      if(!regenerate) setInput(text);
       setMessages((m) => [...m, { id: `e${Date.now()}`, role: "error", content: String((e as Error).message ?? e) }]);
     }
   };
 
   const { data: onDevice } = useResource<{ installed: Record<string,any> | null; answer_on_device: boolean } | null>("/api/ondevice", ["ondevice"], null);
+  const previousAnswers = useMemo(() => {
+    const previous=new Set<ChatMessage['id']>();let newer=false;
+    for(let i=messages.length-1;i>=0;i--) {const message=messages[i];if(message.role === "user") newer=false;
+      else if(message.role === "assistant") {if(newer) previous.add(message.id);newer=true;}}
+    return previous;
+  },[messages]);
+  const lastAssistant = messages.reduce((index,message,i)=>message.role === "assistant" ? i : index,-1);
   const local = !!onDevice?.installed;
   const signedOut = cloud && !local ? !cloud.signed_in : false;
   const noModel = !local && (typeof liveModel?.serving?.accepting_requests === "boolean" && !cloud?.available
@@ -185,6 +221,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
         {mode === "chat" && (
           <Select
             className="h-7 min-w-0 max-w-56 flex-1 text-xs"
+            aria-label="Conversation" disabled={busy} title={busy ? "Stop or wait for the current reply before changing conversations" : "Conversation history"}
             value={cid ?? ""}
             onChange={(e) => {
               setMessages([]);
@@ -192,12 +229,14 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
             }}
           >
             <option value="">New conversation</option>
+            {cid !== null && !conversations?.some((item)=>item.id === cid) && <option value={cid}>Current conversation</option>}
             {conversations?.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
           </Select>
         )}
+        {mode === "chat" && <input aria-label="Search conversations" placeholder="Search history" value={search} onChange={(event)=>setSearch(event.target.value)} className="h-7 w-28 min-w-0 rounded border border-border bg-bg px-2 text-xs sm:w-40" />}
         <div className="flex-1" />
         {mode === "chat" && (
-          <Button variant="ghost" size="icon-sm" title="New conversation" onClick={() => { setCid(null); setMessages([]); }}>
+          <Button variant="ghost" size="icon-sm" title={busy ? "Stop or wait for the current reply" : "New conversation"} disabled={busy} aria-label="New conversation" onClick={() => { setCid(null); setMessages([]); }}>
             <MessageSquarePlus />
           </Button>
         )}
@@ -211,7 +250,8 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
         <AgentPanel />
       ) : (
         <>
-          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+          <div ref={scroller} onScroll={(event)=>{const node=event.currentTarget;followTail.current=node.scrollHeight-node.scrollTop-node.clientHeight < 80;}} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+            {hasOlder && <Button size="sm" variant="ghost" onClick={loadOlder}>Load older messages</Button>}
             {messages.length === 0 ? (
               <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 pt-5 text-left animate-fade-in sm:pt-8">
                 <div className="flex items-center gap-2"><MothEmblem motion="idle" className="size-10 shrink-0" />
@@ -241,12 +281,12 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
               </div>
             ) : (
               <div className="flex w-full flex-col gap-3">
-                {messages.map((m) => (
-                  <div key={m.id} className={cn("flex animate-rise", m.role === "user" && "justify-end")}>
+                {messages.map((m,index) => {
+                  const content = <div key={m.id} className={cn("flex animate-rise", m.role === "user" && "justify-end")}>
                     {m.role === "user" ? (
                       <div className="selectable max-w-[85%] whitespace-pre-wrap rounded-xl rounded-br-sm border border-border bg-surface-2 px-3.5 py-2 text-[13px]">{m.content}</div>
                     ) : m.role === "error" ? (
-                      <div className="max-w-[90%] rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{m.content}</div>
+                      <ErrorNotice error={m.content} />
                     ) : (
                       <div className="flex max-w-[95%] gap-2.5">
                         <MothEmblem motion={m.streaming ? "generating" : "none"} className="mt-0.5 size-5 shrink-0" />
@@ -260,12 +300,17 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                               {m.meta.stop_reason === "cancelled" && " · cancelled"}
                             </div>
                           )}
+                          {!m.streaming && <div className="mt-2 flex flex-wrap gap-2"><CopyText text={m.content} label="Copy answer" />
+                            {index === lastAssistant && !messages.slice(index+1).some((message)=>message.role === "user") && cid !== null &&
+                              <Button size="sm" variant="ghost" disabled={busy} onClick={()=>send(true)}>Regenerate</Button>}
+                          </div>}
                           {m.meta && !m.streaming && <AnswerFooter meta={m.meta} answer={m.content} />}
                         </div>
                       </div>
                     )}
-                  </div>
-                ))}
+                  </div>;
+                  return previousAnswers.has(m.id) ? <details key={m.id} className="rounded border border-border p-2 text-xs text-muted"><summary className="cursor-pointer">Previous answer · retained in history</summary>{content}</details> : content;
+                })}
               </div>
             )}
           </div>
@@ -292,7 +337,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                   <Square className="text-accent" />
                 </Button>
               ) : (
-                <Button size="icon" disabled={!input.trim() || !!noModel} onClick={send} title="Send">
+                <Button size="icon" disabled={!input.trim() || !!noModel} onClick={() => send()} title="Send">
                   <ArrowUp />
                 </Button>
               )}

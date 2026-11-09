@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import { PanelLeft, PanelRight, SquareTerminal } from "lucide-react";
 import { appStore, useApp } from "@/lib/app-state";
@@ -12,7 +12,9 @@ import { TerminalPanel } from "./TerminalPanel";
 import { ChangesPanel } from "./ChangesPanel";
 import { ActivityPanel } from "./ActivityPanel";
 import { MemoryPanel } from "@/features/agent/MemoryPanel";
-import { pickProject } from "./project-actions";
+import { ErrorNotice } from "@/components/ErrorNotice";
+import { Select } from "@/components/ui/select";
+import { pickProject, openProjectPath } from "./project-actions";
 
 export function WorkspaceView() {
   const explorerOpen = useApp((s) => s.explorerOpen);
@@ -20,6 +22,11 @@ export function WorkspaceView() {
   const terminalOpen = useApp((s) => s.terminalOpen);
   const rightTab = useApp((s) => s.rightTab);
   const project = useApp((s) => s.project);
+  const projects = useApp((s) => s.projects);
+  const [projectError,setProjectError]=useState<string|null>(null);
+  const [opening,setOpening]=useState(false);
+  const chooseProject=async(path?:string)=>{setProjectError(null);setOpening(true);try {if(path) await openProjectPath(path);else await pickProject();}
+    catch(error) {setProjectError((error as Error).message);}finally {setOpening(false);}};
   const explorer = usePanelRef();
   const tools = usePanelRef();
   const initialLayout = useRef(appStore.getState().workspaceLayout);
@@ -53,11 +60,15 @@ export function WorkspaceView() {
         </Tip>
         <button
           className="ml-1 cursor-pointer truncate rounded px-2 py-1 text-xs text-muted hover:bg-surface-2 hover:text-fg"
-          onClick={pickProject}
+          disabled={opening} onClick={()=>chooseProject()}
           title="Open another workspace folder"
         >
           {project ? project.name : "Open folder…"}
         </button>
+        {projects.length > 0 && <Select disabled={opening} aria-label="Recent projects" className="ml-2 h-7 max-w-48 text-xs" value={project?.id ?? ""}
+          onChange={(event) => {const chosen=projects.find((p)=>p.id === Number(event.target.value));if(chosen) void chooseProject(chosen.path);}}>
+          <option value="" disabled>Recent projects</option>{projects.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}
+        </Select>}
         <div className="flex-1" />
         <Tip label="Terminal" side="bottom">
           <Button
@@ -75,6 +86,7 @@ export function WorkspaceView() {
           </Button>
         </Tip>
       </header>
+      <ErrorNotice error={projectError} />
       <Group orientation="horizontal" className="min-h-0 flex-1" defaultLayout={initialLayout.current}
         onLayoutChanged={(layout) => appStore.setState({ workspaceLayout: layout })}>
         <Panel

@@ -1,4 +1,10 @@
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
+
+export function CopyText({text,label="Copy code"}:{text:string;label?:string}) {
+  const [result,setResult]=useState<string|null>(null);
+  return <span className="inline-flex items-center gap-2"><button type="button" className="rounded border border-border px-2 py-1 text-[11px] text-muted hover:text-fg focus-visible:outline focus-visible:outline-accent" aria-label={label}
+    onClick={async()=>{try {if(!navigator.clipboard) throw new Error("Clipboard unavailable");await navigator.clipboard.writeText(text);setResult("Copied");}catch {setResult("Could not copy. Select the text and copy it manually.");}}}>{label}</button>{result && <span role="status" className="text-[10px] text-muted">{result}</span>}</span>;
+}
 
 /** Minimal, safe renderer: fenced code blocks + inline code + paragraphs (no HTML injection). */
 export function Markdown({ text }: { text: string }) {
@@ -11,8 +17,8 @@ export function Markdown({ text }: { text: string }) {
           const lang = nl > 0 ? part.slice(0, nl).trim() : "";
           const code = nl >= 0 ? part.slice(nl + 1) : part;
           return (
-            <div key={i} className="relative my-2">
-              {lang && <span className="absolute right-2 top-1.5 text-[10px] uppercase text-faint">{lang}</span>}
+            <div key={i} className="my-2 min-w-0">
+              <div className="mb-1 flex items-center justify-between gap-2"><span className="text-[10px] uppercase text-faint">{lang || "Code"}</span><CopyText text={code.replace(/\n$/, "")} /></div>
               <pre>
                 <code>{code.replace(/\n$/, "")}</code>
               </pre>

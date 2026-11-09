@@ -9,7 +9,11 @@ export async function loadProjects() {
 }
 
 export async function openProjectPath(path: string) {
+  const before = appStore.getState();
+  if (before.project?.path !== path && before.openFiles.some((file) => file.content !== file.saved) &&
+      !window.confirm("Switch projects and discard unsaved editor changes? Cancel to save your files first.")) return;
   const project = await post<Project>("/api/projects", { path });
+  if (before.project?.id === project.id) {appStore.setState({view:"workspace"});return;}
   appStore.setState({ project, openFiles: [], activeFile: null, view: "workspace", explorerOpen: true });
   try {
     localStorage.setItem("moth.lastProject", String(project.id));

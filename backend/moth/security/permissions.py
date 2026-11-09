@@ -188,14 +188,14 @@ def _is_relative_to(p: Path, root: Path) -> bool:
 class PermissionSettings:
     """User-adjustable autonomy level. Defaults are conservative."""
 
-    auto_write: bool = True  # write/create files inside workspace without asking
+    auto_write: bool = False  # new installations ask before agent writes; stored opt-ins are preserved
     auto_execute: bool = True  # run ordinary (non-destructive) commands without asking
     auto_git_commit: bool = False  # local commits without asking
 
     @classmethod
     def from_dict(cls, d: dict[str, Any] | None) -> "PermissionSettings":
         d = d or {}
-        return cls(**{k: bool(v) for k, v in d.items() if k in cls.__dataclass_fields__})
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__ and type(v) is bool})
 
 
 class PermissionEngine:

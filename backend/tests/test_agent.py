@@ -56,7 +56,7 @@ def env(tmp_path, project):
     events = []
     broker = ApprovalBroker()
     cancel = threading.Event()
-    ctx = AgentContext(Workspace(project), 1, PermissionEngine(), broker, MemoryStore(db), CodeIndex(db), cancel,
+    ctx = AgentContext(Workspace(project), 1, PermissionEngine(PermissionSettings(auto_write=True)), broker, MemoryStore(db), CodeIndex(db), cancel,
                        events.append, task_id="t")
     return {"db": db, "ctx": ctx, "events": events, "broker": broker, "project": project}
 
@@ -173,7 +173,7 @@ def test_manager_cancel_resume_revert(tmp_path, project):
     mgr = TaskManager(db, bus, ApprovalBroker())
     ws = Workspace(project)
     llm = ScriptedLLM([call("write_file", path="new.py", content="a = 1\n")] + [call("list_files")] * 50, delay=0.2)
-    tid = mgr.start(1, ws, "make new.py", llm, PermissionEngine(), "sys", EngineConfig(plan=False, max_steps=50))
+    tid = mgr.start(1, ws, "make new.py", llm, PermissionEngine(PermissionSettings(auto_write=True)), "sys", EngineConfig(plan=False, max_steps=50))
     for _ in range(100):
         if (project / "new.py").exists():
             break
@@ -185,7 +185,7 @@ def test_manager_cancel_resume_revert(tmp_path, project):
 
     # resume continues with the prior history in the prompt
     llm2 = ScriptedLLM([call("finish", summary="done")])
-    mgr.start(1, ws, "", llm2, PermissionEngine(), "sys", EngineConfig(plan=False, verify=False), task_id=tid)
+    mgr.start(1, ws, "", llm2, PermissionEngine(PermissionSettings(auto_write=True)), "sys", EngineConfig(plan=False, verify=False), task_id=tid)
     mgr.wait(tid, 10)
     assert mgr.get(tid)["status"] == "completed"
     assert any('"write_file"' in m.content for m in llm2.prompts[0])

@@ -146,6 +146,11 @@ def create_app(paths: Paths, token: str | None = None, services: Services | None
 
     @app.put("/api/settings", dependencies=A)
     def put_settings(values: dict[str, Any]):
+        if "permissions" in values:
+            permissions = values['permissions']
+            if not isinstance(permissions, dict) or any(type(value) is not bool for key,value in permissions.items()
+                    if key in ('auto_write','auto_execute','auto_git_commit')):
+                raise HTTPException(422, 'Permission choices must be true or false')
         for k, v in values.items():
             svc.db.set_setting(k, v)
         svc.bus.publish("settings", {"keys": list(values)})

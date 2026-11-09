@@ -59,7 +59,10 @@ def test_permission_engine(project):
     ws = Workspace(project)
     eng = PermissionEngine()
     assert eng.check(ActionKind.READ, ws, "demo/math_utils.py").decision == Decision.ALLOW
-    assert eng.check(ActionKind.WRITE, ws, "new.py").decision == Decision.ALLOW
+    assert eng.check(ActionKind.WRITE, ws, "new.py").decision == Decision.ASK
+    assert PermissionSettings.from_dict({"auto_write": "false"}).auto_write is False
+    opted_in = PermissionEngine(PermissionSettings.from_dict({"auto_write": True}))
+    assert opted_in.check(ActionKind.WRITE, ws, "new.py").decision == Decision.ALLOW
     assert eng.check(ActionKind.DELETE, ws, "new.py").decision == Decision.ASK
     assert eng.check(ActionKind.READ, ws, ".env").decision == Decision.ASK
     assert eng.check(ActionKind.WRITE, ws, "../x.py").decision == Decision.DENY

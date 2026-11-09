@@ -29,7 +29,7 @@ interface Permissions {
   auto_execute: boolean;
   auto_git_commit: boolean;
 }
-const DEFAULT_PERMS: Permissions = { auto_write: true, auto_execute: true, auto_git_commit: false };
+const DEFAULT_PERMS: Permissions = { auto_write: false, auto_execute: true, auto_git_commit: false };
 
 export function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
