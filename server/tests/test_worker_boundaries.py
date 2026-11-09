@@ -43,3 +43,28 @@ def test_enrollment_metadata_keys_fit_postgres_schema(client, owner):
     assert response.status_code == 200
     keys = client.app.state.ctx.db.all(select(server_config.c.key))
     assert all(len(row['key']) <= 64 for row in keys)
+
+
+def test_private_dataset_is_blocked_even_for_preexisting_worker_lease(client, owner, tmp_path, monkeypatch):
+    from moth_server.db import training_datasets
+    from moth_server.evolution import backends as B, engine as EN, memory as MEM, settings as S
+    from test_evolution_v053 import _world
+    ctx, _ = _world(client, owner, tmp_path, monkeypatch)
+    cycle = EN.start_cycle(ctx)
+    EN._planning(ctx, cycle, S.get(ctx))
+    exp = MEM.experiments(ctx, cycle['id'])[0]
+    jid = B.create_worker_job(ctx, exp)
+    enrollment = client.post('/v1/training/enrollments', json={}, headers=H(owner['token'])).json()
+    worker = client.post('/v1/worker/enroll', json={'token': enrollment['token'], 'version': '0.5.9',
+        'hardware': {'compute': 'cpu', 'ram_gb': 16, 'cpu_count': 2}}).json()
+    headers = H(worker['worker_token'])
+    claim = client.post('/v1/worker/jobs/claim', headers=headers)
+    assert claim.status_code == 200 and claim.json()['id'] == jid
+    assert client.get(f'/v1/worker/jobs/{jid}/shard', headers=headers).status_code == 200
+    # Reclassification/revoked redistribution permission applies to existing leases, too.
+    with ctx.db.tx() as conn:
+        conn.execute(training_datasets.update().values(contains_user_data=True))
+    denied = client.get(f'/v1/worker/jobs/{jid}/shard', headers=headers)
+    assert denied.status_code == 409 and 'not authorized' in denied.text
+    assert client.get(f'/v1/worker/jobs/{jid}/weights', headers=headers).status_code == 409
+    assert client.post('/v1/worker/jobs/claim', headers=headers).status_code == 204
