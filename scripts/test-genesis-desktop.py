@@ -109,7 +109,7 @@ def main(installer):
         for label in ('Overview','Chat','Code','Intelligence','Data','Network','Activity','Settings'):
             ui.find(label, ('Button',))
         ui.click('Overview')
-        ui.click('Model details')
+        ui.click('Model details and measured architecture')
         ui.click('Inspect layer 2')
         wait(lambda: 'Layer 2 selected' in ui.text(), 'selected architecture layer')
         ui.click('Intelligence')
