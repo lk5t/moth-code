@@ -112,9 +112,13 @@ def main(installer):
         wait(lambda: 'Layer 2 selected' in ui.text(), 'selected architecture layer')
         ui.click('Training', control_type='TabItem')
         print('::notice title=GENESIS native stage::Workspace drafts and interactive Intelligence tabs passed', flush=True)
+        worker_backend = api('/v1/admin/evolution/status')['settings']['backends']['workers']
         for value in (False, True):
             ui.click('Use cloud workers')
-            wait(lambda: api('/v1/admin/evolution/status')['settings']['backends']['workers'] is value, 'worker toggle persisted')
+            wait(lambda: api('/v1/admin/evolution/status')['settings']['cloud_workers'] is value,
+                 'cloud worker toggle persisted')
+            assert api('/v1/admin/evolution/status')['settings']['backends']['workers'] is worker_backend, \
+                'Cloud infrastructure toggle must not change personal-worker backend policy'
         ui.click('Contribute this computer')
         participant = wait(lambda: (s if (s := participant_setting())['enabled'] and s['worker_id'] else None), 'real desktop worker enrollment')
         assert any(w['id'] == participant['worker_id'] and w['hardware'].get('client') == 'moth-code'
