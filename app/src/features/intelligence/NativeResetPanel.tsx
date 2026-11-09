@@ -17,10 +17,18 @@ export function NativeResetPanel(){
  const {data:plan,error,reload}=useResource<Plan>(owner?path:null,[],undefined,server+'\0'+token,load);
  const [backups,setBackups]=useState(false),[confirmation,setConfirmation]=useState(''),[backupConfirmation,setBackupConfirmation]=useState('');
  const current=useRef({server,token});current.current={server,token};
- useEffect(()=>{setConfirmation('');setBackupConfirmation('');setBackups(false);setNotice('');},[server,token]);
+ useEffect(()=>{setConfirmation('');setBackupConfirmation('');setBackups(false);setNotice('');setBusy(false);},[server,token]);
  const [busy,setBusy]=useState(false),[notice,setNotice]=useState('');
  if(!owner)return null;
- const act=async(suffix:string,json:unknown)=>{setBusy(true);setNotice('');try{await secure(()=>{if(current.current.server!==server || current.current.token!==token)throw new Error("Account changed; inspect the current deployment before continuing.");return serverApi(path+suffix,{server,token,method:'POST',json,timeoutMs:60000});});setConfirmation('');setBackupConfirmation('');refreshCloudProgress(true);await reload();}catch(e){setNotice((e as Error).message);await reload();}finally{setBusy(false);}};
+ const act=async(suffix:string,json:unknown)=>{
+  const active=()=>current.current.server===server && current.current.token===token;
+  setBusy(true);setNotice('');
+  try{
+   await secure(()=>{if(!active())throw new Error("Account changed; inspect the current deployment before continuing.");return serverApi(path+suffix,{server,token,method:'POST',json,timeoutMs:60000});});
+   if(active()){setConfirmation('');setBackupConfirmation('');refreshCloudProgress(true);await reload();}
+  }catch(e){if(active()){setNotice((e as Error).message);await reload();}}
+  finally{if(active())setBusy(false);}
+ };
  const pending=['fencing','deleting','failed'].includes(plan?.status);
  return <section className="space-y-3 rounded-lg border border-danger/50 p-3 text-xs" aria-label="Delete all native AI data">
   <h3 className="font-semibold text-danger">Genesis Reset — Delete All Native AI Data</h3>

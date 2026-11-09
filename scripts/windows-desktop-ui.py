@@ -40,7 +40,7 @@ class WindowsUI:
         except Exception:
             pass
         actions = [('iface_selection_item', 'Select'), ('iface_invoke', 'Invoke')] if c.element_info.control_type == 'TabItem' else [
-            ('iface_invoke', 'Invoke'), ('iface_toggle', 'Toggle')]
+            ('iface_invoke', 'Invoke'), ('iface_toggle', 'Toggle'), ('iface_expand_collapse', 'ToggleExpand')]
         for pattern, action in actions:
             try:
                 interface = getattr(c, pattern)
@@ -48,6 +48,8 @@ class WindowsUI:
                     # The library wraps Invoke in a watchdog thread: raw COM Invoke can hang
                     # while the target handles a download, dialog, or process transition.
                     c.invoke()
+                elif action == 'ToggleExpand':
+                    interface.Expand() if interface.CurrentExpandCollapseState == 0 else interface.Collapse()
                 else:
                     getattr(interface, action)()
                 return
