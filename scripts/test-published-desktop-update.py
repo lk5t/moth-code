@@ -66,6 +66,14 @@ def verify_bundle(version,dest):
     return exe, json.loads((dest / f"moth-release-desktop-{version}.json").read_text())
 
 
+def published_updater_key(version):
+    # Release jobs intentionally use shallow checkouts. Read the exact published
+    # tag through the authenticated repository API rather than assuming local tags.
+    source=json.loads(run("gh","api",f"repos/{REPO}/contents/app/src-tauri/updater.pub?ref=desktop-v{version}",capture_output=True).stdout)
+    if source.get('encoding')!='base64':raise AssertionError('Published updater key is not a base64 repository file')
+    return base64.b64decode(source['content']).strip()
+
+
 def probe_cloud(manifest, out):
     server = "https://mothcloud.ddns.net"
     from moth_server.releases import bucket
@@ -140,7 +148,7 @@ def main():
     else:
         target_version='0.5.4'
         new,manifest=download_release(target_version,out/'new')
-    assert run("git", "show", f"desktop-v{old_version}:app/src-tauri/updater.pub", capture_output=True).stdout.strip() == (ROOT / "app/src-tauri/updater.pub").read_bytes().strip()
+    assert published_updater_key(old_version) == (ROOT / "app/src-tauri/updater.pub").read_bytes().strip()
     if not args.candidate_dir:probe_cloud(manifest, out)
 
     # Isolated TLS trust for the stock production installer. No insecure transport or signature bypass.
