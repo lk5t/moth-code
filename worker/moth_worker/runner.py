@@ -16,7 +16,7 @@ import torch
 
 from moth_worker import __version__
 from moth_worker.client import ServerError, WorkerClient
-from moth_worker.hardware import cached_benchmark, compute_kind, detect
+from moth_worker.hardware import measured_device, compute_kind, detect
 
 CHECKPOINT_EVERY = 25
 
@@ -48,14 +48,16 @@ class WorkerRunner:
         self.updated_to: str | None = None
         self.device: str | None = None
         self.bench: dict[str, Any] | None = None
+        self.hardware_lock = threading.Lock()
 
     def hardware(self) -> dict[str, Any]:
         """Detected hardware plus the measured benchmark (taken once, cached for a week)."""
         hw = detect()
-        if self.device is None:
-            self.device = "cuda" if compute_kind(hw) == "gpu" else "cpu"
-            self.bench = cached_benchmark(self.state_dir, self.device)
-        return {**hw, "benchmark": self.bench}
+        with self.hardware_lock:
+            if self.device is None:
+                self.device, self.bench = measured_device(self.state_dir, hw)
+        # Advertise the selected supported backend, not merely an installed graphics card.
+        return {**hw, "compute": "gpu" if self.device == "cuda" else "cpu", "benchmark": self.bench}
 
     # ---- heartbeat -----------------------------------------------------------------------
     def beat(self) -> None:
@@ -176,6 +178,9 @@ class WorkerRunner:
         except ServerError:
             raise
         except Exception as e:  # noqa: BLE001
+            if self.device == "cuda" and any(marker in str(e).lower() for marker in ("cuda", "out of memory", "cublas")):
+                self.device, self.bench = "cpu", None
+                self.log("GPU failed; subsequent eligible work uses CPU. Saved checkpoints are retained.")
             self.log(f"job {jid} failed: {e}")
             try:
                 self.client.fail(jid, f"{type(e).__name__}: {e}")
@@ -208,7 +213,7 @@ class WorkerRunner:
             limits = {**job.get("limits", {}), **self.limits}
             if device == "cpu":  # leave a core for the system unless the owner set a limit
                 from moth.training.resources import cpu_count
-                torch.set_num_threads(min(cpu_count(), max(1, int(limits.get("cpu_threads") or max(1, cpu_count() - 1)))))
+                torch.set_num_threads(min(cpu_count(), max(1, int(limits.get("cpu_threads") or max(1, min(cpu_count() - 1, int((self.bench or {}).get("threads") or cpu_count())))))))
             if device == "cuda" and limits.get("gpu_memory_fraction"):
                 torch.cuda.set_per_process_memory_fraction(float(limits["gpu_memory_fraction"]))
             base = torch.load(io.BytesIO(weights), map_location="cpu", weights_only=True)
@@ -335,6 +340,9 @@ class WorkerRunner:
         except ServerError:
             raise
         except Exception as e:  # noqa: BLE001 — report and move on
+            if self.device == "cuda" and any(marker in str(e).lower() for marker in ("cuda", "out of memory", "cublas")):
+                self.device, self.bench = "cpu", None
+                self.log("GPU failed; subsequent eligible work uses CPU. Saved checkpoints are retained.")
             self.log(f"job {jid} failed: {e}")
             try:
                 self.client.fail(jid, f"{type(e).__name__}: {e}")

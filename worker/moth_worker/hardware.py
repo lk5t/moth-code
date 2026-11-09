@@ -218,3 +218,54 @@ def cached_benchmark(home: Path, device: str, max_age_s: float = 7 * 86400) -> d
     except OSError:
         pass
     return b
+
+
+def measured_device(home: Path, hw: dict[str, Any]) -> tuple[str, dict | None]:
+    """Choose from supported backends using bounded, cached measurements of the same kernel.
+
+    This is a compute benchmark, not a claimed training tokens/sec measurement. Unknown GPU
+    throughput falls back to CPU. Existing per-job memory and owner limits still apply.
+    """
+    import torch
+    from moth.training.resources import cpu_count
+    key = hashlib.sha256(json.dumps({k: hw.get(k) for k in
+        ('cpu_model', 'cpu_count', 'torch', 'torch_cuda')} | {'gpus': [{k: g.get(k) for k in ('name', 'memory_gb', 'driver')} for g in hw.get('gpus', [])]}, sort_keys=True).encode()).hexdigest()
+    path = Path(home) / 'compute-profile.json'
+    try:
+        profile = json.loads(path.read_text())
+        if profile['key'] == key and 0 <= time.time() - profile['measured_at'] < 7 * 86400:
+            device = profile['device']
+            if device == 'cpu' or compute_kind(hw) == 'gpu':
+                return device, profile['benchmark']
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    previous = torch.get_num_threads()
+    samples = []
+    try:
+        ceiling = max(1, cpu_count() - 1)
+        for threads in sorted({1, max(1, ceiling // 2), ceiling}):
+            torch.set_num_threads(threads)
+            samples.append(benchmark('cpu', seconds=.2))
+    except Exception:
+        samples = []
+    finally:
+        torch.set_num_threads(previous)
+    cpu = max(samples, key=lambda x: x['gflops']) if samples else None
+    gpu = None
+    if compute_kind(hw) == 'gpu':
+        try:
+            gpu = benchmark('cuda', seconds=.3)
+        except Exception:
+            gpu = None
+    # Demand a margin over measurement noise before moving work to a GPU.
+    selected = gpu if gpu and cpu and gpu['gflops'] > cpu['gflops'] * 1.1 else cpu
+    device = selected['device'] if selected else 'cpu'
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix('.tmp')
+        temporary.write_text(json.dumps({'key': key, 'device': device, 'benchmark': selected,
+                                        'measured_at': time.time()}))
+        temporary.replace(path)
+    except OSError:
+        pass
+    return device, selected
