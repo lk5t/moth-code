@@ -29,7 +29,7 @@ def _dtype_for(vocab_size: int):
 
 
 def _is_val(doc: Document, val_fraction: float) -> bool:
-    h = int(hashlib.sha1(f"{doc.source}/{doc.id}".encode()).hexdigest()[:8], 16)
+    h = int(hashlib.sha1((json.dumps(doc.messages, sort_keys=True) if doc.messages else doc.text).encode()).hexdigest()[:8], 16)
     return (h % 10_000) < val_fraction * 10_000
 
 
@@ -55,11 +55,18 @@ def prepare_dataset(
     docs = {"train": 0, "val": 0}
     per_source: dict[str, int] = {}
     last = time.time()
+    seen = set()
+    duplicates = 0
     try:
         for spec in specs:
             for doc in iter_source(spec):
                 if should_stop and should_stop():
                     raise InterruptedError("dataset preparation cancelled")
+                digest = hashlib.sha256((json.dumps(doc.messages, sort_keys=True) if doc.messages else doc.text).encode()).digest()
+                if digest in seen:
+                    duplicates += 1
+                    continue
+                seen.add(digest)
                 if doc.messages:
                     msgs = [Message(m["role"], m["content"], allow_special=doc.trusted and m["role"] == "assistant")
                             for m in doc.messages]
@@ -84,8 +91,17 @@ def prepare_dataset(
         for fb, fm in files.values():
             fb.close()
             fm.close()
+    if counts['train'] == 0 and counts['val'] > 1:
+        for kind in ('bin', 'mask'):
+            (out / f'val.{kind}.tmp').replace(out / f'train.{kind}.tmp')
+            (out / f'val.{kind}.tmp').write_bytes(b'')
+        counts['train'], counts['val'] = counts['val'], 0
+        docs['train'], docs['val'] = docs['val'], 0
     if counts["train"] == 0:
-        raise ValueError("no training tokens were produced from the given sources")
+        kinds = ', '.join(f"{s.kind}:{Path(s.target).name}" for s in specs)
+        raise ValueError(f"No text records were extracted from {kinds}; check empty files, ignored paths and supported TXT/JSONL formats")
+    if counts['train'] + counts['val'] < 2:
+        raise ValueError('Insufficient tokens for separate training and validation splits')
     if counts["val"] == 0:  # tiny corpora: carve validation from the end of train
         _split_tail(out, dtype, max(1, counts["train"] // 50))
         moved = max(1, counts["train"] // 50)
@@ -96,6 +112,7 @@ def prepare_dataset(
         (out / f"{split}.mask.tmp").replace(out / f"{split}.mask")
     meta = {
         "format": 1,
+        "duplicates_skipped": duplicates,
         "created": time.time(),
         "dtype": np.dtype(dtype).name,
         "tokenizer_path": str(Path(tokenizer_path).resolve()),

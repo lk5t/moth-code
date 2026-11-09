@@ -160,6 +160,7 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
         tok = Tokenizer.load(tok_path)
         mix = factory.tokenize_build(out, tok, tok_path, log=progress)
         registered = 0
+        registration_errors = []
         for d, info in mix["domains"].items():
             ddir = out / "tokens" / info["dir"]
             user_data = bool(fb) and any(r["domain"] == d for r in fb)
@@ -179,10 +180,12 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
                 # catalog data is pre-approved; feedback is included only with each user's consent
                 DS.approve(ctx, row["id"], None, user_data_permission=user_data)
                 registered += 1
-            except Exception:  # noqa: BLE001 - registration problems never lose the build
-                pass
+            except Exception as exc:  # keep valid domains and report the failed domain
+                from moth.security.redaction import redact
+                registration_errors.append(f"{d}: {redact(str(exc))[0]}")
         if not registered:
-            raise ValueError("No prepared domain could be registered and approved")
+            raise ValueError("No prepared domain could be registered and approved: " + "; ".join(registration_errors))
+        manifest["registration_errors"] = registration_errors
         manifest["token_counts"] = {d: i["tokens"] for d, i in mix["domains"].items()}
         progress("Prepared and approved")
         upd(status="ready", path=str(out), content_sha256=manifest["content_sha256"],
@@ -191,8 +194,8 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
             from moth_server.evolution import engine as EN
             EN.wake(ctx)  # new data is ready now; do not wait for the next daily cycle
     except Exception as e:  # noqa: BLE001
-        upd(status="failed", error=f"{type(e).__name__}: {e}"[:2000], finished_at=now())
-        traceback.print_exc()
+        from moth.security.redaction import redact
+        upd(status="failed", error=redact(f"{type(e).__name__}: {e}")[0][:2000], finished_at=now())
 
 
 def check_updates(ctx: Ctx, fetch_json=_fetch_json, sources=None) -> list[dict[str, Any]]:

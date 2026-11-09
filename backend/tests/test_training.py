@@ -55,7 +55,8 @@ def cfg(pipeline, out, **kw):
 
 def test_dataset_preparation(tiny_pipeline):
     meta = tiny_pipeline["meta"]
-    assert meta["tokens"]["train"] > 1000 and meta["tokens"]["val"] > 0
+    assert meta["tokens"]["train"] > 64 and meta["tokens"]["val"] > 0
+    assert meta["duplicates_skipped"] == 32  # repeated fixture files are excluded before splitting
     assert meta["sources"][0]["license"] == "MIT"
     ds = TokenDataset(tiny_pipeline["dataset"], "train", 32)
     x, y, m = ds.batch(4, torch.Generator().manual_seed(0))

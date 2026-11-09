@@ -34,7 +34,7 @@ from moth.workspace.scanner import iter_files
 TEXT_EXTENSIONS = {
     ".py", ".js", ".ts", ".tsx", ".jsx", ".rs", ".go", ".java", ".kt", ".c", ".h", ".cpp", ".hpp", ".cc", ".cs",
     ".rb", ".php", ".swift", ".html", ".css", ".scss", ".json", ".toml", ".yaml", ".yml", ".md", ".txt", ".rst",
-    ".sh", ".ps1", ".sql", ".lua", ".dart", ".vue", ".svelte", ".zig", ".ini", ".cfg",
+    ".jsonl", ".sh", ".ps1", ".sql", ".lua", ".dart", ".vue", ".svelte", ".zig", ".ini", ".cfg",
 }
 
 # Vetted public datasets. ``license`` is the dataset's published license; users
@@ -179,43 +179,80 @@ def _iter_stdlib(root: Path) -> Iterator[Document]:
 
 def _iter_dir(root: Path) -> Iterator[Document]:
     if not root.is_dir():
-        raise FileNotFoundError(f"directory not found: {root}")
+        raise FileNotFoundError(f"directory not found: {root.name}")
     for rel, path in iter_files(root, max_files=1_000_000):
-        if path.suffix.lower() not in TEXT_EXTENSIONS or is_secret_path(rel):
+        if path.suffix.lower() not in TEXT_EXTENSIONS or is_secret_path(rel) or path.is_symlink():
+            continue
+        if path.suffix.lower() == '.jsonl':
+            yield from _iter_jsonl(path)
             continue
         try:
-            if path.stat().st_size > 1_000_000:
-                continue
-            text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-        yield Document(text, f"dir:{root}", rel)
+            with path.open(encoding='utf-8-sig') as stream:
+                index = 0
+                while text := stream.read(256 * 1024):
+                    yield Document(text, f"dir:{root}", f"{rel}:{index}")
+                    index += 1
+        except UnicodeDecodeError:
+            raise ValueError(f"{rel}: expected UTF-8 text") from None
 
 
 def _iter_jsonl(path: Path) -> Iterator[Document]:
-    with open(path, encoding="utf-8") as f:
-        for i, line in enumerate(f):
-            line = line.strip()
-            if not line:
+    with open(path, encoding="utf-8-sig") as f:
+        for i, line in enumerate(f, 1):
+            if not line.strip():
                 continue
-            row = json.loads(line)
-            if "messages" in row:
-                text = "\n".join(m.get("content", "") for m in row["messages"])
-                yield Document(text, f"jsonl:{path}", str(i), messages=row["messages"],
-                               trusted=bool(row.get("moth_trusted")))
+            try:
+                row = json.loads(line)
+            except ValueError:
+                raise ValueError(f"{path.name}: line {i}: malformed JSON") from None
+            if not isinstance(row, dict):
+                raise ValueError(f"{path.name}: line {i}: expected an object")
+            messages = row.get('messages')
+            if messages is None and ('prompt' in row or 'answer' in row):
+                if not all(isinstance(row.get(k), str) and row[k].strip() for k in ('prompt', 'answer')):
+                    raise ValueError(f"{path.name}: line {i}: prompt and answer must be nonempty text")
+                messages = [{'role': 'user', 'content': row['prompt']}, {'role': 'assistant', 'content': row['answer']}]
+            if messages is not None:
+                if (not isinstance(messages, list) or not messages or any(not isinstance(m, dict)
+                    or m.get('role') not in ('system', 'user', 'assistant', 'tool', 'tool_call', 'tool_result')
+                    or not isinstance(m.get('content'), str) for m in messages)
+                    or not any(m['role'] == 'assistant' and m['content'].strip() for m in messages)):
+                    raise ValueError(f"{path.name}: line {i}: messages need valid roles, text content and an assistant answer")
+                messages = [{**m, 'role': 'tool_result' if m['role'] == 'tool' else m['role']} for m in messages]
+                yield Document('\n'.join(m['content'] for m in messages), f'jsonl:{path}', str(i),
+                               messages=messages, trusted=bool(row.get('moth_trusted')))
+            elif isinstance(row.get('text'), str) and row['text'].strip():
+                yield Document(row['text'], f'jsonl:{path}', str(i))
             else:
-                yield Document(row.get("text", ""), f"jsonl:{path}", str(i))
+                raise ValueError(f"{path.name}: line {i}: expected nonempty text, prompt/answer, or messages")
 
 
 def _iter_hf(src: SourceSpec) -> Iterator[Document]:
     try:
         import datasets  # type: ignore
     except ImportError as e:
-        raise RuntimeError("Hugging Face sources need the optional 'datasets' package: pip install datasets") from e
+        raise RuntimeError(f"Hugging Face source {src.target}: dataset support is not installed; install the backend datasets extra or update to a build with dataset support") from None
     entry = catalog_entry(src.spec) or {}
     field_name = src.options.get("field") or entry.get("field") or "text"
     config = src.options.get("config") or entry.get("config")
     split = src.options.get("split", "train")
-    ds = datasets.load_dataset(src.target, config, split=split, streaming=True)
-    for i, row in enumerate(ds):
-        yield Document(str(row.get(field_name, "")), src.spec, str(i))
+    try:
+        ds = datasets.load_dataset(src.target, config, split=split, streaming=True)
+        for i, row in enumerate(ds):
+            text = row.get(field_name)
+            if not isinstance(text, str):
+                raise ValueError(f"Hugging Face source {src.target}: record {i} lacks text field {field_name}")
+            yield Document(text, src.spec, str(i))
+    except Exception as error:
+        status = getattr(getattr(error, 'response', None), 'status_code', None)
+        kind = type(error).__name__
+        if status in (401, 403) or 'Gated' in kind:
+            reason = 'access denied; authenticate with an authorized account and accept the source license if required'
+        elif status == 404 or 'NotFound' in kind:
+            reason = 'repository, configuration or split is unavailable; check the selected source and access'
+        elif isinstance(error, ValueError):
+            reason = 'invalid configuration or missing text field; check the source field and split'
+        else:
+            reason = 'download or preparation failed; check connectivity and retry this source'
+        # Do not expose request URLs, authorization headers or hub tokens from upstream exceptions.
+        raise RuntimeError(f"Hugging Face source {src.target}: {reason} ({kind})") from None

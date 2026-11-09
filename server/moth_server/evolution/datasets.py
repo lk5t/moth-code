@@ -18,6 +18,7 @@ import shutil
 import tarfile
 import tempfile
 import zipfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -123,7 +124,7 @@ def register_prepared(ctx: Ctx, src_dir: Path, name: str, tags: list[str], conta
     """Register a dataset prepared on the server (``moth prepare``), copied into MOTH's storage."""
     src_dir = Path(src_dir).resolve()
     info = inspect(src_dir)
-    dest = root(ctx) / f"ds-{info['sha256'][:16]}"
+    dest = root(ctx) / f"ds-{info['sha256'][:16]}-{uuid.uuid4().hex[:8]}"
     if dest.resolve() != src_dir:
         shutil.rmtree(dest, ignore_errors=True)
         shutil.copytree(src_dir, dest)
@@ -169,7 +170,10 @@ def create_from_files(ctx: Ctx, upload: Path, filename: str, name: str, license_
     with tempfile.TemporaryDirectory(prefix="moth-ds-", dir=root(ctx)) as tmp:
         src = Path(tmp) / "src"
         src.mkdir()
-        _extract(upload, filename, src)
+        try:
+            _extract(upload, filename, src)
+        except (OSError, tarfile.TarError, zipfile.BadZipFile):
+            raise DatasetError(f"{Path(filename).name}: unreadable or invalid upload archive") from None
         out = Path(tmp) / "prepared"
         try:
             prepare_dataset([{"spec": f"dir:{src}", "license": license_.strip()}], tok, tok_path, out)
@@ -183,7 +187,7 @@ def create_from_files(ctx: Ctx, upload: Path, filename: str, name: str, license_
             s["spec"] = "upload:" + Path(filename).name[:80]
         (out / "meta.json").write_text(json.dumps(meta, indent=2))
         info = inspect(out)
-        dest = root(ctx) / f"ds-{info['sha256'][:16]}"
+        dest = root(ctx) / f"ds-{info['sha256'][:16]}-{uuid.uuid4().hex[:8]}"
         if any(r["sha256"] == info["sha256"] and r["status"] != "revoked" for r in all_(ctx)):
             raise DatasetError("this data is already registered")
         shutil.rmtree(dest, ignore_errors=True)

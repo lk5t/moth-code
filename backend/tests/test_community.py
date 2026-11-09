@@ -57,7 +57,7 @@ def test_federated_average_weighted():
 def coordinator(tmp_path, tiny_model, tiny_pipeline):
     root = tmp_path / "coord"
     init_coordinator(root, tiny_model["dir"], tiny_pipeline["dataset"], shards=3,
-                     train=TrainSpec(steps=6, lr=1e-3, batch_size=4, seq_len=64), min_contributions=2)
+                     train=TrainSpec(steps=6, lr=1e-4, batch_size=4, seq_len=64), min_contributions=2)
     return TestClient(create_coordinator_app(root, admin_token="adm")), root
 
 
@@ -74,7 +74,7 @@ def test_full_round_two_clients_aggregates_new_version(coordinator):
     assert http.get("/v1/info").json()["pending_contributions"] == 1
     b = CommunityClient(settings(), "client-b", http=http)
     r2 = b.run_round()
-    assert r2["accepted"] and r2["aggregated"]["version"] == 1
+    assert r2["accepted"] and r2["aggregated"]["version"] == 1, json.dumps(r2)
     info = http.get("/v1/info").json()
     assert info["version"] == 1 and info["round"] == 1
     v1 = info["versions"][1]
