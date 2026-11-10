@@ -8,13 +8,14 @@ vi.mock("@/lib/hooks",()=>({useResource:(path:string)=>({data:path.startsWith('/
 vi.mock("@/features/agent/AgentPanel",()=>({AgentPanel:()=>null}));
 vi.mock("@/features/account/AccountDialog",()=>({openAccountDialog:vi.fn()}));
 import { ChatPanel } from "@/features/chat/ChatPanel";
+import { appStore } from "@/lib/app-state";
 import { _testing } from "@/lib/events";
-beforeEach(()=>{vi.stubGlobal("ResizeObserver",class {observe(){} disconnect(){} unobserve(){}});HTMLElement.prototype.scrollTo=vi.fn();});
+beforeEach(()=>{appStore.setState({chatRequest:null,chatSession:{conversationId:null,title:"New conversation",busy:false}});vi.stubGlobal("ResizeObserver",class {observe(){} disconnect(){} unobserve(){}});HTMLElement.prototype.scrollTo=vi.fn();});
 afterEach(()=>{cleanup();vi.unstubAllGlobals();});
 it("does not pull a reader to the bottom while new tokens arrive",async()=>{
   mocks.get.mockResolvedValue([{id:1,role:"user",content:"Question"},{id:2,role:"assistant",content:"Old answer"}]);
   render(<ChatPanel general/>);
-  fireEvent.change(screen.getByRole("combobox",{name:"Conversation"}),{target:{value:"1"}});
+  act(()=>appStore.setState({chatRequest:{sequence:1,conversationId:1}}));
   await screen.findByText("Old answer");
   const scroll=screen.getByText("Old answer").closest('.overflow-y-auto') as HTMLElement;
   const move=vi.fn();scroll.scrollTo=move;
@@ -29,4 +30,13 @@ it("does not pull a reader to the bottom while new tokens arrive",async()=>{
   fireEvent.click(screen.getByRole("button",{name:"Regenerate"}));
   await waitFor(()=>expect(mocks.post).toHaveBeenCalledWith('/api/chat',expect.objectContaining({regenerate:true,message:"Question",conversation_id:1})));
   expect(screen.getAllByText("Question")).toHaveLength(1);
+});
+
+it("protects an unsent draft when sidebar navigation is cancelled",async()=>{
+ render(<ChatPanel general/>);const draft=screen.getByRole("textbox",{name:"Message MOTH"});
+ fireEvent.change(draft,{target:{value:"Keep this unsent draft"}});
+ vi.stubGlobal("confirm",vi.fn(()=>false));act(()=>appStore.setState({chatRequest:{sequence:1,conversationId:null}}));
+ expect(draft).toHaveValue("Keep this unsent draft");
+ vi.stubGlobal("confirm",vi.fn(()=>true));act(()=>appStore.setState({chatRequest:{sequence:2,conversationId:null}}));
+ expect(draft).toHaveValue("");
 });

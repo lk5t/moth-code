@@ -5,7 +5,7 @@ import { useCloudStatus } from "@/lib/cloud";
 import { openAccountDialog } from "@/features/account/AccountDialog";
 import { get, post } from "@/lib/backend";
 import { useEvent } from "@/lib/events";
-import { useApp } from "@/lib/app-state";
+import { appStore, useApp } from "@/lib/app-state";
 import { useResource } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
@@ -49,6 +49,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     [],
   );
   const [cid, setCid] = useState<number | null>(null);
+  const chatRequest=useApp(s=>s.chatRequest);
   const [hasOlder, setHasOlder] = useState(false);
   const followTail = useRef(true);
   const conversationLoad = useRef(0);
@@ -57,6 +58,17 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
   const [busy, setBusy] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  useEffect(()=>{
+    if(!general)return;
+    const title=conversations?.find(c=>c.id===cid)?.title??(chatRequest?.conversationId===cid&&chatRequest.title?chatRequest.title:cid===null?'New conversation':'Current conversation');
+    appStore.setState({chatSession:{conversationId:cid,title,busy}});
+  },[general,cid,busy,conversations,chatRequest?.title]);
+  useEffect(()=>{
+    if(!general||!chatRequest||busy)return;
+    if(chatRequest.conversationId===cid && cid!==null)return;
+    if(input.trim()&&!confirm('Change conversation and discard the unsent message? Cancel to keep your draft.'))return;
+    setCid(chatRequest.conversationId);setMessages([]);setInput('');
+  },[general,chatRequest?.sequence]);
   useLayoutEffect(() => {
     const field = composer.current;
     if (!field) return;
@@ -201,7 +213,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2">
+      {!general && <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2">
         {!general && (
           <div className="flex rounded-md border border-border p-0.5">
             {(["chat", "agent"] as const).map((m) => (
@@ -244,7 +256,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
           <Cloud className="size-3" />
           <span className="truncate">{currentLabel}</span>
         </span>}
-      </div>
+      </div>}
 
       {mode === "agent" ? (
         <AgentPanel />
@@ -270,7 +282,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                   </div>
                 ) : (
                   <div className="max-w-sm text-xs text-muted">
-                    {liveModel?.current ? modelLabel(liveModel.current) : modelLabel(cloud?.model)} on MOTH Cloud · an early, independently trained model.
+                    {currentLabel}{liveModel?.current?.initialization === "random-untrained" && !usingLocal ? " · untrained baseline; capabilities have not been established." : ". Measured model details are available in Overview."}
                   </div>
                 )}
                 {!noModel && <div className="flex flex-wrap gap-1.5">
@@ -280,7 +292,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                 </div>}
               </div>
             ) : (
-              <div className="flex w-full flex-col gap-3">
+              <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
                 {messages.map((m,index) => {
                   const content = <div key={m.id} className={cn("flex animate-rise", m.role === "user" && "justify-end")}>
                     {m.role === "user" ? (
@@ -314,7 +326,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
               </div>
             )}
           </div>
-          <div className="shrink-0 px-2 pb-2 pt-1 sm:px-3">
+          <div className="mx-auto w-full max-w-4xl shrink-0 px-3 pb-3 pt-1 sm:px-4">
             <div className="flex w-full items-end gap-2 rounded-lg border border-border bg-surface p-1.5 transition-shadow focus-within:border-accent/50 focus-within:shadow-glow">
               <Textarea
                 ref={composer}

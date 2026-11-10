@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 vi.mock("@/features/workspace/WorkspaceView", () => ({ WorkspaceView: () => <input aria-label="Unsaved code" defaultValue="original code" /> }));
-vi.mock("@/features/chat/ChatView", () => ({ ChatView: () => <textarea aria-label="Chat draft" defaultValue="" /> }));
+vi.mock("@/features/chat/ChatView", () => ({ ChatView: () => <textarea aria-label="Chat draft" defaultValue="" />,ModelBar:()=> <span>Active model</span> }));
 import { WorkspaceShell } from "@/features/workspace/WorkspaceShell";
 import { appStore } from "@/lib/app-state";
 

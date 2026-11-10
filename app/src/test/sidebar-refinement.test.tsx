@@ -1,0 +1,34 @@
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+const mock=vi.hoisted(()=>({get:vi.fn(),open:vi.fn(),pick:vi.fn()}));
+vi.mock('@/lib/backend',()=>({get:mock.get}));
+vi.mock('@/lib/account',()=>({useAccount:(fn:any)=>fn({token:'test',serverUrl:'https://test.invalid',user:{role:'owner'}}),serverApi:async()=>({})}));
+vi.mock('@/features/account/AccountMenu',()=>({AccountMenu:()=> <span>Account</span>}));
+vi.mock('@/features/workspace/project-actions',()=>({openProjectPath:mock.open,pickProject:mock.pick}));
+import {NavRail} from '@/components/NavRail';
+import {requestChat} from '@/components/SidebarCollections';
+import {TooltipProvider} from '@/components/ui/tooltip';
+import {appStore} from '@/lib/app-state';
+beforeEach(()=>{mock.get.mockResolvedValue([{id:7,title:'An earlier conversation'}]);appStore.setState({view:'intelligence',sidebarCollapsed:false,chatRequest:null,chatSession:{conversationId:null,title:'New conversation',busy:false},projects:[{id:3,name:'Example project',path:'/authorized/example',last_opened:1}]});});
+afterEach(()=>{cleanup();vi.clearAllMocks();});
+it('searches existing history, opens recent projects and requests an existing chat',async()=>{
+ render(<TooltipProvider><NavRail/></TooltipProvider>);
+ fireEvent.click(await screen.findByRole('button',{name:'An earlier conversation'}));
+ expect(appStore.getState().chatRequest).toEqual({sequence:1,conversationId:7,title:'An earlier conversation'});
+ expect(appStore.getState().view).toBe('chat');
+ fireEvent.change(screen.getByRole('textbox',{name:'Search conversations'}),{target:{value:'earlier'}});
+ await waitFor(()=>expect(mock.get).toHaveBeenCalledWith('/api/conversations?scope=general&q=earlier'));
+ fireEvent.click(screen.getByRole('button',{name:'Example project'}));
+ await waitFor(()=>expect(mock.open).toHaveBeenCalledWith('/authorized/example'));
+});
+it('persists collapse and blocks new-conversation requests during a reply',async()=>{
+ render(<TooltipProvider><NavRail/></TooltipProvider>);
+ fireEvent.click(screen.getByRole('button',{name:'Collapse sidebar'}));
+ expect(JSON.parse(localStorage.getItem('moth.navigation')!).sidebarCollapsed).toBe(true);
+ expect(screen.queryByRole('textbox',{name:'Search conversations'})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Expand sidebar'}));
+ expect(screen.getByRole('textbox',{name:'Search conversations'})).toBeInTheDocument();
+ act(()=>appStore.setState({chatSession:{conversationId:7,title:'Reply in progress',busy:true}}));
+ expect(screen.getByRole('button',{name:'New Chat'})).toBeDisabled();requestChat(null);
+ expect(appStore.getState().chatRequest).toBeNull();
+});

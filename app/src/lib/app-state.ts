@@ -21,9 +21,10 @@ function navigation(): Partial<AppState> {
   try {
     const n = JSON.parse(localStorage.getItem("moth.navigation") ?? "{}");
     return {
-      view: ["overview", "data", "activity", "chat", "workspace", "intelligence", "evolution", "network", "training", "models", "owner", "settings"].includes(n.view) ? n.view : "overview",
+      view: ["overview", "data", "activity", "chat", "workspace", "intelligence", "evolution", "network", "training", "models", "owner", "settings"].includes(n.view) ? n.view : "chat",
       workspaceMode: n.workspaceMode === "code" ? "code" : "chat",
       intelligenceTab: ["overview", "training", "evolution", "improvements", "history", "advanced", "network", "data"].includes(n.intelligenceTab) ? n.intelligenceTab : "overview",
+      ...(typeof n.sidebarCollapsed === "boolean" ? {sidebarCollapsed:n.sidebarCollapsed} : {}),
       ...(typeof n.explorerOpen === "boolean" ? { explorerOpen: n.explorerOpen } : {}),
       ...(typeof n.toolsOpen === "boolean" ? { toolsOpen: n.toolsOpen } : {}),
       ...(typeof n.terminalOpen === "boolean" ? { terminalOpen: n.terminalOpen } : {}),
@@ -46,11 +47,14 @@ export interface AppState {
   updateVersion: string | null;
   workspaceMode: "code" | "chat";
   intelligenceTab: IntelligenceTab;
+  sidebarCollapsed: boolean;
+  chatRequest: {sequence:number; conversationId:number|null;title?:string}|null;
+  chatSession: {conversationId:number|null; title:string; busy:boolean};
   workspaceLayout?: Record<string, number>;
 }
 
 export const appStore = createStore<AppState>({
-  view: "overview",
+  view: "chat",
   project: null,
   projects: [],
   openFiles: [],
@@ -63,6 +67,9 @@ export const appStore = createStore<AppState>({
   updateVersion: null,
   workspaceMode: "chat",
   intelligenceTab: "overview",
+  sidebarCollapsed: false,
+  chatRequest: null,
+  chatSession: {conversationId:null,title:"New conversation",busy:false},
   ...navigation(),
 });
 
@@ -73,7 +80,7 @@ appStore.subscribe(() => {
   if (mode !== s.workspaceMode) { appStore.setState({ workspaceMode: mode }); return; }
   try {
     const value = JSON.stringify({ view: s.view, workspaceMode: mode,
-      intelligenceTab: s.intelligenceTab, explorerOpen: s.explorerOpen, toolsOpen: s.toolsOpen,
+      intelligenceTab: s.intelligenceTab, sidebarCollapsed:s.sidebarCollapsed, explorerOpen: s.explorerOpen, toolsOpen: s.toolsOpen,
       terminalOpen: s.terminalOpen, workspaceLayout: s.workspaceLayout });
     if (value !== savedNavigation) { localStorage.setItem("moth.navigation", value); savedNavigation = value; }
   } catch { /* storage unavailable */ }
