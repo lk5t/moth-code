@@ -96,7 +96,7 @@ function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric
   );
 }
 
-export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
+export function IntelligenceView({ embedded = false, focus = "all" }: { embedded?: boolean; focus?: "all" | "history" | "improvements" }) {
   const sessionToken = useAccount((s) => s.token);
   const signedIn = !!sessionToken;
   const {data:p,error:err} = useCloudProgress();
@@ -126,14 +126,14 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
           <h1 className="text-lg font-semibold">Intelligence</h1>
           <p className="mt-1 text-xs text-muted">Recorded model sizes and training progress, with capabilities measured on held-out benchmarks MOTH never trained on.</p>
         </div>}
-        {p.deployment_events?.length > 0 && <Card><CardHeader><CardTitle>Deployment history</CardTitle>
+        {focus !== "improvements" && p.deployment_events?.length > 0 && <Card><CardHeader><CardTitle>Deployment history</CardTitle>
           <CardDescription>Recorded promotions and rollbacks</CardDescription></CardHeader>
           <CardContent><ol className="max-h-48 space-y-2 overflow-auto text-xs">
             {p.deployment_events.map((event: Any, index: number) => <li key={`${event.ts}-${index}`} className="flex flex-wrap gap-x-3 gap-y-1 border-l-2 border-accent pl-3">
               <time className="text-muted">{when(event.ts)}</time><span>{event.action.replaceAll('.', ' · ')}</span><span className="font-mono text-muted">{event.target}</span>
             </li>)}
           </ol></CardContent></Card>}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {focus === "all" && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat icon={<Brain />} label="Current model" value={cur ? (modelLabel(cur)) : "None yet"}
             sub={cur ? `${formatNumber(cur.params ?? 0)} parameters · ${METHOD[cur.method] ?? cur.method}` : "Nothing is deployed on MOTH Cloud"} />
           <Stat icon={<Sparkles />} label="Training" value={!p.training.enabled ? "off" : p.training.paused ? "paused" : p.training.cycle ? p.training.cycle.status.replaceAll("_", " ") : "waiting"}
@@ -145,7 +145,8 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
             sub={cur?.lineage_totals ? `${formatNumber(cur.lineage_totals.tokens)} tokens trained since the foundation` : "one continuous model"} />
         </div>
 
-        {cur && (
+        }
+        {focus !== "history" && cur && (
           <Card>
             <CardHeader>
               <CardTitle>Capabilities of {modelLabel(cur)}</CardTitle>
@@ -164,14 +165,15 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
           </Card>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        {focus === "all" && <div className="grid gap-3 sm:grid-cols-2">
           <Stat icon={<GitBranch />} label="Stable model" value={p.stable ? (modelLabel(p.stable)) : "—"}
             sub={p.rollout?.length > 1 ? `staged rollout: ${p.rollout.map((r: Any) => `v${r.version} ${r.role}${r.percent ? ` ${r.percent}%` : ""}`).join(", ")}` : "serves everyone"} />
           <Stat icon={<GitBranch />} label="Development checkpoint" value={p.development ? `v${p.development.version}` : "—"}
             sub={p.development ? "full training state kept: the next cycle continues from here" : "created by the first training cycle"} />
         </div>
 
-        <Card>
+        }
+        {focus !== "improvements" && <Card>
           <CardHeader>
             <CardTitle>MOTH timeline</CardTitle>
             <CardDescription>Every version of the one MOTH model, from its foundation onward. Points are measurements; nothing is interpolated.</CardDescription>
@@ -218,9 +220,9 @@ export function IntelligenceView({ embedded = false }: { embedded?: boolean }) {
               ))}
             </ol>
           </CardContent>
-        </Card>
+        </Card>}
 
-        {p.datasets && (
+        {focus === "all" && p.datasets && (
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><Database className="size-4 text-accent" />What MOTH learns from</CardTitle>
               <CardDescription>Approved, licensed datasets (dataset library build {p.datasets.build}).</CardDescription></CardHeader>

@@ -15,7 +15,7 @@ export interface OpenFile {
 }
 
 export type View = "overview" | "data" | "activity" | "chat" | "workspace" | "intelligence" | "evolution" | "network" | "owner" | "training" | "models" | "settings";
-export type IntelligenceTab = "overview" | "training" | "evolution" | "network" | "data";
+export type IntelligenceTab = "overview" | "training" | "evolution" | "improvements" | "history" | "advanced" | "network" | "data";
 
 function navigation(): Partial<AppState> {
   try {
@@ -23,7 +23,7 @@ function navigation(): Partial<AppState> {
     return {
       view: ["overview", "data", "activity", "chat", "workspace", "intelligence", "evolution", "network", "training", "models", "owner", "settings"].includes(n.view) ? n.view : "overview",
       workspaceMode: n.workspaceMode === "code" ? "code" : "chat",
-      intelligenceTab: ["overview", "training", "evolution", "network", "data"].includes(n.intelligenceTab) ? n.intelligenceTab : "overview",
+      intelligenceTab: ["overview", "training", "evolution", "improvements", "history", "advanced", "network", "data"].includes(n.intelligenceTab) ? n.intelligenceTab : "overview",
       ...(typeof n.explorerOpen === "boolean" ? { explorerOpen: n.explorerOpen } : {}),
       ...(typeof n.toolsOpen === "boolean" ? { toolsOpen: n.toolsOpen } : {}),
       ...(typeof n.terminalOpen === "boolean" ? { terminalOpen: n.terminalOpen } : {}),

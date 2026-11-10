@@ -12,7 +12,7 @@ export function OverviewSummary({progress,updatedAt}:{progress:Any|null;updatedA
   return <Card><CardContent className="space-y-4 p-4">
     <div className="flex flex-wrap items-center gap-3"><LivingMoth className="size-10"/><div>
       <p className="text-[11px] text-muted">Active native model</p><h2 className="text-xl font-medium">{current ? modelLabel(current) : "No native model available"}</h2>
-      {current && <p className="text-xs text-muted">Revision {current.revision ?? "not recorded"} · {current.name}</p>}
+      {current && <p className="text-xs text-muted">Revision {current.revision ?? "not recorded"} · {typeof current.params === "number" ? current.params.toLocaleString()+" actual parameters" : "Parameter measurement unavailable"} · {current.name}</p>}
     </div><div className="ml-auto"><IntelligencePulse /></div></div>
     <div className="grid gap-3 text-xs sm:grid-cols-3">
       <div><p className="text-faint">Service</p><p>{serving ? serving.accepting_requests ? "Ready to answer" : serving.reason : current ? "Model loaded; service status not reported" : "Waiting for a native model"}</p></div>

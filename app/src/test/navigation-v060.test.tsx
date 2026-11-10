@@ -24,12 +24,12 @@ it("supports keyboard feature search and legacy route adapters", () => {
   fireEvent.change(search,{target:{value:"Evolution"}});
   fireEvent.keyDown(search,{key:"Enter"});
   expect(appStore.getState().view).toBe("intelligence");
-  expect(appStore.getState().intelligenceTab).toBe("evolution");
+  expect(appStore.getState().intelligenceTab).toBe("improvements");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   openIntelligence("network"); expect(appStore.getState().view).toBe("network");
   openIntelligence("data"); expect(appStore.getState().view).toBe("data");
   expect(workspaceOf("training")).toBe("intelligence");
   expect(workspaceOf("models")).toBe("intelligence");
   expect(workspaceOf("owner")).toBe("settings");
-  navigate("intelligence");expect(appStore.getState().intelligenceTab).toBe("training");
+  navigate("intelligence");expect(appStore.getState().intelligenceTab).toBe("overview");
 });

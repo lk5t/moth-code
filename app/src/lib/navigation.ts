@@ -17,6 +17,6 @@ export function workspaceOf(view: View): View {
 }
 export function navigate(view: View) {
   const state = appStore.getState();
-  appStore.setState({ view, ...(view === "intelligence" && !["training", "evolution"].includes(state.intelligenceTab)
-    ? { intelligenceTab: "training" as const } : {}) });
+  appStore.setState({ view, ...(view === "intelligence" && !["overview", "training", "evolution", "improvements", "history", "advanced"].includes(state.intelligenceTab)
+    ? { intelligenceTab: "overview" as const } : {}) });
 }

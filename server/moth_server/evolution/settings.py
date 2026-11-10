@@ -17,6 +17,7 @@ DEFAULTS: dict[str, Any] = {
     "training_mode": "automatic",
     "training_priority": "balanced",
     "enabled": True,
+    "automatic": True,              # false: advance only an explicitly requested cycle
     "paused": False,
     "interval_hours": 0.01,          # time between the end of one cycle and the start of the next
     "auto_deploy": True,             # deploy a candidate that passed every gate (then monitor it)
@@ -103,7 +104,7 @@ def validate(s: dict[str, Any]) -> None:
             continue
         if not isinstance(node, (int, float)) or isinstance(node, bool) or not (lo <= node <= hi):
             raise SettingsError(f"{path} must be a number between {lo} and {hi}")
-    for b in ("enabled", "paused", "auto_deploy", "allow_from_scratch", "cloud_workers"):
+    for b in ("enabled", "automatic", "paused", "auto_deploy", "allow_from_scratch", "cloud_workers"):
         if not isinstance(s.get(b), bool):
             raise SettingsError(f"{b} must be true or false")
     ids = s.get("worker_ids")

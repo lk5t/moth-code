@@ -216,6 +216,9 @@ def _maybe_start(ctx: Ctx, settings: dict, woken: bool = False) -> dict:
     from moth_server import models as M
 
     st = state(ctx)
+    if not settings.get("automatic", True) and not st.get("manual_cycle_requested"):
+        _set_state(ctx, idle_reason="Manual training: start a cycle in Intelligence → Training.")
+        return {"state": "manual", "reason": "Waiting for an explicit training request"}
     if not woken and now() < float(st["next_cycle_at"] or 0):  # an Owner action checks now
         return {"state": "scheduled", "next_cycle_at": st["next_cycle_at"]}
     base = M.deployed(ctx)
@@ -246,7 +249,8 @@ def _maybe_start(ctx: Ctx, settings: dict, woken: bool = False) -> dict:
         later = 0.0 if ctx.extras.get("evolution_wake") else now() + min(3600.0, float(settings["interval_hours"]) * 3600)
         _set_state(ctx, idle_reason=reason, next_cycle_at=later)
         return {"state": "idle", "reason": reason}
-    cyc = start_cycle(ctx, "schedule")
+    cyc = start_cycle(ctx, "manual" if st.get("manual_cycle_requested") else "schedule")
+    _set_state(ctx, manual_cycle_requested=False)
     return {"cycle": cyc["id"], "status": cyc["status"]}
 
 

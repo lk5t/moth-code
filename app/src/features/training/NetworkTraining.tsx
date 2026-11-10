@@ -1,3 +1,5 @@
+import { navigate } from "@/lib/navigation";
+import { Button as ActionButton } from "@/components/ui/button";
 import { EvolutionControls } from "./EvolutionControls";
 /**
  * Model training → MOTH training network: one model, trained by MOTH Cloud, its workers and this computer.
@@ -64,9 +66,9 @@ export function ParticipantSwitch({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function NetworkTraining() {
+export function NetworkTraining({ scope = "all" }: { scope?: "all" | "training" | "network" }) {
   const [evo, reloadEvo, loadError] = usePoll<Any>(() => serverApi<Any>("/v1/admin/evolution/status"), 5000);
-  const [con] = usePoll<Any>(() => serverApi<Any>("/v1/admin/evolution/contributions"), 5000);
+  const [con] = usePoll<Any | null>(() => scope === "training" ? Promise.resolve(null) : serverApi<Any>("/v1/admin/evolution/contributions"), 5000);
   const [msg, setMsg] = useState<string | null>(null);
   if (!evo) return <p role="status" className="text-xs text-muted">{loadError || "Loading training status…"}</p>;
   const s = evo.settings;
@@ -85,15 +87,17 @@ export function NetworkTraining() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-xs">
-        <div className="flex flex-wrap items-center gap-3">
+        {scope !== "network" && <div className="flex flex-wrap items-center gap-3">
           <Button size="sm" disabled={!!active && !s.paused} onClick={trainNow}><Play />{s.paused ? "Resume MOTH training" : active ? "Training cycle active" : "Train MOTH now"}</Button>
           {cyc && <Badge variant={active ? "accent" : cyc.status === "completed" ? "success" : "default"}>Cycle #{cyc.id}: {cyc.status.replaceAll("_", " ")}</Badge>}
           {cyc?.result?.waiting_reason && <span className="text-muted">{cyc.result.waiting_reason}</span>}
-        </div>
-        <EvolutionControls settings={s} onChange={(changes) => secure(() => serverApi("/v1/admin/evolution/settings", {
+          {!s.paused && <Button size="sm" variant="secondary" onClick={()=>secure(()=>serverApi("/v1/admin/evolution/pause",{method:"POST"})).then(reloadEvo).catch(e=>setMsg(e.message))}>Pause training</Button>}
+        </div>}
+        <EvolutionControls scope={scope} settings={s} onChange={(changes) => secure(() => serverApi("/v1/admin/evolution/settings", {
           method: "PUT", json: { changes },
         })).then(reloadEvo).catch((e) => setMsg((e as Error).message))} />
-        <ParticipantSwitch />
+        {scope === "all" && <ParticipantSwitch />}
+        {scope === "training" && <p className="text-muted">Prepare Data → Start Training → Evaluate Improvement → Apply Verified Model. Candidates keep the serving model available; only verified candidates may be promoted. <ActionButton size="sm" variant="ghost" onClick={()=>navigate("data")}>Prepare Data</ActionButton><ActionButton size="sm" variant="ghost" onClick={()=>navigate("network")}>Manage computers in Network</ActionButton></p>}
         {exp && (
           <div className="flex flex-col gap-2 rounded-md border border-border p-3">
             <div className="flex items-center gap-2 text-fg">Experiment #{exp.id} · round {Math.min(exp.round + 1, exp.rounds)} of {exp.rounds}

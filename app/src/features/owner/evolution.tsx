@@ -9,7 +9,8 @@ import { EvolutionControls } from "@/features/training/EvolutionControls";
  */
 import { useRef, useState } from "react";
 import { Activity, Cpu, Database, FlaskConical, GitBranch, HardDrive, MemoryStick, Pause, Play, RotateCcw, Sparkles, Upload } from "lucide-react";
-import { serverApi } from "@/lib/account";
+import { useResource } from "@/lib/hooks";
+import { serverApi, useAccount } from "@/lib/account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,7 +51,7 @@ const until = (ts: number) => {
   return s <= 60 ? "within a minute" : `in ${duration(s)}`;
 };
 
-export function EvolutionPanel() {
+export function EvolutionPanel({ section = "all" }: { section?: "all" | "improvements" | "advanced" }) {
   const { data: st, load } = usePoll<Any>("/v1/admin/evolution/status", 5000);
   const { run, view } = useAction(load);
   if (!st) return null;
@@ -61,7 +62,7 @@ export function EvolutionPanel() {
     : active ? CYCLE_LABEL[cyc.status] : st.state.idle_reason ? "Idle" : "Scheduled";
   return (
     <div className="flex flex-col gap-4">
-      <Card>
+      {section === "all" && <Card>
         <CardContent className="flex flex-col gap-3 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-[13px] font-medium">
@@ -88,15 +89,11 @@ export function EvolutionPanel() {
           {active && cyc.result?.waiting_reason && <div className="rounded border border-warning/40 bg-warning/10 p-2 text-warning">Waiting: {cyc.result.waiting_reason}</div>}
           {view}
         </CardContent>
-      </Card>
-
-      {cyc && <CycleCard cyc={cyc} />}
-      {st.comparison && <Comparison c={st.comparison} />}
-      <Versions reload={load} />
-      <Resources />
-      <Data reload={load} />
-      <ActivityLog st={st} />
-      <SettingsCard s={s} reload={load} />
+      </Card>}
+      {section !== "advanced" && cyc && <CycleCard cyc={cyc} />}
+      {section !== "advanced" && st.comparison && <Comparison c={st.comparison} />}
+      {section === "all" && <><Versions reload={load} /><Data reload={load} /><ActivityLog st={st} /></>}
+      {section !== "improvements" && <><Resources /><SettingsCard s={s} reload={load} advanced={section === "advanced"} /></>}
     </div>
   );
 }
@@ -412,10 +409,27 @@ function ActivityLog({ st }: { st: Any }) {
   );
 }
 
-function SettingsCard({ s, reload }: { s: Any; reload: () => void }) {
+function SettingsCard({ s, reload, advanced = false }: { s: Any; reload: () => void; advanced?: boolean }) {
   const { run, view } = useAction(reload);
   return <Card><CardHeader><CardTitle>Evolution settings</CardTitle></CardHeader>
-    <CardContent><EvolutionControls settings={s} onChange={(changes) => run(() => serverApi("/v1/admin/evolution/settings", {
+    <CardContent><EvolutionControls scope={advanced ? "advanced" : "all"} settings={s} onChange={(changes) => run(() => serverApi("/v1/admin/evolution/settings", {
       method: "PUT", json: { changes },
     }), "Settings saved.")} />{view}</CardContent></Card>;
 }
+
+/** Reuse the existing cycle detail renderer; the history tab does not create a second engine. */
+export function CycleHistory() {
+  const token=useAccount(s=>s.token),server=useAccount(s=>s.serverUrl);
+  const [selected,setSelected]=useState<number|null>(null);
+  const scope=server+'\0'+token;
+  const {data:cycles,error}=useResource<Any[]>("/v1/admin/evolution/cycles",[],undefined,scope,loadHistory);
+  const {data:cycle,error:detailError}=useResource<Any>(selected ? `/v1/admin/evolution/cycles/${selected}` : null,[],undefined,scope,loadHistory);
+  return <Card><CardHeader><CardTitle>Training cycles and experiments</CardTitle></CardHeader><CardContent className="space-y-3 text-xs">
+    {(error||detailError) && <p role="alert">{error||detailError}</p>}
+    {!cycles?.length && <p>No training cycles recorded.</p>}
+    <div className="flex max-h-48 flex-wrap gap-2 overflow-auto">{cycles?.map(c=><Button key={c.id} size="sm" variant={selected===c.id?'default':'secondary'} onClick={()=>setSelected(c.id)}>Cycle #{c.id} · {CYCLE_LABEL[c.status]??c.status}</Button>)}</div>
+    {cycle && <CycleCard cyc={cycle}/>}
+  </CardContent></Card>;
+}
+const loadHistory=(path:string)=>serverApi<any>(path);
+export { Versions as EvolutionVersions };

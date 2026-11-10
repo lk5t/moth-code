@@ -5,7 +5,7 @@ vi.mock("@/lib/account", () => ({ serverApi: mocks.api, useAccount: (fn: (s: any
 vi.mock("@/lib/backend", () => ({ get: mocks.get, put: mocks.put }));
 vi.mock("@/features/owner/ops", () => ({ secure: (fn: () => Promise<unknown>) => fn(), formatBytes: (n: number) => `${n} bytes`,
   ModelsPanel: () => <p>Cloud registry controls</p>, WorkersPanel: () => <p>Worker resource controls</p> }));
-vi.mock("@/features/owner/evolution", () => ({ EvolutionPanel: () => <p>Growth approval and rollback controls</p> }));
+vi.mock("@/features/owner/evolution", () => ({ EvolutionPanel: () => <p>Growth approval and rollback controls</p>,CycleHistory:()=> <p>Recorded training cycles</p>,EvolutionVersions:()=> <p>Accepted rollback versions</p> }));
 vi.mock("@/features/owner/intelligence", () => ({ IntelligencePanel: () => <p>Approved dataset controls</p> }));
 vi.mock("@/features/owner/ModelOverview", () => ({ ModelOverview: () => <p>Baseline and selected workers</p> }));
 vi.mock("@/features/training/TrainingView", () => ({ TrainingView: () => <p>Local training controls</p> }));
@@ -36,15 +36,17 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe("Intelligence consolidation", () => {
   it("keeps training/evolution focused and supports the Data workspace adapter", async () => {
     render(<IntelligenceHub />);
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Training", "Evolution"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Overview", "Training", "Improvements", "History", "Advanced"]);
     fireEvent.click(screen.getByText("Model details and measured architecture"));
     await screen.findByRole("button", { name: "Inspect layer 2" });
     fireEvent.click(screen.getByRole("button", { name: "Inspect layer 2" }));
     expect(screen.getByRole("button", { name: "Inspect layer 2" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Training" }), { button: 0 });
     await screen.findByRole("button", { name: "Train MOTH now" });
-    expect(screen.getByRole("switch", { name: "Contribute this computer" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Training Mode" })).toHaveValue("automatic");
+    expect(screen.queryByRole("switch", { name: "Contribute this computer" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Training schedule" })).toHaveValue("automatic");
+    expect(screen.queryByRole("combobox", {name:"Training Mode"})).toBeNull();
+    expect(screen.getAllByRole("button",{name:/Train MOTH now|Resume MOTH training/})).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Prepare and verify backup" })).not.toBeInTheDocument();
     act(() => appStore.setState({view:"data", intelligenceTab:"data"}));
     fireEvent.mouseDown(screen.getByRole("tab", {name:"Cloud library"}), {button:0});
@@ -75,4 +77,14 @@ it("clears model activity after a failed refresh instead of showing stale state 
     expect(screen.queryByRole("button", { name: "Inspect layer 2" })).not.toBeInTheDocument();
     expect(screen.getAllByText(/Live status unavailable/).length).toBeGreaterThan(0);
   } finally { vi.useRealTimers(); }
+});
+
+it("routes legacy evolution to Improvements and keeps history in the unified workspace",async()=>{
+ appStore.setState({view:"evolution",intelligenceTab:"evolution"});render(<IntelligenceHub/>);
+ expect(screen.getByRole("tab",{name:"Improvements"})).toHaveAttribute("aria-selected","true");
+ await screen.findByText("Growth approval and rollback controls");
+ fireEvent.mouseDown(screen.getByRole("tab",{name:"History"}),{button:0});
+ await screen.findByText("Recorded training cycles");
+ expect(appStore.getState().view).toBe("intelligence");expect(appStore.getState().intelligenceTab).toBe("history");
+ expect(screen.queryByRole("button",{name:"Train MOTH now"})).toBeNull();
 });

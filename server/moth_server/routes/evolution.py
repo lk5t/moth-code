@@ -112,6 +112,15 @@ def status(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     }
 
 
+@router.get("/growth-diagnostics")
+def growth_diagnostics(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.evolution.growth_diagnostics import inspect
+    try:
+        return inspect(ctx)
+    except (ValueError, OSError) as e:
+        raise HTTPException(409, f"Growth evidence unavailable: {e}") from None
+
+
 @router.get("/resources")
 def resources(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     from moth_server.routes.system import cpu_percent
@@ -282,12 +291,14 @@ def run_now(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
             raise HTTPException(409, str(e)) from None
         preparation = discovery.ensure_data(ctx)
         if preparation.get('status') in ('preparing', 'queued', 'running'):
+            EN._set_state(ctx, manual_cycle_requested=True)
             S.update(ctx, {'enabled': True, 'paused': False})
             EN.wake(ctx)
             return {'requested': True, 'status': 'preparing_data', 'preparation': preparation}
         raise HTTPException(409, str(e)) from None
     S.update(ctx, {'enabled': True, 'paused': False})
     EN._set_state(ctx, consecutive_failures=0)
+    EN._set_state(ctx, manual_cycle_requested=False)
     EN.kick(ctx)
     return _cycle_summary(ctx, cyc)
 
