@@ -3,7 +3,7 @@
 Repository `lk5t/moth-code`; branch `claude/jolly-darwin-2qeihd`.
 Baseline `c61d52b`; implementation through `eb362a5`.
 
-Status: all requested feature implementations are present. Corrected signed Windows/Server candidate verification is still running; publication is not authorized. This report must be finalized against the actual workflow results.
+Status: all 15 phase implementations are present. All available automated, real CPU, browser and native Windows candidate checks passed. Physical GPU and live Hugging Face verification remain unavailable as described below. Signed candidates are verified; publication awaits explicit Owner approval. The tested Desktop source is `eb362a5`; later commits only update documentation. The Server candidate uses the same final Server/Worker runtime at `a7d8e95`.
 
 ## Phase status
 
@@ -22,10 +22,10 @@ Status: all requested feature implementations are present. Corrected signed Wind
 | 11 — Full native reset | Complete implementation; isolated real trainer/files/SQLite/PostgreSQL/worker/failure/recovery/fresh-training tests. |
 | 12 — Unified activity | Complete; persisted authorization-filtered history, paging/filtering and deduplicated quiet notices. |
 | 13 — Stability/accessibility | Complete; real browser sizes, dialog focus, event/editor response-order and resource cleanup tests. |
-| 14 — Full integration | Local suites passed; corrected native Windows verification pending. |
-| 15 — Signed 0.6.0 candidate | Prepared with publication disabled; final signed artifact/upgrade checks pending. |
+| 14 — Full integration | Available CPU/browser/native Windows paths passed, including genuine training, restart, reset and upgrade. Physical GPU and live Hugging Face checks are blocked, not claimed complete. |
+| 15 — Signed 0.6.0 candidate | Complete candidate preparation: both signed workflows passed; verified artifacts uploaded. GitHub Release publication awaits explicit Owner approval. |
 
-## Verified local evidence
+## Verified automated and integration evidence
 
 - 169-test full local backend suite; four additional focused native-driver tests. Latest Linux/Windows CI covers the resulting 173 collected backend tests with applicable platform skips.
 - 188-test full local server suite, followed by reset and legacy Genesis/compute regressions; final Server candidate passed the expanded 190-test suites on SQLite and PostgreSQL.
@@ -38,9 +38,14 @@ Status: all requested feature implementations are present. Corrected signed Wind
 
 ## Candidate workflows
 
-- Corrected Server: https://github.com/lk5t/moth-code/actions/runs/42706344137
-- Corrected Desktop: https://github.com/lk5t/moth-code/actions/runs/42712321054
+- Passed Server (11/11 jobs): https://github.com/lk5t/moth-code/actions/runs/42706344137
+- Passed Desktop (14/14 jobs): https://github.com/lk5t/moth-code/actions/runs/42712321054
 - Final Server candidate passed all eleven jobs at `a7d8e952fe3bef5bd5bc760abf1529b55f8ce572`. Production signature and bundle verification passed; GitHub publication was skipped. Signed server/worker artifact: `13714576836`, SHA-256 `c0e51d9e14a9c3c72f90ba87a3b8cf3e1bf717871caaa46e757fb4a9a987794a`.
+- Final Desktop candidate passed all fourteen jobs at `eb362a5c751825909fd352d2ec6bbf1accf6601e`. Signed installer and manifest checks passed. Signed Desktop artifact: [`13719676098`](https://github.com/lk5t/moth-code/actions/runs/42712321054/artifacts/13719676098), Actions artifact ZIP SHA-256 `f3760ebc1215856c9b3d1201603472509ed1b25779ad96fd8a5290da6a719b15` (172,070,159 bytes). The Server digest above is also the Actions artifact ZIP digest, not an installer checksum; each bundle's signed manifest and checksums were independently verified inside its workflow.
+- Native Windows proof confirms the real installed frozen backend, eight workspaces, actual composer draft preservation, Cloud worker controls and personal enrollment, real CPU training cycle, 800×600 navigation, Owner credential-vault/session and workspace restoration after restart, isolated full reset, empty Overview and explicit fresh initialization. `production_reset=false`, `trained_foundation=false`.
+- Real published **0.5.9 → 0.6.0** proof confirms production signatures, tampered-installer rejection, verified background download before close, install-on-close, successful restart report and settings/account/workspace preservation. This was an isolated HTTPS server and actual Windows installation, not a live customer rollout. The historical production-signed **0.5.1 → 0.5.4** regression also passed.
+- Native evidence artifact: [`13719401241`](https://github.com/lk5t/moth-code/actions/runs/42712321054/artifacts/13719401241); upgrade evidence artifact: [`13719366424`](https://github.com/lk5t/moth-code/actions/runs/42712321054/artifacts/13719366424).
+- Both workflows explicitly skipped GitHub Release creation. GitHub API reads confirmed `desktop-v0.6.0` and `server-v0.6.0` were absent (HTTP 404) at final verification.
 - Earlier Windows candidates exposed test-driver assumptions: delayed Welcome guide, selecting conversation search instead of the composer, a shortened disclosure name, and assuming published Git tags existed in a shallow checkout. These were corrected without removing assertions or altering signing/updater checks. Run 42704682002 passed its ten CI jobs and two signed Windows update jobs, built its production-signed installer/frozen backend, logged in as the isolated Owner and preserved the actual Chat draft; it then failed on the disclosure selector. Corrected final run is listed above.
 
 ## Limits and explicit approval boundaries
