@@ -3,7 +3,7 @@
 Repository `lk5t/moth-code`; branch `claude/jolly-darwin-2qeihd`.
 Baseline `c61d52b`; implementation through `eb362a5`.
 
-Status: all 15 phase implementations are present. All available automated, real CPU, browser and native Windows candidate checks passed. Physical GPU and live Hugging Face verification remain unavailable as described below. Signed candidates are verified; publication awaits explicit Owner approval. The tested Desktop source is `eb362a5`; later commits only update documentation. The Server candidate uses the same final Server/Worker runtime at `a7d8e95`.
+Status: all 15 phase implementations are present. All available automated, real CPU, browser and native Windows candidate checks passed. Physical GPU and live Hugging Face verification remain unavailable as described below. Following explicit Owner approval, both signed v0.6.0 Releases are published. The publication workflows tested and released `40ab9612fe61e24bcd641032a1c4d7bbb5b6525e`, whose application source matches the verified candidates; subsequent commits only update documentation. The candidate Server/Worker runtime at `a7d8e95` and Desktop source at `eb362a5` are preserved.
 
 ## Phase status
 
@@ -23,7 +23,7 @@ Status: all 15 phase implementations are present. All available automated, real 
 | 12 — Unified activity | Complete; persisted authorization-filtered history, paging/filtering and deduplicated quiet notices. |
 | 13 — Stability/accessibility | Complete; real browser sizes, dialog focus, event/editor response-order and resource cleanup tests. |
 | 14 — Full integration | Available CPU/browser/native Windows paths passed, including genuine training, restart, reset and upgrade. Physical GPU and live Hugging Face checks are blocked, not claimed complete. |
-| 15 — Signed 0.6.0 candidate | Complete candidate preparation: both signed workflows passed; verified artifacts uploaded. GitHub Release publication awaits explicit Owner approval. |
+| 15 — Signed 0.6.0 release | Complete: Owner-approved Server/Worker and Desktop Releases published; all 11 Server and 14 Desktop jobs passed, including signing, native Windows and genuine upgrade verification. |
 
 ## Verified automated and integration evidence
 
@@ -45,7 +45,7 @@ Status: all 15 phase implementations are present. All available automated, real 
 - Native Windows proof confirms the real installed frozen backend, eight workspaces, actual composer draft preservation, Cloud worker controls and personal enrollment, real CPU training cycle, 800×600 navigation, Owner credential-vault/session and workspace restoration after restart, isolated full reset, empty Overview and explicit fresh initialization. `production_reset=false`, `trained_foundation=false`.
 - Real published **0.5.9 → 0.6.0** proof confirms production signatures, tampered-installer rejection, verified background download before close, install-on-close, successful restart report and settings/account/workspace preservation. This was an isolated HTTPS server and actual Windows installation, not a live customer rollout. The historical production-signed **0.5.1 → 0.5.4** regression also passed.
 - Native evidence artifact: [`13719401241`](https://github.com/lk5t/moth-code/actions/runs/42712321054/artifacts/13719401241); upgrade evidence artifact: [`13719366424`](https://github.com/lk5t/moth-code/actions/runs/42712321054/artifacts/13719366424).
-- Both workflows explicitly skipped GitHub Release creation. GitHub API reads confirmed `desktop-v0.6.0` and `server-v0.6.0` were absent (HTTP 404) at final verification.
+- The candidate-only workflows explicitly skipped GitHub Release creation. At candidate verification both tags were absent (HTTP 404). Subsequent Owner-approved publication is recorded below.
 - Earlier Windows candidates exposed test-driver assumptions: delayed Welcome guide, selecting conversation search instead of the composer, a shortened disclosure name, and assuming published Git tags existed in a shallow checkout. These were corrected without removing assertions or altering signing/updater checks. Run 42704682002 passed its ten CI jobs and two signed Windows update jobs, built its production-signed installer/frozen backend, logged in as the isolated Owner and preserved the actual Chat draft; it then failed on the disclosure selector. Corrected final run is listed above.
 
 ## Limits and explicit approval boundaries
@@ -54,7 +54,22 @@ Physical CUDA hardware is unavailable; CPU execution and fallback/control paths 
 
 Full reset covers fixed deployment-owned roots and records. It preserves unrelated platform/user data and creates no replacement automatically. Managed backup deletion requires separate typed scope. External originals, infrastructure snapshots, exported Desktop packages, unverified worker caches and offline workers remain explicitly disclosed; completion is not a claim of forensic erasure of every copy. The supported server deployment has one coordinator/web process; other direct native-storage writers must be stopped for an administrative reset.
 
-No production deployment, production reset, merge, GitHub tag or v0.6.0 Release was performed. `publish=false` keeps candidates as Actions artifacts. Publishing requires separate explicit Owner approval; production reset requires its own separate authorization.
+Candidate verification used `publish=false`, creating only Actions artifacts. The Owner subsequently explicitly approved release publication, recorded below. No production reset or merge was performed. Existing automatic update and rollout mechanisms govern installation; this session did not observe a live customer or VPS installation. Production reset still requires its own separate authorization.
+
+## Owner-approved publication — 10 November 2026
+
+Both Releases were built from `40ab9612fe61e24bcd641032a1c4d7bbb5b6525e` on `claude/jolly-darwin-2qeihd` using the existing workflows with `publish=true` and the stable channel. GitHub confirms `draft=false`, `prerelease=false`, nonempty published timestamps and matching tag commit refs. All required assets are nonempty and in the `uploaded` state.
+
+| Component | Published Release | Successful workflow | Published at (UTC) | Required assets |
+| --- | --- | --- | --- | --- |
+| Server/Worker | [server-v0.6.0](https://github.com/lk5t/moth-code/releases/tag/server-v0.6.0) | [42803598527](https://github.com/lk5t/moth-code/actions/runs/42803598527), 11/11 jobs | 2026-11-10T11:13:05Z | 6/6: Cloud bundle, Worker bundle and its checksum, release manifest and signature, SHA256SUMS. |
+| Windows Desktop | [desktop-v0.6.0](https://github.com/lk5t/moth-code/releases/tag/desktop-v0.6.0) | [42803602128](https://github.com/lk5t/moth-code/actions/runs/42803602128), 14/14 jobs | 2026-11-10T11:41:23Z | 5/5: installer and updater signature, release manifest and signature, SHA256SUMS. |
+
+The publication run repeated and passed the real native Windows UI/worker/CPU/reset/restart flow and the production-signed 0.5.9 → 0.6.0 lifecycle: tampered installer rejected; background download verified; installation waited for close; restart report received; settings, accounts and workspaces preserved. The historical 0.5.1 → 0.5.4 Windows update regression passed too. Server signing, bundle contents and checksums were verified before upload. Both actual GitHub Release creation steps succeeded.
+
+The published Windows installer is `MOTH.Code_0.6.0_x64-setup.exe` (172,030,596 bytes), GitHub asset SHA-256 `f534871a5726065e5785497cc1693d1fc7a1c89b208af06706ddb3c12063dc6f`. Published Cloud bundle SHA-256: `ccc29a180d2235877eb7ada09d35ef438438710fc65963a07426af2d2a97e7c5`; Worker bundle SHA-256: `c82da783fa92c850a8a4412220d7a30deee764957e8e6c91402c2a3ba32fb53c`. These are published asset digests, distinct from the earlier candidate artifact ZIP digests.
+
+Existing updater source, signing keys and Owner rollout controls are unchanged. Desktop availability follows the existing rollout setting; publishing is not proof that a particular live installation has updated. No production reset or live Foundation quality claim is made. Physical GPU and live Hugging Face limitations above remain.
 
 ## Exact changed files and necessity
 
