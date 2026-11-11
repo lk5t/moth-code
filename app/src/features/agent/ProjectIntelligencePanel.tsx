@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "@/lib/app-state";
 import { useAccount } from "@/lib/account";
@@ -29,31 +30,31 @@ export function ProjectIntelligencePanel() {
     const started = epoch.current; setBusy(true); setNotice("");
     try {await action(); if (started === epoch.current) await reload();} catch (e) {if (started === epoch.current) setNotice(String((e as Error).message));} finally {if (started === epoch.current) setBusy(false);}
   }
-  if (!base) return <p className="p-4 text-sm text-muted-foreground">Open a project to inspect its structure.</p>;
-  return <section className="h-full overflow-auto p-3 text-sm space-y-3" aria-label="Project intelligence">
-    <p>Local project understanding. Analysis never executes project code or uploads it. Cloud context requires separate consent.</p>
-    {(error || notice) && <p role="alert">{error || notice}</p>}
-    {!data && !error && <p role="status">Analyzing authorized project files…</p>}
+  if (!base) return <p className="p-4 text-sm text-muted">Open a project to inspect its structure.</p>;
+  return <section className="h-full space-y-3 overflow-auto p-4 text-xs" aria-label="Project intelligence">
+    <p className="text-muted">Local project understanding. Analysis never executes project code or uploads it. Cloud context requires separate consent.</p>
+    {(error || notice) && <p role="alert" className="text-danger">{error || notice}</p>}
+    {!data && !error && <p role="status" className="text-muted">Analyzing authorized project files…</p>}
     {data?.scope_warning && <p>{data.scope_warning}</p>}
-    <div className="flex gap-3"><button disabled={busy} onClick={() => void act(() => projectApi(base + "/refresh", "POST"))}>Refresh analysis</button>
-      <button disabled={busy} onClick={() => {if (window.confirm("Delete this profile’s project index and memories? Project files are preserved. Refresh explicitly to enable indexing again.")) void act(async () => {await projectApi(base, "DELETE"); setMatches(null);});}}>Delete index and memory</button></div>
+    <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={busy} onClick={() => void act(() => projectApi(base + "/refresh", "POST"))}>Refresh analysis</Button>
+      <Button size="sm" variant="ghost" disabled={busy} onClick={() => {if (window.confirm("Delete this profile’s project index and memories? Project files are preserved. Refresh explicitly to enable indexing again.")) void act(async () => {await projectApi(base, "DELETE"); setMatches(null);});}}>Delete index and memory</Button></div>
     {data?.disabled ? <p>Project intelligence is disabled. Refresh analysis to enable it again.</p> : data && <>
-      <p>{data.summary}</p>{data.truncated && <p>Analysis is limited to the first 1,000 eligible files.</p>}
+      <p className="text-sm text-fg">{data.summary}</p>{data.truncated && <p>Analysis is limited to the first 1,000 eligible files.</p>}
       <p>Framework evidence: {data.frameworks?.join(", ") || "None detected"}</p>
-      <details><summary>Structure and configuration</summary><pre className="whitespace-pre-wrap">{Object.entries(data.structure || {}).map(([name, count]) => `${name}: ${count} files`).join("\n")}</pre><p>{data.configurations?.join(", ")}</p></details>
-      <details><summary>Dependencies and import graph</summary>{data.dependencies?.map((d, i) => <p key={i}>{d.name} {d.version} · {d.source}</p>)}{data.imports?.map((e, i) => <p key={i}>{e.source}:{e.line} → {e.target} ({e.local ? "local" : "external or unresolved"})</p>)}</details>
-      <details><summary>Potential issues and skipped files</summary><p>Static evidence only; import aliases and generated files can need manual review.</p>{[...(data.issues || []), ...(data.warnings || [])].map((e, i) => <p key={i}>{e.path}{e.line ? `:${e.line}` : ""} · {e.message}</p>)}</details>
-      <details><summary>Recent changes and inspected files</summary>{data.recent_changes?.map((e, i) => <p key={i}>{e.kind}: {e.path}</p>)}<p>Opened: {data.inspected?.join(", ") || "None recorded"}</p></details>
+      <details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-muted hover:text-fg">Structure and configuration</summary><pre className="whitespace-pre-wrap">{Object.entries(data.structure || {}).map(([name, count]) => `${name}: ${count} files`).join("\n")}</pre><p>{data.configurations?.join(", ")}</p></details>
+      <details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-muted hover:text-fg">Dependencies and import graph</summary>{data.dependencies?.map((d, i) => <p key={i}>{d.name} {d.version} · {d.source}</p>)}{data.imports?.map((e, i) => <p key={i}>{e.source}:{e.line} → {e.target} ({e.local ? "local" : "external or unresolved"})</p>)}</details>
+      <details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-muted hover:text-fg">Potential issues and skipped files</summary><p>Static evidence only; import aliases and generated files can need manual review.</p>{[...(data.issues || []), ...(data.warnings || [])].map((e, i) => <p key={i}>{e.path}{e.line ? `:${e.line}` : ""} · {e.message}</p>)}</details>
+      <details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-muted hover:text-fg">Recent changes and inspected files</summary>{data.recent_changes?.map((e, i) => <p key={i}>{e.kind}: {e.path}</p>)}<p>Opened: {data.inspected?.join(", ") || "None recorded"}</p></details>
       <form onSubmit={e => {e.preventDefault(); void act(async () => {const started=epoch.current; const found=await projectApi<{matches: {path: string}[]; affected_components: string[]}>(base + "/search?q=" + encodeURIComponent(query)); if (started===epoch.current) setMatches(found);});}}>
-        <label>Find relevant files<input className="w-full border border-border p-1" value={query} onChange={e => setQuery(e.target.value)} maxLength={200} /></label><button disabled={busy || !query.trim()}>Search project</button>
-      </form>{matches && <div><p>Relevant: {matches.matches.map(m => m.path).join(", ") || "No matches"}</p><p>Direct dependents: {matches.affected_components.join(", ") || "None found"}</p></div>}
-      <details><summary>Confirmed project decisions</summary>{data.decisions?.map(d => <div key={d.id}><p>{d.content}</p><button disabled={busy} onClick={() => void act(() => projectApi(base + "/decisions/" + d.id, "DELETE"))}>Delete decision</button></div>)}
+        <label className="block text-muted">Find relevant files<input className="mt-1 w-full rounded-md border border-border bg-bg p-2 text-fg" value={query} onChange={e => setQuery(e.target.value)} maxLength={200} /></label><Button size="sm" variant="secondary" className="mt-2" type="submit" disabled={busy || !query.trim()}>Search project</Button>
+      </form>{matches && <div className="rounded-lg border border-border p-3"><p>Relevant: {Array.from(new Set(matches.matches.map(m => m.path))).join(", ") || "No matches"}</p><p>Direct dependents: {matches.affected_components.join(", ") || "None found"}</p></div>}
+      <details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-muted hover:text-fg">Confirmed project decisions</summary>{data.decisions?.map(d => <div key={d.id}><p>{d.content}</p><Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => projectApi(base + "/decisions/" + d.id, "DELETE"))}>Delete decision</Button></div>)}
         <form onSubmit={e => {e.preventDefault(); void act(async () => {await projectApi(base + "/decisions", "POST", {text: decision, confirmed}); setDecision(""); setConfirmed(false);});}}>
-          <label>Decision<textarea className="w-full border border-border p-1" value={decision} onChange={e => setDecision(e.target.value)} maxLength={2000} /></label>
-          <label><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />I confirm this project decision</label><button disabled={busy || !confirmed || !decision.trim()}>Save decision</button>
+          <label className="mt-2 block text-muted">Decision<textarea className="mt-1 w-full rounded-md border border-border bg-bg p-2 text-fg" value={decision} onChange={e => setDecision(e.target.value)} maxLength={2000} /></label>
+          <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />I confirm this project decision</label><Button size="sm" className="mt-2" type="submit" disabled={busy || !confirmed || !decision.trim()}>Save decision</Button>
         </form>
       </details>
     </>}
-    <details><summary>Advanced: legacy device-wide notes</summary><p>These older notes are shared on this device and are separate from profile-scoped project memory.</p><MemoryPanel /></details>
+    <details className="rounded-lg border border-border p-3"><summary className="cursor-pointer text-muted hover:text-fg">Advanced: legacy device-wide notes</summary><p>These older notes are shared on this device and are separate from profile-scoped project memory.</p><MemoryPanel /></details>
   </section>;
 }

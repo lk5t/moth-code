@@ -150,7 +150,7 @@ function Weaknesses() {
     <>
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Target className="size-4 text-accent" />Measured weaknesses (model v{w.version})</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Target className="size-4 text-accent" />Measured weaknesses</CardTitle>
           <CardDescription>From held-out benchmarks that are never trained on{w.parent ? `, compared with v${w.parent}` : ""}, plus recurring problems users report.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-1.5 text-xs">
@@ -175,7 +175,7 @@ function Weaknesses() {
             {c.progress.stage_budget ? ` of ${formatNumber(c.progress.stage_budget)}` : ""}.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-1 text-xs">
-          <div className="text-muted">Next training mixture{c.next_mixture.note ? ` — ${c.next_mixture.note}` : ""}:</div>
+          <div className="text-muted">Next training mixture{c.next_mixture.note ? ` — ${c.next_mixture.note}` : ":"}</div>
           {Object.entries((c.next_mixture.weights ?? {}) as Record<string, number>).map(([d, v]) => (
             <div key={d} className="flex items-center gap-2">
               <span className="w-28">{d}</span>

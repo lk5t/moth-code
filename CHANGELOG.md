@@ -3,6 +3,15 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## Unreleased — follow-up to 0.6.0 (not published; needs a new version number and Owner approval)
+
+- Genesis Reset moved to Settings → Advanced: review the real deletion inventory, type `RESET GENESIS`, confirm once more. MOTH Cloud still accepts the phrase the published 0.6.0 desktop sends. Optionally also deletes the native AI data stored on this computer.
+- "No Model — Ready for Genesis": a guided fresh start with a choice of tokenizer and model size (real parameter counts from the server) replaces the empty Overview.
+- Model size and growth: plain explanation of why the parameter count is unchanged, the planner's evidence, and an Owner-requested growth experiment that is evaluated like any other candidate.
+- Gated Hugging Face datasets no longer fail as "not found": the message says the dataset is gated and how to get access.
+- Interface: no-model states say what to do next; Network no longer repeats its switch and heading; Project Intelligence and Dataset Quality Studio use the app's controls; History states a single measurement instead of drawing an empty chart.
+- Details: [docs/GENESIS-RESET.md](docs/GENESIS-RESET.md).
+
 ## 0.6.0 — LIVING INTELLIGENCE (release candidate; not published)
 
 - Eight workspaces with focused pages, progressive controls, keyboard feature search and optional guidance.

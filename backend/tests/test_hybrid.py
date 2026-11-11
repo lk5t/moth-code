@@ -163,7 +163,7 @@ def test_cloud_status_explains_why_nothing_is_served():
         MothCloudClient("https://moth.test", http=server(old)).health()
         raise AssertionError("expected CloudUnavailable")
     except CloudUnavailable as e:
-        assert e.reason == "no_model_deployed" and "Owner Dashboard" in str(e)
+        assert e.reason == "no_model_deployed" and "creates a model in Intelligence" in str(e)
     tunnel_down = httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(530, text="<html>")))
     try:
         MothCloudClient("https://x.trycloudflare.com", http=tunnel_down).health()

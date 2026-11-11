@@ -55,14 +55,20 @@ function Change({ cur, prev }: { cur: Any; prev?: Any }) {
   );
 }
 
+const EVENT: Record<string, string> = { "models.deployed": "Deployed", "models.rollback": "Rolled back", "evolution.rollback": "Rolled back automatically" };
+
 /** One benchmark across model versions (measured points only). */
 function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric: string; onSelect?: (v: Any) => void }) {
   const pts = versions.map((v, i) => ({ i, v, b: v.benchmarks[metric] })).filter((p) => p.b);
   const W = 640, H = 180, pad = { l: 44, r: 16, t: 14, b: 30 };
   if (pts.length === 0) return <div className="py-6 text-center text-xs text-muted">Not measured yet.</div>;
+  if (pts.length === 1) {  // one measurement is a fact, not a trend: state it instead of drawing an invented axis
+    const only = pts[0];
+    return <div className="py-4 text-center text-xs text-muted">{modelLabel(only.v)}: <span className="font-mono text-fg">{metric === "parameters" ? Math.round(only.b.value).toLocaleString() : fmt(only.b)}</span> {(LABEL[metric] ?? metric).toLowerCase()}. A chart appears once a second version has been measured.</div>;
+  }
   const vals = pts.map((p) => p.b.value);
   let lo = Math.min(...vals), hi = Math.max(...vals);
-  if (hi - lo < 1e-6) { hi += 0.05; lo -= 0.05; }
+  if (hi - lo < 1e-6) { const m = Math.max(0.05, Math.abs(hi) * 0.1); hi += m; lo -= m; }  // one value: centre it
   const n = Math.max(1, versions.length - 1);
   const x = (i: number) => pad.l + (i / n) * (W - pad.l - pad.r);
   const y = (v: number) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
@@ -75,7 +81,7 @@ function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric
           <g key={f}>
             <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} className="stroke-border" strokeWidth={1} />
             <text x={pad.l - 6} y={y(v) + 3} textAnchor="end" className="fill-[var(--color-faint,#888)] text-[10px]">
-              {metric === "parameters" ? `${(v / 1e6).toFixed(1)}M` : metric === "training_steps" ? v.toFixed(0)
+              {metric === "parameters" ? formatNumber(Math.round(v)) : metric === "training_steps" ? v.toFixed(0)
                 : pts[0].b.higher_is_better ? `${(v * 100).toFixed(0)}%` : v.toFixed(2)}
             </text>
           </g>
@@ -113,6 +119,7 @@ export function IntelligenceView({ embedded = false, focus = "all" }: { embedded
     return { ...v, benchmarks };
   }), [p]);
   const metrics = useMemo(() => Array.from(new Set(chartVersions.flatMap((v) => Object.keys(v.benchmarks)))).sort(), [chartVersions]);
+  const shown = metrics.includes(metric) ? metric : metrics[0] ?? metric;  // never chart a measurement this lineage does not have
   if (!signedIn) return <EmptyState title="Sign in to see MOTH's progress">The dashboard shows MOTH Cloud's measurements.</EmptyState>;
   if (err) return <EmptyState title="Progress is not available">{err}</EmptyState>;
   if (!p) return null;
@@ -130,7 +137,7 @@ export function IntelligenceView({ embedded = false, focus = "all" }: { embedded
           <CardDescription>Recorded promotions and rollbacks</CardDescription></CardHeader>
           <CardContent><ol className="max-h-48 space-y-2 overflow-auto text-xs">
             {p.deployment_events.map((event: Any, index: number) => <li key={`${event.ts}-${index}`} className="flex flex-wrap gap-x-3 gap-y-1 border-l-2 border-accent pl-3">
-              <time className="text-muted">{when(event.ts)}</time><span>{event.action.replaceAll('.', ' · ')}</span><span className="font-mono text-muted">{event.target}</span>
+              <time className="text-muted">{when(event.ts)}</time><span>{EVENT[event.action] ?? event.action.replaceAll('.', ' · ')}</span><span className="text-muted">{String(event.target ?? "").replace(/^release:/, "internal version ")}</span>
             </li>)}
           </ol></CardContent></Card>}
         {focus === "all" && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -182,14 +189,14 @@ export function IntelligenceView({ embedded = false, focus = "all" }: { embedded
             {metrics.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {metrics.map((m) => (
-                  <button key={m} onClick={() => setMetric(m)}
-                    className={cn("cursor-pointer rounded-md border border-border px-2 py-0.5", metric === m ? "bg-surface-2 text-fg" : "text-muted hover:text-fg")}>
+                  <button key={m} aria-pressed={shown === m} onClick={() => setMetric(m)}
+                    className={cn("cursor-pointer rounded-md border border-border px-2 py-0.5", shown === m ? "bg-surface-2 text-fg" : "text-muted hover:text-fg")}>
                     {LABEL[m] ?? m}
                   </button>
                 ))}
               </div>
             )}
-            <TimelineChart versions={chartVersions} metric={metric} onSelect={setSelection} />
+            <TimelineChart versions={chartVersions} metric={shown} onSelect={setSelection} />
             {selection && <div role="status" className="rounded-lg border border-border bg-bg p-3">
               <div className="font-medium">{modelLabel(selection)}</div>
               <div className="mt-1 text-muted">{formatNumber(selection.params)} parameters · {when(selection.created_at)}

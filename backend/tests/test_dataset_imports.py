@@ -50,5 +50,26 @@ def test_hub_access_error_names_source_without_leaking_credentials(monkeypatch):
     monkeypatch.setitem(sys.modules, 'datasets', SimpleNamespace(load_dataset=denied))
     with pytest.raises(RuntimeError) as caught:
         list(iter_source(SourceSpec('hf:example/gated', license='MIT')))
-    assert 'example/gated' in str(caught.value) and 'accept the source license' in str(caught.value)
+    assert 'example/gated' in str(caught.value) and 'Accept the dataset terms' in str(caught.value)
     assert 'secret-value' not in str(caught.value)
+
+
+def test_gated_catalog_source_reported_as_gated_not_missing(monkeypatch):
+    """Reproduced against Hugging Face: an unsigned request for a gated dataset answers "not found",
+    which made preparing every catalog source at once fail with a misleading message."""
+    class DatasetNotFoundError(Exception):
+        pass
+
+    def missing(*args, **kwargs):
+        raise DatasetNotFoundError('hidden upstream text')
+    monkeypatch.setitem(sys.modules, 'datasets', SimpleNamespace(load_dataset=missing))
+    monkeypatch.delenv('HF_TOKEN', raising=False)
+    monkeypatch.delenv('HUGGING_FACE_HUB_TOKEN', raising=False)
+    monkeypatch.setattr('moth.training.sources._hf_signed_in', lambda: False)
+    with pytest.raises(RuntimeError) as caught:
+        list(iter_source(SourceSpec('hf:bigcode/the-stack-smol', license='x')))
+    text = str(caught.value)
+    assert 'bigcode/the-stack-smol' in text and 'gated' in text and 'HF_TOKEN' in text and 'remove this source' in text
+    monkeypatch.setattr('moth.training.sources._hf_signed_in', lambda: True)
+    with pytest.raises(RuntimeError, match='unavailable; check the selected source'):
+        list(iter_source(SourceSpec('hf:example/typo', license='MIT')))

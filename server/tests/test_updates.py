@@ -277,7 +277,7 @@ def test_owner_can_change_the_public_address(client, signed, settings):
 
 def test_cloud_health_explains_why_nothing_is_served(client, signed):
     h = client.get("/cloud/v1/health").json()
-    assert h["models"] == [] and h["status"] == "no_model_deployed" and "Owner Dashboard" in h["message"]
+    assert h["models"] == [] and h["status"] == "no_model_deployed" and "Intelligence" in h["message"]
 
 
 def test_desktop_051_to_054_does_not_confuse_unavailable_with_current(client, signed):

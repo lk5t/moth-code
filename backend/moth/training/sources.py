@@ -227,6 +227,21 @@ def _iter_jsonl(path: Path) -> Iterator[Document]:
                 raise ValueError(f"{path.name}: line {i}: expected nonempty text, prompt/answer, or messages")
 
 
+_HF_ACCESS = ("Accept the dataset terms on its Hugging Face page, then sign in on this computer "
+              "(set the HF_TOKEN environment variable to a read token, or run `hf auth login`) and restart MOTH Code.")
+
+
+def _hf_signed_in() -> bool:
+    if os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"):
+        return True
+    try:
+        from huggingface_hub import get_token  # type: ignore
+
+        return bool(get_token())
+    except Exception:
+        return False
+
+
 def _iter_hf(src: SourceSpec) -> Iterator[Document]:
     try:
         import datasets  # type: ignore
@@ -246,10 +261,17 @@ def _iter_hf(src: SourceSpec) -> Iterator[Document]:
     except Exception as error:
         status = getattr(getattr(error, 'response', None), 'status_code', None)
         kind = type(error).__name__
+        signed_in = _hf_signed_in()
         if status in (401, 403) or 'Gated' in kind:
-            reason = 'access denied; authenticate with an authorized account and accept the source license if required'
+            reason = _HF_ACCESS if not signed_in else 'access denied for the signed-in Hugging Face account; accept the dataset terms on its Hugging Face page, then retry'
         elif status == 404 or 'NotFound' in kind:
-            reason = 'repository, configuration or split is unavailable; check the selected source and access'
+            # Hugging Face answers "not found" for gated and private datasets when the request is not signed in.
+            if entry.get('gated') and not signed_in:
+                reason = 'this dataset is gated and this computer is not signed in to Hugging Face. ' + _HF_ACCESS + ' Or remove this source and prepare the others'
+            elif not signed_in:
+                reason = 'repository, configuration or split was not found. If the dataset is gated or private: ' + _HF_ACCESS
+            else:
+                reason = 'repository, configuration or split is unavailable; check the selected source and access'
         elif isinstance(error, ValueError):
             reason = 'invalid configuration or missing text field; check the source field and split'
         else:
