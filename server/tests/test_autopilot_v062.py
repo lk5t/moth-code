@@ -92,8 +92,12 @@ def test_slows_down_instead_of_looping_without_improvement(client):
 def test_decisions_are_recorded_and_reported(client, owner):
     ctx = client.app.state.ctx
     _exp(ctx, "passed", 0.04); _exp(ctx, "passed", 0.05)
-    s, decisions = AP.adapt(ctx, S.get(ctx))
-    AP.remember(ctx, s, decisions, None)
+    owner_s = S.get(ctx)
+    s, decisions = AP.adapt(ctx, owner_s)
+    AP.remember(ctx, s, decisions, None, owner_s)
+    assert AP.adapt(ctx, owner_s)[0]["training"]["steps"] >= s["training"]["steps"]  # the adapted plan carries over
+    changed = {**owner_s, "training": {**owner_s["training"], "steps": 3}}
+    assert AP.adapt(ctx, changed)[0]["training"]["steps"] >= 3  # an Owner change restarts from the Owner's value
     ev = [e for e in MEM.events(ctx, limit=20) if e["kind"] == "plan.adjusted"]
     assert ev and "training longer" in ev[0]["message"]
     st = client.get(f"{BASE}/autopilot", headers=H(owner["token"])).json()

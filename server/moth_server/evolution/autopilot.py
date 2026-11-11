@@ -57,9 +57,13 @@ def adapt(ctx: Ctx, settings: dict, resources: dict | None = None) -> tuple[dict
     tr = out["training"]
     base_steps, base_lr, base_batch = int(tr["steps"]), float(tr["lr"]), int(tr["batch_size"])
     state = ctx.db.get_config("evolution_autopilot", {}) or {}
+    # The Owner's settings win: when they changed since the plan was adapted, start again from them.
+    if state.get("base") != [base_steps, base_lr, base_batch]:
+        state = {}
     steps = int(state.get("steps") or base_steps)
     lr = float(state.get("lr") or base_lr)
     batch = int(state.get("batch_size") or base_batch)
+    floor = min(MIN_STEPS, base_steps)  # never raise a deliberately small Owner setting
     decisions: list[dict] = []
 
     def decide(kind: str, message: str, **metrics: Any) -> None:
@@ -88,16 +92,16 @@ def adapt(ctx: Ctx, settings: dict, resources: dict | None = None) -> tuple[dict
                 steps = new
         elif last < min_gain and prev < min_gain:
             new_lr = max(lr / 2, 1e-6)
-            new_steps = max(MIN_STEPS, base_steps if steps > base_steps else steps)
+            new_steps = max(floor, base_steps if steps > base_steps else steps)
             why = (f"stopped early ({(early[0]['metrics'] or {}).get('early_stopped')})" if early
                    else f"improved held-out results by only {_pct(last)} and {_pct(prev)} (I need {_pct(min_gain)})")
             decide("lr", f"Training has slowed down: the last two runs {why}. I'm testing a lower learning rate "
                    f"({new_lr:.1e} instead of {lr:.1e})" + (f" and returning to {new_steps} steps." if new_steps != steps else "."),
                    improvements=[last, prev], lr_before=lr, lr_after=new_lr, steps_before=steps, steps_after=new_steps)
             lr, steps = new_lr, new_steps
-        elif early and steps > MIN_STEPS:
+        elif early and steps > floor:
             stopped = int(((early[0]["metrics"] or {}).get("training") or {}).get("step") or steps)
-            new = max(MIN_STEPS, min(steps, int(stopped * 1.2)))
+            new = max(floor, min(steps, int(stopped * 1.2)))
             if new < steps:
                 decide("steps", f"Experiment #{early[0]['id']} stopped improving at step {stopped}, so I'm planning "
                        f"{new} steps instead of {steps} to save compute.", steps_before=steps, steps_after=new,
@@ -114,7 +118,7 @@ def adapt(ctx: Ctx, settings: dict, resources: dict | None = None) -> tuple[dict
         budget = float(settings["budget"]["max_cycle_hours"]) * 3600 * 0.8
         fit = int(budget / max(per_step * experiments, 1e-6))
         if fit < steps:
-            new = max(MIN_STEPS, fit)
+            new = max(floor, fit)
             decide("budget", f"Each step took {per_step:.2f} s last time, so {steps} steps for {experiments} experiments "
                    f"would not fit the {settings['budget']['max_cycle_hours']:g}-hour cycle budget. I'm planning {new} steps.",
                    seconds_per_step=per_step, steps_before=steps, steps_after=new)
@@ -145,10 +149,13 @@ def adapt(ctx: Ctx, settings: dict, resources: dict | None = None) -> tuple[dict
     return out, decisions
 
 
-def remember(ctx: Ctx, settings: dict, decisions: list[dict], cycle_id: int | None) -> None:
+def remember(ctx: Ctx, settings: dict, decisions: list[dict], cycle_id: int | None, owner_settings: dict | None = None) -> None:
     """Keep the adapted plan for the next cycle and record each decision in the activity stream."""
     tr = settings["training"]
+    otr = (owner_settings or settings)["training"]
+    base = [int(otr["steps"]), float(otr["lr"]), int(otr["batch_size"])]
     ctx.db.set_config("evolution_autopilot", {"steps": tr["steps"], "lr": tr["lr"], "batch_size": tr["batch_size"],
+                                              "base": base,
                                               "updated_at": now(), "decisions": decisions[-8:]})
     for d in decisions:
         MEM.event(ctx, "plan.adjusted", d["message"], cycle_id=cycle_id, decision=d["kind"], **{

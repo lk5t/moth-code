@@ -289,8 +289,9 @@ def _planning(ctx: Ctx, cyc: dict, settings: dict) -> None:
         measured = {"local": CMP.local(ctx)}
     except Exception:  # noqa: BLE001 — resources only refine the plan
         measured = None
+    owner_settings = settings
     settings, decisions = AP.adapt(ctx, settings, measured)
-    AP.remember(ctx, settings, decisions, cyc["id"])
+    AP.remember(ctx, settings, decisions, cyc["id"], owner_settings)
     result = P.plan(ctx, base, settings, cycle_seed=1000 + cyc["id"])
     result["decisions"] = decisions
     if not result["experiments"]:
