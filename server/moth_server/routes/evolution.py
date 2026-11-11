@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from moth_server import models as M
 from moth_server.context import Ctx, get_ctx
@@ -223,21 +223,37 @@ def start_training(body: TrainingStartIn, auth: Auth = Depends(owner_reauthed), 
     return {'requested': True, 'worker_ids': selected, 'server_cpu': body.server_cpu}
 
 
+class GenesisInitIn(BaseModel):
+    size: str = "seed"
+    tokenizer: str = "byte"
+
+
+@router.get("/initialize/options")
+def initialize_options(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """Model sizes and tokenizers a fresh lineage can start from, with real parameter counts and whether
+    this deployment can train each one (measured memory, configured backends)."""
+    from moth_server.evolution.bootstrap import options
+
+    return options(ctx)
+
+
 @router.post("/initialize")
-def initialize(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+def initialize(body: GenesisInitIn | None = None, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
     from moth_server.evolution.bootstrap import initialize as init
 
+    body = body or GenesisInitIn()
     try:
-        return init(ctx, auth.uid)
+        return init(ctx, auth.uid, body.size, body.tokenizer)
     except (ValueError, RuntimeError) as e:
         raise HTTPException(409, str(e)) from None
 
 
 @router.post("/initialize/activate")
-def activate_initial(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+def activate_initial(body: GenesisInitIn | None = None, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
     from moth_server.evolution.bootstrap import activate_initial as activate
+    body = body or GenesisInitIn()
     try:
-        return activate(ctx, auth.uid)
+        return activate(ctx, auth.uid, body.size, body.tokenizer)
     except (ValueError, RuntimeError) as e:
         raise HTTPException(409, str(e)) from None
 
@@ -543,6 +559,32 @@ async def upload_suite(name: str = Form(..., max_length=80), capability: str = F
         return EV.add_task_suite(ctx, name, capability, data)
     except (ValueError, UnicodeDecodeError) as e:
         raise _bad(e) from None
+
+
+class GrowthRequestIn(BaseModel):
+    add_layers: int = Field(ge=0, le=64)
+    ffn_hidden: int = Field(ge=64, le=65536)
+
+
+@router.post("/growth-request")
+def growth_request(body: GrowthRequestIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    """Ask for one growth experiment in the next cycle. It stays a candidate: evaluated against the deployed
+    model on held-out benchmarks and discarded unless it passes; the deployed model is never modified."""
+    from moth_server.evolution.growth_diagnostics import inspect
+
+    d = inspect(ctx)
+    opt = next((o for o in d.get("options", []) if o["add_layers"] == body.add_layers and o["ffn_hidden"] == body.ffn_hidden), None)
+    if opt is None:
+        raise HTTPException(409, "That expansion is not valid for the deployed model or exceeds the parameter budget.")
+    ctx.db.set_config("growth_request", {**body.model_dump(), "params": opt["params"], "requested_by": auth.uid, "at": time.time()})
+    MEM.event(ctx, "growth.requested", f"Owner requested a growth experiment to {opt['params']:,} parameters", actor=auth.uid)
+    return {"request": ctx.db.get_config("growth_request")}
+
+
+@router.delete("/growth-request")
+def growth_request_cancel(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    ctx.db.set_config("growth_request", None)
+    return {"request": None}
 
 
 class NativeResetPreviewIn(BaseModel):

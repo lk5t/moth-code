@@ -275,6 +275,8 @@ def _planning(ctx: Ctx, cyc: dict, settings: dict) -> None:
                 resources="{}", compute_seconds=0.0, created_at=t, updated_at=t))
             MEM.event(ctx, "experiment.planned", f"Experiment #{res.inserted_primary_key[0]}: {p['rationale']}",
                       cycle_id=cyc["id"], experiment_id=res.inserted_primary_key[0], conn=c)
+        if any((p["config"].get("grow") or {}).get("requested_by") for p in result["experiments"]):
+            ctx.db.set_config("growth_request", None, conn=c)  # one request, one experiment (plans are also previewed)
         MEM.update_cycle(ctx, cyc["id"], conn=c, status="waiting_for_compute", plan=result, started_at=t)
 
 

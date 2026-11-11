@@ -16,11 +16,13 @@ from sqlalchemy import select, func, delete
 from moth_server import db as D
 
 KEY='native_reset'
-CONFIRM='DELETE ALL NATIVE AI DATA'
+CONFIRM='RESET GENESIS'
+LEGACY_CONFIRM='DELETE ALL NATIVE AI DATA'  # typed by published 0.6.0 desktops; still accepted
+CONFIRMATIONS=(CONFIRM,LEGACY_CONFIRM)
 BACKUP_CONFIRM='DELETE MANAGED AI BACKUPS'
 ROOTS=('storage/models','storage/uploads','storage/staging','lineage','evolution','coordinator','library','eval')
 TABLES=('training_jobs','evolution_experiments','evolution_cycles','evaluation_reports','model_lineage','evolution_events','training_datasets','library_builds','uploads','model_releases')
-CONFIGS=('deployed_release','evolution_state','curriculum','library_pins','library_updates','eval_dataset_pinned','genesis_state','library_discovery_state','library_discovery_scan_at')
+CONFIGS=('deployed_release','evolution_state','curriculum','library_pins','library_updates','eval_dataset_pinned','genesis_state','library_discovery_state','library_discovery_scan_at','growth_request')
 NATIVE_AUDIT=('models.','evolution.','library.','training.')
 
 
@@ -108,6 +110,7 @@ def pending_workers(ctx):
 
 def status(ctx):
     out=state(ctx).copy();out['pending_worker_acknowledgements']=pending_workers(ctx)
+    out['confirmation']=CONFIRM;out['ready_for_genesis']=empty(ctx) or (out.get('status') in ('idle','completed','preview') and not ctx.db.one(select(D.model_releases.c.id).limit(1)))
     out['reported_retained_worker_cache_files']={w['id']:ctx.db.get_config('native_reset_retained:'+str(w['id']),0) for w in ctx.db.all(select(D.workers.c.id)) if ctx.db.get_config('native_reset_retained:'+str(w['id']),0)}
     return out
 
@@ -128,7 +131,7 @@ def _execute(ctx,reset_id,confirmation,actor_id,backup_confirmation=''):
     with lock(ctx):
         plan=state(ctx)
         if plan.get('id')!=reset_id or plan.get('actor_id')!=actor_id:raise ValueError('Reset preview does not belong to this Owner session')
-        if confirmation!=CONFIRM:raise ValueError('Type the exact native AI deletion confirmation')
+        if confirmation not in CONFIRMATIONS:raise ValueError('Type the exact confirmation: '+CONFIRM)
         if plan.get('backups') and backup_confirmation!=BACKUP_CONFIRM:raise ValueError('Managed backup deletion requires its separate exact confirmation')
         if plan['status']=='completed':return status(ctx)
         if plan['status']=='preview' and time.time()-plan['created_at']>600:raise ValueError('Reset preview expired; inspect a fresh inventory')

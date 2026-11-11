@@ -40,6 +40,10 @@ def inspect(ctx):
     backend,reasons=C.choose_backend(ctx,settings,need)
     result.update(estimated_training_bytes=need,available_backend=backend,compute_blockers=reasons)
     if backend is None:result['blockers'].extend(reasons)
+    from moth.model.growth import growth_options
+    limit=int(settings['growth'].get('max_params',0)) or None
+    result['options']=[o for o in growth_options(cfg,2.0) if not limit or o['params']<=limit][:12]
+    result['request']=ctx.db.get_config('growth_request',None)
     result['compatibility']='Expansion preserves vocabulary, tokenizer and existing weights; optimizer state is migrated. Held-out gates and rollback still apply.'
     result['scope']='Current deployed lineage; at most the latest 100 recorded experiments. Missing history is not proof that growth never ran.'
     return result

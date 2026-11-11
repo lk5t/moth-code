@@ -228,6 +228,27 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
                  + (" — needs the Owner's approval" if decision["requires_approval"] else ""), 99)
         else:
             out["notes"].append("parameter growth not proposed: " + decision["reason"])
+        req = ctx.db.get_config("growth_request", None)
+        if req and not decision["grow"]:
+            from moth.model.growth import growth_options
+
+            opt = next((o for o in growth_options(cfg_model, 2.0) if o["add_layers"] == req.get("add_layers")
+                        and o["ffn_hidden"] == req.get("ffn_hidden")), None)
+            max_params = int(g.get("max_params", 0)) or None
+            if opt is None or (max_params and opt["params"] > max_params):
+                out["notes"].append("the requested growth does not fit this model or the parameter budget")
+            else:
+                cfg = _config(base, arch, src, tilted if tilted.get("weights") else balanced, lrs[0],
+                              int(tr["steps"]) * int(g.get("steps_multiplier", 2)), settings, cycle_seed)
+                cfg["method"] = "expansion"
+                cfg["grow"] = {"add_layers": opt["add_layers"], "ffn_hidden": opt["ffn_hidden"],
+                               "params_before": cfg_model.num_params(), "params_after": opt["params"],
+                               "ratio": opt["ratio"], "requested_by": req.get("requested_by")}
+                cfg["requires_approval"] = False  # the Owner asked for exactly this candidate
+                cfg["approved_by"] = req.get("requested_by")
+                _add(ctx, out, cfg, src, f"Owner-requested growth experiment ({cfg_model.num_params():,} → "
+                     f"{opt['params']:,} parameters). It is trained as a separate candidate and must pass every "
+                     "gate against the deployed model; otherwise it is discarded.", 99)
     return out
 
 

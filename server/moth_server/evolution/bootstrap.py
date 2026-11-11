@@ -9,7 +9,74 @@ from moth_server import models as M
 from moth_server.context import Ctx
 
 
-def initialize(ctx: Ctx, actor_id: int | None = None) -> dict:
+# Sizes a fresh lineage can start from. "seed" is the original GENESIS start (kept as the default so
+# existing behaviour and old clients are unchanged); larger sizes need more memory and far more training.
+SIZES = {
+    "seed": {"preset": "moth-tiny", "overrides": {"ffn_hidden": 128}, "label": "Seed",
+             "note": "Trains in minutes on any CPU. Learns very little; useful to verify the pipeline."},
+    "small": {"preset": "moth-small", "overrides": {}, "label": "Small",
+              "note": "CPU-trainable in hours to days. Can learn simple language and code patterns."},
+    "foundation": {"preset": "moth-50m", "overrides": {}, "label": "Foundation",
+                   "note": "Needs a GPU worker or many CPU-days to train usefully."},
+}
+TOKENIZERS = ("byte", "library")
+
+
+def _library_tokenizer(ctx: Ctx) -> Path | None:
+    """The tokenizer trained by the newest ready dataset-library build (only when no model exists)."""
+    from moth_server.intelligence import library
+
+    b = library.latest_ready(ctx)
+    p = Path(b["path"]) / "tokenizer.json" if b and b.get("path") else None
+    return p if p and p.is_file() else None
+
+
+def _config(size: str, vocab: int):
+    from moth.model.config import preset
+
+    if size not in SIZES:
+        raise ValueError(f"Unknown model size {size!r}; choose one of: {', '.join(SIZES)}")
+    spec = SIZES[size]
+    cfg = preset(spec["preset"], vocab_size=vocab, **spec["overrides"])
+    cfg.name = "moth-0.01"
+    return cfg
+
+
+def options(ctx: Ctx) -> dict:
+    """What a fresh lineage can start from: real parameter counts per size and tokenizer, with the memory
+    estimate and whether this deployment has a backend that can train it. Nothing is created."""
+    from moth.model.tokenizer import Tokenizer
+    from moth_server.evolution import compute as C, settings as S
+
+    settings = S.get(ctx)
+    tr = settings["training"]
+    lib = _library_tokenizer(ctx)
+    vocabs = {"byte": Tokenizer([]).vocab_size}
+    if lib is not None:
+        vocabs["library"] = Tokenizer.load(lib).vocab_size
+    sizes = []
+    for key, spec in SIZES.items():
+        row = {"id": key, "label": spec["label"], "note": spec["note"], "tokenizers": {}}
+        for tok, vocab in vocabs.items():
+            cfg = _config(key, vocab)
+            need = C.estimate_training_memory(cfg.num_params(), tr["batch_size"], min(tr["seq_len"], cfg.max_seq_len),
+                                              cfg.d_model, cfg.n_layers)
+            backend, reasons = C.choose_backend(ctx, settings, need)
+            row["tokenizers"][tok] = {"params": cfg.num_params(), "layers": cfg.n_layers, "d_model": cfg.d_model,
+                                      "context": cfg.max_seq_len, "vocab": vocab, "training_memory_bytes": need,
+                                      "trainable_here": backend is not None, "blockers": reasons if backend is None else []}
+        sizes.append(row)
+    existing = M.deployed(ctx) or next(iter(M.list_releases(ctx)), None)
+    return {"sizes": sizes, "tokenizers": [
+        {"id": "byte", "label": "Byte-level", "available": True,
+         "note": "Lossless, needs no data. Every character costs one or more tokens, so context is short."},
+        {"id": "library", "label": "Trained on the dataset library", "available": lib is not None,
+         "note": "A BPE vocabulary learned from the prepared library: several characters per token."
+                 if lib is not None else "Prepare the dataset library first (Data); its build trains this tokenizer."}],
+        "can_initialize": existing is None, "existing": existing["name"] if existing else None}
+
+
+def initialize(ctx: Ctx, actor_id: int | None = None, size: str = "seed", tokenizer: str = "byte") -> dict:
     from moth.model.config import preset
     from moth.model.registry import export_model
     from moth.model.tokenizer import Tokenizer
@@ -42,11 +109,19 @@ def initialize(ctx: Ctx, actor_id: int | None = None) -> dict:
             raise ValueError("Existing unregistered weights found; import that checkpoint before initializing a lineage")
         tok_path = root / "tokenizer.json"
         if not checkpoint.exists():
-            # Byte vocabulary is lossless and needs no external training material.
-            tok = Tokenizer([])
+            if tokenizer not in TOKENIZERS:
+                raise ValueError(f"Unknown tokenizer {tokenizer!r}; choose one of: {', '.join(TOKENIZERS)}")
+            if tokenizer == "library":
+                src = _library_tokenizer(ctx)
+                if src is None:
+                    raise ValueError("No prepared dataset library with a trained tokenizer exists yet; prepare data first "
+                                     "or choose the byte-level tokenizer")
+                tok = Tokenizer.load(src)
+            else:
+                # Byte vocabulary is lossless and needs no external training material.
+                tok = Tokenizer([])
             tok.save(tok_path)
-            cfg = preset("moth-tiny", vocab_size=tok.vocab_size, ffn_hidden=128)
-            cfg.name = "moth-0.01"
+            cfg = _config(size, tok.vocab_size)
             model = MothModel(cfg)
             atomic_torch_save({"model": model.state_dict(), "model_config": cfg.to_dict(),
                                "tokenizer_path": str(tok_path), "tokenizer_fingerprint": tok.fingerprint(),
@@ -64,17 +139,18 @@ def initialize(ctx: Ctx, actor_id: int | None = None) -> dict:
         import json
 
         M._set(ctx, rel["version"], info=json.dumps({**rel["info"], "initialization": "random-untrained",
+                                                   "genesis": {"size": size, "tokenizer": tokenizer},
                                                    "lineage_totals": {"steps": 0, "tokens": 0, "cycles": 0},
                                                    "dev_checkpoint": dev}))
         return {"created": True, "recovered": recovering, "model": M.release(ctx, rel["version"])}
 
 
-def activate_initial(ctx: Ctx, actor_id: int) -> dict:
+def activate_initial(ctx: Ctx, actor_id: int, size: str = "seed", tokenizer: str = "byte") -> dict:
     """Explicit owner activation of an evaluated *untrained* baseline, never an upgrade shortcut."""
     current = M.deployed(ctx)
     if current:
         return current
-    rel = initialize(ctx, actor_id)['model']
+    rel = initialize(ctx, actor_id, size, tokenizer)['model']
     if rel['info'].get('source', {}).get('type') != 'native-initialization':
         raise ValueError('An existing lineage is registered; evaluate and deploy it in Model registry')
     rel = M.evaluate(ctx, rel['version'], actor_id=actor_id)
