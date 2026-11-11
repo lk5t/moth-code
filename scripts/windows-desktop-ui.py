@@ -57,11 +57,19 @@ class WindowsUI:
                 pass
         raise AssertionError(f'Windows control has no supported action: {name}')
 
-    def optional_tab(self, name):
+    def optional_tab(self, name, wait=10):
         # The published 0.5.1 installer has one Settings page; newer versions group it in tabs.
-        if any(c.element_info.name == name and c.element_info.control_type == 'TabItem'
-               for c in self.root.descendants()):
-            self.click(name, control_type='TabItem')
+        # Wait for the page to render: a tab saved from an earlier session (the app profile is
+        # shared between installs) must never be mistaken for the one we need.
+        deadline = time.monotonic() + wait
+        while True:
+            if any(c.element_info.name == name and c.element_info.control_type == 'TabItem'
+                   for c in self.root.descendants()):
+                self.click(name, control_type='TabItem')
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.5)
 
     def field(self, name):
         for c in self.root.descendants(control_type='Edit'):

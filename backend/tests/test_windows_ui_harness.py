@@ -72,3 +72,20 @@ def test_draft_targets_composer_instead_of_conversation_search():
     ui.draft('synthetic unsent draft')
     assert ui.draft()=='synthetic unsent draft'
     assert search.iface_value.CurrentValue=='search unchanged'
+
+
+def test_tab_that_renders_late_is_still_selected(monkeypatch):
+    """0.6.2 release run: Settings rendered its tabs after the first look, and a remembered tab showed."""
+    import itertools
+    module=runpy.run_path(str(Path(__file__).resolve().parents[2]/'scripts/windows-desktop-ui.py'))
+    ui=object.__new__(module['WindowsUI']);clicked=[]
+    tab=SimpleNamespace(element_info=SimpleNamespace(name='Account',control_type='TabItem'))
+    trees=itertools.chain([[],[]],itertools.repeat([tab]))
+    ui.root=SimpleNamespace(descendants=lambda **kw:next(trees))
+    ui.click=lambda name,**kw:clicked.append((name,kw.get('control_type')))
+    clock=[0.0]
+    monkeypatch.setattr(module['time'],'sleep',lambda s:clock.__setitem__(0,clock[0]+s))
+    monkeypatch.setattr(module['time'],'monotonic',lambda:clock[0])
+    assert ui.optional_tab('Account') is True and clicked==[('Account','TabItem')]
+    ui.root=SimpleNamespace(descendants=lambda **kw:[])  # a single-page Settings (0.5.1) never has tabs
+    assert ui.optional_tab('Account') is False
