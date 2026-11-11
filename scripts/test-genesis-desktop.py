@@ -116,6 +116,7 @@ def main(installer):
         ui.click('Training', control_type='TabItem')
         print('::notice title=GENESIS native stage::Workspace drafts and interactive Intelligence tabs passed', flush=True)
         worker_backend = api('/v1/admin/evolution/status')['settings']['backends']['workers']
+        ui.click('Network', control_type='Button')  # computers and consent live in Network
         for value in (False, True):
             ui.click('Use cloud workers')
             wait(lambda: api('/v1/admin/evolution/status')['settings']['cloud_workers'] is value,
@@ -128,6 +129,8 @@ def main(installer):
                    for w in api('/v1/training/workers')['workers'])
         ui.click('Contribute this computer')
         wait(lambda: not participant_setting()['enabled'], 'participant disable persisted')
+        ui.click('Intelligence', control_type='Button')
+        ui.click('Training', control_type='TabItem')
         ui.click('Resume MOTH training')
         print('::notice title=GENESIS native stage::Cloud worker toggle and actual desktop enrollment passed; waiting for CPU progress', flush=True)
         cycle = wait(lambda: api('/v1/admin/evolution/status').get('cycle'), 'eligible cycle created by UI', timeout=120)
@@ -136,7 +139,8 @@ def main(installer):
              'real CPU training progress from requested cycle', timeout=180)
         api('/v1/admin/evolution/pause', {}, 'POST')
         ui.resize(800, 600)
-        ui.click('Evolution', control_type='TabItem')
+        for tab in ('Improvements','History','Advanced'):
+            ui.click(tab, control_type='TabItem')
         for label in ('Network','Data','Activity'):
             ui.click(label, control_type='Button')
         ui.click('Chat')
