@@ -230,7 +230,9 @@ def _maybe_start(ctx: Ctx, settings: dict, woken: bool = False) -> dict:
     elif not DS.approved(ctx):
         reason = "No approved training data. Add a dataset in Evolution → Data and approve it."
     else:
-        preview = P.plan(ctx, base, settings, 0)
+        from moth_server.evolution import autopilot as AP
+
+        preview = P.plan(ctx, base, AP.adapt(ctx, settings)[0], 0)
         if not preview["experiments"]:
             reason = " ".join(preview["notes"]) or "Nothing new to train on."
     if reason:
@@ -258,7 +260,18 @@ def _planning(ctx: Ctx, cyc: dict, settings: dict) -> None:
     from moth_server import models as M
 
     base = M.release(ctx, cyc["base_version"])
+    from moth_server.evolution import autopilot as AP
+
+    try:
+        from moth_server.evolution import compute as CMP
+
+        measured = {"local": CMP.local(ctx)}
+    except Exception:  # noqa: BLE001 — resources only refine the plan
+        measured = None
+    settings, decisions = AP.adapt(ctx, settings, measured)
+    AP.remember(ctx, settings, decisions, cyc["id"])
     result = P.plan(ctx, base, settings, cycle_seed=1000 + cyc["id"])
+    result["decisions"] = decisions
     if not result["experiments"]:
         MEM.update_cycle(ctx, cyc["id"], status="completed", plan=result, finished_at=now(),
                          result={"outcome": "nothing_to_do", "notes": result["notes"]})
@@ -763,6 +776,10 @@ def _schedule_next(ctx: Ctx, failed: bool) -> None:
     settings = S.runtime(ctx)
     st = state(ctx)
     fails = int(st["consecutive_failures"]) + 1 if failed else 0
+    if not failed:
+        from moth_server.evolution import autopilot as AP
+
+        settings = AP.adapt(ctx, settings)[0]  # slows down after cycles without an accepted improvement
     delay = float(settings["interval_hours"]) * 3600 * (2 ** min(fails, 4))
     values: dict[str, Any] = {"consecutive_failures": fails, "next_cycle_at": now() + delay}
     if failed and fails >= int(settings["max_consecutive_failures"]):

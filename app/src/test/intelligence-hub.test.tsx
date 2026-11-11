@@ -27,6 +27,8 @@ beforeEach(() => {
     if (path.endsWith("/status")) return { settings: { backends: { local_cpu: true, workers: true }, distributed: { enabled: true } }, cycle: null };
     if (path.endsWith("/resources")) return { training: { running: [] }, local: { cpu_count: 4, cpu_percent: 2, memory: { available: 4 * 1024 ** 3 } } };
     if (path.endsWith("/genesis")) return { status: "not_prepared" };
+    if (path.endsWith("/autopilot")) return { stage: "idle", running: true, doing: "Waiting for the next cycle.", autopilot: true,
+      plan: { steps: 100, lr: 0.00015, batch_size: 8 }, decisions: [{ kind: "lr", message: "Training has slowed down: testing a lower learning rate." }] };
     return {};
   });
 });
@@ -40,9 +42,10 @@ describe("Intelligence consolidation", () => {
     await screen.findByRole("button", { name: "Inspect layer 2" });
     fireEvent.click(screen.getByRole("button", { name: "Inspect layer 2" }));
     expect(screen.getByRole("button", { name: "Inspect layer 2" })).toHaveAttribute("aria-pressed", "true");
-    await screen.findByRole("button", { name: "Train MOTH now" });
+    await screen.findByRole("button", { name: "Pause Evolution" });
+    expect(screen.getByText("Training has slowed down: testing a lower learning rate.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Train MOTH now" })).toBeNull();  // manual controls live in AI Settings
     expect(screen.queryByRole("switch", { name: "Contribute this computer" })).toBeNull();
-    expect(screen.getAllByRole("button",{name:/Train MOTH now|Resume MOTH training/})).toHaveLength(1);
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Data" }), { button: 0 });
     fireEvent.mouseDown(await screen.findByRole("tab", {name:"Cloud library"}), {button:0});
     await screen.findByText("Approved dataset controls");
@@ -50,6 +53,8 @@ describe("Intelligence consolidation", () => {
     expect(appStore.getState().intelligenceTab).toBe("data");
     fireEvent.mouseDown(screen.getByRole("tab", { name: "AI Settings" }), { button: 0 });
     await screen.findByText("Growth approval and rollback controls");
+    fireEvent.click(screen.getByText("Manual training controls"));
+    await screen.findByRole("button", { name: "Train MOTH now" });
   });
   it("never animates a training claim without reported progress", async () => {
     const props = { progress: { ...progress, training: { cycle: { status: "training" } } }, resources: { training: { running: [{ progress: { step: 0 } }] } } };

@@ -269,6 +269,32 @@ def put_settings(body: SettingsIn, auth: Auth = Depends(owner_reauthed), ctx: Ct
     return s
 
 
+@router.get("/autopilot")
+def autopilot_status(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """What MOTH is doing now, what it will do next and the reasons for its recent plan changes."""
+    from moth_server.evolution import autopilot as AP
+
+    return AP.status(ctx)
+
+
+@router.post("/autopilot/start")
+def autopilot_start(auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    """One click: create a first model if there is none, select trusted data, start continuous evolution."""
+    from moth_server.evolution import autopilot as AP
+
+    try:
+        return AP.start(ctx, auth.uid)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(409, str(e)) from None
+
+
+@router.post("/autopilot/pause")
+def autopilot_pause(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.evolution import autopilot as AP
+
+    return AP.pause(ctx, auth.uid)
+
+
 @router.post("/pause")
 def pause(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     S.update(ctx, {"paused": True})

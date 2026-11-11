@@ -3,12 +3,11 @@ import { navigate } from "@/lib/navigation";
 import { LivingMoth, IntelligencePulse } from "@/components/LivingMoth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { GenesisSetup } from "./GenesisSetup";
 
 type Any=Record<string,any>;
 export function OverviewSummary({progress,updatedAt}:{progress:Any|null;updatedAt:number|null}) {
   const current=progress?.current, serving=progress?.serving;
-  if(progress && !current) return <GenesisSetup />;
+  if(progress && !current) return null;  // AI → Evolution offers Start Evolution instead
   const measured=progress?.improvement;
   return <Card><CardContent className="space-y-4 p-4">
     <div className="flex flex-wrap items-center gap-3"><LivingMoth className="size-10"/><div>

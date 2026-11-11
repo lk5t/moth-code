@@ -1,6 +1,8 @@
 import { useCloudProgress, refreshCloudProgress } from "@/lib/cloud-progress";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { OverviewSummary } from "./OverviewSummary";
+import { EvolutionControl } from "./EvolutionControl";
+import { GenesisSetup } from "./GenesisSetup";
 import { modelLabel } from "@/lib/model-label";
 import { useSavedSection } from "@/lib/use-saved-section";
 import { useEffect, useRef, useState } from "react";
@@ -155,9 +157,9 @@ export function IntelligenceHub() {
           {TABS.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="[&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
         </TabsList>
         {tab === "evolution" && <TabsContent value="evolution" className="flex flex-col gap-4">
-          <OverviewSummary progress={p} updatedAt={updatedAt} />
+          <EvolutionControl progress={p} />
           {p?.current && <TrainingProgress progress={p} resources={resources} />}
-          {owner && p?.current && <NetworkTraining scope="training" />}
+          {p?.current ? <OverviewSummary progress={p} updatedAt={updatedAt} /> : owner && p && <Advanced title="Choose the model size and tokenizer yourself"><GenesisSetup /></Advanced>}
           {p?.current && <Advanced title="Model details and measured architecture"><ModelActivity progress={p} resources={resources} /></Advanced>}
         </TabsContent>}
         {tab === "data" && <TabsContent value="data" className="flex flex-col gap-4">
@@ -182,7 +184,7 @@ export function IntelligenceHub() {
           <Advanced title="Activity on this computer"><ActivityPanel all /></Advanced>
         </TabsContent>}
         {tab === "settings" && <TabsContent value="settings" className="space-y-3">
-          {owner ? <><GrowthDiagnostics /><EvolutionPanel section="advanced" /><Advanced title="Detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView scope="training" /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced><Advanced title="Feedback and shared knowledge"><IntelligencePanel sections={["feedback", "knowledge"]} /></Advanced></> : <p className="text-xs text-muted">Advanced training and deployment controls require the Owner.</p>}
+          {owner ? <><Advanced title="Manual training controls"><NetworkTraining scope="training" /></Advanced><GrowthDiagnostics /><EvolutionPanel section="advanced" /><Advanced title="Detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView scope="training" /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced><Advanced title="Feedback and shared knowledge"><IntelligencePanel sections={["feedback", "knowledge"]} /></Advanced></> : <p className="text-xs text-muted">Advanced training and deployment controls require the Owner.</p>}
         </TabsContent>}
       </Tabs>}
     </div>
