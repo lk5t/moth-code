@@ -217,7 +217,7 @@ def _maybe_start(ctx: Ctx, settings: dict, woken: bool = False) -> dict:
 
     st = state(ctx)
     if not settings.get("automatic", True) and not st.get("manual_cycle_requested"):
-        _set_state(ctx, idle_reason="Manual training: start a cycle in Intelligence → Training.")
+        _set_state(ctx, idle_reason="Manual training: start a cycle in AI → Evolution.")
         return {"state": "manual", "reason": "Waiting for an explicit training request"}
     if not woken and now() < float(st["next_cycle_at"] or 0):  # an Owner action checks now
         return {"state": "scheduled", "next_cycle_at": st["next_cycle_at"]}

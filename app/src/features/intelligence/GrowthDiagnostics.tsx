@@ -1,5 +1,5 @@
 /**
- * Intelligence → Advanced: why the parameter count is what it is, and the one way to change it.
+ * AI → AI Settings: why the parameter count is what it is, and the one way to change it.
  * Ordinary training never changes the count. It changes only when a larger candidate — proposed by the
  * growth planner on plateau evidence, or requested here by the Owner — passes every evaluation gate.
  */

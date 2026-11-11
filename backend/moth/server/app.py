@@ -93,7 +93,18 @@ def create_app(paths: Paths, token: str | None = None, services: Services | None
     api_token = token if token is not None else os.environ.get("MOTH_API_TOKEN") or ""
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        import asyncio
+
+        async def retention():  # the Owner's chosen conversation retention, if any, applied daily
+            while True:
+                try:
+                    await asyncio.to_thread(svc.apply_chat_retention)
+                except Exception:
+                    pass
+                await asyncio.sleep(86400)
+        task = asyncio.create_task(retention())
         yield
+        task.cancel()
         svc.shutdown()
 
     app = FastAPI(title="MOTH Code backend", version=__version__, lifespan=lifespan)
@@ -151,6 +162,9 @@ def create_app(paths: Paths, token: str | None = None, services: Services | None
             if not isinstance(permissions, dict) or any(type(value) is not bool for key,value in permissions.items()
                     if key in ('auto_write','auto_execute','auto_git_commit')):
                 raise HTTPException(422, 'Permission choices must be true or false')
+        if "chat_retention_days" in values and (type(values["chat_retention_days"]) not in (int, float)
+                                                 or not 0 <= values["chat_retention_days"] <= 36500):
+            raise HTTPException(422, "Conversation retention must be 0 (keep forever) or a number of days")
         for k, v in values.items():
             svc.db.set_setting(k, v)
         svc.bus.publish("settings", {"keys": list(values)})

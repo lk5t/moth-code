@@ -4,9 +4,11 @@ import { OverviewSummary } from "./OverviewSummary";
 import { modelLabel } from "@/lib/model-label";
 import { useSavedSection } from "@/lib/use-saved-section";
 import { useEffect, useRef, useState } from "react";
-import { Activity, Brain, Database, GitBranch, Network, ChevronDown } from "lucide-react";
+import { Brain, Database, History, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { serverApi, useAccount } from "@/lib/account";
-import { useApp, appStore, type IntelligenceTab } from "@/lib/app-state";
+import { useApp, appStore, aiTab, type AiTab } from "@/lib/app-state";
+import { CloudActivity } from "@/features/activity/CloudActivity";
+import { ActivityPanel } from "@/features/workspace/ActivityPanel";
 import { cn, formatNumber } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty";
@@ -25,10 +27,12 @@ import { ModelOverview } from "@/features/owner/ModelOverview";
 import { TrainingProgress } from "./TrainingProgress";
 
 type Any = Record<string, any>;
-const TABS: [IntelligenceTab, string, React.ReactNode][] = [
-  ["overview", "Overview", <Brain />], ["training", "Training", <Activity />],
-  ["improvements", "Improvements", <GitBranch />], ["history", "History", <Database />], ["advanced", "Advanced", <Network />],
+const TABS: [AiTab, string, React.ReactNode][] = [
+  ["evolution", "Evolution", <Brain />], ["data", "Data", <Database />],
+  ["history", "History", <History />], ["settings", "AI Settings", <SlidersHorizontal />],
 ];
+/** Older views (Overview, Data, Activity, Training, Models) open the matching AI section. */
+const VIEW_TAB: Record<string, AiTab> = { overview: "evolution", training: "evolution", data: "data", activity: "history", evolution: "history", models: "settings" };
 
 export function Advanced({ title, children }: { title: string; children: React.ReactNode }) {
   const [visited, setVisited] = useState(false);
@@ -118,16 +122,15 @@ export function IntelligenceHub() {
   const owner = useAccount((s) => s.user?.role === "owner");
   const view = useApp((s) => s.view);
   const storedTab = useApp((s) => s.intelligenceTab);
-  const standalone = ["overview", "data", "network"].includes(view);
-  const heading = view === "overview" ? "Overview" : view === "data" ? "Data" : view === "network" ? "Network" : "Intelligence";
-  const visibleTabs = TABS;
-  const tab: IntelligenceTab = view === "overview" ? "overview" : view === "data" ? "data" : view === "evolution" ? "improvements" : view === "network" ? "network" : view === "training" ? "training" : view === "models" ? "advanced" : storedTab === "evolution" ? "improvements" : visibleTabs.some(([key]) => key === storedTab) ? storedTab : "overview";
+  const network = view === "network";
+  const tab: AiTab = VIEW_TAB[view] ?? aiTab(storedTab);
+  const heading = network ? "Network" : "AI";
   const [dataSection, setDataSection] = useSavedSection<"local" | "cloud">("data", ["local", "cloud"], "local");
   const {data:p,error,updatedAt} = useCloudProgress();
   const [resources, setResources] = useState<Any | null>(null);
   useEffect(() => {
     setResources(null);
-    if (!signedIn || !owner || !["overview", "training"].includes(tab)) return;
+    if (!signedIn || !owner || network || tab !== "evolution") return;
     let alive = true;
     const load = () => {
       if(document.hidden) return;
@@ -136,39 +139,28 @@ export function IntelligenceHub() {
     load(); const timer = setInterval(load, owner ? 5000 : 20000);
     return () => { alive = false; clearInterval(timer); };
   }, [sessionToken, owner, tab]);
-  if (!signedIn) return <EmptyState title="Sign in to Intelligence">MOTH's live training, compute, data and model history appear here.</EmptyState>;
+  if (!signedIn) return <EmptyState title={network ? "Sign in to Network" : "Sign in to MOTH AI"}>MOTH's live training, compute, data and model history appear here.</EmptyState>;
   return <div className="h-full overflow-auto">
     <div className="mx-auto flex max-w-6xl flex-col gap-3 p-3 sm:p-4 lg:p-5">
       <header className="flex flex-wrap items-end justify-between gap-3"><div>
-        <p className="text-[10px] uppercase tracking-[0.22em] text-accent">MOTH / Intelligence</p>
-        <h1 className="mt-1 text-2xl font-medium tracking-tight">{heading}</h1>
-        <p className="mt-1 text-xs text-muted">{heading === "Overview" ? "The model currently serving MOTH, with measured status and important warnings." : heading === "Data" ? "Prepare and inspect licensed datasets with the intended tokenizer." : heading === "Network" ? "Manage trusted workers and your own computer’s voluntary contribution." : "Train, evaluate and safely improve the native MOTH model."}</p>
+        <h1 className="text-2xl font-medium tracking-tight">{heading}</h1>
+        <p className="mt-1 text-xs text-muted">{network ? "Workers, MOTH Cloud and your own computer's voluntary training." : "MOTH develops its native model by itself. Start or pause it, and follow exactly what it is doing."}</p>
       </div><span className="text-xs text-faint">{p?.current ? modelLabel(p.current) : p ? "No model yet" : error ? "Status unavailable" : "Loading status…"}</span></header>
       {error && <div className="space-y-2"><ErrorNotice error={`Live status unavailable: ${error}`} /><button className="text-xs text-accent" onClick={() => refreshCloudProgress()}>Retry connection</button></div>}
-      <Tabs value={tab} onValueChange={(value) => appStore.setState({view:"intelligence", intelligenceTab:value as IntelligenceTab})}>
-        {!standalone && <TabsList aria-label="Intelligence sections" className="mb-3 w-full justify-start">
-          {visibleTabs.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="[&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
-        </TabsList>}
-        {(tab === "overview") && <TabsContent forceMount hidden={tab !== "overview"} value="overview" className="flex flex-col gap-5 data-[state=inactive]:hidden">
-          <OverviewSummary progress={p} updatedAt={updatedAt} />{p?.current && <Advanced title="Model details and measured architecture"><ModelActivity progress={p} resources={resources} /></Advanced>}
+      {network ? <div className="flex flex-col gap-4">
+        {owner && <NetworkTraining scope="network" />}<NetworkView embedded />{owner && <Advanced title="Worker assignments, permissions and resource limits"><WorkersPanel /></Advanced>}
+      </div> :
+      <Tabs value={tab} onValueChange={(value) => appStore.setState({view:"intelligence", intelligenceTab:value as AiTab})}>
+        <TabsList aria-label="AI sections" className="mb-3 w-full justify-start">
+          {TABS.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="[&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
+        </TabsList>
+        {tab === "evolution" && <TabsContent value="evolution" className="flex flex-col gap-4">
+          <OverviewSummary progress={p} updatedAt={updatedAt} />
+          {p?.current && <TrainingProgress progress={p} resources={resources} />}
+          {owner && p?.current && <NetworkTraining scope="training" />}
+          {p?.current && <Advanced title="Model details and measured architecture"><ModelActivity progress={p} resources={resources} /></Advanced>}
         </TabsContent>}
-        {(tab === "training") && <TabsContent forceMount hidden={tab !== "training"} value="training" className="flex flex-col gap-4 data-[state=inactive]:hidden">
-          <TrainingProgress progress={p} resources={resources} />
-          {owner && <NetworkTraining scope="training" />}
-        </TabsContent>}
-        {(tab === "improvements") && <TabsContent forceMount hidden={tab !== "improvements"} value="improvements" className="space-y-3 data-[state=inactive]:hidden">
-          <IntelligenceView embedded focus="improvements" />{owner && <><EvolutionPanel section="improvements" /><IntelligencePanel sections={["weak"]} /></>}
-        </TabsContent>}
-        {(tab === "history") && <TabsContent forceMount hidden={tab !== "history"} value="history" className="space-y-3 data-[state=inactive]:hidden">
-          <IntelligenceView embedded focus="history" />{owner && <><CycleHistory /><Advanced title="Rollback to an accepted version"><EvolutionVersions reload={()=>{refreshCloudProgress();}} /></Advanced></>}
-        </TabsContent>}
-        {(tab === "advanced") && <TabsContent forceMount hidden={tab !== "advanced"} value="advanced" className="space-y-3 data-[state=inactive]:hidden">
-          {owner ? <><GrowthDiagnostics /><EvolutionPanel section="advanced" /><Advanced title="Detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView scope="training" /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced><Advanced title="Feedback and shared knowledge"><IntelligencePanel sections={["feedback", "knowledge"]} /></Advanced></> : <p className="text-xs text-muted">Advanced training and deployment controls require the Owner.</p>}
-        </TabsContent>}
-        {(tab === "network") && <TabsContent forceMount hidden={tab !== "network"} value="network" className="flex flex-col gap-4 data-[state=inactive]:hidden">
-          {owner && <NetworkTraining scope="network" />}<NetworkView embedded />{owner && <Advanced title="Worker assignments, permissions and resource limits"><WorkersPanel /></Advanced>}
-        </TabsContent>}
-        {(tab === "data") && <TabsContent forceMount hidden={tab !== "data"} value="data" className="flex flex-col gap-4 data-[state=inactive]:hidden">
+        {tab === "data" && <TabsContent value="data" className="flex flex-col gap-4">
           <Tabs value={dataSection} onValueChange={(value) => setDataSection(value as "local" | "cloud")}>
             <TabsList aria-label="Data sections"><TabsTrigger value="local">This computer</TabsTrigger><TabsTrigger value="cloud">Cloud library</TabsTrigger></TabsList>
             <TabsContent value="local"><TrainingView scope="data" /></TabsContent>
@@ -181,7 +173,18 @@ export function IntelligenceHub() {
             </TabsContent>
           </Tabs>
         </TabsContent>}
-      </Tabs>
+        {tab === "history" && <TabsContent value="history" className="space-y-3">
+          <IntelligenceView embedded focus="improvements" />
+          <IntelligenceView embedded focus="history" />
+          {owner && <><CycleHistory /><Advanced title="Experiments, weaknesses and evaluation details"><EvolutionPanel section="improvements" /><IntelligencePanel sections={["weak"]} /></Advanced>
+            <Advanced title="Rollback to an accepted version"><EvolutionVersions reload={()=>{refreshCloudProgress();}} /></Advanced></>}
+          <Advanced title="All activity"><CloudActivity /></Advanced>
+          <Advanced title="Activity on this computer"><ActivityPanel all /></Advanced>
+        </TabsContent>}
+        {tab === "settings" && <TabsContent value="settings" className="space-y-3">
+          {owner ? <><GrowthDiagnostics /><EvolutionPanel section="advanced" /><Advanced title="Detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView scope="training" /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced><Advanced title="Feedback and shared knowledge"><IntelligencePanel sections={["feedback", "knowledge"]} /></Advanced></> : <p className="text-xs text-muted">Advanced training and deployment controls require the Owner.</p>}
+        </TabsContent>}
+      </Tabs>}
     </div>
   </div>;
 }

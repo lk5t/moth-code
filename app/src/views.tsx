@@ -2,7 +2,6 @@ import { type View } from "@/lib/app-state";
 import { useAccount } from "@/lib/account";
 import { EmptyState } from "@/components/ui/empty";
 import { OwnerDashboard } from "@/features/owner/OwnerDashboard";
-import { ActivityWorkspace } from "@/features/activity/ActivityWorkspace";
 import { IntelligenceHub } from "@/features/intelligence/IntelligenceHub";
 
 /** Owner-only tools, grouped under one Owner entry: dashboard, local training, model packaging. */
@@ -22,7 +21,7 @@ function ownerOnly(C: React.ComponentType): React.ComponentType {
 export const views: Partial<Record<View, React.ComponentType>> = {
   overview: IntelligenceHub,
   data: IntelligenceHub,
-  activity: ActivityWorkspace,
+  activity: IntelligenceHub,
   intelligence: IntelligenceHub,
   evolution: IntelligenceHub,
   network: IntelligenceHub,

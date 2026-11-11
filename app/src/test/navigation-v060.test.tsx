@@ -7,29 +7,33 @@ import { navigate, workspaceOf } from "@/lib/navigation";
 vi.mock("@/lib/account", () => ({useAccount: (fn: (s:any) => unknown) => fn({user:{role:"owner"}})}));
 vi.mock("@/features/account/AccountMenu", () => ({AccountMenu: () => <span>Account</span>}));
 afterEach(cleanup);
-it("exposes eight direct workspaces with an active indicator and persistent navigation", () => {
-  appStore.setState({view:"overview"});
+it("exposes five main sections with an active indicator and persistent navigation", () => {
+  appStore.setState({view:"chat"});
   render(<TooltipProvider><NavRail /></TooltipProvider>);
   const nav=screen.getByRole("navigation",{name:"Main workspaces"});
-  for(const label of ["Overview","Chat","Code","Intelligence","Data","Network","Activity","Settings"]) expect(within(nav).getByRole("button",{name:label})).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button",{name:"Data"}));
-  expect(appStore.getState().view).toBe("data");
-  expect(screen.getByRole("button",{name:"Data"})).toHaveAttribute("aria-current","page");
-  expect(JSON.parse(localStorage.getItem("moth.navigation")!).view).toBe("data");
+  const labels=["Chat","Projects","AI","Network","Settings"];
+  for(const label of labels) expect(within(nav).getByRole("button",{name:label})).toBeInTheDocument();
+  for(const old of ["Overview","Code","Intelligence","Data","Activity"]) expect(within(nav).queryByRole("button",{name:old})).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button",{name:"AI"}));
+  expect(appStore.getState().view).toBe("intelligence");
+  expect(screen.getByRole("button",{name:"AI"})).toHaveAttribute("aria-current","page");
+  expect(JSON.parse(localStorage.getItem("moth.navigation")!).view).toBe("intelligence");
 });
-it("supports keyboard feature search and legacy route adapters", () => {
+it("supports keyboard feature search and maps every older route into the five sections", () => {
   render(<TooltipProvider><NavRail /></TooltipProvider>);
   fireEvent.keyDown(window,{key:"k",ctrlKey:true});
   const search=screen.getByRole("combobox",{name:"Search features"});
-  fireEvent.change(search,{target:{value:"Evolution"}});
+  fireEvent.change(search,{target:{value:"Model history"}});
   fireEvent.keyDown(search,{key:"Enter"});
   expect(appStore.getState().view).toBe("intelligence");
-  expect(appStore.getState().intelligenceTab).toBe("improvements");
+  expect(appStore.getState().intelligenceTab).toBe("history");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   openIntelligence("network"); expect(appStore.getState().view).toBe("network");
-  openIntelligence("data"); expect(appStore.getState().view).toBe("data");
-  expect(workspaceOf("training")).toBe("intelligence");
-  expect(workspaceOf("models")).toBe("intelligence");
+  openIntelligence("data"); expect(appStore.getState()).toMatchObject({view:"intelligence",intelligenceTab:"data"});
+  openIntelligence("advanced"); expect(appStore.getState().intelligenceTab).toBe("settings");
+  openIntelligence("improvements"); expect(appStore.getState().intelligenceTab).toBe("history");
+  navigate("overview"); expect(appStore.getState()).toMatchObject({view:"intelligence",intelligenceTab:"evolution"});
+  navigate("activity"); expect(appStore.getState().intelligenceTab).toBe("history");
+  for(const v of ["overview","data","activity","training","models","evolution"] as const) expect(workspaceOf(v)).toBe("intelligence");
   expect(workspaceOf("owner")).toBe("settings");
-  navigate("intelligence");expect(appStore.getState().intelligenceTab).toBe("overview");
 });

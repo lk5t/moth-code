@@ -58,6 +58,25 @@ class Services:
     def workspace(self, project_id: int) -> Workspace:
         return Workspace(Path(self.project(project_id)["path"]))
 
+    def apply_chat_retention(self) -> int:
+        """Delete conversations older than the chosen retention period (setting ``chat_retention_days``).
+
+        0 or unset keeps conversations forever; nothing is deleted without this explicit setting.
+        Age is measured from the latest message, so active conversations are kept."""
+        days = self.db.get_setting("chat_retention_days")
+        if type(days) not in (int, float) or days <= 0:
+            return 0
+        cutoff = time.time() - float(days) * 86400
+        ids = [r["id"] for r in self.db.query(
+            "SELECT c.id FROM conversations c WHERE COALESCE((SELECT MAX(ts) FROM messages m WHERE m.conversation_id=c.id),"
+            " c.created_at) < ?", (cutoff,))]
+        for cid in ids:
+            self.db.execute("DELETE FROM conversations WHERE id=?", (cid,))
+        if ids:
+            self.db.log_activity("chat", f"Deleted {len(ids)} conversation(s) older than {days:g} days (retention setting)")
+            self.bus.publish("conversations", {"deleted": ids})
+        return len(ids)
+
     def permission_engine(self) -> PermissionEngine:
         return PermissionEngine(PermissionSettings.from_dict(self.db.get_setting("permissions")))
 

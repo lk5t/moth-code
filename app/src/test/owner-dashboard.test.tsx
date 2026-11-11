@@ -15,7 +15,7 @@ it("keeps administration in Owner tools and routes native AI into Intelligence",
   const primary = screen.getByRole("tablist", { name: "Owner sections" });
   expect(within(primary).getAllByRole("tab").map(t => t.textContent)).toEqual(["Overview", "Servers", "Community", "Settings"]);
   fireEvent.click(screen.getByRole("button", { name: "View active model" }));
-  expect(appStore.getState().view).toBe("overview");
+  expect(appStore.getState()).toMatchObject({ view: "intelligence", intelligenceTab: "evolution" });
   fireEvent.mouseDown(within(primary).getByRole("tab", { name: "Settings" }), { button: 0 });
   await screen.findByRole("tab", { name: "Updates" });
   expect(screen.getByRole("tab", { name: "Audit log" })).toBeInTheDocument();

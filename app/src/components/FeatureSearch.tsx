@@ -10,10 +10,10 @@ export function FeatureSearch({ compact = false }: { compact?: boolean } = {}) {
   const owner = useAccount((s) => s.user?.role === "owner");
   const input = useRef<HTMLInputElement>(null);
   const targets = [...WORKSPACES.map((w) => ({ ...w, run: () => navigate(w.view) })),
-    { label: "Training", description: "Start, pause and inspect real progress", run: () => openIntelligence("training") },
-    { label: "Improvements", description: "Evolution experiments, evaluation and weaknesses", run: () => openIntelligence("improvements") },
-    { label: "Model history", description: "Revisions, cycles, promotions and rollback", run: () => openIntelligence("history") },
-    { label: "Advanced Intelligence", description: "Growth, checkpoints and technical training settings", run: () => openIntelligence("advanced") },
+    { label: "Evolution", description: "Start or pause MOTH's training and follow live progress", run: () => openIntelligence("evolution") },
+    { label: "Training data", description: "Datasets, tokenizer and data quality", run: () => openIntelligence("data") },
+    { label: "Model history", description: "Improvements, versions, promotions, rollback and activity", run: () => openIntelligence("history") },
+    { label: "AI Settings", description: "Autonomous evolution, resource budget and advanced training options", run: () => openIntelligence("settings") },
     ...(owner ? [{label: "Administration", description: "Owner users, billing, security and infrastructure", run: () => navigate("owner")}] : [])];
   const matches = targets.filter((t) => `${t.label} ${t.description}`.toLowerCase().includes(query.trim().toLowerCase())).sort((a,b) => Number(b.label.toLowerCase() === query.trim().toLowerCase()) - Number(a.label.toLowerCase() === query.trim().toLowerCase()) || Number(b.description.toLowerCase().startsWith(query.trim().toLowerCase())) - Number(a.description.toLowerCase().startsWith(query.trim().toLowerCase())));
   useEffect(() => {

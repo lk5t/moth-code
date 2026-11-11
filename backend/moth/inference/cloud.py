@@ -90,7 +90,7 @@ class MothCloudClient:
         if not data.get("models"):
             err = CloudUnavailable(data.get("message") or (
                 "MOTH Cloud is connected but has no model serving yet: either no model is deployed or inference is "
-                "turned off. The Owner creates a model in Intelligence, or turns answering on in Settings → "
+                "turned off. The Owner starts Evolution in MOTH Code (AI section), or turns answering on in Settings → "
                 "Administration → Policy & flags."))
             err.reason = data.get("status") or "no_model_deployed"
             raise err

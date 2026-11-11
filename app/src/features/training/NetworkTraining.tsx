@@ -83,7 +83,7 @@ export function NetworkTraining({ scope = "all" }: { scope?: "all" | "training" 
         <CardTitle className="flex items-center gap-2"><Cloud className="size-4 text-accent" />MOTH training network</CardTitle>
         <CardDescription>
           {evo.active_model ? <>Training continues the deployed model, {evo.active_model.name}, on MOTH Cloud, its workers and any computers you contribute. A new version replaces it only after passing evaluation.</>
-            : <>There is no model to train yet. Create one in Intelligence → Overview.</>}
+            : <>There is no model to train yet. Start Evolution in AI → Evolution.</>}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-xs">

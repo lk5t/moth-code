@@ -51,6 +51,13 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
   );
   const [cid, setCid] = useState<number | null>(null);
   const chatRequest=useApp(s=>s.chatRequest);
+  // A deleted conversation (sidebar, bulk delete, clear all or the retention setting) never stays open.
+  useEvent("conversations", (e) => {
+    void reloadConversations();
+    if (Array.isArray(e.deleted) && cidRef.current !== null && e.deleted.includes(cidRef.current)) {
+      setCid(null); setMessages([]); setHasOlder(false);
+    }
+  });
   const [hasOlder, setHasOlder] = useState(false);
   const followTail = useRef(true);
   const conversationLoad = useRef(0);
@@ -280,7 +287,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                       ? "Can't reach MOTH Cloud right now. Your editor, terminal and Git keep working; MOTH will be back when the connection returns."
                       : cloud?.error ?? "MOTH Cloud inference is not available yet."}
                     <div className="mt-3 flex justify-center gap-2"><Button size="sm" variant="secondary" onClick={() => reloadCloud()}><RefreshCw /> Retry</Button>
-                      {cloud?.reason === "no_model_deployed" && <Button size="sm" variant="ghost" onClick={() => navigate("overview")}>Open Overview</Button>}</div>
+                      {cloud?.reason === "no_model_deployed" && <Button size="sm" variant="ghost" onClick={() => navigate("overview")}>Open AI</Button>}</div>
                   </div>
                 ) : (
                   <div className="max-w-sm text-xs text-muted">

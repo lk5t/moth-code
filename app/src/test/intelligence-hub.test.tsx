@@ -20,7 +20,7 @@ const progress = { current: { version: 1, model_version: "0.01", name: "MOTH 0.0
   network: { workers_online: 0, gpu_online: 0, cpu_online: 0, verified_tokens: 0 },
   datasets: { sources: [{ id: "psf", name: "Python standard library", license: "PSF-2.0", records: 60 }] } };
 beforeEach(() => {
-  appStore.setState({ view: "intelligence", intelligenceTab: "overview" });
+  appStore.setState({ view: "intelligence", intelligenceTab: "evolution" });
   mocks.get.mockResolvedValue({ available: true, enabled: false, completed_jobs: 0 });
   mocks.api.mockImplementation(async (path: string) => {
     if (path.endsWith("/progress")) return progress;
@@ -33,25 +33,23 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Intelligence consolidation", () => {
-  it("keeps training/evolution focused and supports the Data workspace adapter", async () => {
+  it("groups AI into Evolution, Data, History and AI Settings, with training on the Evolution page", async () => {
     render(<IntelligenceHub />);
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Overview", "Training", "Improvements", "History", "Advanced"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Evolution", "Data", "History", "AI Settings"]);
     fireEvent.click(await screen.findByText("Model details and measured architecture"));  // shown once a model is reported
     await screen.findByRole("button", { name: "Inspect layer 2" });
     fireEvent.click(screen.getByRole("button", { name: "Inspect layer 2" }));
     expect(screen.getByRole("button", { name: "Inspect layer 2" })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.mouseDown(screen.getByRole("tab", { name: "Training" }), { button: 0 });
     await screen.findByRole("button", { name: "Train MOTH now" });
     expect(screen.queryByRole("switch", { name: "Contribute this computer" })).toBeNull();
-    expect(screen.getByRole("combobox", { name: "Training schedule" })).toHaveValue("automatic");
-    expect(screen.queryByRole("combobox", {name:"Training Mode"})).toBeNull();
     expect(screen.getAllByRole("button",{name:/Train MOTH now|Resume MOTH training/})).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "Prepare and verify backup" })).not.toBeInTheDocument();
-    act(() => appStore.setState({view:"data", intelligenceTab:"data"}));
-    fireEvent.mouseDown(screen.getByRole("tab", {name:"Cloud library"}), {button:0});
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Data" }), { button: 0 });
+    fireEvent.mouseDown(await screen.findByRole("tab", {name:"Cloud library"}), {button:0});
     await screen.findByText("Approved dataset controls");
     expect(screen.getByText("PSF-2.0 · 60 retained samples")).toBeInTheDocument();
     expect(appStore.getState().intelligenceTab).toBe("data");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "AI Settings" }), { button: 0 });
+    await screen.findByText("Growth approval and rollback controls");
   });
   it("never animates a training claim without reported progress", async () => {
     const props = { progress: { ...progress, training: { cycle: { status: "training" } } }, resources: { training: { running: [{ progress: { step: 0 } }] } } };
@@ -78,12 +76,15 @@ it("clears model activity after a failed refresh instead of showing stale state 
   } finally { vi.useRealTimers(); }
 });
 
-it("routes legacy evolution to Improvements and keeps history in the unified workspace",async()=>{
+it("opens older views in the matching AI section and keeps history together",async()=>{
  appStore.setState({view:"evolution",intelligenceTab:"evolution"});render(<IntelligenceHub/>);
- expect(screen.getByRole("tab",{name:"Improvements"})).toHaveAttribute("aria-selected","true");
- await screen.findByText("Growth approval and rollback controls");
- fireEvent.mouseDown(screen.getByRole("tab",{name:"History"}),{button:0});
+ expect(screen.getByRole("tab",{name:"History"})).toHaveAttribute("aria-selected","true");
  await screen.findByText("Recorded training cycles");
- expect(appStore.getState().view).toBe("intelligence");expect(appStore.getState().intelligenceTab).toBe("history");
+ expect(screen.getByText("All activity")).toBeInTheDocument();
  expect(screen.queryByRole("button",{name:"Train MOTH now"})).toBeNull();
+ cleanup();
+ appStore.setState({view:"activity"});render(<IntelligenceHub/>);
+ expect(screen.getByRole("tab",{name:"History"})).toHaveAttribute("aria-selected","true");
+ fireEvent.mouseDown(screen.getByRole("tab",{name:"Evolution"}),{button:0});
+ expect(appStore.getState()).toMatchObject({view:"intelligence",intelligenceTab:"evolution"});
 });

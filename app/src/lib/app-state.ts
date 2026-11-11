@@ -15,7 +15,15 @@ export interface OpenFile {
 }
 
 export type View = "overview" | "data" | "activity" | "chat" | "workspace" | "intelligence" | "evolution" | "network" | "owner" | "training" | "models" | "settings";
-export type IntelligenceTab = "overview" | "training" | "evolution" | "improvements" | "history" | "advanced" | "network" | "data";
+/** AI workspace sections. Older names (overview, training, improvements, advanced) remain accepted and map onto them. */
+export type AiTab = "evolution" | "data" | "history" | "settings";
+export type IntelligenceTab = AiTab | "overview" | "training" | "improvements" | "advanced" | "network";
+export function aiTab(tab: IntelligenceTab | string | undefined): AiTab {
+  if (tab === "data" || tab === "history" || tab === "settings") return tab;
+  if (tab === "improvements") return "history";
+  if (tab === "advanced") return "settings";
+  return "evolution";
+}
 
 function navigation(): Partial<AppState> {
   try {
@@ -23,7 +31,7 @@ function navigation(): Partial<AppState> {
     return {
       view: ["overview", "data", "activity", "chat", "workspace", "intelligence", "evolution", "network", "training", "models", "owner", "settings"].includes(n.view) ? n.view : "chat",
       workspaceMode: n.workspaceMode === "code" ? "code" : "chat",
-      intelligenceTab: ["overview", "training", "evolution", "improvements", "history", "advanced", "network", "data"].includes(n.intelligenceTab) ? n.intelligenceTab : "overview",
+      intelligenceTab: aiTab(n.intelligenceTab),
       ...(typeof n.sidebarCollapsed === "boolean" ? {sidebarCollapsed:n.sidebarCollapsed} : {}),
       ...(typeof n.explorerOpen === "boolean" ? { explorerOpen: n.explorerOpen } : {}),
       ...(typeof n.toolsOpen === "boolean" ? { toolsOpen: n.toolsOpen } : {}),
@@ -66,7 +74,7 @@ export const appStore = createStore<AppState>({
   treeVersion: 0,
   updateVersion: null,
   workspaceMode: "chat",
-  intelligenceTab: "overview",
+  intelligenceTab: "evolution",
   sidebarCollapsed: false,
   chatRequest: null,
   chatSession: {conversationId:null,title:"New conversation",busy:false},
@@ -86,8 +94,9 @@ appStore.subscribe(() => {
   } catch { /* storage unavailable */ }
 });
 
-export function openIntelligence(tab: IntelligenceTab = "overview") {
-  appStore.setState({ view: tab === "overview" ? "overview" : tab === "data" ? "data" : tab === "network" ? "network" : "intelligence", intelligenceTab: tab });
+export function openIntelligence(tab: IntelligenceTab = "evolution") {
+  if (tab === "network") { appStore.setState({ view: "network" }); return; }
+  appStore.setState({ view: "intelligence", intelligenceTab: aiTab(tab) });
 }
 
 export const useApp = appStore.useStore;

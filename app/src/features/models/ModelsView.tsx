@@ -46,7 +46,7 @@ const STAGE_TEXT: Record<string, string> = {
   paused: "Upload paused — it resumes automatically when MOTH Cloud is reachable", processing: "MOTH Cloud is verifying the upload…",
   evaluating: "MOTH Cloud is evaluating the model (it runs real inference)…",
   evaluated: "Evaluated — scored worse than the active model; you can still publish it from the Owner Dashboard",
-  published: "Published — ready to deploy from Intelligence → Advanced → Cloud model registry", deployed: "Deployed — serving MOTH Cloud users",
+  published: "Published — ready to deploy from AI → AI Settings → Cloud model registry", deployed: "Deployed — serving MOTH Cloud users",
   failed: "Publishing failed",
 };
 
@@ -128,7 +128,7 @@ export function ModelsView() {
           <p className="mt-1 text-xs text-muted">
             Models trained with the Owner training tools. Publishing sends one to MOTH Cloud:
             <span className="text-fg"> Validate → Upload → Evaluate → Publish</span> happen automatically (uploads resume if
-            interrupted); then deploy it for everyone from Intelligence → Advanced → Cloud model registry. Models never serve users from this PC.
+            interrupted); then deploy it for everyone from AI → AI Settings → Cloud model registry. Models never serve users from this PC.
           </p>
         </div>
         {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}

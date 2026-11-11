@@ -9,7 +9,7 @@ import uuid
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from moth.model.chat_format import Message
 from moth.model.generation import GenerationParams
@@ -24,6 +24,17 @@ class ChatIn(BaseModel):
     project_id: int | None = None
     context_project_id: int | None = None
     params: dict[str, Any] | None = None
+
+
+class RenameIn(BaseModel):
+    title: str = Field(max_length=200)
+
+
+class DeleteManyIn(BaseModel):
+    ids: list[int] = Field(default_factory=list, max_length=1000)
+    all: bool = False
+    confirm: str = ""
+    project_id: int | None = None
 
 
 class PolicyTestIn(BaseModel):
@@ -77,8 +88,54 @@ def register(app: FastAPI, svc: Services, deps) -> None:
 
     @app.delete("/api/conversations/{cid}", dependencies=deps)
     def delete_conversation(cid: int):
-        svc.db.execute("DELETE FROM conversations WHERE id=?", (cid,))
-        return {"ok": True}
+        if not svc.db.one("SELECT id FROM conversations WHERE id=?", (cid,)):
+            raise NotFound("This conversation no longer exists")
+        svc.db.execute("DELETE FROM conversations WHERE id=?", (cid,))  # messages cascade
+        svc.bus.publish("conversations", {"deleted": [cid]})
+        return {"ok": True, "deleted": [cid]}
+
+    @app.patch("/api/conversations/{cid}", dependencies=deps)
+    def rename_conversation(cid: int, body: RenameIn):
+        title = " ".join(body.title.split())
+        if not title:
+            raise HTTPException(422, "Enter a name for the conversation")
+        if not svc.db.one("SELECT id FROM conversations WHERE id=?", (cid,)):
+            raise NotFound("This conversation no longer exists")
+        svc.db.execute("UPDATE conversations SET title=? WHERE id=?", (title[:120], cid))
+        svc.bus.publish("conversations", {"renamed": cid})
+        return svc.db.one("SELECT * FROM conversations WHERE id=?", (cid,))
+
+    @app.post("/api/conversations/delete", dependencies=deps)
+    def delete_conversations(body: DeleteManyIn):
+        """Delete the selected conversations, or every conversation when ``all`` is confirmed.
+
+        Each conversation is deleted on its own, so one failure never leaves another half-deleted;
+        the result lists what was deleted and what failed."""
+        if body.all:
+            if body.confirm != "DELETE ALL":
+                raise HTTPException(422, "Type DELETE ALL to clear every conversation")
+            ids = [r["id"] for r in svc.db.query("SELECT id FROM conversations" + (" WHERE project_id=?" if body.project_id is not None else ""),
+                                                 (body.project_id,) if body.project_id is not None else ())]
+        else:
+            if not body.ids:
+                raise HTTPException(422, "Select at least one conversation")
+            ids = list(dict.fromkeys(body.ids))
+        deleted, missing, failed = [], [], []
+        for cid in ids:
+            try:
+                if not svc.db.one("SELECT id FROM conversations WHERE id=?", (cid,)):
+                    missing.append(cid); continue
+                svc.db.execute("DELETE FROM conversations WHERE id=?", (cid,))
+                deleted.append(cid)
+            except Exception as error:  # report, keep going
+                failed.append({"id": cid, "error": str(error)[:200]})
+        if deleted:
+            svc.bus.publish("conversations", {"deleted": deleted})
+        return {"deleted": deleted, "missing": missing, "failed": failed}
+
+    @app.post("/api/conversations/retention/apply", dependencies=deps)
+    def apply_retention():
+        return {"deleted": svc.apply_chat_retention()}
 
     @app.post("/api/chat", dependencies=deps)
     def chat(body: ChatIn):

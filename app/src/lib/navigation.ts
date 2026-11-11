@@ -1,22 +1,21 @@
-import { appStore, type View } from "./app-state";
+import { appStore, aiTab, type View } from "./app-state";
 
+/** The five main sections. Everything else lives inside one of them. */
 export const WORKSPACES: { view: View; label: string; description: string }[] = [
-  { view: "overview", label: "Overview", description: "Active model, status and warnings" },
-  { view: "chat", label: "Chat", description: "Conversations and answers" },
-  { view: "workspace", label: "Code", description: "Projects, files, editor and coding agent" },
-  { view: "intelligence", label: "Intelligence", description: "Training, evaluation and safe evolution" },
-  { view: "data", label: "Data", description: "Datasets, tokenizer and preparation" },
-  { view: "network", label: "Network", description: "Workers and personal contribution" },
-  { view: "activity", label: "Activity", description: "History, events and model timeline" },
-  { view: "settings", label: "Settings", description: "Account, privacy, updates and administration" },
+  { view: "chat", label: "Chat", description: "Conversations with MOTH" },
+  { view: "workspace", label: "Projects", description: "Coding projects, files, editor and autonomous tasks" },
+  { view: "intelligence", label: "AI", description: "Evolution, live training, data and model history" },
+  { view: "network", label: "Network", description: "Workers, servers and your computer's contribution" },
+  { view: "settings", label: "Settings", description: "Account, preferences, updates and administration" },
 ];
+/** Which main section a view belongs to (older views open inside AI or Settings). */
 export function workspaceOf(view: View): View {
   if (view === "owner") return "settings";
-  if (["training", "models", "evolution"].includes(view)) return "intelligence";
+  if (["overview", "data", "activity", "training", "models", "evolution"].includes(view)) return "intelligence";
   return view;
 }
 export function navigate(view: View) {
-  const state = appStore.getState();
-  appStore.setState({ view, ...(view === "intelligence" && !["overview", "training", "evolution", "improvements", "history", "advanced"].includes(state.intelligenceTab)
-    ? { intelligenceTab: "overview" as const } : {}) });
+  const legacy: Partial<Record<View, string>> = { overview: "evolution", training: "evolution", data: "data", activity: "history", evolution: "history", models: "settings" };
+  if (legacy[view]) { appStore.setState({ view: "intelligence", intelligenceTab: aiTab(legacy[view]) }); return; }
+  appStore.setState({ view });
 }

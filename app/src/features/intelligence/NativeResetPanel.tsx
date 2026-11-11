@@ -5,7 +5,7 @@
  * Four deliberate steps: review the real deletion inventory (re-authentication required), type
  * RESET GENESIS, confirm once more, then the server deletes and verifies. The server enforces Owner
  * permission, re-authentication, the preview and the phrase independently of this screen.
- * Deleting one selected model is a different, ordinary operation (Intelligence → Advanced).
+ * Deleting one selected model is a different, ordinary operation (AI → AI Settings).
  */
 import { useEffect, useRef, useState } from "react";
 import { serverApi, useAccount } from "@/lib/account";
@@ -66,7 +66,7 @@ export function NativeResetPanel() {
   const records = inventory ? Object.values(inventory.records as Record<string, number>).reduce((a, b) => a + Number(b), 0) : 0;
   return <section className="space-y-4 rounded-xl border border-danger/50 p-4 text-xs" aria-label="Genesis Reset">
     <div><h3 className="text-sm font-semibold text-danger">Genesis Reset</h3>
-      <p className="mt-1 text-muted">Permanently delete MOTH's native AI on <strong className="text-fg">{server}</strong> and start again from zero. This cannot be undone. Deleting a single model is a separate, ordinary action in Intelligence → Advanced.</p></div>
+      <p className="mt-1 text-muted">Permanently delete MOTH's native AI on <strong className="text-fg">{server}</strong> and start again from zero. This cannot be undone. Deleting a single model is a separate, ordinary action in AI → AI Settings.</p></div>
     <div className="grid gap-4 sm:grid-cols-2">
       <div><p className="font-medium text-fg">Deleted</p><ul className="mt-1 list-inside list-disc space-y-0.5 text-muted">{DELETED.map((t) => <li key={t}>{t}</li>)}</ul></div>
       <div><p className="font-medium text-fg">Kept</p><ul className="mt-1 list-inside list-disc space-y-0.5 text-muted">{KEPT.map((t) => <li key={t}>{t}</li>)}</ul></div>

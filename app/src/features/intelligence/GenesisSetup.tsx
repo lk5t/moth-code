@@ -68,8 +68,8 @@ export function GenesisSetup() {
       <li className="space-y-2"><p className="flex items-center gap-2 text-sm font-medium"><Play className="size-4 text-accent" />3 · Create the model</p>
         <p className="text-muted">Creates random, untrained weights{chosen ? ` (${chosen.params.toLocaleString()} parameters)` : ""}, checks they load and generate, and makes them the active model. It will answer poorly until it is trained.</p>
         <Button size="sm" disabled={busy || (!legacy && (!data?.can_initialize || !chosen))} onClick={() => void create()}>{busy ? "Creating the model…" : "Create and activate the model"}</Button>
-        {data && !data.can_initialize && <p className="text-warning">A model is already registered ({data.existing}). Open Intelligence → Advanced to evaluate and deploy it.</p>}</li>
-      <li><p className="text-sm font-medium">4 · Train</p><p className="text-muted">After creation this opens Intelligence → Training, where you start, pause and follow training.</p></li>
+        {data && !data.can_initialize && <p className="text-warning">A model is already registered ({data.existing}). Open AI → AI Settings to evaluate and deploy it.</p>}</li>
+      <li><p className="text-sm font-medium">4 · Train</p><p className="text-muted">After creation this opens AI → Evolution, where you start, pause and follow training.</p></li>
     </ol>}
     {notice && <p role="alert" className="text-xs text-danger">{notice}</p>}
   </CardContent></Card>;
