@@ -7,24 +7,49 @@ import time
 import re
 
 
+class _StableRoot:
+    """The window root, tolerating elements that vanish mid-scan while the app re-renders.
+
+    pywinauto raises (for example ``KeyError: None``) when an element disappears between being listed
+    and being wrapped. That is a moment of re-rendering, not a missing control, so scan again."""
+
+    def __init__(self, root):
+        self._root = root
+
+    def descendants(self, **kw):
+        for attempt in range(8):
+            try:
+                return self._root.descendants(**kw)
+            except Exception:
+                if attempt == 7:
+                    raise
+                time.sleep(0.5)
+
+    def __getattr__(self, name):
+        return getattr(self._root, name)
+
+
 class WindowsUI:
     def __init__(self, pid, timeout=120):
         from pywinauto import Desktop
         self.window = Desktop(backend='uia').window(process=pid, title='MOTH Code',
                                                   control_type='Window', visible_only=True)
         self.window.wait('exists', timeout=timeout)
-        self.root = self.window.wrapper_object()
+        self.root = _StableRoot(self.window.wrapper_object())
 
     def find(self, name, types=None, timeout=60, prefix=False, contains=False):
         deadline = time.monotonic() + timeout
         while True:
             for c in self.root.descendants():
-                info = c.element_info
-                if types and info.control_type not in types:
+                try:
+                    info = c.element_info
+                    if types and info.control_type not in types:
+                        continue
+                    matches = name in info.name if contains else info.name.startswith(name) if prefix else info.name == name
+                    if matches and c.is_enabled():
+                        return c
+                except Exception:  # the element disappeared while the page re-rendered: look again
                     continue
-                matches = name in info.name if contains else info.name.startswith(name) if prefix else info.name == name
-                if matches and c.is_enabled():
-                    return c
             if time.monotonic() > deadline:
                 labels = [(c.element_info.control_type, c.element_info.name) for c in self.root.descendants()
                           if c.element_info.control_type in ('Button', 'TabItem', 'Window', 'Text')][:60]

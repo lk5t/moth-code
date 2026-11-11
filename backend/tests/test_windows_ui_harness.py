@@ -89,3 +89,16 @@ def test_tab_that_renders_late_is_still_selected(monkeypatch):
     assert ui.optional_tab('Account') is True and clicked==[('Account','TabItem')]
     ui.root=SimpleNamespace(descendants=lambda **kw:[])  # a single-page Settings (0.5.1) never has tabs
     assert ui.optional_tab('Account') is False
+
+
+def test_elements_vanishing_mid_scan_are_retried(monkeypatch):
+    """0.6.2 release run: pywinauto raised KeyError(None) while the AI page re-rendered."""
+    module=runpy.run_path(str(Path(__file__).resolve().parents[2]/'scripts/windows-desktop-ui.py'))
+    calls=[0]
+    def flaky(**kw):
+        calls[0]+=1
+        if calls[0]<3: raise KeyError(None)
+        return ['ok']
+    monkeypatch.setattr(module['time'],'sleep',lambda _:None)
+    root=module['_StableRoot'](SimpleNamespace(descendants=flaky,name='root'))
+    assert root.descendants()==['ok'] and calls[0]==3 and root.name=='root'
