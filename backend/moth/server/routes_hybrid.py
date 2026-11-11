@@ -32,6 +32,10 @@ class ParticipantIn(BaseModel):
     enabled: bool
 
 
+class LocalResetIn(BaseModel):
+    confirmation: str
+
+
 class OnDeviceIn(BaseModel):
     answer_on_device: bool
 
@@ -76,6 +80,58 @@ def register(app: FastAPI, svc: Services, deps) -> None:
             return participant.control(action)
         except ParticipantError as e:
             raise HTTPException(409, str(e)) from None
+
+    # ---- Genesis Reset, this computer's part: native AI data MOTH Code itself stored -----------------------
+    # Deletes only MOTH Code's own model/training folders and training tables. Projects, conversations,
+    # settings, the account session and the worker credential are never touched.
+    LOCAL_NATIVE = {"Model packages": lambda: svc.paths.models, "Training runs and checkpoints": lambda: svc.paths.runs,
+                    "Prepared datasets": lambda: svc.paths.datasets, "Tokenizers": lambda: svc.paths.tokenizers,
+                    "Training-network cache": lambda: svc.paths.community,
+                    "Contributed job checkpoints": lambda: svc.paths.home / "participant" / "jobs",
+                    "Upload staging": lambda: svc.paths.home / "cache" / "publish"}
+
+    def local_native_inventory() -> dict[str, Any]:
+        rows = []
+        for label, where in LOCAL_NATIVE.items():
+            root = where()
+            files = [p for p in root.rglob("*") if p.is_file() and not p.is_symlink()] if root.is_dir() else []
+            rows.append({"category": label, "files": len(files), "bytes": sum(p.stat().st_size for p in files)})
+        running = [j.title for j in jobs.jobs.values() if j.status == "running"]
+        return {"categories": rows, "files": sum(r["files"] for r in rows), "bytes": sum(r["bytes"] for r in rows),
+                "training_runs": svc.db.one("SELECT COUNT(*) AS n FROM training_runs")["n"], "running_jobs": running,
+                "contributing": bool(participant.status().get("running")), "confirmation": "RESET GENESIS"}
+
+    @app.get("/api/native-ai", dependencies=deps)
+    def native_ai_inventory():
+        return local_native_inventory()
+
+    @app.post("/api/native-ai/reset", dependencies=deps)
+    def native_ai_reset(body: LocalResetIn):
+        import shutil
+
+        if body.confirmation != "RESET GENESIS":
+            raise HTTPException(422, "Type the exact confirmation: RESET GENESIS")
+        inv = local_native_inventory()
+        if inv["running_jobs"]:
+            raise HTTPException(409, "Stop the running training job on this computer first: " + ", ".join(inv["running_jobs"]))
+        was_contributing = bool(participant.status().get("enabled"))
+        participant.stop()  # checkpoint and stop the contributed job before its files are removed
+        ondevice.unload()
+        svc.db.set_setting("ondevice", {"answer_on_device": False})
+        for where in LOCAL_NATIVE.values():
+            root = where()
+            if root.is_symlink():
+                raise HTTPException(409, f"{root} is a link; it was not followed and nothing in it was deleted")
+            if root.is_dir():
+                shutil.rmtree(root)
+        svc.paths.ensure()
+        svc.db.execute("DELETE FROM training_metrics")
+        svc.db.execute("DELETE FROM training_runs")
+        svc.db.log_activity("training", "Genesis Reset: native AI data on this computer was deleted")
+        if was_contributing:
+            participant.start()
+        after = local_native_inventory()
+        return {"deleted_files": inv["files"], "deleted_bytes": inv["bytes"], "remaining_files": after["files"]}
 
     # ---- MOTH on this computer (0.5.2) ----------------------------------------------------------------
     from moth.inference.ondevice import OnDevice, OnDeviceError

@@ -22,7 +22,7 @@ import { ConnectionSection } from "./ConnectionSection";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 /** Settings in a few plain groups instead of one long page (0.5.4). */
-const TABS = ["Account", "Privacy & AI", "Plan & referrals", "Code agent", "Updates & about"] as const;
+const TABS = ["Account", "Privacy & AI", "Plan & referrals", "Code agent", "Updates & about", "Advanced"] as const;
 type Tab = (typeof TABS)[number];
 
 interface Permissions {
@@ -79,12 +79,12 @@ export function SettingsView() {
           ))}
         </TabsList>
         <TabsContent value={tab} className="flex flex-col gap-3">
-        {tab === "Account" && <><Button variant="secondary" onClick={reopenWelcome}>Show the quick introduction</Button><AccountSection /><ConnectionSection />{owner && <details className="rounded-lg border border-danger/40 p-3">
-          <summary className="cursor-pointer text-sm text-danger">Advanced · Native AI operations</summary>
-          <p className="my-3 text-xs text-muted">Separate from everyday settings. Legacy lineage recovery retains previous models and backups.</p>
+        {tab === "Account" && <><Button variant="secondary" onClick={reopenWelcome}>Show the quick introduction</Button><AccountSection /><ConnectionSection /></>}
+        {tab === "Advanced" && (owner ? <>
+          <p className="text-xs text-muted">Rarely needed, irreversible operations for the Owner. Everyday settings are in the other tabs.</p>
           <NativeResetPanel />
-          <details className="mt-4"><summary>Legacy reversible lineage recovery (retains models)</summary><GenesisPanel /></details>
-        </details>}</>}
+          <details className="rounded-xl border border-border p-4 text-xs"><summary className="cursor-pointer text-sm">Reversible lineage restart (keeps a verified backup of the current models)</summary><div className="mt-3"><GenesisPanel /></div></details>
+        </> : <p className="text-xs text-muted">Advanced operations, including Genesis Reset, are available to the MOTH Owner only.</p>)}
         {tab === "Privacy & AI" && <><IntelligenceSection /><OnDeviceSection /></>}
         {tab === "Plan & referrals" && <><UsageSection /><ReferralsSection /></>}
         {tab === "Updates & about" && <UpdatesSection />}

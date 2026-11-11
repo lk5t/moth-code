@@ -149,15 +149,17 @@ def main(installer):
         ui.find('Dataset Quality Studio', ('Text',))  # persisted Data workspace
         ui.click('Settings');ui.optional_tab('Account')
         ui.find(user['username'],('Text',),contains=True)  # actual Windows credential-vault session survived
-        ui.click('Advanced · Native AI operations')
-        ui.click('Inspect deletion inventory')
+        ui.optional_tab('Advanced')  # Settings → Advanced → Genesis Reset
+        ui.click('Review deletion')
         reset=wait(lambda:(r if (r:=api('/v1/admin/evolution/native-reset')).get('status')=='preview' else None),'native reset preview')
         assert reset['inventory']['records']['model_releases']>0
-        ui.set_text('Confirm all native AI deletion','DELETE ALL NATIVE AI DATA')
-        ui.click('Permanently delete reviewed native AI data')
+        ui.set_text('Genesis Reset confirmation','RESET GENESIS')
+        ui.click('Continue to final confirmation')
+        assert api('/v1/intelligence/progress')['current'] is not None  # nothing deleted before the final confirmation
+        ui.click('Delete everything and reset')
         wait(lambda:api('/v1/admin/evolution/native-reset').get('status')=='completed','isolated native reset',timeout=120)
         assert api('/v1/intelligence/progress')['current'] is None
-        ui.click('Overview');ui.find('No native model available',('Text',))
+        ui.click('Overview');ui.find('No Model — Ready for Genesis',('Text',))
         api('/v1/admin/evolution/initialize',{},'POST')
         assert api('/v1/admin/evolution/versions'), 'Explicit fresh initialization failed after isolated reset'
         evidence = {'native_windows': True, 'real_frozen_backend': True, 'real_cloud_api': True,

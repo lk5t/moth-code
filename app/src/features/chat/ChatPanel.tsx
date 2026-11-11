@@ -1,3 +1,4 @@
+import { navigate } from "@/lib/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MothEvent } from "@/lib/events";
 import { ArrowUp, Cloud, LogIn, MessageSquarePlus, RefreshCw, Square } from "lucide-react";
@@ -278,7 +279,8 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                     {cloud?.reachable === false
                       ? "Can't reach MOTH Cloud right now. Your editor, terminal and Git keep working; MOTH will be back when the connection returns."
                       : cloud?.error ?? "MOTH Cloud inference is not available yet."}
-                    <div className="mt-3 flex justify-center"><Button size="sm" variant="secondary" onClick={() => reloadCloud()}><RefreshCw /> Retry</Button></div>
+                    <div className="mt-3 flex justify-center gap-2"><Button size="sm" variant="secondary" onClick={() => reloadCloud()}><RefreshCw /> Retry</Button>
+                      {cloud?.reason === "no_model_deployed" && <Button size="sm" variant="ghost" onClick={() => navigate("overview")}>Open Overview</Button>}</div>
                   </div>
                 ) : (
                   <div className="max-w-sm text-xs text-muted">
@@ -333,7 +335,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                 rows={1}
                 value={input}
                 aria-label="Message MOTH"
-                placeholder={signedOut ? "Sign in to chat with MOTH" : noModel ? "MOTH Cloud is unavailable" : "Message MOTH"}
+                placeholder={signedOut ? "Sign in to chat with MOTH" : noModel ? (cloud?.reachable === false ? "MOTH Cloud can't be reached" : "MOTH can't answer yet") : "Message MOTH"}
                 title="Enter to send · Shift+Enter for a new line"
                 disabled={!!noModel}
                 className="max-h-40 min-h-8 border-0 bg-transparent px-2 py-1.5 focus:shadow-none"

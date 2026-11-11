@@ -82,13 +82,13 @@ export function NetworkTraining({ scope = "all" }: { scope?: "all" | "training" 
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Cloud className="size-4 text-accent" />MOTH training network</CardTitle>
         <CardDescription>
-          One MOTH model, improved by MOTH Cloud, its workers and this computer together. Training continues the deployed
-          model ({evo.active_model?.name ?? "none yet"}) — it never starts from random weights.
+          {evo.active_model ? <>Training continues the deployed model ({evo.active_model.name}) on MOTH Cloud, its workers and any computers you contribute. A new version replaces it only after passing evaluation.</>
+            : <>There is no model to train yet. Create one in Intelligence → Overview.</>}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 text-xs">
         {scope !== "network" && <div className="flex flex-wrap items-center gap-3">
-          <Button size="sm" disabled={!!active && !s.paused} onClick={trainNow}><Play />{s.paused ? "Resume MOTH training" : active ? "Training cycle active" : "Train MOTH now"}</Button>
+          <Button size="sm" disabled={(!!active && !s.paused) || !evo.active_model} onClick={trainNow}><Play />{s.paused ? "Resume MOTH training" : active ? "Training cycle active" : "Train MOTH now"}</Button>
           {cyc && <Badge variant={active ? "accent" : cyc.status === "completed" ? "success" : "default"}>Cycle #{cyc.id}: {cyc.status.replaceAll("_", " ")}</Badge>}
           {cyc?.result?.waiting_reason && <span className="text-muted">{cyc.result.waiting_reason}</span>}
           {!s.paused && <Button size="sm" variant="secondary" onClick={()=>secure(()=>serverApi("/v1/admin/evolution/pause",{method:"POST"})).then(reloadEvo).catch(e=>setMsg(e.message))}>Pause training</Button>}

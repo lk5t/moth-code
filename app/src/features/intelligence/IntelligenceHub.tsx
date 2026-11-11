@@ -15,7 +15,7 @@ import { MothEmblem } from "@/components/MothEmblem";
 import { IntelligenceView } from "./IntelligenceView";
 import { GrowthDiagnostics } from "./GrowthDiagnostics";
 import { NetworkView } from "@/features/network/NetworkView";
-import { NetworkTraining, ParticipantSwitch } from "@/features/training/NetworkTraining";
+import { NetworkTraining } from "@/features/training/NetworkTraining";
 import { TrainingView } from "@/features/training/TrainingView";
 import { ModelsView } from "@/features/models/ModelsView";
 import { EvolutionPanel, CycleHistory, EvolutionVersions } from "@/features/owner/evolution";
@@ -143,14 +143,14 @@ export function IntelligenceHub() {
         <p className="text-[10px] uppercase tracking-[0.22em] text-accent">MOTH / Intelligence</p>
         <h1 className="mt-1 text-2xl font-medium tracking-tight">{heading}</h1>
         <p className="mt-1 text-xs text-muted">{heading === "Overview" ? "The model currently serving MOTH, with measured status and important warnings." : heading === "Data" ? "Prepare and inspect licensed datasets with the intended tokenizer." : heading === "Network" ? "Manage trusted workers and your own computer’s voluntary contribution." : "Train, evaluate and safely improve the native MOTH model."}</p>
-      </div><span className="text-xs text-faint">{p?.current ? modelLabel(p.current) : "Model status unavailable"}</span></header>
+      </div><span className="text-xs text-faint">{p?.current ? modelLabel(p.current) : p ? "No model yet" : error ? "Status unavailable" : "Loading status…"}</span></header>
       {error && <div className="space-y-2"><ErrorNotice error={`Live status unavailable: ${error}`} /><button className="text-xs text-accent" onClick={() => refreshCloudProgress()}>Retry connection</button></div>}
       <Tabs value={tab} onValueChange={(value) => appStore.setState({view:"intelligence", intelligenceTab:value as IntelligenceTab})}>
         {!standalone && <TabsList aria-label="Intelligence sections" className="mb-3 w-full justify-start">
           {visibleTabs.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="[&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
         </TabsList>}
         {(tab === "overview") && <TabsContent forceMount hidden={tab !== "overview"} value="overview" className="flex flex-col gap-5 data-[state=inactive]:hidden">
-          <OverviewSummary progress={p} updatedAt={updatedAt} /><Advanced title="Model details and measured architecture"><ModelActivity progress={p} resources={resources} /></Advanced>
+          <OverviewSummary progress={p} updatedAt={updatedAt} />{p?.current && <Advanced title="Model details and measured architecture"><ModelActivity progress={p} resources={resources} /></Advanced>}
         </TabsContent>}
         {(tab === "training") && <TabsContent forceMount hidden={tab !== "training"} value="training" className="flex flex-col gap-4 data-[state=inactive]:hidden">
           <TrainingProgress progress={p} resources={resources} />
@@ -166,7 +166,7 @@ export function IntelligenceHub() {
           {owner ? <><GrowthDiagnostics /><EvolutionPanel section="advanced" /><Advanced title="Detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView scope="training" /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced><Advanced title="Feedback and shared knowledge"><IntelligencePanel sections={["feedback", "knowledge"]} /></Advanced></> : <p className="text-xs text-muted">Advanced training and deployment controls require the Owner.</p>}
         </TabsContent>}
         {(tab === "network") && <TabsContent forceMount hidden={tab !== "network"} value="network" className="flex flex-col gap-4 data-[state=inactive]:hidden">
-          <ParticipantSwitch />{owner && <NetworkTraining scope="network" />}<NetworkView />{owner && <Advanced title="Worker assignments, permissions and resource limits"><WorkersPanel /></Advanced>}
+          {owner && <NetworkTraining scope="network" />}<NetworkView embedded />{owner && <Advanced title="Worker assignments, permissions and resource limits"><WorkersPanel /></Advanced>}
         </TabsContent>}
         {(tab === "data") && <TabsContent forceMount hidden={tab !== "data"} value="data" className="flex flex-col gap-4 data-[state=inactive]:hidden">
           <Tabs value={dataSection} onValueChange={(value) => setDataSection(value as "local" | "cloud")}>

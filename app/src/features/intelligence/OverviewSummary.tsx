@@ -4,10 +4,12 @@ import { openIntelligence } from "@/lib/app-state";
 import { LivingMoth, IntelligencePulse } from "@/components/LivingMoth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { GenesisSetup } from "./GenesisSetup";
 
 type Any=Record<string,any>;
 export function OverviewSummary({progress,updatedAt}:{progress:Any|null;updatedAt:number|null}) {
   const current=progress?.current, serving=progress?.serving;
+  if(progress && !current) return <GenesisSetup />;
   const measured=progress?.improvement;
   return <Card><CardContent className="space-y-4 p-4">
     <div className="flex flex-wrap items-center gap-3"><LivingMoth className="size-10"/><div>
@@ -24,7 +26,6 @@ export function OverviewSummary({progress,updatedAt}:{progress:Any|null;updatedA
       : "No verified improvement measurement recorded for the active model."}</p></div>
     {progress?.rollout?.filter((r:Any) => r.role === "canary").map((r:Any) => <p key={r.version} className="text-xs text-warning">Candidate release {r.version} is serving {r.percent}% of canary traffic. It is separate from the active stable model.</p>)}
     {progress?.training?.cycle?.waiting_reason && <p role="status" className="text-xs text-warning">{progress.training.cycle.waiting_reason}</p>}
-    {!current && progress && <p className="text-xs text-muted">An Owner can prepare data and initialize a model in Intelligence. No replacement is created by this screen.</p>}
     <div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => navigate("chat")}>Open Chat</Button><Button size="sm" variant="secondary" onClick={() => navigate("workspace")}>Open Code</Button>
       <Button size="sm" variant="ghost" onClick={() => openIntelligence("training")}>View training</Button>
       <span className="ml-auto self-center text-[10px] text-faint">{updatedAt ? `Status received ${new Date(updatedAt).toLocaleTimeString()}` : "Live status unavailable"}</span></div>

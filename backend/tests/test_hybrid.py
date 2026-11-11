@@ -170,3 +170,37 @@ def test_cloud_status_explains_why_nothing_is_served():
         raise AssertionError("expected CloudUnavailable")
     except CloudUnavailable as e:
         assert e.reason == "unreachable" and "tunnel" in str(e)
+
+
+def test_local_genesis_reset_deletes_only_native_ai_data(tmp_path):
+    """This computer's part of Genesis Reset: MOTH Code's own model/training folders and training tables
+    go; projects, conversations, settings and unrelated files stay. The exact phrase is required."""
+    from fastapi.testclient import TestClient
+
+    from moth.config import get_paths
+    from moth.server.app import create_app
+
+    paths = get_paths(tmp_path / "home")
+    with TestClient(create_app(paths, token="t")) as c:
+        h = {"Authorization": "Bearer t"}
+        svc = c.app.state.services
+        for d in (paths.models / "pkg", paths.runs / "r1" / "checkpoints", paths.datasets / "d1", paths.tokenizers,
+                  paths.home / "participant" / "jobs"):
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "x.bin").write_bytes(b"native" * 10)
+        keep = paths.home / "notes.txt"
+        keep.write_text("mine")
+        svc.db.execute("INSERT INTO training_runs(id, name, status, step, config, out_dir, created_at, updated_at) VALUES "
+                       "('r1','run','completed',3,'{}','x',1,1)")
+        svc.db.execute("INSERT INTO conversations(project_id, title, created_at) VALUES (NULL,'keep me',1)")
+        svc.db.set_setting("permissions", {"auto_write": False})
+        inv = c.get("/api/native-ai", headers=h).json()
+        assert inv["files"] == 5 and inv["training_runs"] == 1 and inv["confirmation"] == "RESET GENESIS"
+        assert c.post("/api/native-ai/reset", headers=h, json={"confirmation": "reset"}).status_code == 422
+        assert (paths.models / "pkg" / "x.bin").exists()
+        r = c.post("/api/native-ai/reset", headers=h, json={"confirmation": "RESET GENESIS"})
+        assert r.status_code == 200 and r.json() == {"deleted_files": 5, "deleted_bytes": 300, "remaining_files": 0}
+        assert c.get("/api/native-ai", headers=h).json()["training_runs"] == 0
+        assert keep.read_text() == "mine" and paths.models.is_dir()
+        assert svc.db.one("SELECT title FROM conversations")["title"] == "keep me"
+        assert svc.db.get_setting("permissions") == {"auto_write": False}

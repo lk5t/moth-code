@@ -10,7 +10,6 @@ vi.mock("@/features/owner/intelligence", () => ({ IntelligencePanel: () => <p>Ap
 vi.mock("@/features/owner/ModelOverview", () => ({ ModelOverview: () => <p>Baseline and selected workers</p> }));
 vi.mock("@/features/training/TrainingView", () => ({ TrainingView: () => <p>Local training controls</p> }));
 vi.mock("@/features/models/ModelsView", () => ({ ModelsView: () => <p>Local package controls</p> }));
-vi.mock("@/features/evolution/EvolutionView", () => ({ EvolutionView: () => <p>Existing evolution cycle controls</p> }));
 vi.mock("@/features/network/NetworkView", () => ({ NetworkView: () => <p>Existing worker enrollment controls</p> }));
 import { IntelligenceHub, ModelActivity } from "@/features/intelligence/IntelligenceHub";
 import { appStore } from "@/lib/app-state";
@@ -37,7 +36,7 @@ describe("Intelligence consolidation", () => {
   it("keeps training/evolution focused and supports the Data workspace adapter", async () => {
     render(<IntelligenceHub />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Overview", "Training", "Improvements", "History", "Advanced"]);
-    fireEvent.click(screen.getByText("Model details and measured architecture"));
+    fireEvent.click(await screen.findByText("Model details and measured architecture"));  // shown once a model is reported
     await screen.findByRole("button", { name: "Inspect layer 2" });
     fireEvent.click(screen.getByRole("button", { name: "Inspect layer 2" }));
     expect(screen.getByRole("button", { name: "Inspect layer 2" })).toHaveAttribute("aria-pressed", "true");

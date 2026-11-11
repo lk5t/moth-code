@@ -53,11 +53,11 @@ def health(ctx: Ctx = Depends(get_ctx)):
     enabled = bool(flags(ctx).get("cloud_inference_enabled"))
     models = []
     if engine is None or not engine.manifest:
-        status, message = "no_model_deployed", ("No AI model is deployed on MOTH Cloud yet. The Owner deploys one in "
-                                                 "Owner Dashboard → AI models.")
+        status, message = "no_model_deployed", ("MOTH has no model yet. The Owner creates and trains one in "
+                                                 "Intelligence.")
     elif not enabled:
         status, message = "inference_disabled", ("A model is deployed, but MOTH Cloud inference is turned off. The Owner "
-                                                 "turns it on in Owner Dashboard → Policy & flags.")
+                                                 "turns it on in Settings → Administration → Policy & flags.")
     else:
         status, message = "ready", "ready"
         m = engine.manifest

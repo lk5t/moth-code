@@ -48,7 +48,7 @@ function Copyable({ text, label }: { text: string; label: string }) {
   );
 }
 
-export function NetworkView() {
+export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
   const user = useAccount((s) => s.user);
   const [data, setData] = useState<Listing | null>(null);
   const [name, setName] = useState("");
@@ -88,15 +88,15 @@ export function NetworkView() {
   const expiresIn = enrollment ? Math.max(0, Math.round(enrollment.expires_at - Date.now() / 1000)) : 0;
 
   return (
-    <div className="h-full overflow-auto">
-      <div className="mx-auto flex max-w-4xl flex-col gap-5 p-8 animate-rise">
-        <div>
+    <div className={embedded ? "" : "h-full overflow-auto"}>
+      <div className={embedded ? "flex flex-col gap-4" : "mx-auto flex max-w-4xl flex-col gap-5 p-8 animate-rise"}>
+        {!embedded && <div>
           <h1 className="text-lg font-semibold">Training & Referrals</h1>
           <p className="mt-1 text-xs text-muted">
             Help train MOTH with any computer you have: a server, a desktop or a laptop, with or without a GPU. MOTH Worker is
             a small separate program; it trains only on public, licensed data and never sees your projects.
           </p>
-        </div>
+        </div>}
         {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
 
         <Card>
