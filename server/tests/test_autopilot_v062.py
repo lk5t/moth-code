@@ -131,3 +131,22 @@ def test_one_click_start_from_genesis_and_pause(client, owner, settings):
     assert len(M.list_releases(ctx)) == 1
     p = client.post(f"{BASE}/autopilot/pause", headers=o).json()
     assert p["status"]["stage"] == "paused" and S.get(ctx)["paused"]
+
+
+def test_worker_connect_and_disconnect_are_recorded_once(client, owner):
+    from moth_server import db as D
+    from moth_server import training
+    from moth_server.evolution import engine as EN
+
+    ctx = client.app.state.ctx
+    wid, _ = training.enroll_worker(ctx, training.create_enrollment(ctx, owner["user"], "Lab GPU", None), {}, "0.6.2")
+    with ctx.db.tx() as c:
+        c.execute(D.workers.update().where(D.workers.c.id == wid).values(last_heartbeat_at=now()))
+    EN._watch_workers(ctx, EN.state(ctx))
+    EN._watch_workers(ctx, EN.state(ctx))  # no change: no second event
+    with ctx.db.tx() as c:
+        c.execute(D.workers.update().where(D.workers.c.id == wid).values(last_heartbeat_at=now() - 600))
+    EN._watch_workers(ctx, EN.state(ctx))
+    kinds = [e["kind"] for e in MEM.events(ctx, limit=20) if e["kind"].startswith("worker.")]
+    assert kinds == ["worker.disconnected", "worker.connected"]
+    assert "Lab GPU" in MEM.events(ctx, limit=1)[0]["message"]

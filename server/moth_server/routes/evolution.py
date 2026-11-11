@@ -269,6 +269,25 @@ def put_settings(body: SettingsIn, auth: Auth = Depends(owner_reauthed), ctx: Ct
     return s
 
 
+class CleanupIn(BaseModel):
+    items: list[str] = Field(min_length=1, max_length=500)
+
+
+@router.get("/storage")
+def storage_summary(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """What uses space on MOTH Cloud, what is protected (and why) and what can be removed safely."""
+    from moth_server.evolution import storage as ST
+
+    return ST.summary(ctx)
+
+
+@router.post("/storage/cleanup")
+def storage_cleanup(body: CleanupIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.evolution import storage as ST
+
+    return ST.cleanup(ctx, body.items, auth.uid)
+
+
 @router.get("/autopilot")
 def autopilot_status(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     """What MOTH is doing now, what it will do next and the reasons for its recent plan changes."""

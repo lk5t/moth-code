@@ -18,6 +18,7 @@ import { ReferralsSection } from "@/features/billing/ReferralsSection";
 import { IntelligenceSection } from "@/features/intelligence/IntelligenceSection";
 import { OnDeviceSection } from "@/features/intelligence/OnDeviceSection";
 import { UpdatesSection } from "./UpdatesSection";
+import { ChatRetention } from "./ChatRetention";
 import { ConnectionSection } from "./ConnectionSection";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
@@ -85,7 +86,7 @@ export function SettingsView() {
           <NativeResetPanel />
           <details className="rounded-xl border border-border p-4 text-xs"><summary className="cursor-pointer text-sm">Reversible lineage restart (keeps a verified backup of the current models)</summary><div className="mt-3"><GenesisPanel /></div></details>
         </> : <p className="text-xs text-muted">Advanced operations, including Genesis Reset, are available to the MOTH Owner only.</p>)}
-        {tab === "Privacy & AI" && <><IntelligenceSection /><OnDeviceSection /></>}
+        {tab === "Privacy & AI" && <><ChatRetention /><IntelligenceSection /><OnDeviceSection /></>}
         {tab === "Plan & referrals" && <><UsageSection /><ReferralsSection /></>}
         {tab === "Updates & about" && <UpdatesSection />}
 

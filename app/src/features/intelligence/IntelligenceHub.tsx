@@ -3,6 +3,7 @@ import { ErrorNotice } from "@/components/ErrorNotice";
 import { OverviewSummary } from "./OverviewSummary";
 import { EvolutionControl } from "./EvolutionControl";
 import { EvolutionActivity } from "./EvolutionActivity";
+import { AiSettings } from "./AiSettings";
 import { GenesisSetup } from "./GenesisSetup";
 import { modelLabel } from "@/lib/model-label";
 import { useSavedSection } from "@/lib/use-saved-section";
@@ -186,7 +187,7 @@ export function IntelligenceHub() {
           <Advanced title="Activity on this computer"><ActivityPanel all /></Advanced>
         </TabsContent>}
         {tab === "settings" && <TabsContent value="settings" className="space-y-3">
-          {owner ? <><Advanced title="Manual training controls"><NetworkTraining scope="training" /></Advanced><GrowthDiagnostics /><EvolutionPanel section="advanced" /><Advanced title="Detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView scope="training" /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced><Advanced title="Feedback and shared knowledge"><IntelligencePanel sections={["feedback", "knowledge"]} /></Advanced></> : <p className="text-xs text-muted">Advanced training and deployment controls require the Owner.</p>}
+          {owner ? <><AiSettings /><p className="pt-2 text-[10px] uppercase tracking-[0.22em] text-faint">Advanced</p><Advanced title="Manual training controls"><NetworkTraining scope="training" /></Advanced><GrowthDiagnostics /><EvolutionPanel section="advanced" /><Advanced title="Detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView scope="training" /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced><Advanced title="Feedback and shared knowledge"><IntelligencePanel sections={["feedback", "knowledge"]} /></Advanced></> : <p className="text-xs text-muted">Advanced training and deployment controls require the Owner.</p>}
         </TabsContent>}
       </Tabs>}
     </div>
