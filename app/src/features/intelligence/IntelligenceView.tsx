@@ -64,7 +64,7 @@ function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric
   if (pts.length === 0) return <div className="py-6 text-center text-xs text-muted">Not measured yet.</div>;
   if (pts.length === 1) {  // one measurement is a fact, not a trend: state it instead of drawing an invented axis
     const only = pts[0];
-    return <div className="py-4 text-center text-xs text-muted">{modelLabel(only.v)}: <span className="font-mono text-fg">{metric === "parameters" ? Math.round(only.b.value).toLocaleString() : fmt(only.b)}</span> {(LABEL[metric] ?? metric).toLowerCase()}. A chart appears once a second version has been measured.</div>;
+    return <div className="py-4 text-center text-xs text-muted">{modelLabel(only.v)}: <span className="font-mono text-fg">{metric === "parameters" ? Math.round(only.b.value).toLocaleString() : fmt(only.b)}</span> {metric === "parameters" ? "parameters" : (LABEL[metric] ?? metric).toLowerCase()}. A chart appears once a second version has been measured.</div>;
   }
   const vals = pts.map((p) => p.b.value);
   let lo = Math.min(...vals), hi = Math.max(...vals);

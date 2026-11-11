@@ -35,6 +35,6 @@ export function NavRail() {
     </div>
     <div hidden={collapsed} className={cn("min-h-0 flex-1 flex-col pt-1",collapsed?"hidden":"hidden md:flex")}><SidebarCollections/></div>
     {collapsed&&<div className="flex-1"/>}
-    <div className="shrink-0 border-t border-border pt-1"><FeatureSearch/><div className="flex items-center justify-center gap-2"><AccountMenu/>{!collapsed&&<span className="hidden md:inline"><ActivityNotices/></span>}</div></div>
+    <div className="shrink-0 border-t border-border pt-1"><FeatureSearch compact={collapsed}/><div className="flex items-center justify-center gap-2"><AccountMenu/>{!collapsed&&<span className="hidden md:inline"><ActivityNotices/></span>}</div></div>
   </nav>;
 }

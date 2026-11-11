@@ -5,7 +5,7 @@ import { WORKSPACES, navigate } from "@/lib/navigation";
 import { useAccount } from "@/lib/account";
 import { openIntelligence } from "@/lib/app-state";
 
-export function FeatureSearch() {
+export function FeatureSearch({ compact = false }: { compact?: boolean } = {}) {
   const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [active, setActive] = useState(0);
   const owner = useAccount((s) => s.user?.role === "owner");
   const input = useRef<HTMLInputElement>(null);
@@ -29,7 +29,7 @@ export function FeatureSearch() {
   return <>
     <button aria-label="Find a feature (Ctrl or Command K)" title="Find a feature · Ctrl/⌘ K" onClick={() => {setQuery(""); setActive(0); setOpen(true);}}
       className="flex h-9 w-full items-center justify-center gap-2 rounded-lg px-2 text-xs text-muted hover:bg-surface-2 focus-visible:outline focus-visible:outline-accent">
-      <Search className="size-4 shrink-0" /><span className="hidden md:inline">Find a feature</span>
+      <Search className="size-4 shrink-0" />{!compact && <span className="hidden md:inline">Find a feature</span>}
     </button>
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="w-full max-w-lg p-3">
         <DialogTitle className="sr-only">Find a feature</DialogTitle><DialogDescription className="sr-only">Search workspaces. Use arrows and Enter, or Tab to a result. Escape closes this dialog.</DialogDescription>
