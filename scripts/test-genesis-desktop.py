@@ -102,19 +102,17 @@ def main(installer):
         print('::notice title=GENESIS native stage::Signed installer, frozen backend and Owner login passed', flush=True)
         ui.click('Chat')
         ui.draft('native unsent draft')
-        ui.click('Code')
+        ui.click('Projects')
         ui.click('Chat')
-        wait(lambda:ui.draft() == 'native unsent draft','actual Chat composer draft retained across Code/Chat navigation')
-        ui.click('Intelligence')
-        for label in ('Overview','Chat','Code','Intelligence','Data','Network','Activity','Settings'):
+        wait(lambda:ui.draft() == 'native unsent draft','actual Chat composer draft retained across Projects/Chat navigation')
+        for label in ('Chat','Projects','AI','Network','Settings'):  # the five main sections
             ui.find(label, ('Button',))
-        ui.click('Overview')
+        ui.click('AI', control_type='Button')
+        ui.click('Evolution', control_type='TabItem')
         ui.click('Model details and measured architecture')
         ui.click('Inspect layer 2')
         wait(lambda: 'Layer 2 selected' in ui.text(), 'selected architecture layer')
-        ui.click('Intelligence')
-        ui.click('Training', control_type='TabItem')
-        print('::notice title=GENESIS native stage::Workspace drafts and interactive Intelligence tabs passed', flush=True)
+        print('::notice title=GENESIS native stage::Workspace drafts and the AI Evolution page passed', flush=True)
         worker_backend = api('/v1/admin/evolution/status')['settings']['backends']['workers']
         ui.click('Network', control_type='Button')  # computers and consent live in Network
         for value in (False, True):
@@ -129,8 +127,9 @@ def main(installer):
                    for w in api('/v1/training/workers')['workers'])
         ui.click('Contribute this computer')
         wait(lambda: not participant_setting()['enabled'], 'participant disable persisted')
-        ui.click('Intelligence', control_type='Button')
-        ui.click('Training', control_type='TabItem')
+        ui.click('AI', control_type='Button')
+        ui.click('AI Settings', control_type='TabItem')
+        ui.click('Manual training controls')  # the explicit, existing control; Start Evolution would also fetch data
         ui.click('Resume MOTH training')
         print('::notice title=GENESIS native stage::Cloud worker toggle and actual desktop enrollment passed; waiting for CPU progress', flush=True)
         cycle = wait(lambda: api('/v1/admin/evolution/status').get('cycle'), 'eligible cycle created by UI', timeout=120)
@@ -139,18 +138,18 @@ def main(installer):
              'real CPU training progress from requested cycle', timeout=180)
         api('/v1/admin/evolution/pause', {}, 'POST')
         ui.resize(800, 600)
-        for tab in ('Improvements','History','Advanced'):
+        for tab in ('Evolution','History','Data'):
             ui.click(tab, control_type='TabItem')
-        for label in ('Network','Data','Activity'):
-            ui.click(label, control_type='Button')
+        ui.click('Network', control_type='Button')
         ui.click('Chat')
-        wait(lambda:ui.draft() == 'native unsent draft','actual Chat composer draft retained across Code/Chat navigation')
-        ui.click('Data')
+        wait(lambda:ui.draft() == 'native unsent draft','actual Chat composer draft retained across Projects/Chat navigation')
+        ui.click('AI', control_type='Button')
+        ui.click('Data', control_type='TabItem')
         ui.close()
         app.wait(timeout=30)
         app = subprocess.Popen([str(exe)], env=appenv)
         ui = WindowsUI(app.pid)
-        ui.find('Dataset Quality Studio', ('Text',))  # persisted Data workspace
+        ui.find('Dataset Quality Studio', ('Text',))  # persisted AI → Data section
         ui.click('Settings');ui.optional_tab('Account')
         ui.find(user['username'],('Text',),contains=True)  # actual Windows credential-vault session survived
         ui.optional_tab('Advanced')  # Settings → Advanced → Genesis Reset
@@ -163,11 +162,12 @@ def main(installer):
         ui.click('Delete everything and reset')
         wait(lambda:api('/v1/admin/evolution/native-reset').get('status')=='completed','isolated native reset',timeout=120)
         assert api('/v1/intelligence/progress')['current'] is None
-        ui.click('Overview');ui.find('No Model — Ready for Genesis',('Text',))
+        ui.find('No Model — Ready for Genesis',('Text',))
+        ui.click('Begin Genesis');ui.find('Start MOTH from zero',('Text',))  # AI → Evolution offers the one-click start
         api('/v1/admin/evolution/initialize',{},'POST')
         assert api('/v1/admin/evolution/versions'), 'Explicit fresh initialization failed after isolated reset'
         evidence = {'native_windows': True, 'real_frozen_backend': True, 'real_cloud_api': True,
-                    'draft_preserved_across_modes': True, 'main_workspaces': 8, 'isolated_full_reset_verified': True, 'fresh_initialization_after_reset': True,
+                    'draft_preserved_across_modes': True, 'main_workspaces': 5, 'isolated_full_reset_verified': True, 'fresh_initialization_after_reset': True,
                     'owner_session_and_navigation_restored_after_restart': True, 'tested_window': [800, 600],
                     'worker_enrollment_id': participant['worker_id'], 'training_cycle_id': cycle['id'],
                     'production_reset': False, 'trained_foundation': False}

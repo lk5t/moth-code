@@ -139,7 +139,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     old, _ = download_release(old_version, out / "old")
     if args.candidate_dir:
-        assert old_version=='0.5.9','Candidate upgrade verification starts at the published 0.5.9 release'
+        assert old_version in ('0.5.9','0.6.1'),'Candidate upgrade verification starts at a published release (0.6.1, or 0.5.9 for older candidates)'
         manifest_path=next(args.candidate_dir.glob('moth-release-desktop-*.json'))
         target_version=json.loads(manifest_path.read_text())['version']
         assert re.fullmatch(r'\d+\.\d+\.\d+',target_version)

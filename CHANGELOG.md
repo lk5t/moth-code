@@ -3,6 +3,17 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.6.2 — AUTONOMOUS GENESIS
+
+- Five sections: Chat, Projects, AI, Network, Settings. AI holds Evolution, Data, History and AI Settings.
+- Chats: rename, delete one, delete selected, clear all; optional automatic retention (off by default).
+- Start Evolution: one click creates the first model if needed, selects trusted coding-first data, prepares it and keeps MOTH improving within your budget. Pause at any time.
+- The Evolution Engine adapts steps, learning rate, batch size and pace from measured results and explains every change.
+- Live training telemetry (compute, memory, workers, losses, speed, elapsed, honest remaining time) and a live activity stream of what the engine did.
+- Credentials are removed from all training data; Dataset Quality Studio reports them.
+- AI Settings in plain words; storage view and safe cleanup on MOTH Cloud.
+- Details: [docs/AUTONOMOUS-GENESIS.md](docs/AUTONOMOUS-GENESIS.md).
+
 ## 0.6.1 — Genesis Reset, fresh genesis and growth clarity
 
 - Genesis Reset moved to Settings → Advanced: review the real deletion inventory, type `RESET GENESIS`, confirm once more. MOTH Cloud still accepts the phrase the published 0.6.0 desktop sends. Optionally also deletes the native AI data stored on this computer.
