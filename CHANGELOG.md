@@ -3,7 +3,7 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
-## Unreleased — follow-up to 0.6.0 (not published; needs a new version number and Owner approval)
+## 0.6.1 — Genesis Reset, fresh genesis and growth clarity
 
 - Genesis Reset moved to Settings → Advanced: review the real deletion inventory, type `RESET GENESIS`, confirm once more. MOTH Cloud still accepts the phrase the published 0.6.0 desktop sends. Optionally also deletes the native AI data stored on this computer.
 - "No Model — Ready for Genesis": a guided fresh start with a choice of tokenizer and model size (real parameter counts from the server) replaces the empty Overview.
