@@ -109,8 +109,12 @@ def test_one_click_start_from_genesis_and_pause(client, owner, settings):
     assert client.get(f"{BASE}/autopilot", headers=o).json()["stage"] == "genesis"
     user = register_verified(client, settings, "plainuser")["token"]
     assert client.post(f"{BASE}/autopilot/start", headers=H(user)).status_code == 403
+    from moth_server.routes.admin import flags
+
+    flags_before = flags(ctx)
     r = client.post(f"{BASE}/autopilot/start", headers=o)
     assert r.status_code == 200, r.text
+    assert flags(ctx) == flags_before  # safety baseline and every other policy flag untouched
     body = r.json()
     assert M.deployed(ctx)["info"]["params"] == 99_648  # a real, untrained seed model
     assert any("Created the first MOTH model" in step for step in body["steps"])

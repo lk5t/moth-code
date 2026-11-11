@@ -312,6 +312,9 @@ def test_library_build_registers_domain_datasets_and_capability_suites(client, o
                                                          "holdout_overrides": {}, "vocab_size": 400}, wait=True)
     b = next(x for x in library.status(ctx)["builds"] if x["id"] == bid)
     assert b["status"] == "ready", b
+    from moth_server.evolution import memory as MEM
+    prepared = [e for e in MEM.events(ctx, limit=20) if e["kind"] == "data.prepared"]
+    assert prepared and prepared[0]["data"]["tokens"] > 0 and "ready for training" in prepared[0]["message"]
     assert b["domains"]["language"]["records"] > 50 and b["tokenizer_fingerprint"]
     assert b["sources"][0]["stats"].get("near_duplicate", 0) > 0  # near-identical stories were removed
     ds = [d for d in DS.all_(ctx) if "library" in d["tags"]]

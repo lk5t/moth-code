@@ -2,6 +2,7 @@ import { useCloudProgress, refreshCloudProgress } from "@/lib/cloud-progress";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { OverviewSummary } from "./OverviewSummary";
 import { EvolutionControl } from "./EvolutionControl";
+import { EvolutionActivity } from "./EvolutionActivity";
 import { GenesisSetup } from "./GenesisSetup";
 import { modelLabel } from "@/lib/model-label";
 import { useSavedSection } from "@/lib/use-saved-section";
@@ -159,6 +160,7 @@ export function IntelligenceHub() {
         {tab === "evolution" && <TabsContent value="evolution" className="flex flex-col gap-4">
           <EvolutionControl progress={p} />
           {p?.current && <TrainingProgress progress={p} resources={resources} />}
+          {p && <EvolutionActivity />}
           {p?.current ? <OverviewSummary progress={p} updatedAt={updatedAt} /> : owner && p && <Advanced title="Choose the model size and tokenizer yourself"><GenesisSetup /></Advanced>}
           {p?.current && <Advanced title="Model details and measured architecture"><ModelActivity progress={p} resources={resources} /></Advanced>}
         </TabsContent>}

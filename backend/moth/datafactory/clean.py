@@ -42,11 +42,24 @@ def normalize(text: str) -> str:
 
 
 def scrub(text: str) -> tuple[str, int]:
-    n = 0
+    """Remove credentials and personal data. Uses the same credential patterns as everything that
+    leaves the machine (private keys, cloud and GitHub tokens, JWTs, ``PASSWORD=...`` assignments)."""
+    from moth.security.redaction import redact
+
+    text, found = redact(text)
+    n = len(found)
     for rx, repl in ((SECRET, "[secret]"), (EMAIL, "[email]"), (PHONE, "[phone]")):
         text, k = rx.subn(repl, text)
         n += k
     return text, n
+
+
+def find_secrets(text: str) -> list[str]:
+    """Names of the credential kinds present (for quality reports; nothing is changed)."""
+    from moth.security.redaction import redact
+
+    found = redact(text)[1]
+    return found + ["token"] * len(SECRET.findall(text))
 
 
 def record_text(rec: dict[str, Any]) -> str:

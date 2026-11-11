@@ -36,6 +36,9 @@ def _record(row, source, number):
     return Document(row['text'],source,str(number))
 
 
+from moth.datafactory.clean import find_secrets
+
+
 def inspect(sources, tokenizer, validation_sources=()):
     issues=[];records=[];total_bytes=0;truncated=False;provenance=[];scanned=0
     def documents(spec):
@@ -63,7 +66,7 @@ def inspect(sources, tokenizer, validation_sources=()):
     for src in validation_sources:
         spec=SourceSpec.from_any(src)
         for doc in documents(spec):validation.add(_digest(doc))
-    seen=set();buckets=defaultdict(list);duplicates=near=contamination=repetition=0;lengths=[];preview=[];clean=[]
+    seen=set();buckets=defaultdict(list);duplicates=near=contamination=repetition=secrets=0;lengths=[];preview=[];clean=[]
     for src in sources:
         spec=SourceSpec.from_any(src);lic=resolve_license(spec)
         path=Path(spec.target) if spec.kind in ('dir','jsonl') else None
@@ -78,6 +81,10 @@ def inspect(sources, tokenizer, validation_sources=()):
             if almost:near+=1
             if grams:buckets[key].append(grams)
             repeated=len(words)>=20 and len(set(words))/len(words)<0.2;repetition+=repeated
+            secret_kinds=find_secrets(doc.text)
+            if secret_kinds:
+                secrets+=1
+                issues.append({'source':doc.source,'record':doc.id,'kind':'secret','message':'Possible credential ('+', '.join(sorted(set(secret_kinds)))+'): it is replaced with a placeholder before training'})
             if doc.messages:ids,mask=encode_chat(tokenizer,[Message(m['role'],m['content']) for m in doc.messages],add_generation_prompt=False)
             else:ids=tokenizer.encode(doc.text)
             lengths.append(len(ids)+1)
@@ -88,7 +95,7 @@ def inspect(sources, tokenizer, validation_sources=()):
     clean_bytes=json.dumps(clean,ensure_ascii=False).encode()
     return {'sources':provenance,'records':len(lengths),'scanned_records':scanned,'training_tokens':sum(lengths),'tokenizer_fingerprint':tokenizer.fingerprint(),
         'status':'needs_review' if issues or duplicates or near or contamination or repetition or truncated else 'checked_sample',
-        'duplicates':duplicates,'near_duplicates':near,'validation_overlap':contamination,'repetition_warnings':repetition,'issues':issues[:100],
+        'duplicates':duplicates,'near_duplicates':near,'validation_overlap':contamination,'repetition_warnings':repetition,'secrets':secrets,'issues':issues[:100],
         'token_lengths':{'min':min(lengths,default=0),'max':max(lengths,default=0),'mean':round(sum(lengths)/max(1,len(lengths)),1)},
         'truncated':truncated,'sample_limit':MAX_RECORDS,'preview':preview,'cleaning_preview':{'retained':len(clean),'removed':len(lengths)-len(clean),'policy':'Remove exact duplicates and exact validation overlaps only; malformed records are excluded. Near duplicates/repetition require review.'},
         'cleaned_records':clean,'inspection_sha256':hashlib.sha256(clean_bytes).hexdigest(),

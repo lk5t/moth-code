@@ -538,7 +538,15 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                           "measurement": B.progress(ctx, e)
                           if e.get('backend') == 'local' and e['status'] in ('running', 'paused')
                           else (e.get('metrics') or {}).get('progress') or (e.get('metrics') or {}).get('training') or {},
-                          "candidate_version": e.get("candidate_version"), "error": e.get("error")}
+                          "candidate_version": e.get("candidate_version"), "error": e.get("error"),
+                          # 0.6.2 telemetry: when it ran, on what data and at what settings (owner only below)
+                          "started_at": e.get("started_at"), "finished_at": e.get("finished_at"),
+                          "compute_seconds": e.get("compute_seconds"), "worker_id": e.get("worker_id"),
+                          "data": {"stage": ((e["config"] or {}).get("mixture") or {}).get("stage"),
+                                   "domains": ((e["config"] or {}).get("mixture") or {}).get("weights") or {},
+                                   "dataset_id": e.get("dataset_id")},
+                          "plan": {k: (e["config"] or {}).get(k) for k in ("steps", "lr", "batch_size", "seq_len")},
+                          "rationale": e.get("rationale") if auth.user["role"] == "owner" else None}
                          for e in experiments]
     current = next((v for v in versions if v["deployed"]), None)
     loaded = rels.get(deployed)

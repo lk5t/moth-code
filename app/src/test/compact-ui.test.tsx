@@ -38,16 +38,30 @@ describe("visible training reports", () => {
       fraction: 1, checkpoint: { name: "step_00000008.pt", step: 8 } } as any;
     rerender(<TrainingProgress progress={progress} resources={null} />);
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "100");
-    expect(screen.getByText(/step_00000008.pt/)).toBeInTheDocument();
+    expect(screen.getByText("Checkpoint").nextSibling).toHaveTextContent("step 8");
+    expect(screen.getByText("Remaining").nextSibling).toHaveTextContent("Estimating");  // no start time reported: no invented estimate
     expect(screen.queryByText("256")).not.toBeInTheDocument();
   });
   it("shows waiting/paused states without inventing progress", () => {
     const { container } = render(<TrainingProgress resources={null} progress={{ training: { enabled: true,
       paused: true, experiments: [{ id: 1, status: "waiting", backend: null, measurement: {} }] } }} />);
-    expect(screen.getByText(/Paused by the Owner/)).toBeInTheDocument();
+    expect(screen.getByText(/· Paused/)).toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(screen.getAllByText("Not reported").length).toBeGreaterThan(0);
     expect(container.querySelector('[data-motion="working"]')).toBeNull();
+  });
+  it("derives remaining time only from the measured step rate", () => {
+    const started = Date.now() / 1000 - 100;  // 100 s for 50 of 200 steps → about 300 s left
+    render(<TrainingProgress resources={{ local: { cpu_count: 4, cpu_percent: 37, memory: { used: 2 * 1024 ** 3, total: 8 * 1024 ** 3 }, gpus: [] } }}
+      progress={{ network: { workers_online: 1, gpu_online: 0, cpu_online: 1 }, training: { enabled: true, paused: false, cycle: { status: "training" },
+        experiments: [{ id: 7, status: "running", backend: "local", device: "cpu", started_at: started,
+          data: { stage: "foundation", domains: { code: 0.6, language: 0.4 } }, plan: { steps: 200, lr: 0.0003, batch_size: 8 },
+          measurement: { step: 50, max_steps: 200, tokens_seen: 51200, train_loss: 3.1 } }] } }} />);
+    expect(screen.getByText("Remaining").nextSibling?.textContent).toMatch(/≈ (4|5) min/);
+    expect(screen.getByText(/code 60%, language 40%/)).toBeInTheDocument();
+    expect(screen.getByText("37% of 4 cores")).toBeInTheDocument();
+    expect(screen.getByText("2.0 GB of 8.0 GB in use")).toBeInTheDocument();
+    expect(screen.getByText("1 (0 GPU · 1 CPU)")).toBeInTheDocument();
   });
 });
 

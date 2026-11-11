@@ -187,6 +187,10 @@ def _tick(ctx: Ctx, woken: bool = False) -> dict[str, Any]:
         recover(ctx)
         ctx.extras["evolution_recovered"] = True
     st = _set_state(ctx, last_tick=now())
+    try:
+        _watch_workers(ctx, st)
+    except Exception:  # noqa: BLE001 — connectivity notes never stop the engine
+        pass
     if now() - float(st.get("last_prune") or 0) > 86400:
         MEM.prune(ctx, float(settings["retention_days"]))
         _set_state(ctx, last_prune=now())
@@ -212,6 +216,23 @@ def _tick(ctx: Ctx, woken: bool = False) -> dict[str, Any]:
     return {"cycle": cyc["id"], "status": MEM.cycle(ctx, cyc["id"])["status"]}
 
 
+def _watch_workers(ctx: Ctx, st: dict) -> None:
+    """Record when an enrolled worker comes online or goes offline (heartbeat within 3 minutes)."""
+    from moth_server.db import workers
+
+    rows = ctx.db.all(select(workers.c.id, workers.c.name, workers.c.last_heartbeat_at).where(workers.c.revoked_at.is_(None)))
+    online = {r["id"]: r["name"] for r in rows if (r["last_heartbeat_at"] or 0) >= now() - 180}
+    before = {int(k): v for k, v in (st.get("workers_online") or {}).items()}
+    if online.keys() == before.keys():
+        return
+    for wid in online.keys() - before.keys():
+        MEM.event(ctx, "worker.connected", f"Worker {online[wid] or wid} connected and can take training work.", worker=wid)
+    for wid in before.keys() - online.keys():
+        MEM.event(ctx, "worker.disconnected", f"Worker {before[wid] or wid} stopped reporting; its unfinished work "
+                  "is reassigned or resumed from its last checkpoint.", level="warning", worker=wid)
+    _set_state(ctx, workers_online={str(k): v for k, v in online.items()})
+
+
 def _maybe_start(ctx: Ctx, settings: dict, woken: bool = False) -> dict:
     from moth_server import models as M
 
@@ -228,7 +249,7 @@ def _maybe_start(ctx: Ctx, settings: dict, woken: bool = False) -> dict:
     if not base:
         reason = "No model is deployed yet. Evolution continues training the deployed model."
     elif not DS.approved(ctx):
-        reason = "No approved training data. Add a dataset in Evolution → Data and approve it."
+        reason = "Waiting for approved training data (prepared automatically; see AI → Data)."
     else:
         from moth_server.evolution import autopilot as AP
 
@@ -496,6 +517,12 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
                       level="warning", cycle_id=cyc["id"], experiment_id=exp["id"])
             B.cleanup_run(ctx, exp)
             return
+        before = (((exp["metrics"] or {}).get("progress") or {}).get("checkpoint") or {}).get("step")
+        ck = (prog.get("checkpoint") or {}).get("step")
+        if ck and ck != before:
+            MEM.event(ctx, "checkpoint.saved", f"Experiment #{exp['id']} saved a checkpoint at step {ck}"
+                      + (f" (training loss {prog['train_loss']:.3f})" if isinstance(prog.get("train_loss"), (int, float)) else "") + ".",
+                      cycle_id=cyc["id"], experiment_id=exp["id"], step=ck)
         MEM.update_experiment(ctx, exp["id"], progress=prog.get("fraction"),
                               metrics={**(exp["metrics"] or {}), "progress": prog})
         MEM.update_cycle(ctx, cyc["id"], status="training")

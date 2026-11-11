@@ -21,6 +21,7 @@ import torch
 
 from moth.model.chat_format import Message, encode_chat
 from moth.model.tokenizer import Tokenizer
+from moth.security.redaction import redact
 from moth.training.sources import Document, SourceSpec, iter_source, resolve_license
 
 
@@ -57,6 +58,7 @@ def prepare_dataset(
     last = time.time()
     seen = set()
     duplicates = 0
+    secrets_removed = 0
     try:
         for spec in specs:
             for doc in iter_source(spec):
@@ -67,12 +69,20 @@ def prepare_dataset(
                     duplicates += 1
                     continue
                 seen.add(digest)
+                # Credentials never become training data (private keys, tokens, PASSWORD=... and similar).
                 if doc.messages:
+                    cleaned = []
+                    for m in doc.messages:
+                        content, found = redact(m["content"])
+                        secrets_removed += len(found)
+                        cleaned.append({**m, "content": content})
                     msgs = [Message(m["role"], m["content"], allow_special=doc.trusted and m["role"] == "assistant")
-                            for m in doc.messages]
+                            for m in cleaned]
                     ids, mask = encode_chat(tokenizer, msgs, add_generation_prompt=False)
                 else:
-                    ids = tokenizer.encode(doc.text)
+                    text, found = redact(doc.text)
+                    secrets_removed += len(found)
+                    ids = tokenizer.encode(text)
                     mask = [1] * len(ids)
                 ids.append(tokenizer.eos_id)
                 mask.append(1)
@@ -113,6 +123,7 @@ def prepare_dataset(
     meta = {
         "format": 1,
         "duplicates_skipped": duplicates,
+        "secrets_removed": secrets_removed,
         "created": time.time(),
         "dtype": np.dtype(dtype).name,
         "tokenizer_path": str(Path(tokenizer_path).resolve()),

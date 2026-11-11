@@ -188,6 +188,11 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
         manifest["registration_errors"] = registration_errors
         manifest["token_counts"] = {d: i["tokens"] for d, i in mix["domains"].items()}
         progress("Prepared and approved")
+        from moth_server.evolution import memory as _MEM
+        tokens = sum(sum(v for v in t.values() if isinstance(v, (int, float))) if isinstance(t, dict) else int(t or 0)
+                     for t in (i.get("tokens") for i in mix["domains"].values()))
+        _MEM.event(ctx, "data.prepared", f"Training data prepared: {tokens:,} tokens across {len(mix['domains'])} domains "
+                   f"({', '.join(sorted(mix['domains']))}); ready for training.", build=bid, tokens=tokens)
         upd(status="ready", path=str(out), content_sha256=manifest["content_sha256"],
             tokenizer_fingerprint=tok.fingerprint(), manifest=json.dumps(manifest), finished_at=now())
         if config.get('automatic'):
@@ -196,6 +201,12 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
     except Exception as e:  # noqa: BLE001
         from moth.security.redaction import redact
         upd(status="failed", error=redact(f"{type(e).__name__}: {e}")[0][:2000], finished_at=now())
+        try:
+            from moth_server.evolution import memory as _MEM
+            _MEM.event(ctx, "data.failed", "Training data preparation failed: " + redact(f"{e}")[0][:300]
+                       + " It is retried automatically.", level="error", build=bid)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def check_updates(ctx: Ctx, fetch_json=_fetch_json, sources=None) -> list[dict[str, Any]]:

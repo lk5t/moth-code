@@ -3,7 +3,7 @@ import { get, post } from "@/lib/backend";
 import { Button } from "@/components/ui/button";
 import { SourcePicker, type SourceSel } from "./SourcePicker";
 
-type Report = {status: string; records: number; training_tokens: number; duplicates: number; near_duplicates: number; validation_overlap: number; repetition_warnings: number; truncated: boolean; tokenizer_fingerprint: string; sources: {source: string; license: string; format: string; bytes: number | null}[]; token_lengths: {min: number; max: number; mean: number}; issues: {source: string; record: number; message: string}[]; preview: {source: string; record: string; text: string; tokens: number}[]; cleaning_preview: {retained: number; removed: number; policy: string}; limitations: string[]};
+type Report = {status: string; records: number; training_tokens: number; duplicates: number; near_duplicates: number; validation_overlap: number; repetition_warnings: number; secrets?: number; truncated: boolean; tokenizer_fingerprint: string; sources: {source: string; license: string; format: string; bytes: number | null}[]; token_lengths: {min: number; max: number; mean: number}; issues: {source: string; record: number; message: string}[]; preview: {source: string; record: string; text: string; tokens: number}[]; cleaning_preview: {retained: number; removed: number; policy: string}; limitations: string[]};
 export function DatasetQualityStudio({tokenizers, datasets = []}: {tokenizers: {name: string; fingerprint: string}[]; datasets?: {name: string}[]}) {
   const [prepared,setPrepared]=useState<Record<string, any>|null>(null);
   const [dataset,setDataset]=useState('');
@@ -32,6 +32,7 @@ export function DatasetQualityStudio({tokenizers, datasets = []}: {tokenizers: {
     {report && <div className="space-y-2 rounded-lg border border-border p-3">
       <p className="text-sm text-fg">{report.records} examples · {report.training_tokens.toLocaleString()} estimated training tokens · {report.status.replaceAll('_',' ')}</p>
       <p>Exact duplicates: {report.duplicates} · Potential near duplicates: {report.near_duplicates} · Repetition warnings: {report.repetition_warnings}</p>
+      {(report.secrets ?? 0) > 0 && <p className="text-warning">Possible credentials in {report.secrets} {report.secrets === 1 ? "example" : "examples"} — they are replaced with placeholders before training.</p>}
       <p>Validation overlap: {validation.length ? report.validation_overlap : 'Not tested — choose validation sources'}</p>
       <p>Token length: {report.token_lengths.min}–{report.token_lengths.max} (mean {report.token_lengths.mean})</p>
       {report.truncated && <p className="text-warning">Inspection limit reached; remaining records were not checked.</p>}

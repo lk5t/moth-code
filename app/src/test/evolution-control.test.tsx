@@ -9,7 +9,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); m.role = "owner"; });
 
 it("starts from Genesis with one click and reports what it did", async () => {
   let started = false;
-  m.api.mockImplementation(async (path: string, init?: any) => {
+  m.api.mockImplementation(async (path: string) => {
     if (path.endsWith("/autopilot/start")) { started = true; return { steps: ["Created the first MOTH model (seed size, byte-level tokenizer)."], status: {} }; }
     return started ? { stage: "preparing_data", running: true, doing: "Preparing training data." } : { stage: "genesis", running: false, doing: "There is no model yet." };
   });
