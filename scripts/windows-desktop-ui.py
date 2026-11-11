@@ -86,13 +86,19 @@ class WindowsUI:
         """
         deadline = time.monotonic() + timeout
         skip = ('Continue without signing in (editor, terminal and Git work offline)', 'Skip for now')
+        settled = None  # the introduction can open a moment after Settings first appears: require it to stay away
         while time.monotonic() < deadline:
             buttons = [c for c in self.root.descendants(control_type='Button') if c.is_visible() and c.is_enabled()]
             intro = next((c.element_info.name for c in buttons if c.element_info.name in skip), None)
             if intro:
+                settled = None
                 self.click(intro, timeout=5)
             elif any(c.element_info.name == 'Settings' for c in buttons):
-                return
+                settled = settled or time.monotonic()
+                if time.monotonic() - settled >= 5:
+                    return
+            else:
+                settled = None
             time.sleep(1)
         raise AssertionError('First-launch introduction or Settings did not become actionable')
 
