@@ -193,14 +193,22 @@ def holdout_suite(model, tok, path: str, limit: int = 300, max_tokens: int = 80_
 def instruction_suite(model, tok, path: str, limit: int = 40, max_new: int = 160) -> dict[str, Any]:
     items = [r for r in _items(path, 400) if "messages" in r][:limit]
     good = 0
+    failures = {"empty": 0, "no_end": 0, "repetitive": 0}  # why replies failed (first reason that applies)
     for rec in items:
         prompt = next(m["content"] for m in rec["messages"] if m["role"] == "user")
         out, stats = _chat(model, tok, prompt, max_new)
         w = out.split()
         distinct = len(set(zip(w, w[1:]))) / max(1, len(w) - 1)
-        if out.strip() and stats.stop_reason in ("eos", "stop_string") and (len(w) < 8 or distinct > 0.5):
+        if not out.strip():
+            failures["empty"] += 1
+        elif stats.stop_reason not in ("eos", "stop_string"):
+            failures["no_end"] += 1
+        elif not (len(w) < 8 or distinct > 0.5):
+            failures["repetitive"] += 1
+        else:
             good += 1
-    return {"metric": "well_formed", "value": good / max(1, len(items)), "n": len(items), "higher_is_better": True}
+    return {"metric": "well_formed", "value": good / max(1, len(items)), "n": len(items), "higher_is_better": True,
+            "failures": failures}
 
 
 def safety_suite(model, tok, policy: dict[str, Any] | None = None, max_new: int = 60) -> dict[str, Any]:

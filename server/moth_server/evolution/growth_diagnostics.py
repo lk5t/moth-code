@@ -1,4 +1,4 @@
-"""Read-only explanation of the existing growth planner; never creates experiments or data."""
+"""Read-only explanation of the capability-based growth decision; never creates experiments or data."""
 import json
 from pathlib import Path
 from sqlalchemy import select
@@ -16,13 +16,14 @@ def inspect(ctx):
     if not base:
         return result|{'blockers':['No deployed native model is available.'],'decision':None}
     from moth.model.config import MothConfig
-    from moth.model.growth import plan_growth
+    from moth_server.evolution import capacity as CAP
     cfg=MothConfig.from_dict(json.loads((Path(base['path'])/'config.json').read_text()))
     evidence=v2.growth_evidence(ctx,base)|{'plateau_threshold':settings['growth']['plateau_threshold']}
-    decision=plan_growth(cfg,evidence,settings['growth'],approval_ratio=settings['growth']['approval_ratio'])
+    decision=CAP.assess(ctx,base,settings)  # the same capability-based decision the planner makes
     versions={base['version']}|{a['version'] for a in MEM.ancestors(ctx,base['version'])}
     attempts=[e for e in MEM.experiments(ctx,limit=100) if e['base_version'] in versions and (e['config'] or {}).get('method')=='expansion']
     result.update(deployed_version=base['version'],registered_params=base['info'].get('params'),architecture_params=cfg.num_params(),
+                  params_verified=M.params_verified(base['info']),
                   tokenizer=base['info'].get('tokenizer_fingerprint'),evidence=evidence,decision=decision,
                   attempts=[{'id':e['id'],'status':e['status'],'candidate':e.get('candidate_version'),'growth':(e['config'] or {}).get('grow'),'error':e.get('error')} for e in attempts])
     approved=DS.approved(ctx,base['info'].get('tokenizer_fingerprint'))

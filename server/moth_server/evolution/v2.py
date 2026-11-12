@@ -177,7 +177,6 @@ def growth_evidence(ctx: Ctx, base: dict) -> dict[str, Any]:
 def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any]:
     """Experiments on the curriculum mixture (empty when no compatible library build exists)."""
     from moth.model.config import MothConfig
-    from moth.model.growth import plan_growth
 
     from moth_server.evolution.planner import _lr_ranking, architecture_key
     from moth_server.intelligence import curriculum, feedback, weakness
@@ -225,20 +224,24 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
         _add(ctx, out, cfg, src, f"{why} (stage {mix['stage']}); lr {lr:.2e}, {cfg['steps']} steps"
              + ("; continues the development checkpoint" if dev else ""), int(settings["max_experiments_per_cycle"]))
     g = settings.get("growth") or {}
+    # 0.6.3 capability-based growth: the decision comes from measured capabilities, training progress
+    # and resources (see capacity.py); the engine passes the assessment it already made this cycle.
+    decision = settings.get("_capacity")
+    if decision is None:
+        from moth_server.evolution import capacity as CAP
+
+        decision = CAP.assess(ctx, base, settings)
+    out["growth"] = decision
     if g.get("enabled", True):
         cfg_model = MothConfig.from_dict(json.loads((Path(base["path"]) / "config.json").read_text()))
-        decision = plan_growth(cfg_model, growth_evidence(ctx, base) | {"plateau_threshold": float(
-            g.get("plateau_threshold", 0.01))}, {"max_params": int(g.get("max_params", 0)) or None,
-                                                  "max_ratio": float(g.get("max_ratio", 1.5))},
-            approval_ratio=float(g.get("approval_ratio", 1.25)))
-        out["growth"] = decision
         if decision["grow"]:
             cfg = _config(base, arch, src, tilted if tilted.get("weights") else balanced, lrs[0],
                           int(tr["steps"]) * int(g.get("steps_multiplier", 2)), settings, cycle_seed)
             cfg["method"] = "expansion"
             cfg["grow"] = {"add_layers": decision["add_layers"], "ffn_hidden": decision["ffn_hidden"],
                            "params_before": decision["params_before"], "params_after": decision["params_after"],
-                           "ratio": decision["ratio"]}
+                           "ratio": decision["ratio"], "target_capabilities": decision.get("target_capabilities") or [],
+                           "estimate": decision.get("estimate")}
             cfg["requires_approval"] = bool(decision["requires_approval"])
             _add(ctx, out, cfg, src, "Adaptive Parameter Growth: " + decision["reason"]
                  + (" — needs the Owner's approval" if decision["requires_approval"] else ""), 99)

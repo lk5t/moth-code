@@ -35,7 +35,9 @@ def test_growth_diagnostics_reads_real_registered_architecture(client,owner,tmp_
     response=client.get('/v1/admin/evolution/growth-diagnostics',headers=H(owner['token']))
     assert response.status_code==200,response.text
     report=response.json();assert report['architecture_params']==config.num_params()==release['info']['params']
-    assert report['decision']['grow'] is False and 'need 3' in report['decision']['reason']
+    assert report['decision']['grow'] is False and report['decision']['action']=='continue_training'
+    assert report['decision']['reason']=='no capability benchmark or held-out result has been recorded for this model yet'
+    assert report['params_verified'] is True
     assert report['attempts']==[] and not MEM.cycles(ctx)
     assert set(before)==set(Path(ctx.settings.data_dir).rglob('*'))
 

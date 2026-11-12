@@ -25,7 +25,7 @@ const TITLE: [RegExp, string][] = [
   [/^data\.scaled/, "Library grown"], [/^storage\.retention/, "Old versions cleaned up"], [/^storage\./, "Storage"], [/^worker\.connected/, "Worker connected"],
   [/^worker\.disconnected/, "Worker disconnected"], [/^deploy\.done/, "New model promoted"], [/^deploy\.verified/, "Health verified"], [/^deploy\.rollback/, "Rolled back"],
   [/^cycle\.rejected/, "Kept the current model"], [/^cycle\./, "Cycle"], [/^engine\.started|^engine\.resumed/, "Evolution started"],
-  [/^engine\.paused/, "Evolution paused"], [/^engine\.idle/, "Waiting"], [/^evaluation\./, "Evaluation"], [/^growth\.proposed/, "Growth proposed"], [/^growth\.not_proposed/, "Growth not needed yet"], [/^growth\.passed/, "Growth candidate passed"], [/^growth\.rejected/, "Growth rejected"], [/^growth\./, "Growth"], [/^model\.params_corrected/, "Parameter count corrected"],
+  [/^engine\.paused/, "Evolution paused"], [/^engine\.idle/, "Waiting"], [/^evaluation\./, "Evaluation"], [/^growth\.proposed/, "Growth proposed"], [/^growth\.not_proposed/, "Intelligence check"], [/^growth\.passed/, "Growth candidate passed"], [/^growth\.rejected/, "Growth rejected"], [/^growth\./, "Growth"], [/^model\.params_corrected/, "Parameter count corrected"],
 ];
 const title = (kind: string) => TITLE.find(([rx]) => rx.test(kind))?.[1] ?? kind.replace(/[._]/g, " ");
 const time = (ts: number) => {

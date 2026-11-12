@@ -300,9 +300,25 @@ def _planning(ctx: Ctx, cyc: dict, settings: dict) -> None:
         AP.scale_data(ctx)
     except Exception:  # noqa: BLE001 — data scaling never blocks a cycle
         pass
-    settings, decisions = AP.adapt(ctx, settings, measured)
+    # 0.6.3: what limits MOTH now — measured capabilities, training progress, data and resources
+    from moth_server.evolution import capacity as CAP
+
+    try:
+        assessment = CAP.assess(ctx, base, settings)
+    except Exception:  # noqa: BLE001 — the assessment refines the plan; it never blocks a cycle
+        log.exception("capability assessment failed")
+        assessment = None
+    settings, decisions = AP.adapt(ctx, settings, measured, capacity=assessment)
     AP.remember(ctx, settings, decisions, cyc["id"], owner_settings)
-    result = P.plan(ctx, base, settings, cycle_seed=1000 + cyc["id"])
+    if assessment and assessment["action"] == "improve_data" and \
+            int(state(ctx).get("capacity_data_cycle") or 0) <= cyc["id"] - 5:  # at most every 5 cycles
+        try:
+            if AP.scale_data(ctx, force=True, reason=assessment["reason"][:1].upper() + assessment["reason"][1:]):
+                _set_state(ctx, capacity_data_cycle=cyc["id"])
+        except Exception:  # noqa: BLE001
+            pass
+    result = P.plan(ctx, base, {**settings, "_capacity": assessment} if assessment else settings,
+                    cycle_seed=1000 + cyc["id"])
     result["decisions"] = decisions
     if result.get("data_note"):
         MEM.event(ctx, "plan.adjusted", result["data_note"], cycle_id=cyc["id"], decision="data")
@@ -331,32 +347,49 @@ def _planning(ctx: Ctx, cyc: dict, settings: dict) -> None:
 
 
 def _growth_event(ctx: Ctx, cyc: dict, base: dict, decision: dict | None, settings: dict) -> None:
-    """Record the architecture-growth decision of this cycle's plan in the activity feed.
+    """Record this cycle's capability assessment / growth decision in the activity feed.
 
-    A proposal is always recorded; a 'not yet' is recorded when its reason changes, so the feed
-    explains why the model keeps its size without repeating the same line every cycle.
+    A growth proposal is always recorded with its evidence and estimated cost; any other decision is
+    recorded when it changes, so the feed explains why the model keeps its size without repeating the
+    same line every cycle. The latest assessment is kept for the AI workspace.
     """
-    if not (settings.get("growth") or {}).get("enabled", True):
-        reason, decision = "architecture growth is turned off in AI Settings", None
-    elif decision is None:
+    if not (settings.get("growth") or {}).get("enabled", True) and not (decision or {}).get("headline"):
+        decision = {"grow": False, "action": "continue_training", "reason": "architecture growth is turned off in AI Settings",
+                    "params_before": (base["info"] or {}).get("params")}
+    if decision is None:
         return
-    else:
-        reason = decision.get("reason") or ""
-    before = (decision or {}).get("params_before") or (base["info"] or {}).get("params")
-    if decision and decision.get("grow"):
-        MEM.event(ctx, "growth.proposed", f"Growth experiment planned: {decision['params_before']:,} → "
-                  f"{decision['params_after']:,} parameters (+{decision['ratio'] - 1:.0%}). Reason: {reason}"
-                  + (". It needs the Owner's approval." if decision.get("requires_approval") else
-                     ". It trains as a separate candidate and must pass every gate."),
+    reason = decision.get("reason") or ""
+    before = decision.get("params_before") or (base["info"] or {}).get("params")
+    _set_state(ctx, capacity={k: decision.get(k) for k in (
+        "action", "headline", "reason", "investigating", "capabilities", "causes", "tokens_per_param", "params",
+        "tokens", "loss_improving", "estimate", "params_after", "target_capabilities")} | {"cycle": cyc.get("id"), "at": now()})
+    if decision.get("grow"):
+        est = decision.get("estimate") or {}
+        where = (["this server"] if est.get("fits_server") else []) + \
+                ([f"{est['workers_that_fit']} MOTH worker(s)"] if est.get("workers_that_fit") else [])
+        cost = (f" Estimated training memory {est['memory_bytes'] / 2**30:.1f} GB (fits: {', '.join(where)})"
+                if est.get("memory_bytes") else "") + \
+               (f"; about {est['training_seconds'] / 60:.0f} min of training" if est.get("training_seconds") else "")
+        MEM.event(ctx, "growth.proposed", "Current architecture may be limiting progress. Testing a larger candidate: "
+                  f"{decision['params_before']:,} → {decision['params_after']:,} parameters (+{decision['ratio'] - 1:.0%}). "
+                  f"Why: {reason}.{cost + '.' if cost else ''}"
+                  + (" It needs the Owner's approval." if decision.get("requires_approval") else
+                     " It trains as a separate candidate on the same data and must beat the current model on the same "
+                     "benchmarks; otherwise it is discarded."),
                   cycle_id=cyc["id"], params_before=decision["params_before"], params_after=decision["params_after"],
-                  add_layers=decision.get("add_layers"), ffn_hidden=decision.get("ffn_hidden"))
+                  add_layers=decision.get("add_layers"), ffn_hidden=decision.get("ffn_hidden"), estimate=est,
+                  target_capabilities=decision.get("target_capabilities"), causes=decision.get("causes"))
         _set_state(ctx, last_growth_reason=None)
         return
-    if state(ctx).get("last_growth_reason") == reason:
+    key = f"{decision.get('action')}|{reason}"
+    if state(ctx).get("last_growth_reason") == key:
         return
-    MEM.event(ctx, "growth.not_proposed", f"The model keeps its size ({before or 0:,} parameters): {reason}.",
-              cycle_id=cyc["id"], params=before, reason=reason)
-    _set_state(ctx, last_growth_reason=reason)
+    head = (decision.get("investigating") + " " if decision.get("investigating") else "") + (decision.get("headline") or "")
+    MEM.event(ctx, "growth.not_proposed", (head.strip() + " " if head.strip() else "")
+              + f"The model keeps its size ({before or 0:,} parameters): {reason}.",
+              cycle_id=cyc["id"], params=before, reason=reason, action=decision.get("action"),
+              causes=decision.get("causes"))
+    _set_state(ctx, last_growth_reason=key)
 
 
 def _need_bytes(ctx: Ctx, exp: dict) -> int:
@@ -694,7 +727,7 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
         e = MEM.experiment(ctx, e["id"])  # keep what the remote evaluation recorded
         try:
             verdict = EV.gate(ctx, cand, base, DS.get(ctx, e["dataset_id"]), settings,
-                              mixture=(e["config"] or {}).get("mixture"))
+                              mixture=(e["config"] or {}).get("mixture"), growth=(e["config"] or {}).get("grow"))
         except Exception as ex:  # noqa: BLE001
             MEM.update_experiment(ctx, e["id"], status="failed", error=f"evaluation failed: {ex}", finished_at=now())
             MEM.event(ctx, "experiment.failed", f"Experiment #{e['id']}: evaluation failed: {ex}", level="error",
@@ -721,8 +754,8 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
             MEM.event(ctx, "growth.passed" if verdict["passed"] else "growth.rejected",
                       f"Growth candidate v{cand['version']} ({size}) " + (
                           "passed every gate and competes for promotion like any other candidate." if verdict["passed"]
-                          else f"was rejected: it did not beat the current model safely ({', '.join(failed)}). "
-                               "The current size is kept."),
+                          else f"was rejected ({', '.join(failed)}). Larger model did not improve performance "
+                               "enough. Keeping the current version."),
                       level="info" if verdict["passed"] else "warning", cycle_id=cyc["id"], experiment_id=e["id"],
                       params_before=grow["params_before"], params_after=measured.get("total") or grow["params_after"],
                       failed=failed)

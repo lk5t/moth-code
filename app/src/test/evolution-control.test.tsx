@@ -43,3 +43,24 @@ it("shows workers with their tasks, versions and the bottleneck from the server"
   expect(screen.getByText(/Holding back progress: 1 job\(s\) wait/)).toBeInTheDocument();
   expect(screen.getByText(/weakness-tilted curriculum/)).toBeInTheDocument();
 });
+
+it("reports the intelligence check, real size and growth outcomes exactly as the server measured them", async () => {
+  m.api.mockResolvedValue({ stage: "training", running: true, doing: "Training (cycle #9).", intelligence: {
+    version: 12, params: 5184768, params_verified: true,
+    assessment: { action: "grow", investigating: "Arithmetic remains limited. Evaluating possible causes.",
+      headline: "Current architecture may be limiting progress. Testing a larger candidate.",
+      reason: "arithmetic did not improve over the last 3 measured versions despite 41 tokens per parameter: grow 20% (5,184,768 → 6,221,568 parameters)",
+      estimate: { memory_bytes: 2 * 2 ** 30, fits_server: true, workers_that_fit: 1, training_seconds: null },
+      capabilities: [{ capability: "math", name: "Arithmetic", value: 0.02, target: 0.2, limited: true, stalled: true, higher_is_better: true, change: 0 },
+                     { capability: "holdout_language", name: "Language understanding", value: 2.1234, target: null, limited: null, stalled: false, higher_is_better: false, change: 0.04 }],
+      causes: [{ cause: "insufficient_training", found: false, detail: "41 tokens per parameter" }] },
+    growth_attempts: [{ experiment: 31, status: "rejected", params_before: 5184768, params_after: 6221568, measured: true }] } });
+  render(<EvolutionControl progress={{ current: { name: "MOTH 0.12" }, training: {} }} />);
+  expect(await screen.findByText("Current architecture may be limiting progress. Testing a larger candidate.")).toBeInTheDocument();
+  expect(screen.getByText("Arithmetic remains limited. Evaluating possible causes.")).toBeInTheDocument();
+  expect(screen.getByText("Model v12: 5,184,768 parameters · counted from the saved weights")).toBeInTheDocument();
+  expect(screen.getByText(/2\.0% \/ target 20\.0% · not improving/)).toBeInTheDocument();
+  expect(screen.getByText(/loss 2\.123 · improving/)).toBeInTheDocument();
+  expect(screen.getByText(/fits this server · fits 1 MOTH worker\(s\) · training time not measured yet/)).toBeInTheDocument();
+  expect(screen.getByText(/Experiment #31: 5,184,768 → 6,221,568 parameters \(counted from weights\) · Larger model did not improve performance enough\. Kept the current version\./)).toBeInTheDocument();
+});

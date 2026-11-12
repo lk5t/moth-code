@@ -23,7 +23,8 @@ def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner, tmp_
     torch.manual_seed(0)
     # This test rolls back two generations to the seed, so it keeps every version (retention 0);
     # the 0.6.3 default (active + previous) is covered in test_retention_v063.py.
-    S.update(ctx, {**FAST, 'retention': {'models': 0}, 'paused': True, 'training': {**FAST['training'], 'steps': 20}, 'growth': {'enabled': False},
+    # exact step totals are asserted below, so the autopilot (which may lengthen runs) is off here
+    S.update(ctx, {**FAST, 'retention': {'models': 0}, 'paused': True, 'training': {**FAST['training'], 'steps': 20}, 'growth': {'enabled': False}, 'autopilot': False,
                    'rollout': {'canary_percent': 100}, 'monitoring': {'minutes': 0.0, 'min_requests': 1}})
     discovery.update(ctx, {'max_source_chars': 100000})
     if baseline_mode == 'approved_genesis':

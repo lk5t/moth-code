@@ -93,7 +93,9 @@ def test_parameter_growth_waits_for_approval_then_trains_a_larger_candidate(clie
     # evidence of a plateau (three cycles below 1%) without overfitting
     monkeypatch.setattr(V2, "growth_evidence", lambda ctx_, base: {"recent_improvements": [0.002, 0.001, 0.0],
                                                                   "train_loss": 3.0, "val_loss": 3.05})
-    S.update(ctx, {"growth": {"approval_ratio": 1.01}})  # any growth needs the Owner here
+    # any growth needs the Owner here; this tiny model has had little training, so the
+    # tokens-per-parameter check (tested in test_capacity_v063) is switched off for this flow test
+    S.update(ctx, {"growth": {"approval_ratio": 1.01, "min_tokens_per_param": 0.0, "foundation_tokens_per_param": 0.0}})
     cyc = drive(ctx, lambda c: any(e["config"].get("method") == "expansion" for e in MEM.experiments(ctx, c["id"]))
                 and (c["result"] or {}).get("waiting_reason") == "waiting for the Owner to approve a parameter expansion"
                 or c["status"] in MEM.TERMINAL_CYCLE, timeout=600)

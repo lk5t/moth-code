@@ -200,7 +200,7 @@ def _better(c: float, b: float, higher: bool) -> float:
 
 
 def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: dict,
-         mixture: dict | None = None) -> dict[str, Any]:
+         mixture: dict | None = None, growth: dict | None = None) -> dict[str, Any]:
     from moth_server import models as M
 
     g = settings["gates"]
@@ -277,6 +277,8 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
     if improvement is None:
         gates.append({"gate": "target_improvement", "passed": False,
                       "detail": "the training data's validation split could not be scored"})
+    if growth and growth.get("target_capabilities"):
+        gates.append(growth_gate(growth["target_capabilities"], suites, base_scores["suites"], cand_scores["suites"]))
     bp, cp = base_scores["performance"], cand_scores["performance"]
     if bp.get("tokens_per_second") and cp.get("tokens_per_second") is not None:
         ratio = cp["tokens_per_second"] / bp["tokens_per_second"]
@@ -290,3 +292,38 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
                       "detail": f"peak memory {ratio:.0%} of the base model's"})
     return {"passed": all(x["passed"] for x in gates), "gates": gates, "primary_improvement": improvement,
             "release_status": rel["status"], "performance": {"candidate": cp, "base": bp}}
+
+
+def growth_gate(targets: list[str], suites: list[dict], base: dict, cand: dict) -> dict[str, Any]:
+    """A larger candidate grown because of stalled capabilities must improve at least one of them on
+    the same benchmark: beyond two standard errors for an accuracy, by at least 1% for a held-out loss.
+    Lower loss elsewhere alone does not justify the extra size."""
+    detail = []
+    for s in suites:
+        if s.get("kind") != "capability":
+            continue
+        cap = s.get("capability")
+        key = f"holdout_{s['id'].split(':')[2]}" if cap == "holdout" else cap
+        if key not in targets:
+            continue
+        b, c = base.get(s["id"]) or {}, cand.get(s["id"]) or {}
+        if not (b.get("ok") and c.get("ok")):
+            detail.append(f"{s['name']}: not measurable")
+            continue
+        bv, cv = float(b["value"]), float(c["value"])
+        if c.get("higher_is_better"):
+            n = max(1, int(c.get("n") or b.get("n") or 1))
+            p_ = min(max(bv, 0.0), 1.0)
+            need = 2 * (p_ * (1 - p_) / n) ** 0.5 or 1.0 / n
+            ok = cv - bv > need
+            detail.append(f"{s['name']}: {bv:.1%} → {cv:.1%} (needs > +{need:.1%})")
+        else:
+            rel = (bv - cv) / bv if bv else 0.0
+            ok = rel >= 0.01
+            detail.append(f"{s['name']} loss: {bv:.3f} → {cv:.3f} ({rel:+.1%}, needs ≥ +1.0%)")
+        if ok:
+            return {"gate": "growth_justified", "passed": True,
+                    "detail": "the larger model improved a capability that motivated it: " + "; ".join(detail)}
+    return {"gate": "growth_justified", "passed": False,
+            "detail": "the larger model did not improve the capabilities that motivated it beyond noise: "
+                      + ("; ".join(detail) or "none of them could be measured")}

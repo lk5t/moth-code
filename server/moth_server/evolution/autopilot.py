@@ -52,7 +52,8 @@ def _pct(v: float) -> str:
     return f"{v * 100:.1f}%"
 
 
-def adapt(ctx: Ctx, settings: dict, resources: dict | None = None) -> tuple[dict, list[dict]]:
+def adapt(ctx: Ctx, settings: dict, resources: dict | None = None,
+          capacity: dict | None = None) -> tuple[dict, list[dict]]:
     """Return (settings for the next cycle, decisions). ``settings`` is never modified in place."""
     out = copy.deepcopy(settings)
     if not settings.get("autopilot", True):
@@ -110,6 +111,15 @@ def adapt(ctx: Ctx, settings: dict, resources: dict | None = None) -> tuple[dict
                        f"{new} steps instead of {steps} to save compute.", steps_before=steps, steps_after=new,
                        stopped_at=stopped)
                 steps = new
+
+    # Capability-based assessment (capacity.py): a model that has seen very little text for its size
+    # gets longer foundation runs — still fitted into the time budget below.
+    if capacity and capacity.get("action") == "foundation_training" and steps < min(MAX_STEPS, base_steps * 2):
+        new = min(MAX_STEPS, base_steps * 2)  # twice the Owner's steps at most; never compounding
+        decide("steps", f"Foundation training: MOTH has trained on only {capacity.get('tokens_per_param', 0):g} tokens "
+               f"per parameter, so I'm training longer: {new} steps instead of {steps}.",
+               steps_before=steps, steps_after=new, tokens_per_param=capacity.get("tokens_per_param"))
+        steps = new
 
     # Fit the cycle into the Owner's time budget, using the real time per step measured last time.
     timed = next((e for e in recent if ((e.get("metrics") or {}).get("training") or {}).get("seconds")
@@ -285,7 +295,29 @@ def status(ctx: Ctx) -> dict:
             "doing": doing, "next_cycle_at": st.get("next_cycle_at") or None,
             "autopilot": bool(s.get("autopilot", True)),
             "plan": {k: auto.get(k) for k in ("steps", "lr", "batch_size")} if auto else None,
-            "decisions": auto.get("decisions") or [], "data": {"status": data.get("status"), "error": data.get("error")}}
+            "decisions": auto.get("decisions") or [], "data": {"status": data.get("status"), "error": data.get("error")},
+            "intelligence": intelligence(ctx, st, deployed)}
+
+
+def intelligence(ctx: Ctx, st: dict, deployed: dict | None) -> dict | None:
+    """The latest capability assessment (capacity.py), the model's verified size and growth outcomes."""
+    from moth_server import models as M
+    from moth_server.evolution import capacity as CAP
+
+    if not deployed:
+        return None
+    info = deployed.get("info") or {}
+    attempts = []
+    for e in CAP.growth_attempts(ctx, limit=200)[:3]:
+        g = (e.get("config") or {}).get("grow") or {}
+        cand = M.release(ctx, e["candidate_version"]) if e.get("candidate_version") else None
+        measured = ((cand or {}).get("info") or {}).get("params_measured") or {}
+        attempts.append({"experiment": e["id"], "status": e["status"], "params_before": g.get("params_before"),
+                         "params_after": measured.get("total") or g.get("params_after"),
+                         "measured": bool(measured.get("total")), "candidate": e.get("candidate_version"),
+                         "error": e.get("error"), "improvement": (e.get("metrics") or {}).get("primary_improvement")})
+    return {"assessment": st.get("capacity"), "params": info.get("params"), "params_verified": M.params_verified(info),
+            "version": deployed["version"], "growth_attempts": attempts}
 
 
 # ---- evolution memory: which strategies worked --------------------------------------------------------------
@@ -330,8 +362,9 @@ def rank_strategies(ctx: Ctx, candidates: list[str]) -> tuple[list[str], str | N
 
 
 # ---- data scaling: grow the library when the model has trained on it many times over ---------------------
-def scale_data(ctx: Ctx) -> dict | None:
-    """Double the per-source sample when the lineage has trained on more than 3x the prepared tokens."""
+def scale_data(ctx: Ctx, force: bool = False, reason: str | None = None) -> dict | None:
+    """Double the per-source sample when the lineage has trained on more than 3x the prepared tokens
+    (or now, with ``force``, when the capability assessment found the data too thin)."""
     from moth_server import models as M
     from moth_server.intelligence import discovery, library
 
@@ -347,13 +380,14 @@ def scale_data(ctx: Ctx) -> dict | None:
     prepared = sum(int(v.get("train", 0)) if isinstance(v, dict) else int(v or 0)
                    for v in (manifest.get("token_counts") or {}).values())
     trained = int(((dep.get("info") or {}).get("lineage_totals") or {}).get("tokens") or 0)
-    if prepared <= 0 or trained < 3 * prepared:
+    if prepared <= 0 or (trained < 3 * prepared and not force):
         return None
     new = min(MAX_SOURCE_CHARS, int(pol["max_source_chars"]) * 2)
     discovery.update(ctx, {"max_source_chars": new})
-    MEM.event(ctx, "data.scaled", f"MOTH has trained on {trained:,} tokens, more than three times the {prepared:,} "
-              f"prepared, so each source now contributes up to {new:,} characters instead of {pol['max_source_chars']:,}. "
-              "The larger library is prepared in the background; training continues meanwhile.",
+    why = (reason + ", so" if force and reason else
+           f"MOTH has trained on {trained:,} tokens, more than three times the {prepared:,} prepared, so")
+    MEM.event(ctx, "data.scaled", f"{why} each source now contributes up to {new:,} characters instead of "
+              f"{pol['max_source_chars']:,}. The larger library is prepared in the background; training continues meanwhile.",
               trained_tokens=trained, prepared_tokens=prepared, max_source_chars=new)
     try:
         discovery.ensure_data(ctx)

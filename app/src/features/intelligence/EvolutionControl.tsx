@@ -11,6 +11,7 @@ import { refreshCloudProgress } from "@/lib/cloud-progress";
 import { secure } from "@/features/owner/ops";
 import { LivingMoth } from "@/components/LivingMoth";
 import { Card, CardContent } from "@/components/ui/card";
+import { paramsLabel } from "@/lib/params";
 import { Button } from "@/components/ui/button";
 
 type Any = Record<string, any>;
@@ -66,6 +67,7 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
       {stage === "genesis" && owner && <p className="text-xs text-muted">Start Evolution creates a small, untrained model (99,648 parameters), selects trusted, licensed training data — coding first — prepares it and trains continuously within your resource budget. It starts knowing nothing; every improvement is measured on data it never trained on before it is kept.</p>}
       {running && data?.next_cycle_at && !["training", "evaluating", "planning", "deploying", "monitoring", "waiting_for_compute"].includes(stage) && <p className="text-xs text-faint">Next cycle {when(data.next_cycle_at)}.</p>}
       {data && <CommandStrip data={data} />}
+      {data?.intelligence && <IntelligenceCheck intel={data.intelligence} />}
       {steps.length > 0 && <ul className="space-y-1 rounded-lg border border-border bg-bg p-3 text-xs">{steps.map((s) => <li key={s} className="flex gap-2"><Sparkles className="mt-0.5 size-3 shrink-0 text-accent" />{s}</li>)}</ul>}
       {(data?.decisions?.length ?? 0) > 0 && <div className="text-xs">
         <p className="mb-1 text-faint">Why MOTH changed its plan</p>
@@ -101,4 +103,47 @@ function CommandStrip({ data }: { data: Any }) {
         <span className="text-muted">{w.paused ? "paused by its owner" : w.task ? `${TASK[w.task.kind] ?? w.task.kind}${typeof w.task.progress === "number" ? ` · ${Math.round(w.task.progress * 100)}%` : ""}` : "idle"}</span></li>)}</ul></details>}
     {data.bottleneck && <p role="status" className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-warning">Holding back progress: {data.bottleneck}</p>}
   </div>;
+}
+
+
+const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+const ATTEMPT: Record<string, string> = {
+  rejected: "Larger model did not improve performance enough. Kept the current version.",
+  failed: "The larger candidate could not be trained. Kept the current version.",
+  passed: "The larger model passed every check and competes for promotion.",
+  cancelled: "Cancelled. Kept the current version.",
+};
+
+/** Capability-based growth: what limits MOTH now, measured capabilities, real size, growth outcomes. */
+function IntelligenceCheck({ intel }: { intel: Any }) {
+  const a: Any | null = intel.assessment ?? null;
+  const caps: Any[] = a?.capabilities ?? [];
+  const est: Any | null = a?.action === "grow" ? a?.estimate ?? null : null;
+  return <section aria-label="Intelligence check" className="space-y-2 rounded-lg border border-border bg-bg px-3 py-2 text-xs">
+    <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <p className="font-medium text-fg">Intelligence check</p>
+      <p className="text-faint">Model v{intel.version}: {paramsLabel(intel.params, intel.params_verified)}</p>
+    </div>
+    {a ? <>
+      {a.investigating && <p className="text-muted">{a.investigating}</p>}
+      <p className="text-fg">{a.headline}</p>
+      <p className="text-faint">Why: {a.reason}.</p>
+      {est && <p className="text-faint">Estimated training memory {(est.memory_bytes / 2 ** 30).toFixed(1)} GB
+        {est.fits_server ? " · fits this server" : ""}{est.workers_that_fit ? ` · fits ${est.workers_that_fit} MOTH worker(s)` : ""}
+        {est.training_seconds ? ` · about ${Math.round(est.training_seconds / 60)} min of training` : " · training time not measured yet"}</p>}
+    </> : <p className="text-muted">The next cycle measures what limits MOTH: capabilities, training progress, data and compute.</p>}
+    {caps.length > 0 && <ul className="grid gap-1 sm:grid-cols-2">{caps.map((c) => <li key={c.capability} className="flex justify-between gap-2 border-b border-border py-0.5">
+      <span className="text-muted">{c.name}</span>
+      <span className={c.limited || c.stalled ? "text-warning" : "text-fg"}>
+        {c.higher_is_better ? pct(c.value) : `loss ${Number(c.value).toFixed(3)}`}
+        {c.target != null ? ` / target ${pct(c.target)}` : ""}
+        {c.stalled ? " · not improving" : c.change != null ? " · improving" : ""}
+      </span></li>)}</ul>}
+    {(a?.causes?.length ?? 0) > 0 && <details><summary className="cursor-pointer text-muted hover:text-fg">Causes checked</summary>
+      <ul className="mt-1 space-y-0.5">{a!.causes.map((c: Any) => <li key={c.cause} className="text-faint">
+        <span className="text-muted">{c.cause.replaceAll("_", " ")}</span>: {c.found === true ? "yes" : c.found === false ? "no" : "not determined"} — {c.detail}</li>)}</ul></details>}
+    {(intel.growth_attempts?.length ?? 0) > 0 && <div><p className="text-faint">Growth experiments</p>
+      <ul className="space-y-0.5">{intel.growth_attempts.map((g: Any) => <li key={g.experiment} className="text-muted">
+        Experiment #{g.experiment}: {g.params_before?.toLocaleString()} → {g.params_after?.toLocaleString()} parameters{g.measured ? " (counted from weights)" : " (planned)"} · {ATTEMPT[g.status] ?? `${g.status.replaceAll("_", " ")}…`}</li>)}</ul></div>}
+  </section>;
 }

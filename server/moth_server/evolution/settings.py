@@ -51,7 +51,11 @@ DEFAULTS: dict[str, Any] = {
     "use_curriculum": True,          # train on the dataset library's curriculum mixture when one exists
     "early_stopping": {"enabled": True, "min_evals": 3, "patience": 3},
     "growth": {"enabled": True, "approval_ratio": 1.25, "max_ratio": 1.5, "max_params": 400_000_000,
-               "plateau_threshold": 0.01, "steps_multiplier": 2},
+               "plateau_threshold": 0.01, "steps_multiplier": 2,
+               # 0.6.3 capability-based growth (capacity.py): growth needs enough training for the size,
+               # a stalled capability over this many measured versions, and respects a cooldown
+               "min_tokens_per_param": 20.0, "foundation_tokens_per_param": 2.0, "capability_window": 3,
+               "cooldown_cycles": 3, "max_failed_attempts": 3, "min_domain_share": 0.03},
     "distributed": {"enabled": True, "min_participants": 2, "max_participants": 8, "rounds": 3,
                     "eval_on_workers": True, "eval_wait_minutes": 10.0},
     # staged rollout: a promoted candidate first serves this share of users while it is monitored
@@ -73,7 +77,10 @@ _BOUNDS = {
     "limits.cpu_threads": (1, 1024), "limits.min_free_memory_gb": (0.0, 4096.0), "limits.min_free_disk_gb": (0.0, 1e6),
     "limits.gpu_memory_fraction": (0.05, 1.0), "limits.duty_cycle": (0.05, 1.0),
     "schedule.max_requests_per_minute": (0.0, 1e6),
-    "budget.max_compute_hours_per_day": (0.0, 24.0), "retention.models": (0, 100), "budget.max_cycle_hours": (0.01, 24 * 30),
+    "budget.max_compute_hours_per_day": (0.0, 24.0), "retention.models": (0, 100),
+    "growth.min_tokens_per_param": (0.0, 10_000.0), "growth.foundation_tokens_per_param": (0.0, 1000.0),
+    "growth.capability_window": (2, 20), "growth.cooldown_cycles": (0, 1000), "growth.max_failed_attempts": (1, 100),
+    "growth.min_domain_share": (0.0, 0.5), "budget.max_cycle_hours": (0.01, 24 * 30),
 }
 
 
