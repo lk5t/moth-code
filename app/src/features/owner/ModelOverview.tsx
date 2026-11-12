@@ -18,8 +18,8 @@ export function ModelOverview() {
   const [compare, setCompare] = useState<number | null>(null);
   if (!data) return <p className="text-muted">{error ?? "Loading MOTH measurements…"}</p>;
   const model = data.model;
-  if (!model) return <Card><CardHeader><CardTitle>MOTH AI</CardTitle><CardDescription>No native model is registered. Initialization creates an untrained 99,648-parameter MOTH 0.01. Existing weights must be imported and preserved.</CardDescription></CardHeader>
-    <CardContent><Button onClick={() => run(() => serverApi("/v1/admin/evolution/initialize", { method: "POST" }), "MOTH 0.01 initialized. Evaluate the checkpoint in Model registry before deployment.")}>Initialize MOTH 0.01</Button>{view}</CardContent></Card>;
+  if (!model) return <Card><CardHeader><CardTitle>MOTH AI</CardTitle><CardDescription>No native model is registered. Initialization creates an untrained 99,648-parameter MOTH 0.0.1. Existing weights must be imported and preserved.</CardDescription></CardHeader>
+    <CardContent><Button onClick={() => run(() => serverApi("/v1/admin/evolution/initialize", { method: "POST" }), "MOTH 0.0.1 initialized. Evaluate the checkpoint in Model registry before deployment.")}>Initialize MOTH 0.0.1</Button>{view}</CardContent></Card>;
   const versions: Any[] = data.accepted_versions ?? [];
   const previous = versions.find(v => v.release === compare) ?? versions.at(-2);
   const comparable = previous && model.evaluation?.dataset?.sha256 &&

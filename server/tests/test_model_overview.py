@@ -11,7 +11,7 @@ def test_overview_uses_verified_weights_and_does_not_fabricate_measurements(clie
     assert r.status_code == 200, r.text
     data = r.json()
     assert data['model']['params'] == 99648
-    assert data['model']['model_version'] == '0.01'
+    assert data['model']['model_version'] == '0.0.1'
     assert data['model']['totals'] == {'steps': 0, 'tokens': 0, 'cycles': 0}
     assert data['model']['training']['train_loss'] is None
     assert data['evaluation'] is None and not data['accepted_versions']

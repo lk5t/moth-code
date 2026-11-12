@@ -17,7 +17,7 @@ def test_initialization_is_real_near_100k_and_idempotent(client, owner):
     rel = response.json()['model']
     model, tok, manifest = load_model(rel['path'])
     assert sum(p.numel() for p in model.parameters()) == rel['info']['params'] == 99648
-    assert manifest['model_version'] == '0.01' and tok.vocab_size == 272
+    assert manifest['model_version'] == '0.0.1' and tok.vocab_size == 272
     assert MEM.ancestors(client.app.state.ctx, rel['version'])[0]['method'] == 'initialization'
     assert rel['status'] == 'uploaded' and not M.deployed(client.app.state.ctx)
     digest = sha256_file(Path(rel['path']) / 'model.pt')
@@ -31,15 +31,16 @@ def test_existing_larger_checkpoint_preserved_and_version_migrates(client, tiny_
     rel = M._register(ctx, tiny_model_dir, 'Existing trained lineage', {'type': 'upload'}, None)
     before = sha256_file(Path(rel['path']) / 'model.pt')
     assert not initialize(ctx)['created']
-    assert v2.assign_model_version(ctx, rel['version']) == '0.01'
+    assert v2.assign_model_version(ctx, rel['version']) == '0.0.1'
     assert rel['info']['params'] > 100000
     assert sha256_file(Path(rel['path']) / 'model.pt') == before
-    # Routine descendants retain the historical public label until a milestone is earned.
-    M._set(ctx, rel['version'], info=json.dumps({**M.release(ctx, rel['version'])['info'], 'model_version': '0.1'}))
+    # 0.7.0: every verified upgrade is the next public version; the parent keeps its own
+    M._set(ctx, rel['version'], info=json.dumps({**M.release(ctx, rel['version'])['info'], 'model_version': '0.0.4'}))
     next_v = M.reserve(ctx, 'candidate', {'type': 'evolution'}, None)
     MEM.record_lineage(ctx, next_v, rel['version'], 'continue')
-    assert v2.assign_model_version(ctx, next_v) == '0.1'
-    assert M.release(ctx, rel['version'])['info']['model_version'] == '0.1'
+    assert v2.assign_model_version(ctx, next_v) == '0.0.5'
+    assert M.release(ctx, next_v)['info']['display_name'] == 'MOTH 0.0.5'
+    assert M.release(ctx, rel['version'])['info']['model_version'] == '0.0.4'
 
 
 def test_unregistered_weights_prevent_random_reset(client, tmp_path):

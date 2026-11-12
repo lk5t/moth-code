@@ -131,10 +131,10 @@ def initialize(ctx: Ctx, actor_id: int | None = None, size: str = "seed", tokeni
         package = root / "packages" / "moth-0.01"
         if not package.exists():
             export_model(checkpoint, package.parent, package.name, dtype="float32", extra={
-                "model_version": "0.01", "display_name": "MOTH 0.01", "family": "MOTH",
+                "model_version": "0.0.1", "display_name": "MOTH 0.0.1", "family": "MOTH",
                 "lineage_id": "native-moth", "initialization": "random-untrained"})
         rel = M.finalize(ctx, existing['version'], package, actor_id) if recovering else M._register(
-            ctx, package, "MOTH 0.01 (untrained)", {"type": "native-initialization"}, actor_id)
+            ctx, package, "MOTH 0.0.1 (untrained)", {"type": "native-initialization"}, actor_id)
         dev = v2.store_dev_checkpoint(ctx, rel["version"], str(checkpoint), file_sha256(checkpoint))
         import json
 
@@ -162,6 +162,6 @@ def activate_initial(ctx: Ctx, actor_id: int, size: str = "seed", tokenizer: str
     serving.sign_release(ctx, rel['version'])
     rel = M.deploy(ctx, rel['version'], actor_id)
     EN._set_state(ctx, stable_version=rel['version'])
-    MEM.event(ctx, 'model.initial_baseline', 'Untrained MOTH 0.01 baseline evaluated and activated by Owner; quality training is not complete', actor=actor_id)
+    MEM.event(ctx, 'model.initial_baseline', 'Untrained MOTH 0.0.1 baseline evaluated and activated by Owner; quality training is not complete', actor=actor_id)
     EN.wake(ctx)
     return rel

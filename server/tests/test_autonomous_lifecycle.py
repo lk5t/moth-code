@@ -82,7 +82,7 @@ def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner, tmp_
     b = library.latest_ready(ctx)
     assert b and 'PSF-2.0' in b['manifest']
     overview = client.get('/v1/admin/model-overview', headers=headers).json()
-    assert [r['model_version'] for r in overview['accepted_versions']] == ['0.01', '0.01', '0.01']
+    assert sorted(r['model_version'] for r in overview['accepted_versions']) == ['0.0.1', '0.0.2', '0.0.3']  # each verified upgrade is the next version
     assert overview['checkpoint']['valid']
     assert EN.rollback_to(ctx, initialized['version'], owner['user']['id'])['version'] == initialized['version']
     assert Path(initialized['path'], 'model.pt').read_bytes() == seed_bytes

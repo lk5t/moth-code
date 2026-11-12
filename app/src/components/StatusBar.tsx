@@ -32,7 +32,7 @@ export function StatusBar() {
       : conn === "offline" ? "MOTH Cloud offline · retrying"
         : conn === "reconnecting" || conn === "connecting" ? "MOTH Cloud · connecting…"
           : !signedIn ? "MOTH Cloud · signed out"
-            : cloud?.available ? `MOTH Cloud · ${live ? live.current ? modelLabel(live.current) : "no native model deployed" : cloud.model?.name ?? "ready"}`
+            : cloud?.available ? `MOTH Cloud · ${live ? live.current ? "answering" : "no native model deployed" : "ready"}`
               : cloud?.reason === "inference_disabled" ? "MOTH Cloud · inference turned off"
                 : cloud?.reason === "not_moth" ? "not a MOTH Cloud server"
                   : cloud?.reason === "unreachable" ? "MOTH Cloud unreachable · retrying"
@@ -48,6 +48,7 @@ export function StatusBar() {
       {project && <span className="truncate" title={project.path}>{project.path}</span>}
       <div className="flex-1" />
       {training && <span className="text-[#ff6b75]">{training}</span>}
+      {signedIn && live?.current && <span aria-label="Active MOTH model" className="text-muted">{modelLabel(live.current)}</span>}
       {required && upd.phase !== "ready" && (
         <span className="text-warning">MOTH Cloud needs version {required} · {upd.phase === "downloading" ? `downloading ${Math.round(upd.progress)}%` : "updating automatically"}</span>
       )}

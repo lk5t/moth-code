@@ -160,7 +160,7 @@ def prepare(ctx: Ctx, actor_id: int) -> dict:
         lineage_id = f"native-moth-genesis-{plan['id']}"
         if not package.exists():
             export_model(seed, package.parent, package.name, dtype='float32', extra={
-                'model_version': '0.01', 'display_name': 'MOTH 0.01', 'family': 'MOTH',
+                'model_version': '0.0.1', 'display_name': 'MOTH 0.0.1', 'family': 'MOTH',
                 'lineage_id': lineage_id, 'initialization': 'random-untrained'})
         plan.update(status='prepared', archive_files=len(index), archive_bytes=sum(e['size'] for e in index.values()),
                     archive_index_sha256=_sha(root / 'archive-index.json'), restore_verified=True,

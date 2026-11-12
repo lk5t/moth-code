@@ -32,6 +32,14 @@ router = APIRouter(prefix="/v1/admin/evolution", tags=["evolution"])
 def setup(ctx: Ctx) -> None:
     if ctx.db.get_config('genesis_state') is None:
         ctx.db.set_config('genesis_state', {'status': 'not_prepared'})
+    try:  # 0.7.0: one public identity (MOTH 0.0.x); renumbers older versions once, weights untouched
+        from moth_server.evolution import identity
+
+        identity.migrate(ctx)
+    except Exception:  # noqa: BLE001 — never blocks start-up; retried on the next start
+        import logging
+
+        logging.getLogger("moth_server").exception("model identity migration failed")
     if not ctx.extras.get("disable_background"):
         EN.start_background(ctx)
 

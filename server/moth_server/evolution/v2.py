@@ -386,29 +386,24 @@ def _parse(v: str | None) -> tuple[int, int] | None:
 
 
 def assign_model_version(ctx: Ctx, version: int) -> str | None:
-    """Routine revisions inherit their public identity; only verified milestones advance it."""
+    """A verified upgrade (deployed and passed monitoring) is the next MOTH version: 0.0.1 → 0.0.2 → …
+    (0.7.0, identity.py). Capability milestones are still measured and recorded with the version."""
     from moth_server import models as M
-    from moth_server.evolution import milestones
+    from moth_server.evolution import identity, milestones
     rel = M.release(ctx, version)
     if not rel or rel['info'].get('model_version'):
         return rel['info'].get('model_version') if rel else None
     ancestors = [M.release(ctx, a['version']) for a in MEM.ancestors(ctx, version)[1:]]
-    parent = next((r for r in ancestors if r and r['info'].get('model_version')), None)
-    mv = parent['info']['model_version'] if parent else '0.01'
-    baseline = parent
-    for ancestor in ancestors:
-        if ancestor and ancestor['info'].get('model_version') == mv:
-            baseline = ancestor
-        elif ancestor and ancestor['info'].get('model_version'):
-            break
-    evidence = milestones.assess(ctx, rel, baseline) if baseline else {
+    lineage = rel['info'].get('lineage_id')
+    parent = next((r for r in ancestors if r and r['info'].get('model_version')
+                   and (not lineage or not r['info'].get('lineage_id') or r['info']['lineage_id'] == lineage)), None)
+    mv = identity.next_version(parent['info']['model_version']) if parent else identity.FIRST  # a new lineage: 0.0.1
+    evidence = milestones.assess(ctx, rel, parent) if parent else {
         'eligible': False, 'reasons': ['Initial public identity; no earned improvement claimed']}
-    if evidence['eligible']:
-        major, minor = _parse(mv)
-        mv = f"{major}.{minor + 1:02d}"
-    info = {**rel['info'], 'model_version': mv, 'display_name': f'MOTH {mv}',
+    info = {**rel['info'], 'model_version': mv, 'display_name': identity.display(mv),
             'family': rel['info'].get('family') or 'MOTH', 'milestone': evidence}
     M._set(ctx, version, None, info=json.dumps(info))
     MEM.event(ctx, 'model.milestone' if evidence['eligible'] else 'model.revision',
-              f'Release v{version} retains or earns MOTH {mv}', model_version=mv)
+              f'Release v{version} is MOTH {mv}' + (' — a capability milestone' if evidence['eligible'] else ''),
+              model_version=mv)
     return mv
