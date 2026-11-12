@@ -168,6 +168,10 @@ def train_records(src: dict[str, Any], f: dict[str, Any], path: Path) -> Iterato
             if q and a:
                 yield {"uid": f"{base}:{row.get('index', i)}", "source": sid, "domain": src.get("domain", "code"),
                        "messages": _msgs(("user", q[:12_000]), ("assistant", a[:16_000]))}
+    elif fmt == "synthetic":  # generated and verified locally (0.7.0)
+        from moth.datafactory.synthetic import generate
+
+        yield from generate(src["kind"], int(src.get("count", 1000)), seed=0, source_id=sid)
     elif fmt == "stdlib":
         from moth.training.sources import _iter_stdlib, find_stdlib
 

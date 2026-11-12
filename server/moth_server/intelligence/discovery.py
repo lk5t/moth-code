@@ -17,7 +17,7 @@ KEY = "library_discovery"
 DEFAULTS = {"enabled": True, "approved_sources": ["python-stdlib"],
             "max_download_bytes": 256_000_000, "max_source_chars": 500_000, "retry_seconds": 3600,
             "check_updates_seconds": 86400}
-LICENSES = {"PSF-2.0", "MIT", "Apache-2.0", "CC-BY-4.0", "CC-BY-SA-3.0", "CC-BY-SA-4.0", "CDLA-Sharing-1.0"}
+LICENSES = {"CC0-1.0", "PSF-2.0", "MIT", "Apache-2.0", "CC-BY-4.0", "CC-BY-SA-3.0", "CC-BY-SA-4.0", "CDLA-Sharing-1.0"}
 
 
 def policy(ctx: Ctx) -> dict:

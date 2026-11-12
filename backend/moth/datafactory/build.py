@@ -93,6 +93,9 @@ def build(cache: Path, out: Path, config: dict[str, Any] | None = None,
         if src["format"] == "records":
             yield from src["records"]
             return
+        if src["format"] == "synthetic":
+            yield from parse.train_records(src, {"path": ""}, Path("."))
+            return
         if src["format"] == "stdlib":
             excluded = set(cfg.get('excluded_stdlib_files') or [])
             for rec in parse.train_records(src, {"path": ""}, Path(".")):
