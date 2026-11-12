@@ -188,10 +188,11 @@ class WindowsUI:
         win32gui.SetWindowPos(self.root.handle, 0, 0, 0, width, height,
                              win32con.SWP_NOMOVE | win32con.SWP_NOZORDER)
 
-    def text(self):
+    def text(self, offscreen=False):
         # Accessibility exposes adjacent React text nodes separately (e.g. "Layer ", "2").
+        # offscreen=True also reads rendered text scrolled out of view (long pages).
         return re.sub(r'\s+', ' ', ' '.join(c.element_info.name for c in
-                      self.root.descendants(control_type='Text') if c.is_visible()))
+                      self.root.descendants(control_type='Text') if offscreen or c.is_visible()))
 
     def close(self):
         import win32gui

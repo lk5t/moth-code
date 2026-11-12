@@ -113,7 +113,7 @@ def main(installer):
         ui.click('AI Settings', control_type='TabItem')
         ui.click('Model Architecture')
         ui.click('Inspect layer 2')
-        wait(lambda: 'Layer 2 selected' in ui.text(), 'selected architecture layer')
+        wait(lambda: 'Layer 2 selected' in ui.text(offscreen=True), 'selected architecture layer')  # below the fold in AI Settings
         print('::notice title=GENESIS native stage::Workspace drafts and the AI Evolution page passed', flush=True)
         worker_backend = api('/v1/admin/evolution/status')['settings']['backends']['workers']
         ui.click('Network', control_type='Button')  # computers and consent live in Network
