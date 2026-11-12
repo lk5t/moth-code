@@ -3,6 +3,15 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.6.3 — DISTRIBUTED EVOLUTION
+
+- Parallel experiments: while one experiment trains, free compute (MOTH Cloud or an online worker) starts the next one. Measured 1.23× faster on one shared 4-core machine.
+- Evolution 2.0: remembers which strategies and data mixtures improved held-out results and runs the promising ones first; grows its data when the model has outgrown it.
+- Automatic promotion verifies health even when cloud answering is off, keeps the previous working model for rollback and removes older versions' files.
+- Three more licensed coding datasets (Magicoder OSS-Instruct, CodeFeedback, Glaive Code Assistant) with pinned checksums; streaming JSON parsing.
+- Evolution command center: objective, active and rollback models, parallel experiments, workers and their tasks, and what is holding progress back — from server records only.
+- Details and limitations: [docs/DISTRIBUTED-EVOLUTION.md](docs/DISTRIBUTED-EVOLUTION.md).
+
 ## 0.6.2 — AUTONOMOUS GENESIS
 
 - Five sections: Chat, Projects, AI, Network, Settings. AI holds Evolution, Data, History and AI Settings.

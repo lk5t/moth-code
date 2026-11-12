@@ -12,7 +12,7 @@ on:
       tag:
         description: "Desktop release tag (must match the app version, e.g. desktop-v0.3.1)"
         required: true
-        default: "desktop-v0.6.2"
+        default: "desktop-v0.6.3"
       publish:
         description: "Publish to GitHub Releases (requires explicit Owner approval; false builds verified candidates only)"
         type: boolean
@@ -135,15 +135,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Candidate manifest build failed" }
           python scripts/verify-release.py "$env:RUNNER_TEMP/desktop-candidate"
           if ($LASTEXITCODE -ne 0) { throw "Candidate signature verification failed" }
-      - name: Verify published 0.6.1 upgrades to the signed candidate
+      - name: Verify published 0.6.2 upgrades to the signed candidate
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python scripts/test-published-desktop-update.py --from-version 0.6.1 --candidate-dir "$env:RUNNER_TEMP/desktop-candidate"
+          python scripts/test-published-desktop-update.py --from-version 0.6.2 --candidate-dir "$env:RUNNER_TEMP/desktop-candidate"
           if ($LASTEXITCODE -ne 0) { throw "Published-to-candidate upgrade failed" }
           $proof = Get-Content -Raw "$env:RUNNER_TEMP/published-desktop-test/evidence.json" | ConvertFrom-Json
-          if (-not $proof.completed -or $proof.from_version -ne '0.6.1' -or $proof.to_version -ne '${{ inputs.tag }}'.Replace('desktop-v','') -or -not $proof.production_signatures -or -not $proof.installed_on_close -or -not $proof.settings_accounts_workspaces_preserved) { throw "Incomplete candidate upgrade evidence" }
+          if (-not $proof.completed -or $proof.from_version -ne '0.6.2' -or $proof.to_version -ne '${{ inputs.tag }}'.Replace('desktop-v','') -or -not $proof.production_signatures -or -not $proof.installed_on_close -or -not $proof.settings_accounts_workspaces_preserved) { throw "Incomplete candidate upgrade evidence" }
           Write-Output "::notice title=Independent v0.6 candidate upgrade proof::$($proof | ConvertTo-Json -Compress)"
       - uses: actions/upload-artifact@v4
         if: always()
