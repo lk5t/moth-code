@@ -245,17 +245,22 @@ def main():
         WindowsUI = runpy.run_path(str(ROOT / 'scripts/windows-desktop-ui.py'))['WindowsUI']
         ui = WindowsUI(desktop.pid)
         ui.configure_cloud('https://localhost:8900')
+        # Only what the app logs after it uses the isolated server counts: an installed app may log an
+        # error for its default (non-HTTPS) address at startup, before the test server is configured.
+        def since_configured():
+            text = update_log.read_text() if update_log.exists() else ''
+            return '\n'.join(line for line in text.splitlines() if 'must use a secure protocol' not in line)
         # Do not force-kill a browser while it is committing the selected Cloud address.
         # Keep the real process alive through negative verification and the eventual normal close.
-        if not update_log.exists() or 'update error:' not in update_log.read_text():
+        if 'update error:' not in since_configured():
             ui.check_update(wait_for_enabled=False)
         print('::notice title=Published lifecycle stage::Waiting for tampered-download rejection', flush=True)
         deadline = time.monotonic() + 240
         while time.monotonic() < deadline:
-            if update_log.exists() and "update error:" in update_log.read_text(): break
+            if "update error:" in since_configured(): break
             time.sleep(2)
         else: raise AssertionError(f"Stock {old_version} did not report the tampered installer failure")
-        assert "signature" in update_log.read_text().lower(), update_log.read_text()
+        assert "signature" in since_configured().lower(), update_log.read_text()
         assert installed_version() == old_version, "an invalid signature must never install"
         print('::notice title=Published lifecycle stage::Tampered update rejected; restoring the authentic installer', flush=True)
         shutil.copyfile(new, served)
