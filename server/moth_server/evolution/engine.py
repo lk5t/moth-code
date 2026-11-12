@@ -339,24 +339,67 @@ def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
                   level="warning", cycle_id=cyc["id"])
         MEM.update_cycle(ctx, cyc["id"], status="evaluating")
         return
-    active = next((e for e in exps if e["status"] == "running"), None) or \
-        next((e for e in exps if e["status"] in ("planned", "waiting", "paused")
-              and not ((e["config"] or {}).get("requires_approval") and not (e["config"] or {}).get("approved_by"))),
-             None)
+    startable = [e for e in exps if e["status"] in ("planned", "waiting", "paused")
+                 and not ((e["config"] or {}).get("requires_approval") and not (e["config"] or {}).get("approved_by"))]
+    running = [e for e in exps if e["status"] == "running"]
     awaiting = [e for e in exps if e["status"] == "planned" and (e["config"] or {}).get("requires_approval")
                 and not (e["config"] or {}).get("approved_by")]
-    if active is None and awaiting:
+    if not running and not startable and awaiting:
         # the Owner has until the cycle's time budget ends to approve; then it is cancelled (budget check above)
         MEM.update_cycle(ctx, cyc["id"], status="waiting_for_compute", result={
             **(cyc["result"] or {}), "waiting_reason": "waiting for the Owner to approve a parameter expansion"})
         return
-    if active is None:
+    if not running and not startable:
         MEM.update_cycle(ctx, cyc["id"], status="evaluating")
         return
-    if active["status"] == "running":
-        _advance_running(ctx, cyc, active, settings)
-    else:
-        _try_start(ctx, cyc, active, settings)
+    for e in running:  # every running experiment advances each tick (local, worker or distributed)
+        _advance_running(ctx, cyc, e, settings)
+    if not settings.get("parallel_experiments", True):
+        if not running and startable:
+            _try_start(ctx, cyc, startable[0], settings)
+        return
+    # 0.6.3 distributed network: independent experiments run side by side on separate compute —
+    # one process on this server and one job per idle MOTH worker that can hold it.
+    running = [MEM.experiment(ctx, e["id"]) for e in running]
+    running = [e for e in running if e["status"] == "running"]
+    for e in startable:
+        slots = _free_slots(ctx, settings, running, e)
+        if not slots:
+            break
+        if running and e["status"] == "paused":  # resume paused work only on the compute it can use alone
+            continue
+        before = e["status"]
+        _try_start(ctx, cyc, e, slots["settings"], parallel=bool(running) or len(startable) > 1)
+        now_e = MEM.experiment(ctx, e["id"])
+        if now_e["status"] == "running":
+            running.append(now_e)
+            if len(running) > 1 and before != "running":
+                MEM.event(ctx, "plan.parallel", f"Experiment #{e['id']} runs in parallel on "
+                          f"{'a MOTH worker' if now_e['backend'] == 'worker' else 'this server'} while "
+                          f"{len(running) - 1} other experiment(s) train, to finish the cycle sooner.",
+                          cycle_id=cyc["id"], experiment_id=e["id"], parallel=len(running))
+    if any(e["status"] == "running" for e in running):
+        MEM.update_cycle(ctx, cyc["id"], status="training",
+                         result={**(MEM.cycle(ctx, cyc["id"])["result"] or {}), "waiting_reason": None})
+
+
+def _free_slots(ctx: Ctx, settings: dict, running: list[dict], exp: dict) -> dict | None:
+    """Compute still free for one more independent experiment, as settings that only offer that compute."""
+    be = dict(settings["backends"])
+    if any(e["backend"] in ("local",) for e in running):
+        be["local_cpu"] = be["local_gpu"] = False  # one training process on this server at a time
+    if any(e["backend"] == "distributed" for e in running):
+        be["workers"] = False  # every participant is busy with the sharded experiment
+    elif be.get("workers"):
+        queued = sum(1 for e in running if e["backend"] == "worker")
+        cap = C.worker_capacity(ctx, _need_bytes(ctx, exp), settings.get("worker_ids"))
+        if cap["usable"] <= queued:
+            be["workers"] = False
+    if not running:
+        return {"settings": settings}
+    if not (be.get("local_cpu") or be.get("local_gpu") or be.get("workers")):
+        return None
+    return {"settings": {**settings, "backends": be}}
 
 
 def _waiting(ctx: Ctx, cyc: dict, exp: dict, reasons: list[str], status: str = "waiting") -> None:
@@ -369,7 +412,7 @@ def _waiting(ctx: Ctx, cyc: dict, exp: dict, reasons: list[str], status: str = "
                                                                           "waiting_reason": reason})
 
 
-def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
+def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict, parallel: bool = False) -> None:
     if exp.get("job_id"):  # a worker job exists already (e.g. requeued after a lease expiry)
         MEM.update_experiment(ctx, exp["id"], status="running")
         return
@@ -381,7 +424,8 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
         settings = {**settings, "backends": {**settings["backends"], "workers": False}}
     choice, reasons = C.choose_backend(ctx, settings, need)
     ok, n = D.available(ctx, settings, need)
-    if ok and not (choice and choice.get("device", "").startswith("cuda")) and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
+    # Sharding one experiment across all workers only pays when nothing else could use them.
+    if ok and not parallel and not (choice and choice.get("device", "").startswith("cuda")) and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
         st = D.start(ctx, exp, settings, need)
         MEM.update_experiment(ctx, exp["id"], status="running", backend="distributed", error=None, started_at=now(),
                               run_dir=str(B.run_dir(ctx, exp)),
