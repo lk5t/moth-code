@@ -4,4 +4,4 @@ The worker only trains on data shards supplied by the coordinator (checksum-veri
 uploads weight updates. It never reads other files on the machine and is not an AI assistant.
 """
 
-__version__ = "0.6.4"
+__version__ = "0.7.0"

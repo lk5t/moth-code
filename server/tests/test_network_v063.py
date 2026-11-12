@@ -252,3 +252,26 @@ def test_a_disconnected_workers_experiment_continues_on_moth_cloud_without_dupli
     r = client.post(f"/v1/worker/jobs/{job['id']}/result", headers=H(w["worker_token"]),
                     files={"meta": (None, json.dumps({})), "delta": ("d", b"x")})
     assert r.status_code >= 400
+
+
+def test_a_hung_training_process_is_restarted_from_its_checkpoint(client, owner, tmp_path, monkeypatch):
+    """Self-repair (0.7.0): alive but not advancing → stopped, resumed from its checkpoint, finished."""
+    ctx = _world(client, owner, tmp_path, monkeypatch, max_experiments_per_cycle=1,
+                 training={**FAST["training"], "steps": 60, "checkpoint_interval": 10},
+                 backends={"local_cpu": True, "local_gpu": False, "workers": False})
+    cyc = drive(ctx, lambda c: any(e["backend"] == "local" and e["status"] == "running" for e in MEM.experiments(ctx, c["id"])),
+                timeout=300)
+    exp = next(e for e in MEM.experiments(ctx, cyc["id"]) if e["backend"] == "local")
+    real = EN.B.progress
+    monkeypatch.setattr(EN.B, "progress", lambda c, e: {**real(c, e), "step": 3})  # the process looks stuck at step 3
+    monkeypatch.setattr(EN, "STALL_SECONDS", 0.5)
+    EN.tick(ctx)
+    time.sleep(0.6)
+    EN.tick(ctx)
+    assert any(e["kind"] == "engine.stalled" for e in MEM.events(ctx, 50))
+    monkeypatch.setattr(EN.B, "progress", real)
+    monkeypatch.setattr(EN, "STALL_SECONDS", 1200.0)
+    cyc = drive(ctx, lambda c: c["status"] in ("evaluating", "deploying", "monitoring") or c["status"] in MEM.TERMINAL_CYCLE,
+                timeout=600)
+    exp = MEM.experiment(ctx, exp["id"])
+    assert exp["candidate_version"], (exp["status"], exp["error"])

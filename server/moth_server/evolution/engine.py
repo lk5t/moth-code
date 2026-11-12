@@ -38,7 +38,8 @@ from moth_server.evolution import settings as S
 log = logging.getLogger("moth_server.evolution")
 
 TICK_SECONDS = 30.0
-IDLE_RECHECK_SECONDS = 60.0  # nothing to train yet (e.g. data being prepared): look again soon
+IDLE_RECHECK_SECONDS = 60.0
+STALL_SECONDS = 1200.0  # a live training process without a new step for this long is restarted from its checkpoint  # nothing to train yet (e.g. data being prepared): look again soon
 STATE_KEY = "evolution_state"
 _tick_lock = threading.Lock()
 
@@ -698,7 +699,22 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
             MEM.event(ctx, "checkpoint.saved", f"Experiment #{exp['id']} saved a checkpoint at step {ck}"
                       + (f" (training loss {prog['train_loss']:.3f})" if isinstance(prog.get("train_loss"), (int, float)) else "") + ".",
                       cycle_id=cyc["id"], experiment_id=exp["id"], step=ck)
-        MEM.update_experiment(ctx, exp["id"], progress=prog.get("fraction"),
+        # self-repair: a training process that is alive but has not advanced for STALL_SECONDS is
+        # stopped and resumed from its last checkpoint (a crash is already handled below)
+        step = prog.get("step")
+        res = exp["resources"] or {}
+        if step != res.get("last_step"):
+            res = {**res, "last_step": step, "last_step_at": now()}
+        elif now() - float(res.get("last_step_at") or now()) > STALL_SECONDS:
+            B.kill_local(ctx, exp)
+            MEM.update_experiment(ctx, exp["id"], status="paused", resources={**res, "last_step_at": None},
+                                  compute_seconds=float(exp["compute_seconds"] or 0) + elapsed,
+                                  error="the training process stopped making progress; it resumes from its last checkpoint")
+            MEM.event(ctx, "engine.stalled", f"Experiment #{exp['id']} made no progress for "
+                      f"{STALL_SECONDS / 60:.0f} minutes (step {step}). It was stopped and resumes from its last "
+                      "checkpoint.", level="warning", cycle_id=cyc["id"], experiment_id=exp["id"], step=step)
+            return
+        MEM.update_experiment(ctx, exp["id"], progress=prog.get("fraction"), resources=res,
                               metrics={**(exp["metrics"] or {}), "progress": prog})
         MEM.update_cycle(ctx, cyc["id"], status="training")
         return

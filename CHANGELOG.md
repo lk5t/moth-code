@@ -3,6 +3,15 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.7.0 — GENESIS ASCENSION
+
+- One model identity: MOTH 0.0.1, 0.0.2, … — the public version advances only on verified upgrades; earlier labels are renumbered once without touching weights; the active version is shown in every section.
+- Incoherent replies are diagnosed from the model's own output (tokenizer, decoding or training); a tokenizer problem blocks growth.
+- Verified synthetic foundation data: arithmetic, simple instructions and Python functions, each checked before use.
+- AI page: compact MOTH Intelligence panel; the architecture diagram moved to AI Settings → Advanced → Model Architecture.
+- Self-repair: a training process that stops advancing is restarted from its last checkpoint.
+- Details and limitations: [docs/GENESIS-ASCENSION.md](docs/GENESIS-ASCENSION.md).
+
 ## 0.6.4 — One computing network
 
 - One computing network: MOTH Workers 0.6.4 now train conversation data too (the loss mask travels with the job), placement follows measured speed, untaken work moves back to MOTH Cloud, and AI → Evolution shows every machine. The manual Training Jobs controls are retired.
