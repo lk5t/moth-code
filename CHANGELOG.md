@@ -10,6 +10,9 @@ the unverified completion of Foundation training, is recorded in [docs/CONTINUAT
 - Automatic promotion verifies health even when cloud answering is off, keeps the previous working model for rollback and removes older versions' files.
 - Three more licensed coding datasets (Magicoder OSS-Instruct, CodeFeedback, Glaive Code Assistant) with pinned checksums; streaming JSON parsing.
 - Evolution command center: objective, active and rollback models, parallel experiments, workers and their tasks, and what is holding progress back — from server records only.
+- Continuous evolution: rounds run back to back with no timer; only a failed round waits briefly before retrying.
+- Every parameter count is counted from the saved weights; older releases are measured automatically and the app says when a count is verified.
+- Capability-based growth: MOTH grows its architecture only when measured capabilities (arithmetic, reasoning, coding, instruction following, language) stall and other causes are ruled out; larger candidates must improve those capabilities before they are kept.
 - Details and limitations: [docs/DISTRIBUTED-EVOLUTION.md](docs/DISTRIBUTED-EVOLUTION.md).
 
 ## 0.6.2 — AUTONOMOUS GENESIS

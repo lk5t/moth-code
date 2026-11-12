@@ -146,7 +146,7 @@ export function IntelligenceView({ embedded = false, focus = "all" }: { embedded
             sub={cur ? `${formatNumber(cur.params ?? 0)} parameters · ${METHOD[cur.method] ?? cur.method}` : "Nothing is deployed on MOTH Cloud"} />
           <Stat icon={<Sparkles />} label="Training" value={!p.training.enabled ? "off" : p.training.paused ? "paused" : p.training.cycle ? p.training.cycle.status.replaceAll("_", " ") : "waiting"}
             sub={<>{p.training.curriculum && `curriculum: ${p.training.curriculum}`}
-              {p.training.next_cycle_at_estimate && <> · next cycle {when(p.training.next_cycle_at_estimate)} <i>(estimated)</i></>}</>} />
+              {p.training.next_cycle_at_estimate && p.training.next_cycle_at_estimate * 1000 > Date.now() && <> · retrying {when(p.training.next_cycle_at_estimate)}</>}</>} />
           <Stat icon={<Cpu />} label="Training network" value={`${p.network.workers_online} online`}
             sub={`${p.network.gpu_online} GPU · ${p.network.cpu_online} CPU · ${formatNumber(p.network.verified_tokens)} verified tokens`} />
           <Stat icon={<Layers />} label="Lineage" value={`${versions.length} version${versions.length === 1 ? "" : "s"}`}

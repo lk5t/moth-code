@@ -243,8 +243,7 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
         return decide("foundation_training", "MOTH has seen very little text for its size. Running longer foundation training.",
                       f"only {tpp:.1f} tokens per parameter so far" + (f"; {names(focus)} cannot be judged yet" if focus else ""))
     if params and tpp < float(c["min_tokens_per_param"]):
-        return decide("continue_training",
-                      (out.get("investigating", "") + " " if focus else "") + "More training on the current architecture comes first.",
+        return decide("continue_training", "More training on the current architecture comes first.",
                       f"{tpp:.1f} tokens per parameter is below {float(c['min_tokens_per_param']):g}: a larger model "
                       "would be even less trained")
     # 3. generation / format: replies that never end

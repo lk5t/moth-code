@@ -65,7 +65,7 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
           : <Button disabled={busy || !data} onClick={() => void act("start")}><Play className="size-4" />{busy ? "Starting…" : "Start Evolution"}</Button>)}
       </div>
       {stage === "genesis" && owner && <p className="text-xs text-muted">Start Evolution creates a small, untrained model (99,648 parameters), selects trusted, licensed training data — coding first — prepares it and trains continuously within your resource budget. It starts knowing nothing; every improvement is measured on data it never trained on before it is kept.</p>}
-      {running && data?.next_cycle_at && !["training", "evaluating", "planning", "deploying", "monitoring", "waiting_for_compute"].includes(stage) && <p className="text-xs text-faint">Next cycle {when(data.next_cycle_at)}.</p>}
+      {running && data?.next_cycle_at && data.next_cycle_at * 1000 > Date.now() && !["training", "evaluating", "planning", "deploying", "monitoring", "waiting_for_compute"].includes(stage) && <p className="text-xs text-faint">The last round failed; retrying {when(data.next_cycle_at)}.</p>}
       {data && <CommandStrip data={data} />}
       {data?.intelligence && <IntelligenceCheck intel={data.intelligence} />}
       {steps.length > 0 && <ul className="space-y-1 rounded-lg border border-border bg-bg p-3 text-xs">{steps.map((s) => <li key={s} className="flex gap-2"><Sparkles className="mt-0.5 size-3 shrink-0 text-accent" />{s}</li>)}</ul>}

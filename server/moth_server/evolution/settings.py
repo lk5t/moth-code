@@ -21,7 +21,7 @@ DEFAULTS: dict[str, Any] = {
     "autopilot": True,              # adapt steps, learning rate, batch size and pace from measured results
     "parallel_experiments": True,   # run independent experiments side by side on separate compute
     "paused": False,
-    "interval_hours": 0.01,          # time between the end of one cycle and the start of the next
+    "interval_hours": 0.0,           # unused since 0.6.3: rounds run back to back (kept for API compatibility)
     "auto_deploy": True,             # deploy a candidate that passed every gate (then monitor it)
     "max_experiments_per_cycle": 2,
     "training": {"steps": 200, "lr": 3e-4, "batch_size": 8, "seq_len": 256, "weight_decay": 0.0,
@@ -65,7 +65,7 @@ DEFAULTS: dict[str, Any] = {
 }
 
 _BOUNDS = {
-    "interval_hours": (0.01, 24 * 90), "max_experiments_per_cycle": (1, 8), "min_dataset_tokens": (1, 10**12),
+    "interval_hours": (0.0, 24 * 90), "max_experiments_per_cycle": (1, 8), "min_dataset_tokens": (1, 10**12),
     "max_consecutive_failures": (1, 50), "retention_days": (1, 3650),
     "training.steps": (1, 1_000_000), "training.lr": (1e-7, 1e-1), "training.batch_size": (1, 512),
     "training.seq_len": (8, 32768), "training.weight_decay": (0.0, 1.0), "training.eval_interval": (1, 100_000),

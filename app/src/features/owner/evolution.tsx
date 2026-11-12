@@ -83,7 +83,7 @@ export function EvolutionPanel({ section = "all" }: { section?: "all" | "improve
             <Fact label="Active model" value={st.active_model ? `v${st.active_model.version}` : "none"} sub={st.active_model ? `${st.active_model.name}${st.active_model.parent_version ? ` · from v${st.active_model.parent_version}` : ""}` : "deploy a model first"} />
             <Fact label="Latest stable" value={st.stable_model ? `v${st.stable_model.version}` : "—"} sub={st.stable_model?.method ? `${st.stable_model.method}` : undefined} />
             <Fact label="Training data" value={`${st.datasets.approved} approved`} sub={st.datasets.pending ? `${st.datasets.pending} waiting for your approval` : undefined} />
-            <Fact label="Next cycle" value={active ? "running now" : s.paused || !s.enabled ? "—" : st.state.next_cycle_at ? until(st.state.next_cycle_at) : "at the next check"} sub={`every ${s.interval_hours} h${s.auto_deploy ? " · deploys automatically" : " · you deploy"}`} />
+            <Fact label="Next round" value={active ? "running now" : s.paused || !s.enabled ? "—" : st.state.next_cycle_at && st.state.next_cycle_at * 1000 > Date.now() ? `retry ${until(st.state.next_cycle_at)}` : "starts right away"} sub={`continuous${s.auto_deploy ? " · deploys automatically" : " · you deploy"}`} />
           </div>
           {!active && st.state.idle_reason && <div className="rounded border border-border bg-surface-2 p-2 text-muted">{st.state.idle_reason}</div>}
           {active && cyc.result?.waiting_reason && <div className="rounded border border-warning/40 bg-warning/10 p-2 text-warning">Waiting: {cyc.result.waiting_reason}</div>}

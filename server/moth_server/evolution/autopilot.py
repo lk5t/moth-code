@@ -146,17 +146,9 @@ def adapt(ctx: Ctx, settings: dict, resources: dict | None = None,
                f"size from {batch} to {new}.", free_bytes=avail, batch_before=batch, batch_after=new)
         batch = new
 
-    # Avoid endless loops: after several cycles with no accepted improvement, wait longer between cycles.
-    cycles = [c for c in MEM.cycles(ctx, limit=STALL_CYCLES) if c["status"] in MEM.TERMINAL_CYCLE]
-    if len(cycles) >= STALL_CYCLES and not any(c["status"] in ("deployed", "monitoring") or (c.get("result") or {}).get("outcome") == "deployed"
-                                               for c in cycles):
-        factor = min(16, 2 ** (len(cycles) - STALL_CYCLES + 1))
-        hours = float(settings["interval_hours"]) * factor
-        hours = max(hours, 1.0)
-        out["interval_hours"] = hours
-        decide("pace", f"The last {len(cycles)} cycles produced no accepted improvement, so I'm waiting {hours:g} h "
-               "between cycles instead of training continuously. New data, a growth experiment or your request starts sooner.",
-               cycles=[c["id"] for c in cycles], interval_hours=hours)
+    # 0.6.3: Evolution is continuous — no waiting between rounds, also after rounds without an accepted
+    # improvement. Endless repetition is prevented by the plan itself (configurations already tried are
+    # skipped; the capability assessment changes data, training or architecture when progress stalls).
 
     tr["steps"], tr["lr"], tr["batch_size"] = int(steps), float(lr), int(batch)
     return out, decisions

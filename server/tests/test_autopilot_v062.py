@@ -1,5 +1,6 @@
 """0.6.2 autopilot: adaptive plan from recorded measurements, explained decisions, one-click start."""
 import json
+import time
 
 from conftest import H
 from moth_server import models as M
@@ -79,14 +80,27 @@ def test_fits_measured_step_time_into_the_cycle_budget(client):
     assert any(d["kind"] == "budget" and "360.00 s" in d["message"] for d in decisions)
 
 
-def test_slows_down_instead_of_looping_without_improvement(client):
+def test_evolution_is_continuous_even_without_improvement(client):
+    """0.6.3: no waiting between rounds — after rejected rounds the next one is due immediately; only a
+    failed round waits briefly before its retry."""
+    from moth_server.evolution import engine as EN
+
     ctx = client.app.state.ctx
     for _ in range(3):
         _cycle(ctx, "rejected")
-    s = S.get(ctx)
-    out, decisions = AP.adapt(ctx, s)
-    assert out["interval_hours"] >= 1.0 > s["interval_hours"]
-    assert any(d["kind"] == "pace" and "no accepted improvement" in d["message"] for d in decisions)
+    out, decisions = AP.adapt(ctx, S.get(ctx))
+    assert not any(d["kind"] == "pace" for d in decisions)
+    import threading
+
+    wake = threading.Event()
+    ctx.extras["evolution_wake_event"] = wake
+    t = time.time()
+    EN._schedule_next(ctx, failed=False)
+    assert EN.state(ctx)["next_cycle_at"] <= time.time() and wake.is_set()  # the loop starts the next round now
+    wake.clear()
+    EN._schedule_next(ctx, failed=True)
+    st = EN.state(ctx)
+    assert 59 <= st["next_cycle_at"] - t <= 70 and not wake.is_set() and st["consecutive_failures"] == 1
 
 
 def test_decisions_are_recorded_and_reported(client, owner):

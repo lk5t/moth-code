@@ -46,7 +46,7 @@ export function AiSettings() {
     <Card aria-label="Everyday AI settings"><CardContent className="p-4">
       <h2 className="text-sm font-medium">How MOTH evolves</h2>
       {!s ? <p className="mt-2 text-xs text-muted">{evo.error ? `Settings unavailable: ${evo.error}` : "Loading…"}</p> : <>
-        <Row title="Keep evolving continuously" help="On: after each cycle MOTH plans the next one by itself. Off: it trains one cycle each time you press Start Evolution.">
+        <Row title="Keep evolving continuously" help="On: MOTH evolves continuously — each round starts as soon as the previous one ends, with no waiting. Off: it trains one round each time you press Start Evolution.">
           <Switch aria-label="Keep evolving continuously" checked={!!s.automatic} disabled={busy} onCheckedChange={(v) => void change({ automatic: v })} /></Row>
         <Row title="Plan training automatically" help="MOTH chooses steps, learning rate and batch size from its measured results and explains each change. Off: the fixed values in Advanced are used.">
           <Switch aria-label="Plan training automatically" checked={s.autopilot !== false} disabled={busy} onCheckedChange={(v) => void change({ autopilot: v })} /></Row>

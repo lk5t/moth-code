@@ -53,6 +53,49 @@ running in parallel and jobs waiting for a worker, enrolled workers with their m
 current task, and the single thing currently holding progress back. All values come from server
 records; nothing is estimated or simulated.
 
+## Continuous evolution
+
+Rounds run back to back: as soon as one ends (promoted, rejected or nothing to promote), the next is
+planned and started — there is no timer between rounds and no slowdown after rounds without an
+accepted improvement. Repetition is avoided by the plan itself (configurations already tried are
+skipped; the capability assessment below changes data, training or architecture when progress
+stalls). Two waits remain, both visible in the app: a failed round is retried after 1, 2, 4 or 8
+minutes (and Evolution pauses itself after the configured number of failures in a row), and when
+there is nothing to train yet (for example while data is prepared) MOTH looks again within a minute.
+The Owner's resource budget (compute hours per day) still applies.
+
+## Real parameter counts
+
+Every displayed parameter count is counted from the saved weights: package inspection maps the
+tensors in `model.pt` onto the architecture and adds each learnable parameter once (a tied
+embedding/output weight is one parameter; buffers are not parameters). Registration records the
+result (`params_measured`: total, trainable, source) and rejects a package whose weights disagree
+with its manifest. Releases registered before 0.6.3 are measured by the engine in the background; a
+registry value that differed is replaced and an activity event says so. The app says "counted from
+the saved weights" only for measured counts.
+
+The ~5.2M shown on a deployment created with the Genesis "Small" size and the byte tokenizer is
+real: that architecture has 5,184,768 parameters with a 272-token vocabulary. It stays the same
+across versions because continued training changes weights, not size.
+
+## Capability-based growth
+
+The decision to grow is made from measured intelligence, not a single loss threshold
+(`evolution/capacity.py`). Each round assesses arithmetic, reasoning, coding, instruction following
+and held-out language / conversation / knowledge loss over the last three measured versions, plus
+training progress, tokens trained per parameter, data per domain and available compute. It checks,
+in order: overfitting, too little training for the size, replies that never end (a format problem),
+too little data for a stalled capability, the tokenizer (reported only), and only then capacity.
+The outcome is one of continue training, improve data, adjust training, foundation training or grow,
+shown in AI → Evolution ("Intelligence check") and the activity feed in plain language.
+
+A larger candidate keeps the existing weights (function-preserving expansion), is trained on the same
+data on whatever authorized compute has the memory, and must beat the current model on the same
+benchmarks — including improving a capability that motivated it beyond sampling noise. Otherwise it
+is discarded ("Larger model did not improve performance enough. Keeping the current version.").
+Growth respects the parameter ceiling and step limit, never runs while another growth candidate is
+in progress, waits three rounds after a rejection, and pauses after three rejections in 20 rounds.
+
 ## Limitations
 
 - Dataset preparation and tokenization run on MOTH Cloud, not on workers.
@@ -60,3 +103,7 @@ records; nothing is estimated or simulated.
 - The parallel speedup above was measured on a single shared-CPU machine.
 - A lower loss alone is never treated as proof of capability: promotion needs held-out evaluation
   gates and monitoring.
+- Capability benchmarks are small, fixed held-out sets (e.g. 100 GSM8K problems); differences within
+  sampling noise are treated as no change. Reply-failure reasons are recorded for versions benchmarked
+  with 0.6.3 or later.
+- Changing the tokenizer is never automatic; it needs a new Genesis.

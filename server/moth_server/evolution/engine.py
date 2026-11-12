@@ -38,6 +38,7 @@ from moth_server.evolution import settings as S
 log = logging.getLogger("moth_server.evolution")
 
 TICK_SECONDS = 30.0
+IDLE_RECHECK_SECONDS = 60.0  # nothing to train yet (e.g. data being prepared): look again soon
 STATE_KEY = "evolution_state"
 _tick_lock = threading.Lock()
 
@@ -275,7 +276,7 @@ def _maybe_start(ctx: Ctx, settings: dict, woken: bool = False) -> dict:
             MEM.event(ctx, "engine.idle", reason)
         # check again in a while (approving data or deploying a model starts a cycle sooner)
         # an Owner action during this check (e.g. approving data) wins: don't push the next check later
-        later = 0.0 if ctx.extras.get("evolution_wake") else now() + min(3600.0, float(settings["interval_hours"]) * 3600)
+        later = 0.0 if ctx.extras.get("evolution_wake") else now() + IDLE_RECHECK_SECONDS
         _set_state(ctx, idle_reason=reason, next_cycle_at=later)
         return {"state": "idle", "reason": reason}
     cyc = start_cycle(ctx, "manual" if st.get("manual_cycle_requested") else "schedule")
@@ -975,17 +976,25 @@ def _schedule_next(ctx: Ctx, failed: bool) -> None:
     settings = S.runtime(ctx)
     st = state(ctx)
     fails = int(st["consecutive_failures"]) + 1 if failed else 0
-    if not failed:
-        from moth_server.evolution import autopilot as AP
-
-        settings = AP.adapt(ctx, settings)[0]  # slows down after cycles without an accepted improvement
-    delay = float(settings["interval_hours"]) * 3600 * (2 ** min(fails, 4))
+    # Continuous evolution (0.6.3): the next round starts as soon as this one ends. Only a failed round
+    # waits briefly before the retry (1, 2, 4, 8 min) so a persistent error cannot spin; after
+    # max_consecutive_failures in a row Evolution pauses itself (below).
+    delay = 0.0 if not failed else 60.0 * (2 ** min(fails - 1, 3))
     values: dict[str, Any] = {"consecutive_failures": fails, "next_cycle_at": now() + delay}
     if failed and fails >= int(settings["max_consecutive_failures"]):
         S.update(ctx, {"paused": True})
         MEM.event(ctx, "engine.paused", f"Evolution paused itself after {fails} failed cycles in a row. Review the "
                   "failures, then resume.", level="error")
     _set_state(ctx, **values)
+    if not delay:
+        _wake_loop(ctx)
+
+
+def _wake_loop(ctx: Ctx) -> None:
+    """Let the background loop start the next round now instead of at its next periodic check."""
+    ev = ctx.extras.get("evolution_wake_event")
+    if ev is not None:
+        ev.set()
 
 
 # ---- restart recovery ----------------------------------------------------------------------------------
@@ -1011,10 +1020,16 @@ def recover(ctx: Ctx) -> None:
 # ---- background loop ------------------------------------------------------------------------------------
 def start_background(ctx: Ctx) -> None:
     stop = threading.Event()
+    wake = threading.Event()
     ctx.extras["evolution_stop"] = stop
+    ctx.extras["evolution_wake_event"] = wake
 
     def loop() -> None:
-        while not stop.wait(TICK_SECONDS):
+        while not stop.is_set():
+            wake.wait(TICK_SECONDS)  # a finished round wakes the loop at once: rounds run back to back
+            wake.clear()
+            if stop.is_set():
+                break
             tick(ctx)
 
     threading.Thread(target=loop, daemon=True, name="evolution").start()
