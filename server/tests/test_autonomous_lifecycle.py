@@ -51,7 +51,7 @@ def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner, tmp_
     assert start.status_code == 200, start.text
     versions = []
     for revision in (2, 3):
-        expected = '0.01'
+        expected = f'0.0.{len(versions) + 2}'  # the seed is 0.0.1; each verified upgrade is the next version
         cyc = drive(ctx, lambda c: c['status'] in ('monitoring', *MEM.TERMINAL_CYCLE), timeout=240)
         assert cyc['status'] == 'monitoring', [(e['status'], e.get('error'), e.get('metrics')) for e in MEM.experiments(ctx, cyc['id'])]
         candidate = cyc['candidate_version']
