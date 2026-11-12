@@ -24,6 +24,9 @@ def test_gpu_priority_and_cpu_fallback(client, monkeypatch):
     cap = {'usable_gpu': 1, 'usable': 1, 'total': 1, 'online': 1}
     monkeypatch.setattr(C, 'local', lambda ctx: hw)
     monkeypatch.setattr(C, 'worker_capacity', lambda *a: cap)
+    # 0.6.3: placement uses the free, compatible workers with their measured speed
+    monkeypatch.setattr(C, 'available_workers', lambda *a, **k: [{'id': 1, 'gpu': True, 'ratio': 4.0, 'basis': 'benchmark'}]
+                        if cap['usable_gpu'] else [])
     assert C.choose_backend(ctx, settings, C.GB)[0]['device'] == 'cuda'
     hw['gpus'] = []
     assert C.choose_backend(ctx, settings, C.GB)[0]['backend'] == 'worker'
