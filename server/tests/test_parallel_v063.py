@@ -79,3 +79,25 @@ def test_sequential_baseline_for_comparison(client, settings, world, tmp_path):
     a_trained = a["started_at"] + float((a["metrics"].get("training") or {}).get("seconds") or 0)
     assert b["started_at"] >= a_trained - 1  # strictly one after the other
     print(f"\nsequential two-experiment training: {sequential_s:.1f} s")
+
+
+def test_queued_worker_job_is_waiting_not_training(client, settings, world):
+    """Found by the 0.5.0 → 0.6.3 upgrade check: a job no worker has taken yet must not read as training."""
+    ctx, o = world["ctx"], world["o"]
+    S.update(ctx, {**STEPS, "backends": {"local_cpu": False, "local_gpu": True, "workers": True}})
+    client.put("/v1/admin/config/flags", json={"allow_cpu_workers": True}, headers=o)
+    e = client.post("/v1/training/enrollments", json={"name": "lab"}, headers=o).json()
+    w = client.post("/v1/worker/enroll", json={"token": e["token"], "hardware": {"gpus": [], "cpu_count": 4, "ram_gb": 8},
+                                               "version": "0.6.3"}).json()
+    client.post("/v1/worker/heartbeat", json={"hardware": {"gpus": [], "cpu_count": 4, "ram_gb": 8}},
+                headers=H(w["worker_token"]))
+    d = add_dataset(client, o)
+    client.post(f"/v1/admin/evolution/datasets/{d['id']}/approve", json={}, headers=o)
+    cyc = drive(ctx, lambda c: any(x["status"] == "running" for x in MEM.experiments(ctx, c["id"])), timeout=120)
+    for _ in range(2):
+        EN.tick(ctx)
+    cyc = MEM.cycle(ctx, cyc["id"])
+    running = [x for x in MEM.experiments(ctx, cyc["id"]) if x["status"] == "running"]
+    assert running and all(x["backend"] == "worker" and x["job_id"] for x in running), running
+    assert cyc["status"] == "waiting_for_compute", cyc["status"]
+    assert cyc["result"]["waiting_reason"] == "waiting for a MOTH worker to take the job"

@@ -386,9 +386,18 @@ def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
                           f"{'a MOTH worker' if now_e['backend'] == 'worker' else 'this server'} while "
                           f"{len(running) - 1} other experiment(s) train, to finish the cycle sooner.",
                           cycle_id=cyc["id"], experiment_id=e["id"], parallel=len(running))
-    if any(e["status"] == "running" for e in running):
+    if any(_is_training(ctx, e) for e in running):  # a job no worker has taken yet is not training
         MEM.update_cycle(ctx, cyc["id"], status="training",
                          result={**(MEM.cycle(ctx, cyc["id"])["result"] or {}), "waiting_reason": None})
+
+
+def _is_training(ctx: Ctx, exp: dict) -> bool:
+    if exp["status"] != "running":
+        return False
+    if exp["backend"] != "worker":
+        return True
+    j = B.job(ctx, exp["job_id"]) if exp.get("job_id") else None
+    return bool(j and j["status"] == "leased")
 
 
 def _free_slots(ctx: Ctx, settings: dict, running: list[dict], exp: dict) -> dict | None:
@@ -416,6 +425,8 @@ def _waiting(ctx: Ctx, cyc: dict, exp: dict, reasons: list[str], status: str = "
         MEM.event(ctx, "experiment.waiting", f"Experiment #{exp['id']} is waiting: {reason}",
                   cycle_id=cyc["id"], experiment_id=exp["id"])
     MEM.update_experiment(ctx, exp["id"], status=status, error=reason)
+    if any(e["status"] == "running" and e["id"] != exp["id"] for e in MEM.experiments(ctx, cyc["id"])):
+        return  # another experiment is under way: its state, not this extra one, describes the cycle
     MEM.update_cycle(ctx, cyc["id"], status="waiting_for_compute", result={**(cyc["result"] or {}),
                                                                           "waiting_reason": reason})
 
