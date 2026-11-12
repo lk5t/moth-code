@@ -28,3 +28,18 @@ it("shows the reasons for plan changes and never offers controls to other users"
   expect(screen.queryByRole("button", { name: /Evolution/ })).toBeNull();
   expect(m.api).not.toHaveBeenCalled();
 });
+
+
+it("shows workers with their tasks, versions and the bottleneck from the server", async () => {
+  m.api.mockResolvedValue({ stage: "training", running: true, doing: "Training (cycle #3).", objective: "weakness-tilted curriculum (stage foundation)",
+    parallel: 2, queued_jobs: 1, versions: { active: 7, previous: 6 }, bottleneck: "1 job(s) wait for a MOTH worker, but none is online.",
+    workers: [{ id: 1, name: "Lab GPU", online: true, paused: false, compute: "GPU", gflops: 812.4, task: { kind: "evolve_train", progress: 0.4 } },
+              { id: 2, name: "Laptop", online: false, paused: false, compute: "CPU", task: null }] });
+  render(<EvolutionControl progress={{ current: { name: "MOTH 0.02" }, training: {} }} />);
+  expect(await screen.findByText(/Active v7 · previous v6 kept for rollback/)).toBeInTheDocument();
+  expect(screen.getByText("2 running · 1 waiting for a worker")).toBeInTheDocument();
+  expect(screen.getByText("1 of 2 online · 1 busy")).toBeInTheDocument();
+  expect(screen.getByText("training an experiment · 40%")).toBeInTheDocument();
+  expect(screen.getByText(/Holding back progress: 1 job\(s\) wait/)).toBeInTheDocument();
+  expect(screen.getByText(/weakness-tilted curriculum/)).toBeInTheDocument();
+});

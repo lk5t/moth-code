@@ -280,7 +280,8 @@ def status(ctx: Ctx) -> dict:
     else:
         stage = "idle"
         doing = st.get("idle_reason") or "Waiting for the next cycle."
-    return {"stage": stage, "running": bool(deployed and s["enabled"] and not s["paused"]),
+    extra = command_center(ctx, cyc, st, data)
+    return {**extra, "stage": stage, "running": bool(deployed and s["enabled"] and not s["paused"]),
             "doing": doing, "next_cycle_at": st.get("next_cycle_at") or None,
             "autopilot": bool(s.get("autopilot", True)),
             "plan": {k: auto.get(k) for k in ("steps", "lr", "batch_size")} if auto else None,
@@ -401,3 +402,53 @@ def apply_data_effects(ctx: Ctx, mix: dict) -> tuple[dict, str | None]:
             f"{eff[best]['effect'] * 100:+.2f} points more than average over {eff[best]['experiments']} experiments, "
             f"so the next mixture gives {best} {new[best] * 100:.0f}% instead of {w[best] * 100:.0f}%.")
     return {**mix, "weights": new}, note
+
+
+def command_center(ctx: Ctx, cyc: dict | None, st: dict, data: dict) -> dict:
+    """Live facts for AI → Evolution: objective, workers and their tasks, data, versions, bottleneck."""
+    import json as _json
+
+    from sqlalchemy import select
+
+    from moth_server import models as M
+    from moth_server.db import training_jobs, workers
+    from moth_server.evolution import compute as C
+
+    exps = MEM.experiments(ctx, cyc["id"]) if cyc else []
+    running = [e for e in exps if e["status"] == "running"]
+    objective = next((e.get("rationale") for e in running), None) or next((e.get("rationale") for e in exps
+                                                                           if e["status"] in ("planned", "waiting")), None)
+    jobs = ctx.db.all(select(training_jobs).where(training_jobs.c.status.in_(("queued", "leased"))))
+    by_worker = {j["worker_id"]: j for j in jobs if j["worker_id"]}
+    now_ = now()
+    ws = []
+    for w in ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None))):
+        online = (w.get("last_heartbeat_at") or 0) >= now_ - 180 and w["status"] == "online"
+        hw = _json.loads(w["hardware"] or "{}")
+        j = by_worker.get(w["id"])
+        ws.append({"id": w["id"], "name": w["name"], "online": online, "paused": bool(w["paused"]),
+                   "compute": "GPU" if hw.get("compute") == "gpu" or (hw.get("compute") is None and hw.get("gpus")) else "CPU",
+                   "gflops": (hw.get("benchmark") or {}).get("gflops"),
+                   "task": {"kind": j["kind"], "progress": j.get("progress")} if j else None})
+    queued = sum(1 for j in jobs if j["status"] == "queued")
+    dep = M.deployed(ctx)
+    prev_v = st.get("stable_version") if st.get("stable_version") != (dep or {}).get("version") else None
+    if prev_v is None and dep:
+        prev = next((r for r in M.list_releases(ctx) if r["status"] == "published" and r.get("previously_deployed")
+                     and r["version"] != dep["version"] and r.get("path")), None)
+        prev_v = prev["version"] if prev else None
+    hw = C.local(ctx)
+    mem = hw.get("memory") or {}
+    bottleneck = None
+    waiting = (cyc.get("result") or {}).get("waiting_reason") if cyc else None
+    if waiting:
+        bottleneck = waiting[0].upper() + waiting[1:]
+    elif queued and not any(x["online"] and not x["paused"] for x in ws):
+        bottleneck = f"{queued} job(s) wait for a MOTH worker, but none is online."
+    elif data.get("status") in ("queued", "running", "preparing") and not running:
+        bottleneck = "Training waits for data preparation to finish."
+    elif mem.get("percent") and mem["percent"] > 90:
+        bottleneck = f"MOTH Cloud's memory is {mem['percent']:.0f}% used; training slows down or waits to protect answering."
+    return {"objective": objective, "workers": ws, "queued_jobs": queued,
+            "parallel": len(running), "versions": {"active": (dep or {}).get("version"), "previous": prev_v},
+            "bottleneck": bottleneck}

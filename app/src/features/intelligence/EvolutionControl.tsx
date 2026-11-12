@@ -65,6 +65,7 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
       </div>
       {stage === "genesis" && owner && <p className="text-xs text-muted">Start Evolution creates a small, untrained model (99,648 parameters), selects trusted, licensed training data — coding first — prepares it and trains continuously within your resource budget. It starts knowing nothing; every improvement is measured on data it never trained on before it is kept.</p>}
       {running && data?.next_cycle_at && !["training", "evaluating", "planning", "deploying", "monitoring", "waiting_for_compute"].includes(stage) && <p className="text-xs text-faint">Next cycle {when(data.next_cycle_at)}.</p>}
+      {data && <CommandStrip data={data} />}
       {steps.length > 0 && <ul className="space-y-1 rounded-lg border border-border bg-bg p-3 text-xs">{steps.map((s) => <li key={s} className="flex gap-2"><Sparkles className="mt-0.5 size-3 shrink-0 text-accent" />{s}</li>)}</ul>}
       {(data?.decisions?.length ?? 0) > 0 && <div className="text-xs">
         <p className="mb-1 text-faint">Why MOTH changed its plan</p>
@@ -75,4 +76,29 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
       {notice && <p role="alert" className="text-xs text-danger">{notice}</p>}
     </CardContent>
   </Card>;
+}
+
+
+const TASK: Record<string, string> = { evolve_train: "training an experiment", dist_shard: "training a shard", eval_loss: "evaluating a candidate", train_round: "community training" };
+
+/** Objective, versions, workers and their tasks, and the current bottleneck — all from the server. */
+function CommandStrip({ data }: { data: Any }) {
+  const workers: Any[] = data.workers ?? [];
+  const online = workers.filter((w) => w.online);
+  return <div className="space-y-2 text-xs">
+    {data.objective && <p className="text-muted"><span className="text-faint">Current objective · </span>{data.objective}</p>}
+    <dl className="grid gap-2 sm:grid-cols-3">
+      <div className="rounded-lg border border-border bg-bg px-3 py-2"><dt className="text-faint">Models</dt>
+        <dd className="mt-0.5 text-fg">{data.versions?.active ? `Active v${data.versions.active}` : "None yet"}{data.versions?.previous ? ` · previous v${data.versions.previous} kept for rollback` : ""}</dd></div>
+      <div className="rounded-lg border border-border bg-bg px-3 py-2"><dt className="text-faint">Experiments in parallel</dt>
+        <dd className="mt-0.5 text-fg">{data.parallel ?? 0} running{data.queued_jobs ? ` · ${data.queued_jobs} waiting for a worker` : ""}</dd></div>
+      <div className="rounded-lg border border-border bg-bg px-3 py-2"><dt className="text-faint">Workers</dt>
+        <dd className="mt-0.5 text-fg">{workers.length ? `${online.length} of ${workers.length} online · ${online.filter((w) => w.task).length} busy` : "None enrolled — MOTH Cloud trains alone"}</dd></div>
+    </dl>
+    {online.length > 0 && <details><summary className="cursor-pointer text-muted hover:text-fg">Worker tasks</summary>
+      <ul className="mt-1 space-y-0.5">{online.map((w) => <li key={w.id} className="flex flex-wrap justify-between gap-2 border-b border-border py-1">
+        <span className="text-fg">{w.name} <span className="text-faint">· {w.compute}{w.gflops ? ` · ${Math.round(w.gflops)} GFLOPS measured` : ""}</span></span>
+        <span className="text-muted">{w.paused ? "paused by its owner" : w.task ? `${TASK[w.task.kind] ?? w.task.kind}${typeof w.task.progress === "number" ? ` · ${Math.round(w.task.progress * 100)}%` : ""}` : "idle"}</span></li>)}</ul></details>}
+    {data.bottleneck && <p role="status" className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-warning">Holding back progress: {data.bottleneck}</p>}
+  </div>;
 }

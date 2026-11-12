@@ -200,3 +200,25 @@ def test_library_grows_when_the_model_has_used_it_up(client, owner, monkeypatch)
     assert any(e["kind"] == "data.scaled" for e in MEM.events(ctx, limit=5))
     dep["info"]["lineage_totals"]["tokens"] = 1_000_000  # not used up yet: no change
     assert AP.scale_data(ctx) is None
+
+
+def test_command_center_reports_workers_tasks_versions_and_bottleneck(client, owner):
+    from moth_server import db as D
+    from moth_server import training
+
+    ctx = client.app.state.ctx
+    wid, _ = training.enroll_worker(ctx, training.create_enrollment(ctx, owner["user"], "Lab GPU", None),
+                                    {"compute": "gpu", "gpus": [{"name": "RTX"}]}, "0.6.3")
+    with ctx.db.tx() as c:
+        c.execute(D.workers.update().where(D.workers.c.id == wid).values(last_heartbeat_at=now(), status="online"))
+        c.execute(D.training_jobs.insert().values(kind="evolve_train", status="leased", worker_id=wid, spec="{}",
+                                                  progress=0.4, created_at=now(), updated_at=now()))
+        c.execute(D.training_jobs.insert().values(kind="evolve_train", status="queued", spec="{}", created_at=now(), updated_at=now()))
+    st = client.get(f"{BASE}/autopilot", headers=H(owner["token"])).json()
+    w = next(x for x in st["workers"] if x["id"] == wid)
+    assert w["online"] and w["compute"] == "GPU" and w["task"] == {"kind": "evolve_train", "progress": 0.4}
+    assert st["queued_jobs"] == 1 and set(st["versions"]) == {"active", "previous"}
+    with ctx.db.tx() as c:  # the only worker goes offline: queued work cannot start, and status says so
+        c.execute(D.workers.update().where(D.workers.c.id == wid).values(last_heartbeat_at=now() - 600))
+    st = client.get(f"{BASE}/autopilot", headers=H(owner["token"])).json()
+    assert st["bottleneck"] == "1 job(s) wait for a MOTH worker, but none is online."

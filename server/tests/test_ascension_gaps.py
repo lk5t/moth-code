@@ -133,3 +133,46 @@ def test_replay_retains_previous_build_and_masks_are_not_dropped(client, owner, 
     assert MEM.experiment(ctx, planned['id'])['status'] == 'cancelled'
     remaining = v2.mixture_source(ctx, M.release(ctx,base_v))
     assert remaining['path'] == str(new_root/'tokens')
+
+
+def test_monitoring_completes_on_health_checks_when_cloud_answering_is_off(client, owner, tmp_path, monkeypatch):
+    """With cloud answering off no user request can arrive: passing health checks are the evidence."""
+    from moth_server.routes import admin as A
+
+    ctx, stable, candidate = _two_releases(client, owner, tmp_path)
+    monkeypatch.setattr(A, 'flags', lambda c: {'cloud_inference_enabled': False})
+    serving.start_canary(ctx, candidate, 100)
+    with ctx.db.tx() as c:
+        cid = c.execute(evolution_cycles.insert().values(status='monitoring', trigger='manual', base_version=stable,
+            candidate_version=candidate, created_at=now(), updated_at=now(),
+            result=json.dumps({'staged': True, 'canary_percent': 100, 'previous_version': stable,
+                               'deployed_at': now()-100}))).inserted_primary_key[0]
+    settings = S.get(ctx)
+    settings['monitoring'].update(minutes=0, min_requests=5)
+    for _ in range(EN.HEALTH_CHECKS_WITHOUT_TRAFFIC - 1):
+        EN._monitoring(ctx, MEM.cycle(ctx, cid), settings)
+        cyc = MEM.cycle(ctx, cid)
+        assert cyc['status'] == 'monitoring' and cyc['result']['waiting_reason'] == 'running health checks on the new version'
+    EN._monitoring(ctx, MEM.cycle(ctx, cid), settings)
+    cyc = MEM.cycle(ctx, cid)
+    assert cyc['status'] == 'completed' and ctx.extras['deployed_version'] == candidate
+    assert cyc['result']['verified_by'] == 'health_checks'
+    assert any(e['kind'] == 'deploy.verified' for e in MEM.events(ctx, 20))
+
+
+def test_failing_health_check_rolls_back_when_cloud_answering_is_off(client, owner, tmp_path, monkeypatch):
+    from moth_server.routes import admin as A
+
+    ctx, stable, candidate = _two_releases(client, owner, tmp_path)
+    monkeypatch.setattr(A, 'flags', lambda c: {'cloud_inference_enabled': False})
+    serving.start_canary(ctx, candidate, 100)
+    with ctx.db.tx() as c:
+        cid = c.execute(evolution_cycles.insert().values(status='monitoring', trigger='manual', base_version=stable,
+            candidate_version=candidate, created_at=now(), updated_at=now(),
+            result=json.dumps({'staged': True, 'canary_percent': 100, 'previous_version': stable,
+                               'deployed_at': now()-100}))).inserted_primary_key[0]
+    settings = S.get(ctx)
+    settings['monitoring'].update(minutes=0, min_requests=5)
+    monkeypatch.setattr(EN, '_probe', lambda c, v=None: 'the model produced no tokens')
+    EN._monitoring(ctx, MEM.cycle(ctx, cid), settings)
+    assert MEM.cycle(ctx, cid)['status'] == 'rolled_back' and ctx.extras['deployed_version'] == stable

@@ -21,8 +21,9 @@ const TITLE: [RegExp, string][] = [
   [/^checkpoint\./, "Checkpoint saved"], [/^experiment\.trained/, "Training finished"], [/^experiment\.passed/, "Improvement detected"],
   [/^experiment\.rejected/, "Candidate rejected"], [/^experiment\.early_stopped/, "Stopped early"],
   [/^experiment\.(paused|interrupted)/, "Training paused"], [/^experiment\.resumed|^engine\.recovered/, "Recovered"],
-  [/^experiment\.(failed|retry)/, "Training problem"], [/^plan\.adjusted/, "Plan adjusted"], [/^worker\.connected/, "Worker connected"],
-  [/^worker\.disconnected/, "Worker disconnected"], [/^deploy\.done/, "New model promoted"], [/^deploy\.rollback/, "Rolled back"],
+  [/^experiment\.(failed|retry)/, "Training problem"], [/^plan\.adjusted/, "Plan adjusted"], [/^plan\.parallel/, "Running in parallel"],
+  [/^data\.scaled/, "Library grown"], [/^storage\.retention/, "Old versions cleaned up"], [/^storage\./, "Storage"], [/^worker\.connected/, "Worker connected"],
+  [/^worker\.disconnected/, "Worker disconnected"], [/^deploy\.done/, "New model promoted"], [/^deploy\.verified/, "Health verified"], [/^deploy\.rollback/, "Rolled back"],
   [/^cycle\.rejected/, "Kept the current model"], [/^cycle\./, "Cycle"], [/^engine\.started|^engine\.resumed/, "Evolution started"],
   [/^engine\.paused/, "Evolution paused"], [/^engine\.idle/, "Waiting"], [/^evaluation\./, "Evaluation"], [/^growth\./, "Growth"],
 ];
