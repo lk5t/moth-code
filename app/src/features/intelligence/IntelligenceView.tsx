@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty";
 import { cn, formatNumber } from "@/lib/utils";
+import { paramsLabel } from "@/lib/params";
 
 type Any = Record<string, any>;
 
@@ -199,7 +200,7 @@ export function IntelligenceView({ embedded = false, focus = "all" }: { embedded
             <TimelineChart versions={chartVersions} metric={shown} onSelect={setSelection} />
             {selection && <div role="status" className="rounded-lg border border-border bg-bg p-3">
               <div className="font-medium">{modelLabel(selection)}</div>
-              <div className="mt-1 text-muted">{formatNumber(selection.params)} parameters · {when(selection.created_at)}
+              <div className="mt-1 text-muted">{paramsLabel(selection.params, selection.params_verified)} · {when(selection.created_at)}
                 {selection.lineage_totals && ` · ${formatNumber(selection.lineage_totals.tokens)} recorded training tokens`}</div>
               <div className="mt-1 text-muted">{selection.benchmarks[metric] ? `${LABEL[metric] ?? metric}: ${fmt(selection.benchmarks[metric])}` : "This metric was not measured for this version."}</div>
             </div>}

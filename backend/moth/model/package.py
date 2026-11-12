@@ -87,12 +87,50 @@ def inspect_package(model_dir: Path | str, deep: bool = True) -> dict[str, Any]:
         if sha256_file(d / "model.pt") != manifest["sha256"]:
             problems.append("model.pt is corrupted or was modified (SHA-256 does not match the manifest)")
         elif cfg is not None:
-            problems += _check_shapes(d / "model.pt", cfg)
+            shape_problems, measured = _check_shapes(d / "model.pt", cfg)
+            problems += shape_problems
+            if measured is not None:
+                info["params_measured"] = measured
+                if manifest.get("params") and measured["total"] != manifest["params"]:
+                    problems.append(f"the weights contain {measured['total']:,} parameters but the manifest says "
+                                    f"{manifest['params']:,}")
     info["resources"] = estimate_resources(int(manifest.get("params") or 0), info["size"])
     return {"ok": not problems, "problems": problems, "info": info}
 
 
-def _check_shapes(weights: Path, cfg) -> list[str]:
+def count_parameters(state: dict, cfg) -> dict[str, Any]:
+    """Parameters counted from the saved tensors themselves (not from the configuration formula).
+
+    Every learnable parameter of the architecture is looked up in the checkpoint and its tensor's
+    ``numel()`` is added once — a tied embedding/output weight appears twice in a state dict but is one
+    parameter — and buffers (e.g. rotary tables) are not parameters. Raises ``KeyError`` when a
+    parameter has no tensor in the checkpoint.
+    """
+    import torch
+
+    from moth.model.transformer import MothModel
+
+    with torch.device("meta"):
+        model = MothModel(cfg)
+    names = dict(model.named_parameters())  # tied weights are listed once
+    total = sum(int(state[k].numel()) for k in names)
+    trainable = sum(int(state[k].numel()) for k, p in names.items() if p.requires_grad)
+    return {"total": total, "trainable": trainable, "tensors": len(names), "source": "weights"}
+
+
+def measure_package(model_dir: Path | str) -> dict[str, Any]:
+    """Count a package's parameters from its model.pt (used to verify packages registered earlier)."""
+    import torch
+
+    from moth.model.config import MothConfig
+
+    d = Path(model_dir)
+    cfg = MothConfig.from_dict(json.loads((d / "config.json").read_text()))
+    state = torch.load(d / "model.pt", map_location="cpu", weights_only=True)
+    return count_parameters(state, cfg)
+
+
+def _check_shapes(weights: Path, cfg) -> tuple[list[str], dict[str, Any] | None]:
     import torch
 
     from moth.model.transformer import MothModel
@@ -100,7 +138,7 @@ def _check_shapes(weights: Path, cfg) -> list[str]:
     try:
         state = torch.load(weights, map_location="cpu", weights_only=True)
     except Exception as e:  # noqa: BLE001
-        return [f"model.pt could not be read as MOTH weights: {e}"]
+        return [f"model.pt could not be read as MOTH weights: {e}"], None
     with torch.device("meta"):
         expected = {k: tuple(v.shape) for k, v in MothModel(cfg).state_dict().items()}
     got = {k: tuple(v.shape) for k, v in state.items()}
@@ -119,4 +157,5 @@ def _check_shapes(weights: Path, cfg) -> list[str]:
     bad = [k for k, v in state.items() if v.is_floating_point() and not torch.isfinite(v.float()).all()]
     if bad:
         problems.append(f"{len(bad)} weight tensor(s) contain NaN or infinite values (e.g. {bad[0]})")
-    return problems
+    measured = None if (missing or wrong) else count_parameters(state, cfg)
+    return problems, measured

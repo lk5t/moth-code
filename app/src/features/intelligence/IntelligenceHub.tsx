@@ -29,6 +29,7 @@ import { IntelligencePanel } from "@/features/owner/intelligence";
 import { ModelsPanel, WorkersPanel } from "@/features/owner/ops";
 import { ModelOverview } from "@/features/owner/ModelOverview";
 import { TrainingProgress } from "./TrainingProgress";
+import { paramsLabel } from "@/lib/params";
 
 type Any = Record<string, any>;
 const TABS: [AiTab, string, React.ReactNode][] = [
@@ -97,7 +98,7 @@ export function ModelActivity({ progress, resources }: { progress: Any | null; r
           <h2 className="mt-1 text-xl font-medium tracking-tight">{model ? modelLabel(model) : "Model status unavailable"}</h2>
           <p className="mt-1 text-xs text-muted">Identifier: {model?.model_id ?? model?.name ?? "Not available"}</p>
           <p className="mt-1 text-xs text-muted">Revision {model?.revision ?? "not recorded"} · Step {model?.training?.step ?? model?.training?.steps ?? "not reported"}</p>
-          <p className="mt-1 text-xs text-muted">{model?.params != null ? `${formatNumber(model.params)} actual parameters` : "Parameters have not been measured"}</p>
+          <p className="mt-1 text-xs text-muted">{paramsLabel(model?.params, model?.params_verified)}</p>
         </div>
         <div className="flex items-center gap-2 text-xs"><span className={cn("size-1.5 rounded-full", recent ? "bg-success" : "bg-faint")} />{recent ? "Training progress received" : status}</div>
         {model?.initialization === "random-untrained" && <p className="text-xs text-warning">Fresh, untrained baseline. Training and evaluations determine its capabilities.</p>}

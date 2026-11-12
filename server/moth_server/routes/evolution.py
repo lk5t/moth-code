@@ -24,6 +24,7 @@ from moth_server.evolution import engine as EN
 from moth_server.evolution import evaluation as EV
 from moth_server.evolution import memory as MEM
 from moth_server.evolution import settings as S
+from moth_server import models as _M
 
 router = APIRouter(prefix="/v1/admin/evolution", tags=["evolution"])
 
@@ -74,6 +75,7 @@ def _model(ctx: Ctx, version: int | None) -> dict | None:
         return None
     lin = next((x for x in MEM.lineage(ctx) if x["version"] == version), None)
     return {"version": r["version"], "name": r["name"], "status": r["status"], "params": r["info"].get("params"),
+            "params_verified": _M.params_verified(r["info"]),
             "deployed_at": r.get("deployed_at"), "method": lin["method"] if lin else None,
             "parent_version": lin["parent_version"] if lin else None}
 
@@ -484,6 +486,7 @@ def versions(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
         reps = {x["suite"]: x["metrics"] for x in MEM.reports_for(ctx, r["version"])}
         out.append({"version": r["version"], "name": r["name"], "status": r["status"], "created_at": r["created_at"],
                     "deployed_at": r.get("deployed_at"), "params": r["info"].get("params"),
+                    "params_verified": _M.params_verified(r["info"]),
                     "method": (lin.get(r["version"]) or {}).get("method"),
                     "parent_version": (lin.get(r["version"]) or {}).get("parent_version"),
                     "cycle_id": (lin.get(r["version"]) or {}).get("cycle_id"),

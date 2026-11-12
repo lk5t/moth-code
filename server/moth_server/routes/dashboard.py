@@ -20,6 +20,7 @@ from moth_server.db import (
 )
 from moth_server.deps import Auth, require_owner
 from moth_server.routes.admin import flags
+from moth_server import models as _M
 
 router = APIRouter(prefix="/v1/admin", tags=["dashboard"])
 
@@ -68,7 +69,7 @@ def model_overview(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_c
     def summary(r):
         info = r['info']
         return {'release': r['version'], 'name': info.get('display_name') or r['name'],
-                'model_version': info.get('model_version'), 'params': info.get('params'),
+                'model_version': info.get('model_version'), 'params': info.get('params'), 'params_verified': _M.params_verified(info),
                 'architecture': info.get('architecture'), 'config': info.get('config'),
                 'training': info.get('training') or {}, 'totals': info.get('lineage_totals'),
                 'source_type': info.get('source', {}).get('type'),

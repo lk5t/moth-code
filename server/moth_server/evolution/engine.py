@@ -191,6 +191,12 @@ def _tick(ctx: Ctx, woken: bool = False) -> dict[str, Any]:
         _watch_workers(ctx, st)
     except Exception:  # noqa: BLE001 — connectivity notes never stop the engine
         pass
+    try:  # parameter counts registered before 0.6.3 are measured from the weights, one release per tick
+        from moth_server import models as _M
+
+        _M.verify_next_unmeasured(ctx)
+    except Exception:  # noqa: BLE001 — verification never stops the engine
+        log.exception("parameter verification failed")
     if now() - float(st.get("last_prune") or 0) > 86400:
         MEM.prune(ctx, float(settings["retention_days"]))
         _set_state(ctx, last_prune=now())
@@ -302,6 +308,7 @@ def _planning(ctx: Ctx, cyc: dict, settings: dict) -> None:
         MEM.event(ctx, "plan.adjusted", result["data_note"], cycle_id=cyc["id"], decision="data")
     if result.get("strategy_note"):
         MEM.event(ctx, "plan.adjusted", result["strategy_note"], cycle_id=cyc["id"], decision="strategy")
+    _growth_event(ctx, cyc, base, result.get("growth"), settings)
     if not result["experiments"]:
         MEM.update_cycle(ctx, cyc["id"], status="completed", plan=result, finished_at=now(),
                          result={"outcome": "nothing_to_do", "notes": result["notes"]})
@@ -321,6 +328,35 @@ def _planning(ctx: Ctx, cyc: dict, settings: dict) -> None:
         if any((p["config"].get("grow") or {}).get("requested_by") for p in result["experiments"]):
             ctx.db.set_config("growth_request", None, conn=c)  # one request, one experiment (plans are also previewed)
         MEM.update_cycle(ctx, cyc["id"], conn=c, status="waiting_for_compute", plan=result, started_at=t)
+
+
+def _growth_event(ctx: Ctx, cyc: dict, base: dict, decision: dict | None, settings: dict) -> None:
+    """Record the architecture-growth decision of this cycle's plan in the activity feed.
+
+    A proposal is always recorded; a 'not yet' is recorded when its reason changes, so the feed
+    explains why the model keeps its size without repeating the same line every cycle.
+    """
+    if not (settings.get("growth") or {}).get("enabled", True):
+        reason, decision = "architecture growth is turned off in AI Settings", None
+    elif decision is None:
+        return
+    else:
+        reason = decision.get("reason") or ""
+    before = (decision or {}).get("params_before") or (base["info"] or {}).get("params")
+    if decision and decision.get("grow"):
+        MEM.event(ctx, "growth.proposed", f"Growth experiment planned: {decision['params_before']:,} → "
+                  f"{decision['params_after']:,} parameters (+{decision['ratio'] - 1:.0%}). Reason: {reason}"
+                  + (". It needs the Owner's approval." if decision.get("requires_approval") else
+                     ". It trains as a separate candidate and must pass every gate."),
+                  cycle_id=cyc["id"], params_before=decision["params_before"], params_after=decision["params_after"],
+                  add_layers=decision.get("add_layers"), ffn_hidden=decision.get("ffn_hidden"))
+        _set_state(ctx, last_growth_reason=None)
+        return
+    if state(ctx).get("last_growth_reason") == reason:
+        return
+    MEM.event(ctx, "growth.not_proposed", f"The model keeps its size ({before or 0:,} parameters): {reason}.",
+              cycle_id=cyc["id"], params=before, reason=reason)
+    _set_state(ctx, last_growth_reason=reason)
 
 
 def _need_bytes(ctx: Ctx, exp: dict) -> int:
@@ -678,6 +714,18 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
                                                       f"was rejected ({', '.join(failed)})"),
                   level="info" if verdict["passed"] else "warning", cycle_id=cyc["id"], experiment_id=e["id"],
                   improvement=verdict["primary_improvement"])
+        grow = (e["config"] or {}).get("grow")
+        if grow:
+            measured = (M.release(ctx, cand["version"])["info"] or {}).get("params_measured") or {}
+            size = f"{grow['params_before']:,} → {measured.get('total') or grow['params_after']:,} parameters"
+            MEM.event(ctx, "growth.passed" if verdict["passed"] else "growth.rejected",
+                      f"Growth candidate v{cand['version']} ({size}) " + (
+                          "passed every gate and competes for promotion like any other candidate." if verdict["passed"]
+                          else f"was rejected: it did not beat the current model safely ({', '.join(failed)}). "
+                               "The current size is kept."),
+                      level="info" if verdict["passed"] else "warning", cycle_id=cyc["id"], experiment_id=e["id"],
+                      params_before=grow["params_before"], params_after=measured.get("total") or grow["params_after"],
+                      failed=failed)
         B.cleanup_run(ctx, e)
     if waiting_remote:
         return

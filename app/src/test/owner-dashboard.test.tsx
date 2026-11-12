@@ -21,11 +21,11 @@ it("keeps administration in Owner tools and routes native AI into Intelligence",
   expect(screen.getByRole("tab", { name: "Audit log" })).toBeInTheDocument();
 });
 
-it("shows exact parameters and marks missing measurements unavailable", async () => {
-  api.mockResolvedValue({ model: { release: 1, name: "MOTH 0.01", model_version: "0.01", params: 99648,
+it("shows parameters counted from the weights and marks missing measurements unavailable", async () => {
+  api.mockResolvedValue({ model: { release: 1, name: "MOTH 0.01", model_version: "0.01", params: 99648, params_verified: true,
     training: {}, status: "uploaded" }, training: {}, workers: {}, accepted_versions: [] });
   render(<ModelOverview />);
-  await waitFor(() => expect(screen.getByText("Exact parameters").parentElement).toHaveTextContent("99,648"));
+  await waitFor(() => expect(screen.getByText("Parameters").parentElement).toHaveTextContent("99,648 parameters · counted from the saved weights"));
   expect(screen.getByText("Total training steps").parentElement).toHaveTextContent("Unavailable");
   expect(screen.getByText("Training loss").parentElement).toHaveTextContent("Unavailable");
   expect(screen.getByText("Checkpoint size").parentElement).toHaveTextContent("Unavailable");

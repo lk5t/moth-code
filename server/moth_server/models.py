@@ -135,7 +135,9 @@ def finalize(ctx: Ctx, version: int, model_dir: Path, actor_id: int | None) -> d
     shutil.rmtree(dest, ignore_errors=True)
     shutil.copytree(model_dir, dest)
     info = {k: check["info"].get(k) for k in ("architecture", "params", "context_length", "tokenizer_fingerprint",
-                                              "dtype", "config", "training", "resources")}
+                                              "dtype", "config", "training", "resources", "params_measured")}
+    if info.get("params_measured"):
+        info["params_measured"]["at"] = now()
     info["source"] = rel["info"].get("source", {})
     for k in ("model_version", "display_name", "lineage_id", "family"):  # MOTH model identity (0.5.2)
         if check["info"].get(k) is not None:
@@ -698,3 +700,53 @@ def package_archive(ctx: Ctx, version: int) -> tuple[Path, str]:
     os.replace(tmp, out)
     side.write_text(h.hexdigest())
     return out, h.hexdigest()
+
+
+def verify_params(ctx: Ctx, version: int) -> dict | None:
+    """Count a release's parameters from its saved weights and make the registry agree with them.
+
+    Releases registered before 0.6.3 carry the count their manifest claimed (checked only against the
+    configuration formula). This measures the tensors in model.pt; if the registry differed, the
+    measured number replaces it, the old one is kept as ``params_registered`` and an event says so.
+    Returns the measurement, or None when the files are gone.
+    """
+    from moth.model.package import measure_package
+
+    rel = release(ctx, version)
+    if not rel.get("path") or not (Path(rel["path"]) / "model.pt").exists():
+        return None
+    info = dict(rel["info"] or {})
+    try:
+        measured = {**measure_package(rel["path"]), "at": now()}
+    except Exception as e:  # noqa: BLE001 — recorded so it is not retried every tick
+        info["params_measured"] = {"error": f"{type(e).__name__}: {e}"[:300], "at": now()}
+        _set(ctx, version, info=json.dumps(info))
+        return None
+    before = info.get("params")
+    info["params_measured"] = measured
+    if before != measured["total"]:
+        info["params_registered"] = before
+        info["params"] = measured["total"]
+        from moth_server.evolution.memory import event
+
+        event(ctx, "model.params_corrected", f"v{version}: the registry recorded {before or 0:,} parameters; its saved "
+              f"weights contain {measured['total']:,}. The measured number is now shown.", level="warning",
+              version=version, registered=before, measured=measured["total"])
+    _set(ctx, version, info=json.dumps(info))
+    return measured
+
+
+def verify_next_unmeasured(ctx: Ctx) -> int | None:
+    """Measure one release that has files but no measurement yet (a cheap backfill step)."""
+    for r in list_releases(ctx):
+        if r.get("path") and not (r.get("info") or {}).get("params_measured") \
+                and r["status"] not in ("uploading", "failed"):  # uploading: files are still arriving
+            verify_params(ctx, r["version"])
+            return r["version"]
+    return None
+
+
+def params_verified(info: dict | None) -> bool:
+    """True when the displayed count was measured from this release's saved weights."""
+    m = (info or {}).get("params_measured") or {}
+    return bool(m.get("total")) and m.get("total") == (info or {}).get("params")

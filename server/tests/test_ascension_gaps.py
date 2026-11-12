@@ -58,6 +58,11 @@ def test_real_worker_expands_then_trains_without_touching_base(client, owner, tm
     assert model.cfg.n_layers == 3 and model.cfg.ffn_hidden == 256
     assert model.num_params() > base['info']['params']
     assert manifest['lineage']['method'] == 'expansion'
+    # the grown candidate is registered with the count of its own saved weights, larger than the base's
+    grown = M._register(ctx, Path(result['package']), 'grown', {'type': 'upload'}, None)
+    measured = M.release(ctx, grown['version'])['info']['params_measured']
+    assert measured['total'] == model.num_params() == M.release(ctx, grown['version'])['info']['params']
+    assert measured['total'] > M.release(ctx, base_v)['info']['params']
     assert 'model_version' not in manifest and 'display_name' not in manifest
     assert any(not torch.equal(original[k], v.float()) for k,v in model.state_dict().items())
     assert Path(base['path'], 'model.pt').read_bytes() == before

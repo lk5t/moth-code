@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { formatBytes, useAction, usePoll } from "./ops";
 import { serverApi } from "@/lib/account";
+import { paramsLabel } from "@/lib/params";
 
 type Any = Record<string, any>;
 const number = (n: number | null | undefined) => n == null ? "Unavailable" : n.toLocaleString(undefined, { maximumFractionDigits: 6 });
@@ -28,7 +29,7 @@ export function ModelOverview() {
   const train = model.training ?? {};
   const gates: Any[] = data.evaluation?.gates ?? [];
   const stats: [string, React.ReactNode][] = [
-    ["Exact parameters", number(model.params)], ["Model version", model.model_version ?? "Unavailable"],
+    ["Parameters", paramsLabel(model.params, model.params_verified)], ["Model version", model.model_version ?? "Unavailable"],
     ["Architecture", model.architecture ?? "Unavailable"], ["Checkpoint size", bytes(data.checkpoint?.bytes)],
     ["Total training steps", number(model.totals?.steps)], ["Total training tokens", number(model.totals?.tokens)],
     ["Training loss", number(progress?.train_loss ?? train.train_loss)],

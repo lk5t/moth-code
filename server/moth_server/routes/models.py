@@ -57,7 +57,7 @@ def current_model(ctx: Ctx = Depends(get_ctx)):
     from moth_server.evolution.native_reset import fenced
     d = M.deployed(ctx)
     return {"available": bool(not fenced(ctx) and d and flags(ctx).get("cloud_inference_enabled") and ctx.extras.get("inference_engine")),
-            "release": {k: d[k] for k in ("version", "name", "published_at")} | {"params": d["info"].get("params")}
+            "release": {k: d[k] for k in ("version", "name", "published_at")} | {"params": d["info"].get("params"), "params_verified": M.params_verified(d["info"])}
             if d else None}
 
 
@@ -202,7 +202,7 @@ def deployed_package_info(auth: Auth = Depends(current_auth), ctx: Ctx = Depends
         raise HTTPException(404, "No model is deployed on MOTH Cloud yet.")
     path, sha = M.package_archive(ctx, d["version"])
     out = {"version": d["version"], "name": d["name"], "model_version": d["info"].get("model_version"),
-           "display_name": d["info"].get("display_name") or d["name"], "params": d["info"].get("params"),
+           "display_name": d["info"].get("display_name") or d["name"], "params": d["info"].get("params"), "params_verified": M.params_verified(d["info"]),
            "weights_sha256": d["sha256"], "package_sha256": sha, "size": path.stat().st_size,
            "context_length": d["info"].get("context_length")}
     sm = Path(d["path"]) / "model-manifest.json"

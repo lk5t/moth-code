@@ -21,6 +21,7 @@ from moth_server.db import conversation_messages, conversations, now
 from moth_server.deps import Auth, current_auth, owner_reauthed, require_owner
 from moth_server.intelligence import curriculum, feedback as FB, knowledge as K, library, router as R, weakness
 from moth_server.routes.admin import flags
+from moth_server import models as _M
 
 router = APIRouter(tags=["intelligence"])
 MAX_NEW_TOKENS = 1024
@@ -499,7 +500,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
         versions.append({
             "version": row["version"], "model_version": info.get("model_version"),
             "revision": info.get("revision"), "milestone": info.get("milestone"), "deployed_at": r.get("deployed_at"),
-            "name": info.get("display_name") or r["name"], "params": info.get("params"), "method": row["method"],
+            "name": info.get("display_name") or r["name"], "params": info.get("params"), "params_verified": _M.params_verified(info), "method": row["method"],
             "architecture": info.get("architecture"), "tokenizer_fingerprint": info.get("tokenizer_fingerprint"),
             "config": info.get("config"), "initialization": info.get("initialization"),
             "training": {k: (info.get("training") or {}).get(k) for k in
@@ -555,7 +556,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
         info = loaded['info'] or {}
         current = {"version": loaded['version'], "model_version": info.get('model_version'),
                    "revision": info.get('revision'), "name": info.get('display_name') or loaded['name'],
-                   "params": info.get('params'), "config": info.get('config'), "training": info.get('training') or {},
+                   "params": info.get('params'), "params_verified": _M.params_verified(info), "config": info.get('config'), "training": info.get('training') or {},
                    "tokenizer_fingerprint": info.get('tokenizer_fingerprint'), "deployed_at": loaded.get('deployed_at'),
                    "benchmarks": capability_reports(ctx, loaded['version']), "deployed": True, "stable": True}
         versions.append(current)
