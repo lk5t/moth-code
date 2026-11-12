@@ -294,6 +294,8 @@ def _planning(ctx: Ctx, cyc: dict, settings: dict) -> None:
     AP.remember(ctx, settings, decisions, cyc["id"], owner_settings)
     result = P.plan(ctx, base, settings, cycle_seed=1000 + cyc["id"])
     result["decisions"] = decisions
+    if result.get("strategy_note"):
+        MEM.event(ctx, "plan.adjusted", result["strategy_note"], cycle_id=cyc["id"], decision="strategy")
     if not result["experiments"]:
         MEM.update_cycle(ctx, cyc["id"], status="completed", plan=result, finished_at=now(),
                          result={"outcome": "nothing_to_do", "notes": result["notes"]})
@@ -841,6 +843,12 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
             pass
         MEM.event(ctx, "cycle.completed", f"v{cyc['candidate_version']} passed monitoring and is the new stable model"
                   + (f" (MOTH {mv})" if mv else ""), cycle_id=cyc["id"])
+        try:  # keep the active model and the previous working one; clean up older versions
+            from moth_server.evolution import storage as ST
+
+            ST.apply_retention(ctx, res.get("previous_version") or cyc.get("base_version"))
+        except Exception as e:  # noqa: BLE001 — cleanup never undoes a promotion
+            MEM.event(ctx, "storage.retention_failed", f"Old model cleanup did not finish: {str(e)[:200]}", level="warning")
         _schedule_next(ctx, failed=False)
 
 

@@ -200,12 +200,22 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
     arch = architecture_key(base)
     lrs = _lr_ranking(ctx, arch, float(tr["lr"]))
     dev = (base["info"].get("dev_checkpoint") or {})
-    variants = [("weakness-tilted curriculum", tilted, lrs[0]), ("weakness-tilted curriculum", tilted, lrs[1]),
-                ("balanced curriculum", balanced, lrs[0])]
-    for why, mix, lr in variants:
+    variants = [("weakness-tilted curriculum", tilted, lrs[0], "weakness"), ("weakness-tilted curriculum", tilted, lrs[1], "weakness"),
+                ("balanced curriculum", balanced, lrs[0], "balanced")]
+    # Evolution memory: strategies that produced accepted improvements on this lineage go first.
+    from moth_server.evolution import autopilot as AP
+
+    ranked, note = AP.rank_strategies(ctx, [v[3] for v in variants])
+    if note:
+        out["notes"].append(note)
+        out["strategy_note"] = note
+    order = {k: i for i, k in enumerate(ranked)}
+    variants.sort(key=lambda v: order.get(v[3], 99))
+    for why, mix, lr, strategy in variants:
         if not mix.get("weights"):
             continue
         cfg = _config(base, arch, src, mix, lr, int(tr["steps"]), settings, cycle_seed)
+        cfg["strategy"] = strategy
         _add(ctx, out, cfg, src, f"{why} (stage {mix['stage']}); lr {lr:.2e}, {cfg['steps']} steps"
              + ("; continues the development checkpoint" if dev else ""), int(settings["max_experiments_per_cycle"]))
     g = settings.get("growth") or {}

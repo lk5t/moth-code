@@ -56,6 +56,8 @@ DEFAULTS: dict[str, Any] = {
                     "eval_on_workers": True, "eval_wait_minutes": 10.0},
     # staged rollout: a promoted candidate first serves this share of users while it is monitored
     "rollout": {"canary_percent": 20.0},
+    # model retention after a promotion: the active model and the previous working one (0 = keep all)
+    "retention": {"models": 2},
 }
 
 _BOUNDS = {
@@ -71,7 +73,7 @@ _BOUNDS = {
     "limits.cpu_threads": (1, 1024), "limits.min_free_memory_gb": (0.0, 4096.0), "limits.min_free_disk_gb": (0.0, 1e6),
     "limits.gpu_memory_fraction": (0.05, 1.0), "limits.duty_cycle": (0.05, 1.0),
     "schedule.max_requests_per_minute": (0.0, 1e6),
-    "budget.max_compute_hours_per_day": (0.0, 24.0), "budget.max_cycle_hours": (0.01, 24 * 30),
+    "budget.max_compute_hours_per_day": (0.0, 24.0), "retention.models": (0, 100), "budget.max_cycle_hours": (0.01, 24 * 30),
 }
 
 

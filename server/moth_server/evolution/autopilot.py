@@ -276,3 +276,44 @@ def status(ctx: Ctx) -> dict:
             "autopilot": bool(s.get("autopilot", True)),
             "plan": {k: auto.get(k) for k in ("steps", "lr", "batch_size")} if auto else None,
             "decisions": auto.get("decisions") or [], "data": {"status": data.get("status"), "error": data.get("error")}}
+
+
+# ---- evolution memory: which strategies worked --------------------------------------------------------------
+def strategy_stats(ctx: Ctx, limit: int = 60) -> dict[str, dict]:
+    """Per training strategy on this lineage: runs, accepted improvements and mean held-out improvement."""
+    stats: dict[str, dict] = {}
+    for e in MEM.experiments(ctx, limit=limit):
+        key = (e.get("config") or {}).get("strategy")
+        imp = _improvement(e)
+        if not key or e["status"] not in ("passed", "rejected", "deployed") or imp is None:
+            continue
+        st = stats.setdefault(key, {"runs": 0, "passed": 0, "total": 0.0})
+        st["runs"] += 1
+        st["passed"] += int(e["status"] in ("passed", "deployed"))
+        st["total"] += imp
+    for st in stats.values():
+        st["mean_improvement"] = st["total"] / st["runs"]
+    return stats
+
+
+def rank_strategies(ctx: Ctx, candidates: list[str]) -> tuple[list[str], str | None]:
+    """Order strategies by recorded success; untried ones keep their place so they still get explored."""
+    stats = strategy_stats(ctx)
+    uniq = list(dict.fromkeys(candidates))
+    tried = [k for k in uniq if stats.get(k, {}).get("runs", 0) >= 2]
+    if len(tried) < 2:
+        return uniq, None
+
+    def score(k: str) -> tuple:
+        st = stats[k]
+        return (st["passed"] / st["runs"], st["mean_improvement"])
+    best = sorted(tried, key=score, reverse=True)
+    ranked = best + [k for k in uniq if k not in best]
+    if ranked == uniq:
+        return ranked, None
+    a, b = best[0], best[1]
+    sa, sb = stats[a], stats[b]
+    note = (f"{a.capitalize()} training improved held-out results in {sa['passed']} of {sa['runs']} runs "
+            f"(mean {sa['mean_improvement'] * 100:+.1f}%) versus {sb['passed']} of {sb['runs']} for {b} "
+            f"(mean {sb['mean_improvement'] * 100:+.1f}%), so {a} experiments run first.")
+    return ranked, note

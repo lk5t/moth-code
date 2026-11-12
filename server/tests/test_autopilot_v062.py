@@ -154,3 +154,18 @@ def test_worker_connect_and_disconnect_are_recorded_once(client, owner):
     kinds = [e["kind"] for e in MEM.events(ctx, limit=20) if e["kind"].startswith("worker.")]
     assert kinds == ["worker.disconnected", "worker.connected"]
     assert "Lab GPU" in MEM.events(ctx, limit=1)[0]["message"]
+
+
+def test_evolution_memory_runs_the_strategy_that_worked_first(client):
+    ctx = client.app.state.ctx
+    for status, imp, strat in [("passed", 0.04, "balanced"), ("passed", 0.03, "balanced"),
+                               ("rejected", 0.001, "weakness"), ("rejected", -0.01, "weakness")]:
+        eid = _exp(ctx, status, imp)
+        with ctx.db.tx() as c:
+            c.execute(evolution_experiments.update().where(evolution_experiments.c.id == eid)
+                      .values(config=json.dumps({"strategy": strat})))
+    ranked, note = AP.rank_strategies(ctx, ["weakness", "weakness", "balanced"])
+    assert ranked == ["balanced", "weakness"]
+    assert "2 of 2 runs" in note and "0 of 2" in note and "balanced experiments run first" in note
+    # with too little history the planner keeps exploring in its default order
+    assert AP.rank_strategies(ctx, ["weakness", "new-idea"])[0] == ["weakness", "new-idea"]

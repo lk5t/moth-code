@@ -21,7 +21,9 @@ def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner, tmp_
     ctx = client.app.state.ctx
     headers = H(owner['token'])
     torch.manual_seed(0)
-    S.update(ctx, {**FAST, 'paused': True, 'training': {**FAST['training'], 'steps': 20}, 'growth': {'enabled': False},
+    # This test rolls back two generations to the seed, so it keeps every version (retention 0);
+    # the 0.6.3 default (active + previous) is covered in test_retention_v063.py.
+    S.update(ctx, {**FAST, 'retention': {'models': 0}, 'paused': True, 'training': {**FAST['training'], 'steps': 20}, 'growth': {'enabled': False},
                    'rollout': {'canary_percent': 100}, 'monitoring': {'minutes': 0.0, 'min_requests': 1}})
     discovery.update(ctx, {'max_source_chars': 100000})
     if baseline_mode == 'approved_genesis':

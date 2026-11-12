@@ -165,3 +165,55 @@ def cleanup(ctx: Ctx, ids: list[str], actor_id: int | None) -> dict[str, Any]:
         MEM.event(ctx, "storage.cleaned", f"Storage cleanup freed {freed / 1024**2:.1f} MB ({len(removed)} items).",
                   removed=removed, bytes=freed, actor=actor_id)
     return {"removed": removed, "skipped": skipped, "freed_bytes": freed, "at": now()}
+
+
+def apply_retention(ctx: Ctx, previous_version: int | None) -> dict[str, Any]:
+    """After a promotion passed monitoring: keep the active model and the previous working one.
+
+    Removed: files of older versions and of candidates that were not promoted. Never removed: the
+    deployed model, the previous working model (the rollback target), any version serving users or
+    used by active work, and versions still being uploaded, evaluated or deployed. Records stay as
+    history. ``retention.models`` 0 keeps everything.
+    """
+    from moth_server import models as M
+    from moth_server.evolution import settings as S
+
+    keep_n = int((S.get(ctx).get("retention") or {}).get("models", 2))
+    if keep_n <= 0:
+        return {"removed": [], "freed_bytes": 0, "kept": "all"}
+    deployed = M.deployed(ctx)
+    if deployed is None:
+        return {"removed": [], "freed_bytes": 0, "kept": "nothing deployed"}
+    keep = {deployed["version"]}
+    if keep_n >= 2 and previous_version is not None:
+        prev = M.release(ctx, previous_version)
+        if prev and prev.get("path") and Path(prev["path"]).exists():
+            keep.add(previous_version)
+    keep |= _active(ctx)["versions"]
+    removable = [i["id"] for i in items(ctx) if i["category"] == "models"
+                 and int(i["id"].split(":")[1]) not in keep
+                 and M.release(ctx, int(i["id"].split(":")[1]))["status"] in ("published", "evaluated", "failed")]
+    if not removable:
+        return {"removed": [], "freed_bytes": 0, "kept": sorted(keep)}
+    # The cleanup refuses anything 'protected' for ordinary storage reasons; retention decides for
+    # published (rollback-eligible) versions itself, so remove them directly with the same safety.
+    removed, freed = [], 0
+    for iid in removable:
+        v = int(iid.split(":")[1])
+        rel = M.release(ctx, v)
+        if v in keep or rel["status"] in ("deployed", "deploying", "uploading", "evaluating", "uploaded"):
+            continue
+        path = Path(rel["path"]) if rel.get("path") else None
+        size = _size(path) if path and path.exists() else 0
+        if path:
+            shutil.rmtree(path, ignore_errors=True)
+        M._set(ctx, v, "failed", path="", error=f"Removed by model retention after v{deployed['version']} was promoted "
+               f"(kept: active and previous working model). The record is kept as history ({rel['status']} before).")
+        removed.append(v)
+        freed += size
+    if removed:
+        MEM.event(ctx, "storage.retention", f"Kept the active model (v{deployed['version']})"
+                  + (f" and the previous working model (v{previous_version})" if previous_version in keep else "")
+                  + f"; removed {len(removed)} older version(s), freeing {freed / 1024**2:.1f} MB.",
+                  removed=removed, bytes=freed)
+    return {"removed": removed, "freed_bytes": freed, "kept": sorted(keep)}
