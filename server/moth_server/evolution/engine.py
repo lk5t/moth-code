@@ -788,6 +788,7 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
                            f"(limit {float(mon['max_latency_factor']):g}×)")
         if problem is None:  # every passing health check is counted; the window needs evidence
             res = {**res, "health_checks": int(res.get("health_checks") or 0) + 1}
+        res = {k: v for k, v in res.items() if k != "waiting_reason"}  # set again below only if still true
         MEM.update_cycle(ctx, cyc["id"], result={**res, "monitor": stats})
     if problem and problem != "another model was deployed during monitoring":
         prev = res.get("previous_version")
