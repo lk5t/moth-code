@@ -127,9 +127,10 @@ def test_replay_retains_previous_build_and_masks_are_not_dropped(client, owner, 
     mask[0]=0
     mask.flush()
     exp={'id':100,'dataset_id':ds['id'],'config':{'mixture':{'path':src['path'],'weights':{'language':1.0}}}}
+    # 0.6.3: masked data is never sent as tokens alone (sharded rounds), but whole-experiment worker jobs
+    # carry the mask (tested end to end in test_network_v063), so the mask is not dropped either way
     assert not B.worker_training_supported(ctx,exp)
-    with pytest.raises(ValueError,match='assistant-masked'):
-        B.create_worker_job(ctx,exp)
+    assert B.worker_training_supported(ctx,exp,masks=True)
     cycle = EN.start_cycle(ctx)
     EN._planning(ctx, cycle, S.get(ctx))
     planned = MEM.experiments(ctx, cycle['id'])[0]

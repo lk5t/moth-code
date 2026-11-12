@@ -230,7 +230,7 @@ def test_command_center_reports_workers_tasks_versions_and_bottleneck(client, ow
         c.execute(D.training_jobs.insert().values(kind="evolve_train", status="queued", spec="{}", created_at=now(), updated_at=now()))
     st = client.get(f"{BASE}/autopilot", headers=H(owner["token"])).json()
     w = next(x for x in st["workers"] if x["id"] == wid)
-    assert w["online"] and w["compute"] == "GPU" and w["task"] == {"kind": "evolve_train", "progress": 0.4}
+    assert w["online"] and w["compute"] == "GPU" and w["task"] == {"kind": "evolve_train", "progress": 0.4, "experiment": None} and w["state"] == "working"
     assert st["queued_jobs"] == 1 and set(st["versions"]) == {"active", "previous"}
     with ctx.db.tx() as c:  # the only worker goes offline: queued work cannot start, and status says so
         c.execute(D.workers.update().where(D.workers.c.id == wid).values(last_heartbeat_at=now() - 600))
