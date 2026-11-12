@@ -27,7 +27,10 @@ from moth_server.evolution import settings as S
 
 # Trusted catalog sources in the order the autopilot adds them: coding first, then reasoning,
 # instruction following and general language. Every one has a verified license and attribution.
-PRIORITY = ["python-stdlib", "mbpp", "gsm8k", "arc", "oasst1", "dolly-15k", "tinystories", "simple-wikipedia"]
+PRIORITY = ["python-stdlib", "mbpp", "magicoder-oss", "codefeedback", "glaive-code", "gsm8k", "arc", "oasst1",
+            "dolly-15k", "tinystories", "simple-wikipedia"]
+GB = 1024 ** 3
+MAX_SOURCE_CHARS = 64_000_000   # per source; the library grows towards this as the model needs more data
 
 MIN_STEPS, MAX_STEPS = 50, 20_000
 STALL_CYCLES = 3          # cycles without an accepted improvement before the engine slows down
@@ -209,6 +212,12 @@ def start(ctx: Ctx, actor_id: int | None) -> dict:
                      "tokenizer). It starts untrained and learns from the prepared data.")
         MEM.event(ctx, "genesis.created", steps[-1])
     pol = discovery.policy(ctx)
+    # Scale the download budget with the storage actually free (5 %, between 256 MB and 20 GB).
+    free = shutil.disk_usage(library.root(ctx)).free
+    budget = int(min(20 * GB, max(256 * 1024**2, free * 0.05)))
+    if budget > pol["max_download_bytes"]:
+        discovery.update(ctx, {"max_download_bytes": budget})
+        pol = discovery.policy(ctx)
     chosen, skipped = _choose_sources(ctx)
     new = [s for s in chosen if s not in pol["approved_sources"]]
     if new:
@@ -317,3 +326,78 @@ def rank_strategies(ctx: Ctx, candidates: list[str]) -> tuple[list[str], str | N
             f"(mean {sa['mean_improvement'] * 100:+.1f}%) versus {sb['passed']} of {sb['runs']} for {b} "
             f"(mean {sb['mean_improvement'] * 100:+.1f}%), so {a} experiments run first.")
     return ranked, note
+
+
+# ---- data scaling: grow the library when the model has trained on it many times over ---------------------
+def scale_data(ctx: Ctx) -> dict | None:
+    """Double the per-source sample when the lineage has trained on more than 3x the prepared tokens."""
+    from moth_server import models as M
+    from moth_server.intelligence import discovery, library
+
+    dep = M.deployed(ctx)
+    build = library.latest_ready(ctx)
+    pol = discovery.policy(ctx)
+    if not dep or not build or not pol.get("enabled") or pol["max_source_chars"] >= MAX_SOURCE_CHARS:
+        return None
+    import json as _json
+
+    manifest = build.get("manifest")
+    manifest = _json.loads(manifest) if isinstance(manifest, str) else (manifest or {})
+    prepared = sum(int(v.get("train", 0)) if isinstance(v, dict) else int(v or 0)
+                   for v in (manifest.get("token_counts") or {}).values())
+    trained = int(((dep.get("info") or {}).get("lineage_totals") or {}).get("tokens") or 0)
+    if prepared <= 0 or trained < 3 * prepared:
+        return None
+    new = min(MAX_SOURCE_CHARS, int(pol["max_source_chars"]) * 2)
+    discovery.update(ctx, {"max_source_chars": new})
+    MEM.event(ctx, "data.scaled", f"MOTH has trained on {trained:,} tokens, more than three times the {prepared:,} "
+              f"prepared, so each source now contributes up to {new:,} characters instead of {pol['max_source_chars']:,}. "
+              "The larger library is prepared in the background; training continues meanwhile.",
+              trained_tokens=trained, prepared_tokens=prepared, max_source_chars=new)
+    try:
+        discovery.ensure_data(ctx)
+    except Exception:  # noqa: BLE001 — preparation retries on its own
+        pass
+    return {"max_source_chars": new, "trained": trained, "prepared": prepared}
+
+
+# ---- which data helped: measured per-domain effect on held-out results ------------------------------------
+def data_effects(ctx: Ctx, limit: int = 60) -> dict[str, dict]:
+    """For each training domain: the held-out improvement of experiments, weighted by that domain's share
+    of their mixture, compared with the average over all experiments. Positive = above average."""
+    rows = []
+    for e in MEM.experiments(ctx, limit=limit):
+        imp = _improvement(e)
+        w = (((e.get("config") or {}).get("mixture") or {}).get("weights")) or {}
+        if imp is not None and w and e["status"] in ("passed", "rejected", "deployed"):
+            rows.append((w, imp))
+    if len(rows) < 4:
+        return {}
+    mean = sum(i for _, i in rows) / len(rows)
+    out: dict[str, dict] = {}
+    for d in {d for w, _ in rows for d in w}:
+        total_w = sum(w.get(d, 0.0) for w, _ in rows)
+        if total_w <= 0:
+            continue
+        weighted = sum(w.get(d, 0.0) * i for w, i in rows) / total_w
+        out[d] = {"effect": weighted - mean, "experiments": sum(1 for w, _ in rows if w.get(d, 0) > 0)}
+    return out
+
+
+def apply_data_effects(ctx: Ctx, mix: dict) -> tuple[dict, str | None]:
+    """Shift a mixture modestly (at most +/-30 % per domain) towards domains that measurably helped."""
+    eff = data_effects(ctx)
+    w = dict(mix.get("weights") or {})
+    if not eff or not w:
+        return mix, None
+    scale = max(abs(v["effect"]) for v in eff.values()) or 1.0
+    new = {d: max(0.0, v * (1 + 0.3 * (eff.get(d, {}).get("effect", 0.0) / scale))) for d, v in w.items()}
+    total = sum(new.values()) or 1.0
+    new = {d: v / total for d, v in new.items()}
+    best = max((d for d in w if d in eff), key=lambda d: eff[d]["effect"], default=None)
+    if best is None or eff[best]["effect"] <= 0:
+        return mix, None
+    note = (f"Training mixtures with more {best} data improved held-out results by "
+            f"{eff[best]['effect'] * 100:+.2f} points more than average over {eff[best]['experiments']} experiments, "
+            f"so the next mixture gives {best} {new[best] * 100:.0f}% instead of {w[best] * 100:.0f}%.")
+    return {**mix, "weights": new}, note

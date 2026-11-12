@@ -169,3 +169,34 @@ def test_evolution_memory_runs_the_strategy_that_worked_first(client):
     assert "2 of 2 runs" in note and "0 of 2" in note and "balanced experiments run first" in note
     # with too little history the planner keeps exploring in its default order
     assert AP.rank_strategies(ctx, ["weakness", "new-idea"])[0] == ["weakness", "new-idea"]
+
+
+def test_data_that_helped_gets_more_weight(client):
+    ctx = client.app.state.ctx
+    for imp, w in [(0.05, {"code": 0.8, "language": 0.2}), (0.04, {"code": 0.7, "language": 0.3}),
+                   (0.0, {"code": 0.2, "language": 0.8}), (-0.01, {"code": 0.1, "language": 0.9})]:
+        eid = _exp(ctx, "passed" if imp > 0 else "rejected", imp)
+        with ctx.db.tx() as c:
+            c.execute(evolution_experiments.update().where(evolution_experiments.c.id == eid)
+                      .values(config=json.dumps({"mixture": {"weights": w}})))
+    eff = AP.data_effects(ctx)
+    assert eff["code"]["effect"] > 0 > eff["language"]["effect"]
+    mix, note = AP.apply_data_effects(ctx, {"weights": {"code": 0.5, "language": 0.5}, "stage": "s"})
+    assert mix["weights"]["code"] > 0.5 > mix["weights"]["language"] and abs(sum(mix["weights"].values()) - 1) < 1e-9
+    assert mix["weights"]["code"] <= 0.5 * 1.3 / (0.5 * 1.3 + 0.5 * 0.7) + 1e-9  # a bounded shift, not a takeover
+    assert "more code data" in note
+
+
+def test_library_grows_when_the_model_has_used_it_up(client, owner, monkeypatch):
+    from moth_server.intelligence import discovery, library
+    ctx = client.app.state.ctx
+    dep = {"version": 1, "info": {"lineage_totals": {"tokens": 4_000_000}}}
+    monkeypatch.setattr("moth_server.models.deployed", lambda ctx: dep)
+    monkeypatch.setattr(library, "latest_ready", lambda ctx: {"manifest": {"token_counts": {"code": {"train": 1_000_000}}}})
+    monkeypatch.setattr(discovery, "ensure_data", lambda ctx, wait=False: {"status": "preparing"})
+    before = discovery.policy(ctx)["max_source_chars"]
+    r = AP.scale_data(ctx)
+    assert r and discovery.policy(ctx)["max_source_chars"] == before * 2
+    assert any(e["kind"] == "data.scaled" for e in MEM.events(ctx, limit=5))
+    dep["info"]["lineage_totals"]["tokens"] = 1_000_000  # not used up yet: no change
+    assert AP.scale_data(ctx) is None

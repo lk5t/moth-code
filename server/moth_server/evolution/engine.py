@@ -290,10 +290,16 @@ def _planning(ctx: Ctx, cyc: dict, settings: dict) -> None:
     except Exception:  # noqa: BLE001 — resources only refine the plan
         measured = None
     owner_settings = settings
+    try:
+        AP.scale_data(ctx)
+    except Exception:  # noqa: BLE001 — data scaling never blocks a cycle
+        pass
     settings, decisions = AP.adapt(ctx, settings, measured)
     AP.remember(ctx, settings, decisions, cyc["id"], owner_settings)
     result = P.plan(ctx, base, settings, cycle_seed=1000 + cyc["id"])
     result["decisions"] = decisions
+    if result.get("data_note"):
+        MEM.event(ctx, "plan.adjusted", result["data_note"], cycle_id=cyc["id"], decision="data")
     if result.get("strategy_note"):
         MEM.event(ctx, "plan.adjusted", result["strategy_note"], cycle_id=cyc["id"], decision="strategy")
     if not result["experiments"]:

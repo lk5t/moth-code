@@ -28,6 +28,30 @@ def _parquet_rows(path: Path, columns: list[str] | None = None) -> Iterator[dict
         yield from batch.to_pylist()
 
 
+def _json_array_items(path: Path) -> Iterator[dict[str, Any]]:
+    """Objects of a top-level JSON array, decoded one at a time (constant memory)."""
+    dec = json.JSONDecoder()
+    buf, pos = "", 0
+    with open(path, encoding="utf-8") as fh:
+        while True:
+            chunk = fh.read(1 << 20)
+            buf = buf[pos:] + chunk
+            pos = 0
+            while True:
+                while pos < len(buf) and buf[pos] in " \t\r\n,[":
+                    pos += 1
+                if pos >= len(buf) or buf[pos] == "]":
+                    break
+                try:
+                    obj, end = dec.raw_decode(buf, pos)
+                except json.JSONDecodeError:
+                    break  # incomplete object: read more
+                yield obj
+                pos = end
+            if not chunk:
+                return
+
+
 def _msgs(*pairs: tuple[str, str]) -> list[dict[str, str]]:
     return [{"role": r, "content": c} for r, c in pairs]
 
@@ -128,6 +152,22 @@ def train_records(src: dict[str, Any], f: dict[str, Any], path: Path) -> Iterato
             code = row["code"].replace("\r\n", "\n").strip()
             yield {"uid": f"{base}:{row.get('task_id', i)}", "source": sid, "domain": "code",
                    "messages": _msgs(("user", q), ("assistant", f"```python\n{code}\n```"))}
+    elif fmt in ("qa_jsonl", "qa_json"):
+        # Instruction/answer pairs. Fields come from the catalog entry (e.g. query/answer, problem/solution).
+        q_key, a_key = src.get("fields", ("question", "answer"))
+        def rows():
+            if fmt == "qa_json":  # one JSON array; streamed so very large files never load at once
+                yield from _json_array_items(path)
+            else:
+                with open(path, encoding="utf-8") as fh:
+                    for line in fh:
+                        if line.strip():
+                            yield json.loads(line)
+        for i, row in enumerate(rows()):
+            q, a = (row.get(q_key) or "").strip(), (row.get(a_key) or "").strip()
+            if q and a:
+                yield {"uid": f"{base}:{row.get('index', i)}", "source": sid, "domain": src.get("domain", "code"),
+                       "messages": _msgs(("user", q[:12_000]), ("assistant", a[:16_000]))}
     elif fmt == "stdlib":
         from moth.training.sources import _iter_stdlib, find_stdlib
 

@@ -196,6 +196,12 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
     tr = settings["training"]
     budget = int(tr["steps"]) * int(tr["batch_size"]) * int(tr["seq_len"])
     tilted = curriculum.plan(ctx, budget, analysis, tokens=src["domain_tokens"])
+    from moth_server.evolution import autopilot as _AP
+
+    tilted, data_note = _AP.apply_data_effects(ctx, tilted)  # measured: data that helped gets more weight
+    if data_note:
+        out["notes"].append(data_note)
+        out["data_note"] = data_note
     balanced = curriculum.plan(ctx, budget, None, tokens=src["domain_tokens"])
     arch = architecture_key(base)
     lrs = _lr_ranking(ctx, arch, float(tr["lr"]))
