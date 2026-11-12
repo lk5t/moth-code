@@ -335,7 +335,7 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
 
 def coherence_for(ctx: Ctx, base: dict) -> dict | None:
     """The coherence diagnosis of a model version (moth.model.coherence), measured once per weights file."""
-    key = f"coherence:{base.get('sha256')}"
+    key = f"coherence:{str(base.get('sha256'))[:40]}"  # server_config keys are at most 64 characters
     cached = ctx.db.get_config(key, None)
     if cached:
         return cached

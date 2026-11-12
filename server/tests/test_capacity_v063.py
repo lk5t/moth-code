@@ -197,7 +197,8 @@ def test_coherence_is_measured_once_per_model_and_a_broken_tokenizer_blocks_grow
     monkeypatch.setattr("moth.model.coherence.diagnose", lambda *a, **k: calls.append(1))
     CAP.assess(w["ctx"], w["base"](), w["settings"])
     assert not calls  # cached per weights file
-    key = f"coherence:{w['base']()['sha256']}"
+    key = f"coherence:{w['base']()['sha256'][:40]}"
+    assert len(key) <= 64  # fits PostgreSQL's server_config.key
     w["ctx"].db.set_config(key, {**coh, "tokenizer_ok": False, "explanation": "The tokenizer does not turn text back into the same text."})
     d = CAP.assess(w["ctx"], w["base"](), w["settings"])
     assert d["action"] == "continue_training" and not d["grow"] and "tokenizer" in d["headline"]
