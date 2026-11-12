@@ -184,3 +184,20 @@ def test_foundation_training_lengthens_runs_within_budget(world):
     again, _ = AP.adapt(w["ctx"], w["settings"], None, capacity={"action": "foundation_training", "tokens_per_param": 0.5})
     assert again["training"]["steps"] == min(AP.MAX_STEPS, base * 2)  # never compounding
     assert any("Foundation training" in d["message"] for d in decisions)
+
+
+def test_coherence_is_measured_once_per_model_and_a_broken_tokenizer_blocks_growth(world, monkeypatch):
+    w = world
+    w["state"]["history"] = {"math": acc(0.02, 0.02, 0.02)}
+    d = CAP.assess(w["ctx"], w["base"](), w["settings"])
+    coh = d["coherence"]
+    assert coh["tokenizer_ok"] and coh["tokens_per_char"] > 0 and len(coh["samples"]) == 3  # measured on the real model
+    assert any(c["cause"] == "decoding" for c in d["causes"])
+    calls = []
+    monkeypatch.setattr("moth.model.coherence.diagnose", lambda *a, **k: calls.append(1))
+    CAP.assess(w["ctx"], w["base"](), w["settings"])
+    assert not calls  # cached per weights file
+    key = f"coherence:{w['base']()['sha256']}"
+    w["ctx"].db.set_config(key, {**coh, "tokenizer_ok": False, "explanation": "The tokenizer does not turn text back into the same text."})
+    d = CAP.assess(w["ctx"], w["base"](), w["settings"])
+    assert d["action"] == "continue_training" and not d["grow"] and "tokenizer" in d["headline"]

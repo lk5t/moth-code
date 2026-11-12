@@ -160,6 +160,8 @@ function IntelligenceCheck({ intel }: { intel: Any }) {
         {c.target != null ? ` / target ${pct(c.target)}` : ""}
         {c.stalled ? " · not improving" : c.change != null ? " · improving" : ""}
       </span></li>)}</ul>}
+    {a?.coherence && <details><summary className="cursor-pointer text-muted hover:text-fg">Replies: {a.coherence.explanation}</summary>
+      <ul className="mt-1 space-y-0.5">{a.coherence.samples.map((x: Any) => <li key={x.prompt} className="text-faint"><span className="text-muted">{x.prompt}</span> → <span className="font-mono">{x.reply.trim() || "(empty)"}</span></li>)}</ul></details>}
     {(a?.causes?.length ?? 0) > 0 && <details><summary className="cursor-pointer text-muted hover:text-fg">Causes checked</summary>
       <ul className="mt-1 space-y-0.5">{a!.causes.map((c: Any) => <li key={c.cause} className="text-faint">
         <span className="text-muted">{c.cause.replaceAll("_", " ")}</span>: {c.found === true ? "yes" : c.found === false ? "no" : "not determined"} — {c.detail}</li>)}</ul></details>}

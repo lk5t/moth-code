@@ -54,11 +54,13 @@ it("reports the intelligence check, real size and growth outcomes exactly as the
       estimate: { memory_bytes: 2 * 2 ** 30, fits_server: true, workers_that_fit: 1, training_seconds: null },
       capabilities: [{ capability: "math", name: "Arithmetic", value: 0.02, target: 0.2, limited: true, stalled: true, higher_is_better: true, change: 0 },
                      { capability: "holdout_language", name: "Language understanding", value: 2.1234, target: null, limited: null, stalled: false, higher_is_better: false, change: 0.04 }],
-      causes: [{ cause: "insufficient_training", found: false, detail: "41 tokens per parameter" }] },
+      causes: [{ cause: "insufficient_training", found: false, detail: "41 tokens per parameter" }],
+      coherence: { explanation: "Replies are readable text that ends on its own.", samples: [{ prompt: "What is 2 + 3?", reply: "5" }] } },
     growth_attempts: [{ experiment: 31, status: "rejected", params_before: 5184768, params_after: 6221568, measured: true }] } });
   render(<EvolutionControl progress={{ current: { name: "MOTH 0.12" }, training: {} }} />);
   expect(await screen.findByText("Current architecture may be limiting progress. Testing a larger candidate.")).toBeInTheDocument();
   expect(screen.getByText("Arithmetic remains limited. Evaluating possible causes.")).toBeInTheDocument();
+  expect(screen.getByText("Replies: Replies are readable text that ends on its own.")).toBeInTheDocument();
   expect(screen.getByText("Model v12: 5,184,768 parameters · counted from the saved weights")).toBeInTheDocument();
   expect(screen.getByText(/2\.0% \/ target 20\.0% · not improving/)).toBeInTheDocument();
   expect(screen.getByText(/loss 2\.123 · improving/)).toBeInTheDocument();

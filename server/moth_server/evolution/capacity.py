@@ -268,9 +268,22 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
     if thin:
         return decide("improve_data", f"{stalled[0]['name']} has too little training data. Growing the data library.",
                       f"the prepared library has under {float(c['min_domain_share']):.0%} {', '.join(thin)} data")
-    # 5. tokenizer (reported, never acted on automatically)
+    # 5. tokenizer and decoding, measured on the deployed model's own replies (0.7.0)
     vocab = int(((base.get("info") or {}).get("config") or {}).get("vocab_size") or 0)
-    if vocab:
+    coh = coherence_for(ctx, base)
+    out["coherence"] = coh
+    if coh:
+        cause("tokenizer", not coh["tokenizer_ok"], ("decode(encode(text)) returns the text exactly"
+              if coh["tokenizer_ok"] else "the tokenizer does not give back the same text") +
+              f"; {coh['tokens_per_char']} tokens per character" + (" (byte-level: changing it needs a new Genesis)"
+                                                                     if vocab and vocab <= 512 else ""))
+        cause("decoding", coh["decoding_helps"], f"greedy replies repeat {coh['greedy_repetition']:.0%} of word pairs, "
+              f"replies with the serving settings {coh['served_repetition']:.0%}")
+        if not coh["tokenizer_ok"]:
+            return decide("continue_training", "Replies are garbled by the tokenizer. A larger model would not fix this.",
+                          coh["explanation"][:1].lower() + coh["explanation"][1:].rstrip(".") +
+                          "; replacing the tokenizer needs a new Genesis")
+    elif vocab:
         cause("tokenizer", None, f"{vocab}-token vocabulary" + (" (byte-level: every word is several tokens, which "
               "shortens the usable context; changing it needs a new Genesis)" if vocab <= 512 else ""))
     # 6. capacity
@@ -318,3 +331,27 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
                target_capabilities=[r["capability"] for r in stalled])
     return decide("grow", "Current architecture may be limiting progress. Testing a larger candidate.",
                   out["causes"][-1]["detail"] + f": grow {best['ratio'] - 1:.0%} ({params:,} → {best['params']:,} parameters)")
+
+
+def coherence_for(ctx: Ctx, base: dict) -> dict | None:
+    """The coherence diagnosis of a model version (moth.model.coherence), measured once per weights file."""
+    key = f"coherence:{base.get('sha256')}"
+    cached = ctx.db.get_config(key, None)
+    if cached:
+        return cached
+    try:
+        from moth.model.coherence import diagnose
+        from moth.model.registry import load_model
+
+        model, tok, _ = load_model(base["path"], verify=False)
+        d = diagnose(model, tok)
+    except Exception:  # noqa: BLE001 — a diagnosis never blocks planning
+        return None
+    summary = {"version": base.get("version"), "tokenizer_ok": d["tokenizer"]["ok"],
+               "tokens_per_char": d["tokenizer"]["tokens_per_char"], "incoherent": d["incoherent"],
+               "decoding_helps": d["decoding_helps"], "cause": d["cause"], "explanation": d["explanation"],
+               "greedy_repetition": d["greedy"]["repetition"], "served_repetition": d["served"]["repetition"],
+               "served_garbage": d["served"]["garbage"], "served_unended": d["served"]["unended"],
+               "samples": [{"prompt": x["prompt"], "reply": x["reply"]} for x in d["served"]["samples"][:3]]}
+    ctx.db.set_config(key, summary)
+    return summary

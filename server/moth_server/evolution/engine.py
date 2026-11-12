@@ -363,7 +363,7 @@ def _growth_event(ctx: Ctx, cyc: dict, base: dict, decision: dict | None, settin
     before = decision.get("params_before") or (base["info"] or {}).get("params")
     _set_state(ctx, capacity={k: decision.get(k) for k in (
         "action", "headline", "reason", "investigating", "capabilities", "causes", "tokens_per_param", "params",
-        "tokens", "loss_improving", "estimate", "params_after", "target_capabilities")} | {"cycle": cyc.get("id"), "at": now()})
+        "tokens", "loss_improving", "estimate", "params_after", "target_capabilities", "coherence")} | {"cycle": cyc.get("id"), "at": now()})
     if decision.get("grow"):
         est = decision.get("estimate") or {}
         where = (["this server"] if est.get("fits_server") else []) + \
