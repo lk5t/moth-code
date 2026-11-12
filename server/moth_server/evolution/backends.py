@@ -267,7 +267,7 @@ def register_candidate(ctx: Ctx, exp: dict, package: Path, result: dict | None =
 
 
 # ---- worker backend -----------------------------------------------------------------------------------
-MASK_WORKER_VERSION = "0.6.3"  # MOTH Workers from this version apply the loss mask of a job
+MASK_WORKER_VERSION = "0.6.4"  # MOTH Workers from this version apply the loss mask of a job (0.6.3 did not)
 
 
 def worker_training_supported(ctx: Ctx, exp: dict, masks: bool = False) -> bool:

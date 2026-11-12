@@ -96,7 +96,7 @@ is discarded ("Larger model did not improve performance enough. Keeping the curr
 Growth respects the parameter ceiling and step limit, never runs while another growth candidate is
 in progress, waits three rounds after a rejection, and pauses after three rejections in 20 rounds.
 
-## One computing network (MOTH Cloud + workers)
+## One computing network (MOTH Cloud + workers) — 0.6.4
 
 Start Evolution coordinates every authorized machine; there is no separate training-job workflow.
 
@@ -106,8 +106,8 @@ Start Evolution coordinates every authorized machine; there is no separate train
   always chosen before any CPU worker.
 - **Masks travel with the job.** A worker job now carries its shard's loss mask (SHA-256 checked,
   served only to the worker holding the lease), and the worker trains and reports losses with it — the
-  same alignment as training on MOTH Cloud. Only workers 0.6.3 or newer may claim such a job; older
-  workers never get it. Private (user-contributed) data still never leaves MOTH Cloud. Sharded rounds
+  same alignment as training on MOTH Cloud. Only workers 0.6.4 or newer may claim such a job (the published
+  0.6.3 worker does not apply masks); older workers never get it. Private (user-contributed) data still never leaves MOTH Cloud. Sharded rounds
   (one experiment split across many workers) still carry tokens only and are used only for unmasked data.
 - **Placement by measured speed.** Each machine's real end-to-end throughput (tokens/s, including
   downloads and uploads for workers) is recorded after every run; until then the hardware benchmark is

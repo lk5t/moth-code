@@ -70,7 +70,7 @@ def _world(client, owner, tmp_path, monkeypatch, **settings):
     return ctx
 
 
-def _enroll(client, owner, version="0.6.3", gflops=None):
+def _enroll(client, owner, version="0.6.4", gflops=None):
     e = client.post("/v1/training/enrollments", json={"name": "linux-box"}, headers=H(owner["token"])).json()
     hw = {"gpus": [], "cpu_count": 2, "ram_gb": 8, "ram_available_gb": 6, "compute": "cpu",
           **({"benchmark": {"gflops": gflops}} if gflops else {}), "utilization": {"cpu": 0.25, "memory": 0.25}}
@@ -116,7 +116,7 @@ def test_cloud_and_worker_train_masked_conversation_data_together(client, owner,
     ctx = _world(client, owner, tmp_path, monkeypatch, max_experiments_per_cycle=2,
                  training={**FAST["training"], "steps": 60},
                  backends={"local_cpu": True, "local_gpu": False, "workers": True})
-    old = _enroll(client, owner, version="0.6.2")  # cannot apply loss masks
+    old = _enroll(client, owner, version="0.6.3")  # the published 0.6.3 worker cannot apply loss masks
     w = _enroll(client, owner)
     stop, seen = threading.Event(), []
     t0 = time.time()
@@ -126,7 +126,7 @@ def test_cloud_and_worker_train_masked_conversation_data_together(client, owner,
     worker_exp = next(e for e in exps if e["backend"] == "worker")
     job = json.loads(EN.B.job(ctx, worker_exp["job_id"])["spec"])
     # the conversation data's mask travels with the job; only a worker that applies it may take it
-    assert job["mask_sha256"] and job["min_worker_version"] == "0.6.3"
+    assert job["mask_sha256"] and job["min_worker_version"] == "0.6.4"
     assert client.post("/v1/worker/jobs/claim", headers=H(old["worker_token"])).status_code in (200, 204)
     assert EN.B.job(ctx, worker_exp["job_id"])["status"] == "queued"  # the 0.6.2 worker did not get it
     _run_worker(client, w, tmp_path, stop, seen)
@@ -177,7 +177,7 @@ def test_placement_prefers_a_comparable_worker_and_never_waits_on_a_slow_one(cli
     ctx.db.set_config("compute_throughput", {})
     ctx.db.set_config("local_benchmark", {"gflops": 50.0, "at": time.time()})
     client.post("/v1/worker/heartbeat", json={"hardware": {"gpus": [], "cpu_count": 2, "ram_gb": 8, "compute": "cpu",
-                                                           "benchmark": {"gflops": 100.0}}, "version": "0.6.3"},
+                                                           "benchmark": {"gflops": 100.0}}, "version": "0.6.4"},
                 headers=H(w["worker_token"]))
     sp = C.worker_speeds(ctx)[0]
     assert sp["basis"] == "benchmark" and sp["ratio"] == round(100.0 * C.NETWORK_FACTOR / 50.0, 3)

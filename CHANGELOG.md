@@ -3,6 +3,12 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.6.4 — One computing network
+
+- One computing network: MOTH Workers 0.6.4 now train conversation data too (the loss mask travels with the job), placement follows measured speed, untaken work moves back to MOTH Cloud, and AI → Evolution shows every machine. The manual Training Jobs controls are retired.
+- Fixed a MOTH Worker restart loop after a second automatic update.
+- Details: [docs/DISTRIBUTED-EVOLUTION.md](docs/DISTRIBUTED-EVOLUTION.md#one-computing-network-moth-cloud--workers).
+
 ## 0.6.3 — DISTRIBUTED EVOLUTION
 
 - Parallel experiments: while one experiment trains, free compute (MOTH Cloud or an online worker) starts the next one. Measured 1.23× faster on one shared 4-core machine.
@@ -12,8 +18,6 @@ the unverified completion of Foundation training, is recorded in [docs/CONTINUAT
 - Evolution command center: objective, active and rollback models, parallel experiments, workers and their tasks, and what is holding progress back — from server records only.
 - Continuous evolution: rounds run back to back with no timer; only a failed round waits briefly before retrying.
 - Every parameter count is counted from the saved weights; older releases are measured automatically and the app says when a count is verified.
-- One computing network: workers now train conversation data too (the loss mask travels with the job), placement follows measured speed, untaken work moves back to MOTH Cloud, and AI → Evolution shows every machine. The manual Training Jobs controls are retired.
-- Fixed a MOTH Worker restart loop after a second automatic update.
 - Capability-based growth: MOTH grows its architecture only when measured capabilities (arithmetic, reasoning, coding, instruction following, language) stall and other causes are ruled out; larger candidates must improve those capabilities before they are kept.
 - Details and limitations: [docs/DISTRIBUTED-EVOLUTION.md](docs/DISTRIBUTED-EVOLUTION.md).
 
