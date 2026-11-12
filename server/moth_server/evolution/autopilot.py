@@ -520,5 +520,20 @@ def command_center(ctx: Ctx, cyc: dict | None, st: dict, data: dict) -> dict:
     elif mem.get("percent") and mem["percent"] > 90:
         bottleneck = f"MOTH Cloud's memory is {mem['percent']:.0f}% used; training slows down or waits to protect answering."
     return {"objective": objective, "workers": ws, "server": server, "queued_jobs": queued,
-            "parallel": len(running), "versions": {"active": (dep or {}).get("version"), "previous": prev_v},
+            "parallel": len(running), "versions": {"active": (dep or {}).get("version"), "previous": prev_v,
+                                                    "active_name": _public_name(ctx, (dep or {}).get("version")),
+                                                    "previous_name": _public_name(ctx, prev_v)},
             "bottleneck": bottleneck}
+
+
+def _public_name(ctx: Ctx, version: int | None) -> str | None:
+    """'MOTH 0.0.x' for a release (None when it has no public version)."""
+    from moth_server import models as M
+
+    if version is None:
+        return None
+    try:
+        info = M.release(ctx, int(version))["info"] or {}
+    except Exception:  # noqa: BLE001
+        return None
+    return info.get("display_name") or (f"MOTH {info['model_version']}" if info.get("model_version") else None)

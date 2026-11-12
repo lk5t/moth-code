@@ -38,11 +38,8 @@ describe("Intelligence consolidation", () => {
   it("groups AI into Evolution, Data, History and AI Settings, with training on the Evolution page", async () => {
     render(<IntelligenceHub />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Evolution", "Data", "History", "AI Settings"]);
-    fireEvent.click(await screen.findByText("Model details and measured architecture"));  // shown once a model is reported
-    await screen.findByRole("button", { name: "Inspect layer 2" });
-    fireEvent.click(screen.getByRole("button", { name: "Inspect layer 2" }));
-    expect(screen.getByRole("button", { name: "Inspect layer 2" })).toHaveAttribute("aria-pressed", "true");
     await screen.findByRole("button", { name: "Pause Evolution" });
+    expect(screen.queryByText("Model Architecture")).toBeNull();  // 0.7.0: the diagram lives in AI Settings → Advanced
     expect(screen.getByText("Training has slowed down: testing a lower learning rate.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Train MOTH now" })).toBeNull();  // manual controls live in AI Settings
     expect(screen.queryByRole("switch", { name: "Contribute this computer" })).toBeNull();
@@ -53,6 +50,10 @@ describe("Intelligence consolidation", () => {
     expect(appStore.getState().intelligenceTab).toBe("data");
     fireEvent.mouseDown(screen.getByRole("tab", { name: "AI Settings" }), { button: 0 });
     await screen.findByText("Growth approval and rollback controls");
+    fireEvent.click(screen.getByText("Model Architecture"));
+    await screen.findByRole("button", { name: "Inspect layer 2" });
+    fireEvent.click(screen.getByRole("button", { name: "Inspect layer 2" }));
+    expect(screen.getByRole("button", { name: "Inspect layer 2" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText("Manual training controls")).toBeNull();  // Evolution is the only training control
     expect(screen.queryByRole("button", { name: "Train MOTH now" })).toBeNull();
   });
@@ -70,8 +71,9 @@ describe("Intelligence consolidation", () => {
 it("clears model activity after a failed refresh instead of showing stale state as current", async () => {
   vi.useFakeTimers();
   try {
+    appStore.setState({ view: "intelligence", intelligenceTab: "settings" });
     await act(async () => { render(<IntelligenceHub />); });
-    fireEvent.click(screen.getByText("Model details and measured architecture"));
+    fireEvent.click(screen.getByText("Model Architecture"));
     await act(async () => {await vi.advanceTimersByTimeAsync(0);});
     expect(screen.getByRole("button", { name: "Inspect layer 2" })).toBeInTheDocument();
     mocks.api.mockRejectedValue(new Error("connection lost"));

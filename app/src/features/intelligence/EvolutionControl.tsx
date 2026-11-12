@@ -12,6 +12,7 @@ import { secure } from "@/features/owner/ops";
 import { LivingMoth } from "@/components/LivingMoth";
 import { Card, CardContent } from "@/components/ui/card";
 import { paramsLabel } from "@/lib/params";
+import { modelLabel } from "@/lib/model-label";
 import { Button } from "@/components/ui/button";
 
 type Any = Record<string, any>;
@@ -52,6 +53,7 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
   const stage = data?.stage ?? (progress && !progress.current ? "genesis" : progress?.training?.paused ? "paused" : progress?.training?.cycle?.status ?? (progress ? "idle" : null));
   const running = data ? data.running : !!progress?.current && !progress?.training?.paused && progress?.training?.enabled !== false;
   const doing = data?.doing ?? (stage === "genesis" ? "There is no model yet." : progress?.training?.cycle?.waiting_reason ?? null);
+  const name = progress?.current ? modelLabel(progress.current) : "MOTH";
   return <Card className="relative overflow-hidden" aria-label="Evolution">
     <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-accent/10 blur-3xl" />
     <CardContent className="relative space-y-4 p-5">
@@ -59,7 +61,7 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
         <LivingMoth className="size-12" />
         <div className="min-w-0 flex-1">
           <p className="text-[10px] uppercase tracking-[0.22em] text-accent">Evolution · {stage ? STAGE[stage] ?? stage.replaceAll("_", " ") : "Loading"}</p>
-          <h2 className="mt-1 text-lg font-medium">{stage === "genesis" ? "Start MOTH from zero" : running ? "MOTH is evolving" : "Evolution is not running"}</h2>
+          <h2 className="mt-1 text-lg font-medium">{stage === "genesis" ? "Start MOTH from zero" : running ? `${name} is evolving` : `${name} · Evolution is not running`}</h2>
           <p role="status" className="mt-1 text-xs text-muted">{doing ?? (error ? `Status unavailable: ${error}` : "Reading status…")}</p>
         </div>
         {owner && (running
@@ -115,7 +117,7 @@ function CommandStrip({ data }: { data: Any }) {
     {data.objective && <p className="text-muted"><span className="text-faint">Current objective · </span>{data.objective}</p>}
     <dl className="grid gap-2 sm:grid-cols-3">
       <div className="rounded-lg border border-border bg-bg px-3 py-2"><dt className="text-faint">Models</dt>
-        <dd className="mt-0.5 text-fg">{data.versions?.active ? `Active v${data.versions.active}` : "None yet"}{data.versions?.previous ? ` · previous v${data.versions.previous} kept for rollback` : ""}</dd></div>
+        <dd className="mt-0.5 text-fg">{data.versions?.active ? `Active ${data.versions.active_name ?? `v${data.versions.active}`}` : "None yet"}{data.versions?.previous ? ` · previous ${data.versions.previous_name ?? `v${data.versions.previous}`} kept for rollback` : ""}</dd></div>
       <div className="rounded-lg border border-border bg-bg px-3 py-2"><dt className="text-faint">Experiments in parallel</dt>
         <dd className="mt-0.5 text-fg">{data.parallel ?? 0} running{data.queued_jobs ? ` · ${data.queued_jobs} waiting for a worker` : ""}</dd></div>
       <div className="rounded-lg border border-border bg-bg px-3 py-2"><dt className="text-faint">Workers</dt>

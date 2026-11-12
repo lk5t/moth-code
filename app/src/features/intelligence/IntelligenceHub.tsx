@@ -164,7 +164,6 @@ export function IntelligenceHub() {
           {p?.current && <TrainingProgress progress={p} resources={resources} />}
           {p && <EvolutionActivity />}
           {p?.current ? <OverviewSummary progress={p} updatedAt={updatedAt} /> : owner && p && <Advanced title="Choose the model size and tokenizer yourself"><GenesisSetup /></Advanced>}
-          {p?.current && <Advanced title="Model details and measured architecture"><ModelActivity progress={p} resources={resources} /></Advanced>}
         </TabsContent>}
         {tab === "data" && <TabsContent value="data" className="flex flex-col gap-4">
           <Tabs value={dataSection} onValueChange={(value) => setDataSection(value as "local" | "cloud")}>
@@ -188,7 +187,10 @@ export function IntelligenceHub() {
           <Advanced title="Activity on this computer"><ActivityPanel all /></Advanced>
         </TabsContent>}
         {tab === "settings" && <TabsContent value="settings" className="space-y-3">
-          {owner ? <><AiSettings /><p className="pt-2 text-[10px] uppercase tracking-[0.22em] text-faint">Advanced</p><GrowthDiagnostics /><EvolutionPanel section="advanced" /><Advanced title="Detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView scope="training" /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced><Advanced title="Feedback and shared knowledge"><IntelligencePanel sections={["feedback", "knowledge"]} /></Advanced></> : <p className="text-xs text-muted">Advanced training and deployment controls require the Owner.</p>}
+          {owner && <AiSettings />}
+          <p className="pt-2 text-[10px] uppercase tracking-[0.22em] text-faint">Advanced</p>
+          {p?.current && <Advanced title="Model Architecture"><ModelActivity progress={p} resources={resources} /></Advanced>}
+          {owner ? <><GrowthDiagnostics /><EvolutionPanel section="advanced" /><Advanced title="Detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView scope="training" /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Cloud model registry and evaluation data"><ModelsPanel /></Advanced><Advanced title="Feedback and shared knowledge"><IntelligencePanel sections={["feedback", "knowledge"]} /></Advanced></> : <p className="text-xs text-muted">Advanced training and deployment controls require the Owner.</p>}
         </TabsContent>}
       </Tabs>}
     </div>
