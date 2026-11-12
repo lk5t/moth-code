@@ -267,8 +267,13 @@ def register_candidate(ctx: Ctx, exp: dict, package: Path, result: dict | None =
 
 
 # ---- worker backend -----------------------------------------------------------------------------------
-def worker_training_supported(ctx: Ctx, exp: dict) -> bool:
-    """The existing token-only worker protocol cannot preserve assistant-only loss masks."""
+MASK_WORKER_VERSION = "0.6.3"  # MOTH Workers from this version apply the loss mask of a job
+
+
+def worker_training_supported(ctx: Ctx, exp: dict, masks: bool = False) -> bool:
+    """Whether a worker may train this experiment. Private (user-contributed) data never leaves
+    MOTH Cloud. ``masks``: the job carries the loss mask (whole-experiment worker jobs, 0.6.3);
+    without it, assistant-masked data needs local training (token-only, e.g. sharded rounds)."""
     import numpy as np
 
     dataset = DS.get(ctx, exp.get('dataset_id')) if exp.get('dataset_id') else None
@@ -286,6 +291,8 @@ def worker_training_supported(ctx: Ctx, exp: dict) -> bool:
         from moth.model.registry import sha256_file
         if private_shas and sha256_file(path / "train.bin") in private_shas:
             return False
+        if masks:
+            continue
         mask = np.memmap(path / "train.mask", dtype=np.uint8, mode="r")
         if any(np.any(mask[i:i + 1048576] == 0) for i in range(0, len(mask), 1048576)):
             return False
@@ -299,8 +306,8 @@ def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0, worker_ids: list
     from moth_server import models as M
 
     cfg = exp["config"]
-    if not worker_training_supported(ctx, exp):
-        raise ValueError("assistant-masked data requires local training; the worker protocol carries tokens only")
+    if not worker_training_supported(ctx, exp, masks=True):
+        raise ValueError("private training data never leaves MOTH Cloud")
     base = M.release(ctx, exp["base_version"])
     ds = DS.get(ctx, exp["dataset_id"])
     rd = run_dir(ctx, exp)
@@ -332,9 +339,12 @@ def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0, worker_ids: list
 
         need = int(cfg["steps"]) * int(cfg["batch_size"]) * int(cfg["seq_len"]) * 2
         shard_sha = write_mixture_shard(cfg["mixture"]["path"], cfg["mixture"]["weights"], need, int(cfg["seed"]),
-                                        rd / "shard.bin")
+                                        rd / "shard.bin", mask_dest=rd / "shard.mask")
     else:
         shard_sha = DS.write_shard(ds, rd / "shard.bin")
+        if (rd / "shard.mask").exists():
+            (rd / "shard.mask").unlink()
+    mask_sha = sha256_file(rd / "shard.mask") if (rd / "shard.mask").exists() else None
     spec = {"evolution_experiment": exp["id"], "round": -exp["id"], "model_version": base["version"],
             "worker_ids": worker_ids,
             "base_sha256": sha256_file(weights),
@@ -346,6 +356,9 @@ def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0, worker_ids: list
                       "batch_autotune": bool(cfg.get("batch_autotune", True)),
                       "seq_len": cfg["seq_len"], "weight_decay": cfg["weight_decay"]},
             "protocol": PROTOCOL,
+            # conversation data learns only the assistant's replies: the mask travels with the tokens,
+            # and only workers that apply it may claim the job
+            **({"mask_sha256": mask_sha, "min_worker_version": MASK_WORKER_VERSION} if mask_sha else {}),
             # assignment: only workers with enough memory get it; a GPU worker is preferred briefly
             "requirements": {"memory_bytes": int(need_bytes)}, "prefer_gpu": True}
     with ctx.db.tx() as c:
@@ -366,6 +379,12 @@ def job_files(ctx: Ctx, spec: dict) -> tuple[Path, Path]:
     exp = MEM.experiment(ctx, int(spec["evolution_experiment"]))
     base = M.release(ctx, exp["base_version"])
     return (run_dir(ctx, exp) / "growth-base.pt" if spec.get("expanded") else Path(base["path"]) / "model.pt"), run_dir(ctx, exp) / "shard.bin"
+
+
+def job_mask(ctx: Ctx, spec: dict) -> Path:
+    """The loss mask of an evolution job's shard (exists only when the spec names one)."""
+    exp = MEM.experiment(ctx, int(spec["evolution_experiment"]))
+    return run_dir(ctx, exp) / "shard.mask"
 
 
 def accept_worker_result(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) -> dict:

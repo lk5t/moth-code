@@ -96,9 +96,46 @@ is discarded ("Larger model did not improve performance enough. Keeping the curr
 Growth respects the parameter ceiling and step limit, never runs while another growth candidate is
 in progress, waits three rounds after a rejection, and pauses after three rejections in 20 rounds.
 
+## One computing network (MOTH Cloud + workers)
+
+Start Evolution coordinates every authorized machine; there is no separate training-job workflow.
+
+- **Why workers sat idle before.** The automatic data library always includes conversation data, which
+  trains only on the assistant's replies (a loss mask). Worker jobs carried tokens only, so every
+  experiment on such a mixture was kept on MOTH Cloud ("local · cpu"). Also, MOTH Cloud's own CPU was
+  always chosen before any CPU worker.
+- **Masks travel with the job.** A worker job now carries its shard's loss mask (SHA-256 checked,
+  served only to the worker holding the lease), and the worker trains and reports losses with it — the
+  same alignment as training on MOTH Cloud. Only workers 0.6.3 or newer may claim such a job; older
+  workers never get it. Private (user-contributed) data still never leaves MOTH Cloud. Sharded rounds
+  (one experiment split across many workers) still carry tokens only and are used only for unmasked data.
+- **Placement by measured speed.** Each machine's real end-to-end throughput (tokens/s, including
+  downloads and uploads for workers) is recorded after every run; until then the hardware benchmark is
+  used, discounted 20 % for network transfers. A worker at least 0.8× as fast as MOTH Cloud takes work
+  first (MOTH Cloud stays responsive); while MOTH Cloud trains, a parallel experiment goes to a free
+  worker only if it is at least 0.5× as fast — slower, the cycle would take longer than running it here
+  afterwards. Busy and incompatible workers are not counted as free capacity.
+- **Recovery.** A disconnected worker's lease expires and its job is requeued; if no worker takes it
+  within 10 minutes it is cancelled and the experiment continues on MOTH Cloud. Results are accepted
+  only for the worker holding the lease, so a returning worker cannot upload a duplicate.
+- **Live view.** AI → Evolution lists MOTH Cloud and every worker with ID, state (working / online,
+  idle / unavailable), current experiment and progress, CPU and memory use, speed relative to MOTH
+  Cloud, measured throughput, finished runs and tokens trained, and the last problem of the past day.
+- **Measured (one 4-core machine, real worker loop sharing the CPU):** the same two-experiment cycle
+  (245,760 tokens) took 19.6 s on MOTH Cloud alone and 10.4 s with the worker — 1.88× faster. A cycle
+  on conversation data trained one experiment on MOTH Cloud and one on the worker at the same time,
+  with the worker applying the loss mask (`server/tests/test_network_v063.py`).
+- **Worker auto-update loop fixed.** After a worker had already updated once, the restart after the next
+  update inherited the previous version's environment and started the old version again, which
+  re-installed the same update and restarted. Restarts now start from the original environment, so the
+  newest installed version runs (`server/tests/test_worker_restart_v063.py`).
+
 ## Limitations
 
 - Dataset preparation and tokenization run on MOTH Cloud, not on workers.
+- Sharded (multi-worker) training of one experiment is token-only; conversation data uses whole-experiment worker jobs.
+- The production Worker #8 could not be reached from the development environment; its behaviour was
+  reproduced with a real worker process against an isolated MOTH Cloud.
 - GPU training, multi-GPU and multi-machine speedups were not verified in this environment (no GPU).
 - The parallel speedup above was measured on a single shared-CPU machine.
 - A lower loss alone is never treated as proof of capability: promotion needs held-out evaluation

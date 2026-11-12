@@ -445,17 +445,61 @@ def command_center(ctx: Ctx, cyc: dict | None, st: dict, data: dict) -> dict:
     objective = next((e.get("rationale") for e in running), None) or next((e.get("rationale") for e in exps
                                                                            if e["status"] in ("planned", "waiting")), None)
     jobs = ctx.db.all(select(training_jobs).where(training_jobs.c.status.in_(("queued", "leased"))))
-    by_worker = {j["worker_id"]: j for j in jobs if j["worker_id"]}
+    by_worker = {j["worker_id"]: j for j in jobs if j["worker_id"] and j["status"] == "leased"}  # really executing
+    # the latest failure per worker in the last day (connection, download, training or validation errors)
+    errors: dict[int, str] = {}
+    for j in ctx.db.all(select(training_jobs.c.worker_id, training_jobs.c.error, training_jobs.c.updated_at).where(
+            training_jobs.c.error.is_not(None), training_jobs.c.updated_at >= now() - 86400)
+            .order_by(training_jobs.c.updated_at)):
+        if j["worker_id"]:
+            errors[j["worker_id"]] = str(j["error"])[:200]
     now_ = now()
+    # actual contributions: finished training runs (and the tokens they trained) per machine
+    contrib: dict[str, dict] = {}
+    for e in MEM.experiments(ctx, limit=500):
+        if e["status"] not in ("trained", "passed", "rejected", "evaluating"):
+            continue
+        key = f"worker:{e['worker_id']}" if e["backend"] == "worker" and e.get("worker_id") else \
+            ("server" if e["backend"] == "local" else None)
+        if key:
+            c = contrib.setdefault(key, {"runs": 0, "tokens": 0})
+            c["runs"] += 1
+            c["tokens"] += int(((e.get("metrics") or {}).get("training") or {}).get("tokens") or 0)
+    speeds = {x["id"]: x for x in C.worker_speeds(ctx)}
     ws = []
     for w in ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None))):
         online = (w.get("last_heartbeat_at") or 0) >= now_ - 180 and w["status"] == "online"
         hw = _json.loads(w["hardware"] or "{}")
         j = by_worker.get(w["id"])
-        ws.append({"id": w["id"], "name": w["name"], "online": online, "paused": bool(w["paused"]),
+        spec = _json.loads(j["spec"]) if j else {}
+        sp = speeds.get(w["id"])
+        state = ("unavailable" if not online or w["paused"] else "working" if j else "idle")
+        ws.append({"id": w["id"], "name": w["name"], "online": online, "paused": bool(w["paused"]), "state": state,
+                   "last_error": errors.get(w["id"]),
+                   "throughput": C.throughput(ctx).get(f"worker:{w['id']}"),
                    "compute": "GPU" if hw.get("compute") == "gpu" or (hw.get("compute") is None and hw.get("gpus")) else "CPU",
-                   "gflops": (hw.get("benchmark") or {}).get("gflops"),
-                   "task": {"kind": j["kind"], "progress": j.get("progress")} if j else None})
+                   "gflops": (hw.get("benchmark") or {}).get("gflops"), "version": w.get("version"),
+                   "utilization": hw.get("utilization"),
+                   "speed": {"ratio": sp["ratio"], "basis": sp["basis"]} if sp else None,
+                   "contribution": contrib.get(f"worker:{w['id']}", {"runs": 0, "tokens": 0}),
+                   "task": {"kind": j["kind"], "progress": j.get("progress"),
+                            "experiment": spec.get("evolution_experiment")} if j else None})
+    # MOTH Cloud itself is one of the machines doing the work
+    hw0 = C.local(ctx)
+    local_run = next((e for e in running if e["backend"] == "local"), None)
+    la = (hw0.get("load_average") or [None])[0]
+    cached = ctx.db.get_config("local_benchmark", {}) or {}
+    server = {"id": "cloud", "name": "MOTH Cloud (this server)", "online": True, "paused": False,
+              "state": "working" if local_run else "idle", "last_error": None,
+              "throughput": C.throughput(ctx).get("local:cpu") or C.throughput(ctx).get("local:cuda"),
+              "compute": "GPU" if hw0.get("gpus") else "CPU", "gflops": cached.get("gflops"),
+              "utilization": {"cpu": round(min(1.0, la / max(1, hw0.get("cpu_count") or 1)), 3) if la is not None else None,
+                              "memory": round((hw0.get("memory") or {}).get("percent", 0) / 100, 3)
+                              if (hw0.get("memory") or {}).get("percent") is not None else None},
+              "contribution": contrib.get("server", {"runs": 0, "tokens": 0}),
+              "task": {"kind": "evolve_train", "experiment": local_run["id"],
+                       "progress": ((local_run.get("metrics") or {}).get("progress") or {}).get("fraction")}
+              if local_run else None}
     queued = sum(1 for j in jobs if j["status"] == "queued")
     dep = M.deployed(ctx)
     prev_v = st.get("stable_version") if st.get("stable_version") != (dep or {}).get("version") else None
@@ -475,6 +519,6 @@ def command_center(ctx: Ctx, cyc: dict | None, st: dict, data: dict) -> dict:
         bottleneck = "Training waits for data preparation to finish."
     elif mem.get("percent") and mem["percent"] > 90:
         bottleneck = f"MOTH Cloud's memory is {mem['percent']:.0f}% used; training slows down or waits to protect answering."
-    return {"objective": objective, "workers": ws, "queued_jobs": queued,
+    return {"objective": objective, "workers": ws, "server": server, "queued_jobs": queued,
             "parallel": len(running), "versions": {"active": (dep or {}).get("version"), "previous": prev_v},
             "bottleneck": bottleneck}

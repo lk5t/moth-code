@@ -461,6 +461,33 @@ def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
                          result={**(MEM.cycle(ctx, cyc["id"])["result"] or {}), "waiting_reason": None})
 
 
+REASSIGN_SECONDS = 600.0  # a worker job nobody has taken (or a disconnected worker's requeued job) for this long
+
+
+def _reassign_to_cloud(ctx: Ctx, cyc: dict, exp: dict, j: dict, settings: dict) -> bool:
+    """Continue an untaken worker job on MOTH Cloud when it can run here now. The worker job is cancelled
+    first, so a worker that comes back can neither take it nor upload a result for it (no duplicate)."""
+    from moth_server.db import training_jobs
+
+    if any(e["backend"] == "local" and e["status"] == "running" for e in MEM.experiments(ctx, cyc["id"])):
+        return False  # MOTH Cloud is busy too: keep waiting for a worker
+    local_only = {**settings, "backends": {**settings["backends"], "workers": False}}
+    choice, _ = C.choose_backend(ctx, local_only, _need_bytes(ctx, exp))
+    if not choice or choice["backend"] != "local" or C.local_blockers(ctx, settings, choice["device"]):
+        return False
+    with ctx.db.tx() as c:
+        n = c.execute(training_jobs.update().where(training_jobs.c.id == j["id"], training_jobs.c.status == "queued")
+                      .values(status="cancelled", error="reassigned to MOTH Cloud: no worker took it", updated_at=now())).rowcount
+    if not n:
+        return False  # a worker claimed it in the meantime: let it run
+    MEM.update_experiment(ctx, exp["id"], status="waiting", backend=None, job_id=None, worker_id=None,
+                          error="reassigned to MOTH Cloud")
+    MEM.event(ctx, "experiment.reassigned", f"No MOTH worker took experiment #{exp['id']} within "
+              f"{REASSIGN_SECONDS / 60:.0f} minutes, so it continues on MOTH Cloud.", level="warning",
+              cycle_id=cyc["id"], experiment_id=exp["id"], job=j["id"])
+    return True
+
+
 def _is_training(ctx: Ctx, exp: dict) -> bool:
     if exp["status"] != "running":
         return False
@@ -478,10 +505,11 @@ def _free_slots(ctx: Ctx, settings: dict, running: list[dict], exp: dict) -> dic
     if any(e["backend"] == "distributed" for e in running):
         be["workers"] = False  # every participant is busy with the sharded experiment
     elif be.get("workers"):
-        queued = sum(1 for e in running if e["backend"] == "worker")
-        cap = C.worker_capacity(ctx, _need_bytes(ctx, exp), settings.get("worker_ids"))
-        if cap["usable"] <= queued:
+        free = C.available_workers(ctx, _need_bytes(ctx, exp), settings.get("worker_ids"))
+        if not free:
             be["workers"] = False
+        elif any(e["backend"] == "local" for e in running) and not any(w["ratio"] >= C.MIN_PARALLEL for w in free):
+            be["workers"] = False  # every free worker is too slow: running it later here finishes sooner
     if not running:
         return {"settings": settings}
     if not (be.get("local_cpu") or be.get("local_gpu") or be.get("workers")):
@@ -508,11 +536,14 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict, parallel: bool = 
     from moth_server.evolution import distributed as D
 
     need = _need_bytes(ctx, exp)
-    masked = not B.worker_training_supported(ctx, exp)
-    if masked:
+    private = not B.worker_training_supported(ctx, exp, masks=True)  # never leaves MOTH Cloud
+    token_only = private or not B.worker_training_supported(ctx, exp)  # sharded rounds carry no masks
+    if private:
         settings = {**settings, "backends": {**settings["backends"], "workers": False}}
-    choice, reasons = C.choose_backend(ctx, settings, need)
+    # conversation data (assistant-only loss mask) can go to workers that apply the mask
+    choice, reasons = C.choose_backend(ctx, settings, need, None if not token_only or private else B.MASK_WORKER_VERSION)
     ok, n = D.available(ctx, settings, need)
+    ok = ok and not token_only
     # Sharding one experiment across all workers only pays when nothing else could use them.
     if ok and not parallel and not (choice and choice.get("device", "").startswith("cuda")) and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
         st = D.start(ctx, exp, settings, need)
@@ -527,8 +558,8 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict, parallel: bool = 
                   cycle_id=cyc["id"], experiment_id=exp["id"], participants=n)
         return
     if choice is None:  # a paused experiment keeps its checkpoint and stays "paused"
-        if masked:
-            reasons.append("assistant-masked data requires a local backend; token-only workers are incompatible")
+        if private:
+            reasons.append("this experiment uses private training data, which never leaves MOTH Cloud")
         _waiting(ctx, cyc, exp, reasons, "paused" if exp["status"] == "paused" else "waiting")
         return
     if choice["backend"] == "local":
@@ -610,16 +641,26 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
             MEM.update_experiment(ctx, exp["id"], status="failed", error="the worker job disappeared", finished_at=now())
             return
         if j["status"] == "completed" and (rd / "result.json").exists():
-            _finish_training(ctx, cyc, exp, json.loads((rd / "result.json").read_text()),
-                             max(0.0, (j["updated_at"] or now()) - (exp["started_at"] or now())))
+            result = json.loads((rd / "result.json").read_text())
+            began = float((exp["resources"] or {}).get("leased_at") or exp["started_at"] or now())
+            seconds = max(0.0, (j["updated_at"] or now()) - began)  # end to end: download, train, upload
+            if result.get("ok") and j.get("worker_id"):
+                C.record_throughput(ctx, f"worker:{j['worker_id']}", result.get("tokens"), seconds)
+            _finish_training(ctx, cyc, exp, result, seconds)
         elif j["status"] in ("failed", "cancelled"):
             MEM.update_experiment(ctx, exp["id"], status="failed", error=f"worker job {j['status']}: {j['error']}",
                                   finished_at=now(), attempts=j["attempts"])
             MEM.event(ctx, "experiment.failed", f"Experiment #{exp['id']}: the worker job failed: {j['error']}",
                       level="error", cycle_id=cyc["id"], experiment_id=exp["id"])
+        elif j["status"] == "queued" and now() - float(j["updated_at"] or now()) > REASSIGN_SECONDS \
+                and _reassign_to_cloud(ctx, cyc, exp, j, settings):
+            return
         else:
-            MEM.update_experiment(ctx, exp["id"], progress=j["progress"], worker_id=j["worker_id"])
             leased = j["status"] == "leased"
+            res_ = exp["resources"] or {}
+            if leased and res_.get("leased_by") != j["worker_id"]:  # (re)assigned: the clock starts now
+                res_ = {**res_, "leased_at": now(), "leased_by": j["worker_id"]}
+            MEM.update_experiment(ctx, exp["id"], progress=j["progress"], worker_id=j["worker_id"], resources=res_)
             MEM.update_cycle(ctx, cyc["id"], status="training" if leased else "waiting_for_compute",
                              result={**(cyc["result"] or {}),
                                      "waiting_reason": None if leased else "waiting for a MOTH worker to take the job"})
@@ -668,6 +709,9 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
             MEM.update_experiment(ctx, exp["id"], status="paused", compute_seconds=float(exp["compute_seconds"] or 0)
                                   + float(result.get("seconds") or 0))
             return
+        if result.get("ok") and not result.get("resumed"):  # a whole run on this server: its real speed
+            C.record_throughput(ctx, f"local:{(exp['resources'] or {}).get('device', 'cpu').split(':')[0]}",
+                                result.get("tokens"), result.get("seconds"))
         _finish_training(ctx, cyc, exp, result, float(result.get("seconds") or elapsed))
     else:  # the process ended without a result (killed, server restart, out of memory)
         MEM.update_experiment(ctx, exp["id"], status="paused",

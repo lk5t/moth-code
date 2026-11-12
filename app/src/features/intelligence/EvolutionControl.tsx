@@ -36,10 +36,12 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState<string | null>(null), [steps, setSteps] = useState<string[]>([]);
   useEffect(() => { if (!owner) return; const t = setInterval(() => { if (!document.hidden) void reload(); }, 5000); return () => clearInterval(t); }, [owner, reload]);
 
-  const act = async (what: "start" | "pause") => {
+  const act = async (what: "start" | "pause" | "resume") => {
     setBusy(true); setNotice(null); setSteps([]);
     try {
-      const r = await secure(() => serverApi<Any>(`${path}/${what}`, { method: "POST", timeoutMs: 600000 }));
+      // Resume continues exactly where Evolution was paused; Start (first time or when off) also chooses data.
+      const url = what === "resume" ? "/v1/admin/evolution/resume" : `${path}/${what}`;
+      const r = await secure(() => serverApi<Any>(url, { method: "POST", timeoutMs: 600000 }));
       if (what === "start") setSteps(r.steps ?? []);
       refreshCloudProgress(true); await reload();
     } catch (e) { setNotice((e as Error).message); }
@@ -62,7 +64,9 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
         </div>
         {owner && (running
           ? <Button disabled={busy} variant="secondary" onClick={() => void act("pause")}><Pause className="size-4" />Pause Evolution</Button>
-          : <Button disabled={busy || !data} onClick={() => void act("start")}><Play className="size-4" />{busy ? "Starting…" : "Start Evolution"}</Button>)}
+          : stage === "paused"
+            ? <Button disabled={busy || !data} onClick={() => void act("resume")}><Play className="size-4" />{busy ? "Resuming…" : "Resume Evolution"}</Button>
+            : <Button disabled={busy || !data} onClick={() => void act("start")}><Play className="size-4" />{busy ? "Starting…" : "Start Evolution"}</Button>)}
       </div>
       {stage === "genesis" && owner && <p className="text-xs text-muted">Start Evolution creates a small, untrained model (99,648 parameters), selects trusted, licensed training data — coding first — prepares it and trains continuously within your resource budget. It starts knowing nothing; every improvement is measured on data it never trained on before it is kept.</p>}
       {running && data?.next_cycle_at && data.next_cycle_at * 1000 > Date.now() && !["training", "evaluating", "planning", "deploying", "monitoring", "waiting_for_compute"].includes(stage) && <p className="text-xs text-faint">The last round failed; retrying {when(data.next_cycle_at)}.</p>}
@@ -81,7 +85,27 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
 }
 
 
-const TASK: Record<string, string> = { evolve_train: "training an experiment", dist_shard: "training a shard", eval_loss: "evaluating a candidate", train_round: "community training" };
+const TASK: Record<string, string> = { evolve_train: "training", dist_shard: "training a shard of", eval_loss: "evaluating a candidate", train_round: "community training" };
+const STATE: Record<string, string> = { working: "working", idle: "online, idle", unavailable: "unavailable" };
+const share = (v: number | null | undefined) => (typeof v === "number" ? `${Math.round(v * 100)}%` : "—");
+const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(0)}k` : `${n}`);
+
+/** MOTH Cloud and every worker as one computing network: task, load, speed and real contributions. */
+function Machines({ server, workers }: { server?: Any; workers: Any[] }) {
+  const rows = [...(server ? [server] : []), ...workers.filter((w) => w.online || w.last_error)];
+  const offline = workers.filter((w) => !w.online && !w.last_error).length;
+  if (!rows.length) return null;
+  return <section aria-label="Computing network" className="rounded-lg border border-border bg-bg px-3 py-2">
+    <p className="mb-1 text-faint">Computing network{offline ? ` · ${offline} worker(s) offline` : ""}</p>
+    <ul className="space-y-1">{rows.map((m) => <li key={m.id} className="grid gap-x-3 border-b border-border py-1 last:border-0 sm:grid-cols-[1.4fr_1.6fr_1fr_1fr]">
+      <span className="text-fg">{m.id === "cloud" ? m.name : `Worker #${m.id} · ${m.name}`} <span className={m.state === "working" ? "text-accent" : m.state === "unavailable" ? "text-warning" : "text-faint"}>· {STATE[m.state] ?? m.state}</span> <span className="text-faint">· {m.compute}{m.speed ? ` · ${m.speed.ratio.toFixed(1)}× this server's speed (${m.speed.basis})` : ""}{m.throughput ? ` · ${Math.round(m.throughput).toLocaleString()} tokens/s measured` : ""}</span>
+        {m.last_error && <span className="block text-warning">Last problem: {m.last_error}</span>}</span>
+      <span className="text-muted">{m.paused ? "paused by its owner" : m.task ? `${TASK[m.task.kind] ?? m.task.kind}${m.task.experiment ? ` experiment #${m.task.experiment}` : ""}${typeof m.task.progress === "number" ? ` · ${Math.round(m.task.progress * 100)}%` : ""}` : "idle"}</span>
+      <span className="text-faint">CPU {share(m.utilization?.cpu)} · memory {share(m.utilization?.memory)}</span>
+      <span className="text-faint">{m.contribution?.runs ? `${m.contribution.runs} run(s) · ${tokens(m.contribution.tokens)} tokens trained` : "no finished runs yet"}</span>
+    </li>)}</ul>
+  </section>;
+}
 
 /** Objective, versions, workers and their tasks, and the current bottleneck — all from the server. */
 function CommandStrip({ data }: { data: Any }) {
@@ -97,10 +121,7 @@ function CommandStrip({ data }: { data: Any }) {
       <div className="rounded-lg border border-border bg-bg px-3 py-2"><dt className="text-faint">Workers</dt>
         <dd className="mt-0.5 text-fg">{workers.length ? `${online.length} of ${workers.length} online · ${online.filter((w) => w.task).length} busy` : "None enrolled — MOTH Cloud trains alone"}</dd></div>
     </dl>
-    {online.length > 0 && <details><summary className="cursor-pointer text-muted hover:text-fg">Worker tasks</summary>
-      <ul className="mt-1 space-y-0.5">{online.map((w) => <li key={w.id} className="flex flex-wrap justify-between gap-2 border-b border-border py-1">
-        <span className="text-fg">{w.name} <span className="text-faint">· {w.compute}{w.gflops ? ` · ${Math.round(w.gflops)} GFLOPS measured` : ""}</span></span>
-        <span className="text-muted">{w.paused ? "paused by its owner" : w.task ? `${TASK[w.task.kind] ?? w.task.kind}${typeof w.task.progress === "number" ? ` · ${Math.round(w.task.progress * 100)}%` : ""}` : "idle"}</span></li>)}</ul></details>}
+    <Machines server={data.server} workers={workers} />
     {data.bottleneck && <p role="status" className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-warning">Holding back progress: {data.bottleneck}</p>}
   </div>;
 }

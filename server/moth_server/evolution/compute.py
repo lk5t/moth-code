@@ -138,7 +138,99 @@ def in_quiet_hours(settings: dict) -> bool:
     return start <= h < end if start <= end else (h >= start or h < end)
 
 
-def choose_backend(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[dict | None, list[str]]:
+# ---- speed-aware placement (0.6.3) -----------------------------------------------------------------------
+NETWORK_FACTOR = 0.8   # until a worker's real throughput is measured, assume transfers cost it 20 %
+PREFER_WORKER = 0.8    # a worker at least this fast (relative to this server) takes work first: MOTH Cloud stays responsive
+MIN_PARALLEL = 0.5     # slower than this, a parallel experiment would make the cycle longer than running it here later
+
+
+def throughput(ctx: Ctx) -> dict[str, float]:
+    """Measured end-to-end training throughput (tokens/s, including downloads and uploads for workers),
+    per ``local:<device>`` and ``worker:<id>``."""
+    return ctx.db.get_config("compute_throughput", {}) or {}
+
+
+def record_throughput(ctx: Ctx, key: str, tokens: float | None, seconds: float | None) -> None:
+    if not tokens or not seconds or seconds <= 0:
+        return
+    tp = throughput(ctx)
+    new = float(tokens) / float(seconds)
+    tp[key] = round(new if key not in tp else 0.5 * tp[key] + 0.5 * new, 3)  # recent runs count most
+    ctx.db.set_config("compute_throughput", tp)
+
+
+def local_gflops(ctx: Ctx) -> float | None:
+    """This server's measured CPU matrix-multiply speed (the same benchmark workers run), cached a day."""
+    cached = ctx.db.get_config("local_benchmark", {}) or {}
+    if cached.get("gflops") and time.time() - float(cached.get("at") or 0) < 86400:
+        return float(cached["gflops"])
+    try:
+        import torch
+
+        n, runs = 512, 8
+        a, b = torch.randn(n, n), torch.randn(n, n)
+        torch.mm(a, b)
+        t0 = time.perf_counter()
+        for _ in range(runs):
+            torch.mm(a, b)
+        g = round(2 * n ** 3 * runs / (time.perf_counter() - t0) / 1e9, 1)
+    except Exception:  # noqa: BLE001
+        return None
+    ctx.db.set_config("local_benchmark", {"gflops": g, "at": time.time()})
+    return g
+
+
+def available_workers(ctx: Ctx, need_bytes: int = 0, worker_ids: list[int] | None = None,
+                      min_version: str | None = None) -> list[dict[str, Any]]:
+    """Workers that could start this job now: compatible (version), not busy with another job, and not
+    already spoken for by jobs still waiting in the queue (those go to the fastest free workers first)."""
+    from moth_server.db import training_jobs
+    from moth_server.training import version_at_least
+
+    jobs = ctx.db.all(select(training_jobs.c.status, training_jobs.c.worker_id, training_jobs.c.kind).where(
+        training_jobs.c.status.in_(("queued", "leased"))))
+    busy = {j["worker_id"] for j in jobs if j["status"] == "leased" and j["worker_id"]}
+    queued = sum(1 for j in jobs if j["status"] == "queued" and j["kind"] in ("evolve_train", "dist_shard"))
+    versions = {w["id"]: w.get("version") for w in ctx.db.all(select(workers.c.id, workers.c.version))}
+    free = [w for w in worker_speeds(ctx, need_bytes, worker_ids) if w["id"] not in busy
+            and (not min_version or version_at_least(versions.get(w["id"]), min_version))]
+    return free[queued:]
+
+
+def worker_speeds(ctx: Ctx, need_bytes: int = 0, worker_ids: list[int] | None = None) -> list[dict[str, Any]]:
+    """Online workers that can hold the job, with their speed relative to this server's CPU: measured
+    throughput when both have run jobs, else the benchmark with a network discount, else unknown
+    (an unmeasured worker is tried, so its first job measures it)."""
+    from moth_server.training import capacity_bytes, worker_allowed
+
+    rows = ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
+    if worker_ids is not None:
+        rows = [w for w in rows if w["id"] in worker_ids]
+    tp, lg = throughput(ctx), None
+    out = []
+    for w in rows:
+        if not (worker_allowed(ctx, w) and w["status"] == "online" and not w["paused"]
+                and (w.get("last_heartbeat_at") or 0) >= time.time() - 180):
+            continue
+        hw = json.loads(w["hardware"] or "{}")
+        if capacity_bytes(hw, json.loads(w["limits"] or "{}")) < need_bytes:
+            continue
+        gpu = hw.get("compute") == "gpu" or (hw.get("compute") is None and bool(hw.get("gpus")))
+        if tp.get(f"worker:{w['id']}") and tp.get("local:cpu"):
+            ratio, basis = tp[f"worker:{w['id']}"] / tp["local:cpu"], "measured"
+        else:
+            g = (hw.get("benchmark") or {}).get("gflops")
+            lg = lg if lg is not None else local_gflops(ctx)
+            if g and lg:
+                ratio, basis = float(g) * NETWORK_FACTOR / lg, "benchmark"
+            else:
+                ratio, basis = 1.0, "unmeasured"
+        out.append({"id": w["id"], "name": w["name"], "gpu": gpu, "ratio": round(ratio, 3), "basis": basis})
+    return sorted(out, key=lambda x: -x["ratio"])
+
+
+def choose_backend(ctx: Ctx, settings: dict, need_bytes: int,
+                   min_worker_version: str | None = None) -> tuple[dict | None, list[str]]:
     """Where an experiment can train now: {"backend": "local"|"worker", "device": ...} or None + reasons."""
     reasons: list[str] = []
     be = settings["backends"]
@@ -151,27 +243,40 @@ def choose_backend(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[dict | No
         reasons.append(f"the local GPU does not have {need_bytes / GB:.1f} GB of free memory for training")
     elif be.get("local_gpu"):
         reasons.append("this server has no GPU")
+    free: list[dict[str, Any]] = []
     if be.get("workers"):
         cap = worker_capacity(ctx, need_bytes, settings.get("worker_ids"))
-        if cap["usable_gpu"]:
-            return {"backend": "worker", "device": "worker"}, []
+        free = available_workers(ctx, need_bytes, settings.get("worker_ids"), min_worker_version)
+        if any(w["gpu"] for w in free):
+            return {"backend": "worker", "device": "worker", "worker": next(w for w in free if w["gpu"])}, []
         if not cap["total"]:
             reasons.append("no MOTH workers are enrolled")
         elif not cap["online"]:
             reasons.append("no MOTH worker is online")
-        else:
+        elif not cap["usable"]:
             reasons.append(f"no online MOTH worker has {need_bytes / GB:.1f} GB of memory for this job")
+        elif not free:
+            reasons.append("every suitable MOTH worker is busy" + (f" or older than {min_worker_version} (this "
+                           "job's conversation data needs a worker that applies its loss mask)" if min_worker_version else ""))
+    local_fits = False
     if be.get("local_cpu"):
         mem = hw["memory"] or {}
         reserve = float(settings["limits"]["min_free_memory_gb"]) * GB
-        if mem and mem.get("available", 0) - reserve >= need_bytes:
+        local_fits = bool(mem and mem.get("available", 0) - reserve >= need_bytes)
+    if free:
+        # Prefer a suitable external worker: it keeps MOTH Cloud's CPU free for answering and coordination.
+        best = free[0]
+        if not local_fits or best["ratio"] >= PREFER_WORKER:
+            return {"backend": "worker", "device": "worker", "worker": best}, []
+    if be.get("local_cpu"):
+        if local_fits:
             return {"backend": "local", "device": "cpu"}, []
         reasons.append(f"not enough free memory for CPU training (needs {need_bytes / GB:.1f} GB plus the "
                        f"{reserve / GB:.1f} GB reserve)")
     else:
         reasons.append("CPU training on this server is turned off (Evolution → Settings → Compute)")
-    if be.get("workers") and cap["usable"]:
-        return {"backend": "worker", "device": "worker"}, []
+    if free:
+        return {"backend": "worker", "device": "worker", "worker": free[0]}, []
     return None, reasons
 
 

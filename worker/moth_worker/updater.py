@@ -67,6 +67,8 @@ def reexec_into_current(home: Path, argv: list[str]) -> None:
     if not d or not v or _vt(v) <= _vt(__version__):
         return
     env = {**os.environ, "MOTH_WORKER_REEXEC": "1",
+           # remembered so a later restart can choose the newest version again (see restart)
+           "MOTH_WORKER_BASE_PYTHONPATH": os.environ.get("MOTH_WORKER_BASE_PYTHONPATH", os.environ.get("PYTHONPATH", "")),
            "PYTHONPATH": os.pathsep.join([str(d / "worker"), str(d / "backend"), os.environ.get("PYTHONPATH", "")])}
     os.execve(sys.executable, [sys.executable, "-m", "moth_worker.cli", *argv], env)
 
@@ -172,5 +174,19 @@ def confirm_healthy(home: Path) -> dict | None:
     return pending
 
 
+def restart_env() -> dict[str, str]:
+    """The environment for a restart: as before the first re-exec, so the newest installed version is
+    chosen again. Inheriting MOTH_WORKER_REEXEC and the previous version's PYTHONPATH made a second update
+    start the old version again, which re-installed the same update and restarted — in a loop."""
+    env = dict(os.environ)
+    if env.pop("MOTH_WORKER_REEXEC", None) is not None:
+        base = env.pop("MOTH_WORKER_BASE_PYTHONPATH", "")
+        if base:
+            env["PYTHONPATH"] = base
+        else:
+            env.pop("PYTHONPATH", None)
+    return env
+
+
 def restart(argv: list[str]) -> None:
-    os.execv(sys.executable, [sys.executable, "-m", "moth_worker.cli", *argv])
+    os.execve(sys.executable, [sys.executable, "-m", "moth_worker.cli", *argv], restart_env())

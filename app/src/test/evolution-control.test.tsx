@@ -33,13 +33,14 @@ it("shows the reasons for plan changes and never offers controls to other users"
 it("shows workers with their tasks, versions and the bottleneck from the server", async () => {
   m.api.mockResolvedValue({ stage: "training", running: true, doing: "Training (cycle #3).", objective: "weakness-tilted curriculum (stage foundation)",
     parallel: 2, queued_jobs: 1, versions: { active: 7, previous: 6 }, bottleneck: "1 job(s) wait for a MOTH worker, but none is online.",
-    workers: [{ id: 1, name: "Lab GPU", online: true, paused: false, compute: "GPU", gflops: 812.4, task: { kind: "evolve_train", progress: 0.4 } },
+    workers: [{ id: 1, name: "Lab GPU", online: true, paused: false, state: "working", compute: "GPU", gflops: 812.4, task: { kind: "evolve_train", progress: 0.4 } },
               { id: 2, name: "Laptop", online: false, paused: false, compute: "CPU", task: null }] });
   render(<EvolutionControl progress={{ current: { name: "MOTH 0.02" }, training: {} }} />);
   expect(await screen.findByText(/Active v7 · previous v6 kept for rollback/)).toBeInTheDocument();
   expect(screen.getByText("2 running · 1 waiting for a worker")).toBeInTheDocument();
   expect(screen.getByText("1 of 2 online · 1 busy")).toBeInTheDocument();
-  expect(screen.getByText("training an experiment · 40%")).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Computing network" })).toHaveTextContent("Worker #1 · Lab GPU · working · GPU");
+  expect(screen.getByRole("region", { name: "Computing network" })).toHaveTextContent("training · 40%");
   expect(screen.getByText(/Holding back progress: 1 job\(s\) wait/)).toBeInTheDocument();
   expect(screen.getByText(/weakness-tilted curriculum/)).toBeInTheDocument();
 });
@@ -63,4 +64,35 @@ it("reports the intelligence check, real size and growth outcomes exactly as the
   expect(screen.getByText(/loss 2\.123 · improving/)).toBeInTheDocument();
   expect(screen.getByText(/fits this server · fits 1 MOTH worker\(s\) · training time not measured yet/)).toBeInTheDocument();
   expect(screen.getByText(/Experiment #31: 5,184,768 → 6,221,568 parameters \(counted from weights\) · Larger model did not improve performance enough\. Kept the current version\./)).toBeInTheDocument();
+});
+
+
+it("resumes a paused Evolution without choosing new data, and shows MOTH Cloud and workers as one network", async () => {
+  m.api.mockImplementation(async (path: string) => path === "/v1/admin/evolution/resume" ? { paused: false } : {
+    stage: "paused", running: false, doing: "Evolution is paused.",
+    server: { id: "cloud", name: "MOTH Cloud (this server)", online: true, compute: "CPU", utilization: { cpu: 0.42, memory: 0.31 },
+      task: { kind: "evolve_train", experiment: 12, progress: 0.5 }, contribution: { runs: 3, tokens: 1_200_000 } },
+    workers: [{ id: 8, name: "linux-box", online: true, paused: false, state: "working", throughput: 23603.4, compute: "CPU", speed: { ratio: 1.3, basis: "measured" },
+      utilization: { cpu: 0.9, memory: null }, task: { kind: "evolve_train", experiment: 13, progress: 0.25 }, contribution: { runs: 2, tokens: 800_000 } },
+      { id: 9, name: "laptop", online: false, paused: false, state: "unavailable", compute: "CPU", contribution: { runs: 0, tokens: 0 } },
+      { id: 10, name: "old-pc", online: false, paused: false, state: "unavailable", compute: "CPU", last_error: "worker stopped reporting; job requeued", contribution: { runs: 0, tokens: 0 } }] });
+  render(<EvolutionControl progress={{ current: { name: "MOTH 0.03" }, training: {} }} />);
+  const net = await screen.findByRole("region", { name: "Computing network" });
+  expect(net).toHaveTextContent("Computing network · 1 worker(s) offline");
+  expect(net).toHaveTextContent("MOTH Cloud (this server)");
+  expect(net).toHaveTextContent("training experiment #12 · 50%");
+  expect(net).toHaveTextContent("CPU 42% · memory 31%");
+  expect(net).toHaveTextContent("3 run(s) · 1.2M tokens trained");
+  expect(net).toHaveTextContent("Worker #8 · linux-box");
+  expect(net).toHaveTextContent("1.3× this server's speed (measured)");
+  expect(net).toHaveTextContent("training experiment #13 · 25%");
+  expect(net).toHaveTextContent("CPU 90% · memory —");
+  expect(net).not.toHaveTextContent("laptop");
+  expect(net).toHaveTextContent("Worker #8 · linux-box · working");
+  expect(net).toHaveTextContent("23,603 tokens/s measured");
+  expect(net).toHaveTextContent("Worker #10 · old-pc · unavailable");
+  expect(net).toHaveTextContent("Last problem: worker stopped reporting; job requeued");
+  fireEvent.click(screen.getByRole("button", { name: "Resume Evolution" }));
+  await waitFor(() => expect(m.api).toHaveBeenCalledWith("/v1/admin/evolution/resume", { method: "POST", timeoutMs: 600000 }));
+  expect(m.api).not.toHaveBeenCalledWith("/v1/admin/evolution/autopilot/start", expect.anything());
 });

@@ -128,9 +128,10 @@ def main(installer):
         ui.click('Contribute this computer')
         wait(lambda: not participant_setting()['enabled'], 'participant disable persisted')
         ui.click('AI', control_type='Button')
-        ui.click('AI Settings', control_type='TabItem')
-        ui.click('Manual training controls')  # the explicit, existing control; Start Evolution would also fetch data
-        ui.click('Resume MOTH training')
+        ui.click('Evolution', control_type='TabItem')
+        # Evolution is the only training control (0.6.3): Resume continues the paused engine, which starts a
+        # cycle on the prepared data by itself (Start Evolution would also choose and download catalog data)
+        ui.click('Resume Evolution')
         print('::notice title=GENESIS native stage::Cloud worker toggle and actual desktop enrollment passed; waiting for CPU progress', flush=True)
         cycle = wait(lambda: api('/v1/admin/evolution/status').get('cycle'), 'eligible cycle created by UI', timeout=120)
         wait(lambda: any(e.get('progress', {}).get('step', 0) > 0 or e.get('candidate_version')

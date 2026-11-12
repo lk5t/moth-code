@@ -130,6 +130,9 @@ def _clean_hw(hw: dict[str, Any]) -> dict[str, Any]:
 
             "machine_id": s(hw.get("machine_id"), 64),
             "client": s(hw.get("client"), 24),  # "moth-code" when MOTH Code contributes its own computer
+            # current load as the worker's OS reports it (0..1; None = not reported), shown in AI → Evolution
+            "utilization": {k: (min(1.0, max(0.0, num(u.get(k)))) if num(u.get(k)) is not None else None)
+                            for k in ("cpu", "memory")} if isinstance(u := hw.get("utilization"), dict) else None,
             "benchmark": {"device": s(bench.get("device"), 8), "gflops": num(bench.get("gflops"))} if bench else None}
 
 
@@ -218,6 +221,13 @@ def ensure_jobs(ctx: Ctx) -> None:
                                                     created_at=now(), updated_at=now()))
 
 
+def version_at_least(version: str | None, minimum: str) -> bool:
+    try:
+        return tuple(int(x) for x in str(version).split(".")[:3]) >= tuple(int(x) for x in minimum.split(".")[:3])
+    except ValueError:
+        return False
+
+
 def worker_allowed(ctx: Ctx, worker: dict) -> bool:
     hw = json.loads(worker.get('hardware') or '{}')
     settings = ctx.db.get_config('evolution_settings', {}) or {}
@@ -233,7 +243,7 @@ def job_shareable(ctx: Ctx, job: dict) -> bool:
     if spec.get('evolution_experiment'):
         from moth_server.evolution import memory as MEM, backends as B
         exp = MEM.experiment(ctx, int(spec['evolution_experiment']))
-        return bool(exp and B.worker_training_supported(ctx, exp))
+        return bool(exp and B.worker_training_supported(ctx, exp, masks=job.get('kind') == 'evolve_train'))
     return True
 
 
@@ -304,6 +314,8 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
                 spec = json.loads(cand["spec"])
                 if spec.get("worker_ids") is not None and worker['id'] not in spec['worker_ids']:
                     continue
+                if spec.get("min_worker_version") and not version_at_least(worker.get("version"), spec["min_worker_version"]):
+                    continue  # e.g. a job with a loss mask: older workers would ignore it
                 if not fits(hw, spec, json.loads(worker['limits'] or '{}')):
                     continue
                 if hw.get("compute") != "gpu" and spec.get("prefer_gpu") and t - cand["created_at"] < GPU_PREFERENCE_SECONDS:

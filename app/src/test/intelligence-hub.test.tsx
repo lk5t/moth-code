@@ -53,8 +53,8 @@ describe("Intelligence consolidation", () => {
     expect(appStore.getState().intelligenceTab).toBe("data");
     fireEvent.mouseDown(screen.getByRole("tab", { name: "AI Settings" }), { button: 0 });
     await screen.findByText("Growth approval and rollback controls");
-    fireEvent.click(screen.getByText("Manual training controls"));
-    await screen.findByRole("button", { name: "Train MOTH now" });
+    expect(screen.queryByText("Manual training controls")).toBeNull();  // Evolution is the only training control
+    expect(screen.queryByRole("button", { name: "Train MOTH now" })).toBeNull();
   });
   it("never animates a training claim without reported progress", async () => {
     const props = { progress: { ...progress, training: { cycle: { status: "training" } } }, resources: { training: { running: [{ progress: { step: 0 } }] } } };

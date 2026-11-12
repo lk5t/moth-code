@@ -300,6 +300,18 @@ def job_shard(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depends
     return FileResponse(p, media_type="application/octet-stream")
 
 
+@router.get("/v1/worker/jobs/{job_id}/mask")
+def job_mask(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
+    """The loss mask of an evolution job's shard (1 = learn this token)."""
+    j = _job(ctx, w, job_id)
+    spec = json.loads(j["spec"])
+    if j["kind"] != "evolve_train" or not spec.get("mask_sha256"):
+        raise HTTPException(404, "this job has no loss mask")
+    from moth_server.evolution.backends import job_mask as mask_path
+
+    return FileResponse(mask_path(ctx, spec), media_type="application/octet-stream")
+
+
 @router.post("/v1/worker/jobs/{job_id}/progress")
 def job_progress(job_id: int, body: ProgressIn, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
     _job(ctx, w, job_id)

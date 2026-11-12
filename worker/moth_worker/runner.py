@@ -26,6 +26,21 @@ class Stop(Exception):
     pass
 
 
+def utilization(hw: dict[str, Any]) -> dict[str, float | None]:
+    """Current load as the OS reports it (shown in AI → Evolution); unknown values stay None."""
+    import os
+
+    cpu = None
+    try:
+        cpu = round(min(1.0, os.getloadavg()[0] / max(1, int(hw.get("cpu_count") or os.cpu_count() or 1))), 3)
+    except (AttributeError, OSError):  # Windows has no load average
+        pass
+    mem = None
+    if hw.get("ram_gb") and hw.get("ram_available_gb") is not None:
+        mem = round(max(0.0, 1 - float(hw["ram_available_gb"]) / float(hw["ram_gb"])), 3)
+    return {"cpu": cpu, "memory": mem}
+
+
 class WorkerRunner:
     def __init__(self, client: WorkerClient, state_dir: Path, allow_cpu: bool = False,
                  log: Callable[[str], None] = print, heartbeat_seconds: float = 30.0,
@@ -61,7 +76,8 @@ class WorkerRunner:
             if self.device is None:
                 self.device, self.bench = measured_device(self.state_dir, hw)
         # Advertise the selected supported backend, not merely an installed graphics card.
-        return {**hw, "compute": "gpu" if self.device == "cuda" else "cpu", "benchmark": self.bench}
+        return {**hw, "compute": "gpu" if self.device == "cuda" else "cpu", "benchmark": self.bench,
+                "utilization": utilization(hw)}
 
     # ---- heartbeat -----------------------------------------------------------------------
     def beat(self) -> None:
@@ -254,6 +270,11 @@ class WorkerRunner:
             weights = self.client.download(jid, "weights", spec["base_sha256"])
             shard = self.client.download(jid, "shard", spec["shard_sha256"])
             tokens = np.frombuffer(shard, dtype=np.uint32)
+            # conversation data learns only the assistant's replies: apply the job's loss mask (0.6.3)
+            loss_mask = (np.frombuffer(self.client.download(jid, "mask", spec["mask_sha256"]), dtype=np.uint8)
+                         if spec.get("mask_sha256") else None)
+            if loss_mask is not None and len(loss_mask) != len(tokens):
+                raise RuntimeError("the job's loss mask does not match its shard")
             device = self.device or ("cuda" if compute_kind(detect()) == "gpu" else "cpu")
             limits = {**job.get("limits", {}), **self.limits}
             if device == "cpu":  # leave a core for the system unless the owner set a limit
@@ -289,7 +310,8 @@ class WorkerRunner:
                     saved_rng = ck.get("rng")
                     self.log(f"job {jid}: resuming from step {start_step}")
             held = tokens[-(4 * 257):] if len(tokens) > 4 * 257 * 4 else tokens
-            loss_before = batch_loss(_base_model(base, spec, device), held, device)
+            held_mask = None if loss_mask is None else loss_mask[len(tokens) - len(held):]
+            loss_before = batch_loss(_base_model(base, spec, device), held, device, mask=held_mask)
             seq = min(train["seq_len"], model.cfg.max_seq_len, len(tokens) - 2)
             duty = float(limits.get("duty_cycle") or 1.0)
             model.train()
@@ -297,7 +319,9 @@ class WorkerRunner:
                 starts = torch.randint(0, len(tokens) - seq - 1, (batch,), generator=rng or gen).tolist()
                 x = torch.from_numpy(np.stack([tokens[s:s + seq] for s in starts]).astype(np.int64)).to(device)
                 y = torch.from_numpy(np.stack([tokens[s + 1:s + seq + 1] for s in starts]).astype(np.int64)).to(device)
-                return x, y, None
+                m = (torch.from_numpy(np.stack([loss_mask[s + 1:s + seq + 1] for s in starts]).astype(np.uint8)).to(device)
+                     if loss_mask is not None else None)  # aligned with the targets, as in local training
+                return x, y, m
 
             if tuning is None and train.get("batch_autotune", True):
                 from moth.training.autotune import tune_batch
@@ -341,8 +365,8 @@ class WorkerRunner:
                 t0 = time.time()
                 train_loss = 0.0
                 for _ in range(accumulation):
-                    x, y, _ = sample(micro)
-                    _, loss = model(x, y)
+                    x, y, m = sample(micro)
+                    _, loss = model(x, y, loss_mask=m)
                     if not torch.isfinite(loss):
                         raise RuntimeError("training diverged (non-finite loss)")
                     (loss / accumulation).backward()
@@ -361,7 +385,7 @@ class WorkerRunner:
                 if duty < 1.0:
                     time.sleep((time.time() - t0) * (1 / duty - 1))
             checkpoint()  # an upload failure must not discard completed optimization steps
-            loss_after = batch_loss(model, held, device)
+            loss_after = batch_loss(model, held, device, mask=held_mask)
             if not (math.isfinite(loss_before) and math.isfinite(loss_after)):
                 raise RuntimeError("non-finite evaluation loss")
             new = model.state_dict()

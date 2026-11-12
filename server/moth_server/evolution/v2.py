@@ -124,15 +124,19 @@ def _replay_source(ctx, base, source, builds, approved):
             "domain_tokens": {d: v["tokens"]["train"] for d, v in mixture["domains"].items()}}
 
 
-def write_mixture_shard(mix_path: str, weights: dict[str, float], n_tokens: int, seed: int, dest: Path) -> str:
-    """A worker's training shard (uint32 tokens) sampled from the mixture's domains by weight."""
+def write_mixture_shard(mix_path: str, weights: dict[str, float], n_tokens: int, seed: int, dest: Path,
+                        mask_dest: Path | None = None) -> str:
+    """A worker's training shard (uint32 tokens) sampled from the mixture's domains by weight.
+
+    With ``mask_dest``, the matching uint8 loss mask (1 = learn this token; conversation data learns
+    only the assistant's replies) is written alongside — only when some token is masked out."""
     import hashlib
 
     import numpy as np
 
     rng = np.random.default_rng(seed)
     mix = json.loads((Path(mix_path) / "mixture.json").read_text())
-    parts = []
+    parts, mparts = [], []
     names = [d for d in weights if d in mix["domains"] and weights[d] > 0]
     probs = np.array([weights[d] for d in names], dtype=np.float64)
     probs /= probs.sum()
@@ -143,13 +147,25 @@ def write_mixture_shard(mix_path: str, weights: dict[str, float], n_tokens: int,
         toks = np.memmap(Path(mix_path) / mix["domains"][d]["dir"] / "train.bin", dtype=np.dtype(meta["dtype"]), mode="r")
         if len(toks) <= window + 1:
             continue
+        mpath = Path(mix_path) / mix["domains"][d]["dir"] / "train.mask"
+        mask = np.memmap(mpath, dtype=np.uint8, mode="r") if mask_dest is not None and mpath.exists() else None
         k = max(1, per[d] // window)
         for s in rng.integers(0, len(toks) - window - 1, size=k):
             parts.append(np.asarray(toks[s:s + window], dtype=np.uint32))
-    rng.shuffle(parts)
+            mparts.append(np.asarray(mask[s:s + window], dtype=np.uint8) if mask is not None
+                          else np.ones(window, dtype=np.uint8))
+    order = rng.permutation(len(parts))  # tokens and masks stay aligned
+    parts = [parts[i] for i in order]
+    mparts = [mparts[i] for i in order]
     out = np.concatenate(parts) if parts else np.zeros(0, dtype=np.uint32)
     dest.parent.mkdir(parents=True, exist_ok=True)
     out.tofile(dest)
+    if mask_dest is not None:
+        m = np.concatenate(mparts) if mparts else np.zeros(0, dtype=np.uint8)
+        if m.size and not m.all():
+            m.tofile(mask_dest)
+        elif mask_dest.exists():
+            mask_dest.unlink()
     return hashlib.sha256(dest.read_bytes()).hexdigest()
 
 

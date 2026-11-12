@@ -62,12 +62,16 @@ def local_train(model: MothModel, tokens: np.ndarray, spec, device: str, duty_cy
 
 
 @torch.no_grad()
-def batch_loss(model: MothModel, tokens: np.ndarray, device: str, seq: int = 256, n: int = 4) -> float:
+def batch_loss(model: MothModel, tokens: np.ndarray, device: str, seq: int = 256, n: int = 4,
+               mask: np.ndarray | None = None) -> float:
+    """Mean loss on a few fixed windows; with ``mask`` (aligned with ``tokens``) only learnable targets count."""
     model.eval()
     seq = min(seq, model.cfg.max_seq_len, (len(tokens) - 1) // n)
     x = torch.from_numpy(np.stack([tokens[i * seq : i * seq + seq] for i in range(n)]).astype(np.int64)).to(device)
     y = torch.from_numpy(np.stack([tokens[i * seq + 1 : i * seq + seq + 1] for i in range(n)]).astype(np.int64)).to(device)
-    _, loss = model(x, y)
+    m = (torch.from_numpy(np.stack([mask[i * seq + 1 : i * seq + seq + 1] for i in range(n)]).astype(np.uint8)).to(device)
+         if mask is not None else None)
+    _, loss = model(x, y, loss_mask=m)
     model.train()
     return float(loss)
 
