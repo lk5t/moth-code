@@ -73,7 +73,9 @@ def credential(ctx: Ctx) -> str | None:
     token = T.create_enrollment(ctx, dict(owner), NAME, None, kind="cloud")
     from moth_worker.hardware import detect
 
-    _, cred = T.enroll_worker(ctx, token, {**detect(), "name": NAME}, __version__)
+    # no machine id: a real worker on the same computer must never replace (revoke) this one or vice versa
+    hw = {k: v for k, v in detect().items() if k != "machine_id"}
+    _, cred = T.enroll_worker(ctx, token, {**hw, "name": NAME}, __version__)
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(cred)
     os.chmod(f, 0o600)
@@ -84,6 +86,9 @@ def make_runner(ctx: Ctx, http):
     WorkerClient, WorkerRunner = _import_worker()
 
     class CloudRunner(WorkerRunner):
+        def hardware(self):
+            return {k: v for k, v in super().hardware().items() if k != "machine_id"}
+
         def beat(self) -> None:
             super().beat()
             if not allowed(ctx) or local_busy(ctx):

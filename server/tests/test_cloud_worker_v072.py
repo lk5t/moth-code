@@ -37,3 +37,23 @@ def test_owner_choice_turns_it_off(client, owner):
     S.update(ctx, {"distributed": {"cloud_participates": True}})
     ctx.db.set_config("cloud_worker_revoked", True)  # revoked by the Owner in Network
     assert not CW.allowed(ctx)
+
+
+def test_cloud_worker_and_a_real_worker_on_the_same_computer_coexist(client, settings, owner):
+    """Same machine, same Owner account: neither registration may replace the other."""
+    from starlette.testclient import TestClient
+
+    from conftest import H
+    from moth_worker.hardware import detect
+
+    ctx = client.app.state.ctx
+    r = CW.make_runner(ctx, TestClient(ctx.extras["app"]))
+    r.beat()
+    e = client.post("/v1/training/enrollments", json={"name": "owner-pc"}, headers=H(owner["token"])).json()
+    w = client.post("/v1/worker/enroll", json={"token": e["token"], "hardware": detect(), "version": "0.7.2"}).json()
+    assert client.post("/v1/worker/heartbeat", json={"version": "0.7.2", "hardware": detect()},
+                       headers=H(w["worker_token"])).status_code == 200
+    r.beat()
+    live = ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
+    assert sorted(x["name"] for x in live) == sorted([CW.NAME, "owner-pc"])
+    assert not r.revoked

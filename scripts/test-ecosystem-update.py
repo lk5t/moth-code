@@ -240,7 +240,9 @@ def main() -> None:
         procs.append(worker)
         for _ in range(60):
             _, ws = api.call("GET", "/v1/admin/workers", expect=200)
-            if ws and any(w.get("version") == BASE for w in (ws.get("workers") if isinstance(ws, dict) else ws)):
+            # the external worker under test, not MOTH Cloud's built-in worker (0.7.2), which runs the server's version
+            if ws and any(w.get("version") == BASE and w.get("name") != "MOTH Cloud server"
+                          for w in (ws.get("workers") if isinstance(ws, dict) else ws)):
                 break
             time.sleep(1)
         else:
@@ -269,7 +271,7 @@ def main() -> None:
         for _ in range(120):
             _, ws = api.call("GET", "/v1/admin/workers", expect=200)
             ws = ws.get("workers") if isinstance(ws, dict) else ws
-            if any(w.get("version") == V1 for w in ws):
+            if any(w.get("version") == V1 and w.get("name") != "MOTH Cloud server" for w in ws):
                 break
             time.sleep(1)
         else:
