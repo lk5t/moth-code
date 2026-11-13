@@ -3,6 +3,17 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.7.1 — GENESIS ASCENSION, continued
+
+- AI → Model: the active MOTH model in one place: an animated core drawn from its real layers and heads, verified parameters, architecture, checkpoint, tokenizer, deployment, held-out capabilities compared with the rollback model, lifecycle and compact history. The numbered-circle diagram and the separate Cloud model registry section are gone (the registry API stays).
+- Minimum monitored requests is 0 (migrated once): zero user traffic never blocks a promotion; health checks are the evidence.
+- One active + one rollback model, shown in the Model tab; older packages are removed after each verified promotion.
+- Owner-only notifications, enforced by the server, with a bell for the Owner.
+- AI Settings → What trains MOTH: MOTH Cloud server, workers and this computer, in any combination.
+- Workers update at once: the heartbeat announces new worker releases, every worker gets them immediately, failed installs back off.
+- Updaters: the cloud agent uses conditional GitHub requests and respects rate limits; the desktop checks hourly and treats a staged rollout as a wait.
+- Details and limitations: [docs/GENESIS-ASCENSION.md](docs/GENESIS-ASCENSION.md#071).
+
 ## 0.7.0 — GENESIS ASCENSION
 
 - One model identity: MOTH 0.0.1, 0.0.2, … — the public version advances only on verified upgrades; earlier labels are renumbered once without touching weights; the active version is shown in every section.

@@ -53,7 +53,6 @@ describe("desktop update lifecycle", () => {
   });
   it.each([
     "Update check failed (HTTP 503): Windows installer is not yet available",
-    "Update check failed (HTTP 409): Desktop 0.5.4 is rolling out to 10% of installations",
     "error sending request: DNS connection failed",
     "Invalid desktop update metadata: malformed JSON",
   ])("shows a failed check: %s", async (error) => {
@@ -62,6 +61,12 @@ describe("desktop update lifecycle", () => {
     expect(updaterStore.getState().phase).toBe("error");
     expect(updaterStore.getState().error).toBeTruthy();
     expect(mocks.invoke).not.toHaveBeenCalledWith("update_install");
+  });
+  it("treats a staged rollout that has not reached this install as a wait, not an error", async () => {
+    mocks.invoke.mockImplementation(async (cmd: string) => { if (cmd === "update_check") throw new Error("Update check failed (HTTP 409): Desktop 0.7.1 is rolling out to 10% of installations. This installation will retry automatically when its rollout group is eligible."); });
+    await checkForUpdates({ manual: true });
+    expect(updaterStore.getState()).toMatchObject({ phase: "waiting", error: null });
+    expect(mocks.invoke).not.toHaveBeenCalledWith("update_download");
   });
   it("never retries or installs a signature verification failure", async () => {
     mocks.invoke.mockImplementation(async (cmd: string) => {

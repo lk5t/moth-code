@@ -28,6 +28,7 @@ export function UpdatesSection() {
               <span className="text-muted">Version {APP_VERSION}</span>
               {u.phase === "up-to-date" && <span className="text-success">· up to date</span>}
               {u.phase === "checking" && <span className="text-muted">· checking…</span>}
+              {u.phase === "waiting" && <span className="text-muted">· a new version is rolling out in stages; this computer receives it automatically</span>}
               {u.phase === "downloading" && <span className="text-muted">· downloading {u.version}…</span>}
               {u.phase === "error" && <span className="text-danger">· {u.error} (it will retry automatically)</span>}
               {u.lastCheck && <span className="text-faint">· last checked {timeAgo(u.lastCheck / 1000)}</span>}

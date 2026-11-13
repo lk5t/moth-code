@@ -43,7 +43,7 @@ generated; the library build's decontamination still applies.
 
 ## AI page
 
-The large architecture diagram moved to **AI Settings → Advanced → Model Architecture**. The Evolution card
+In 0.7.0 the large architecture diagram moved to AI Settings; since 0.7.1 the model has its own **AI → Model** tab (below). The Evolution card
 is the compact MOTH Intelligence panel: model and status, objective, active and rollback models, parallel
 work, the computing network (MOTH Cloud and every worker), the intelligence check and growth outcomes.
 
@@ -60,3 +60,50 @@ checkpoint (crashes, disconnected workers and untaken jobs were already handled 
 - Capability benchmarks are small fixed sets; differences within sampling noise count as no change.
 - The autonomous coding agent is the existing one; its quality is limited by the native model, which is
   small and early in training.
+
+
+## 0.7.1
+
+**Model tab (AI → Model).** One active model, described only by measurements: the public name (MOTH 0.0.x),
+the parameter count counted from the saved weights, layers, dimensions, attention heads and vocabulary,
+the latest checkpoint, the tokenizer fingerprint, the internal identifier, deployment status and the
+latest verified improvement. The core visual draws one ring per decoder layer (grouped above 12), split
+into one segment per attention head; it turns only while a candidate is training and pulses when the
+reported training step increases (reduced-motion settings stop both). Capabilities are the held-out
+benchmark results of the active model with the change from the rollback model. Lifecycle shows the
+active and rollback models (the Owner can roll back after confirming) and a compact version history
+that says which versions still keep weights.
+
+**Minimum monitored requests = 0.** The default is 0 and the stored setting is set to 0 once
+(`evolution_settings_v071_min_requests`); a value the Owner sets afterwards persists across restarts and
+updates. With no user requests the deployment is judged by three passing health checks during the
+monitoring window; any failure still rolls back; with requests, error rate and latency are checked.
+
+**Retention.** Unchanged rule, now visible: after a promotion passes monitoring, the active and previous
+working model keep their files; older packages are removed and their records kept. To honour "preserve
+model weights during upgrades", nothing is removed when the server starts or updates — models left
+from older versions are cleaned after the next verified promotion.
+
+**Notifications.** `GET /v1/admin/notifications` and `POST /v1/admin/notifications/read` require the
+Owner (403 otherwise). They are a filtered view of real evolution events (promotions, verified
+deployments, rollbacks, deployment failures, rejected cycles, milestones, failed experiments, worker
+disconnects, self-pauses, stalls, engine errors, cleanup failures, dataset failures).
+
+**What trains MOTH.** AI Settings has one choice with three switches: MOTH Cloud server
+(`backends.local_cpu`/`local_gpu`), workers (`backends.workers` and `cloud_workers`) and this computer
+(the desktop's participant worker). Placement among them is unchanged (measured speed decides).
+
+**Updates.** Workers: every heartbeat carries the newest eligible worker release; the worker installs it
+between jobs at once (the scheduled check is every 15 minutes). Worker releases roll out to every
+worker in one stage; a failure rate above the manifest limit still halts the rollout. A failed install
+backs off from 5 minutes, doubling up to 6 hours. Cloud agent: the GitHub release list is requested
+with `If-None-Match` (a 304 is not counted against GitHub's rate limit), verified manifests are cached
+(signatures are still checked every time), and a rate-limit answer is not retried: the agent waits for
+GitHub's reset time and uses the last known list. Desktop: hourly checks plus a check when the window
+regains focus after an hour; a staged rollout that has not reached this install is a wait, not an error.
+
+**Not done in 0.7.1 (honest limits).** Dataset preparation, tokenization and deduplication still run on
+MOTH Cloud, not on workers; there is no new genuine data-parallel training mode beyond the existing
+sharded experiments; no new dataset sources were added; GPU and multi-machine performance were not
+verified on real hardware. Older workers (0.6.4/0.7.0) ignore the heartbeat announcement and update on
+their own schedule (every 30 minutes) — from 0.7.1 on they update at once.

@@ -4,22 +4,25 @@ The MOTH Cloud server for self-managing operation: one-time installation (no sud
 signed updates, verified backups, health checks with automatic rollback, the fixed model publishing
 workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
-LIVING INTELLIGENCE retains the existing training/evolution, distributed workers, adaptive growth,
-held-out promotion gates, staged rollout, signed update agent and automatic rollback. It adds
-capability-labeled reference tests, a privacy-filtered activity feed and an explicit full native AI
-reset, separate from legacy reversible lineage recovery.
+This release (0.7.1) adds:
 
-Full reset requires an authenticated, recently reauthenticated Owner, reviewed deletion inventory
-and exact typed confirmation. Managed backup deletion needs a separate confirmation. Native work
-is fenced, owned artifacts and native records are removed and verified, failures are recoverable,
-and workers acknowledge scoped cleanup. Unverified/offline copies and infrastructure snapshots
-remain disclosed. Accounts, credentials, ordinary chat, billing, settings, consent, signing keys and
-installed software are preserved. Use the supported single-coordinator deployment; stop any other
-process that directly writes its native storage before resetting.
+- Evolution promotes a verified model without waiting for user requests: the minimum monitored
+  requests becomes 0 once (a value the Owner sets later persists); without traffic, repeated passing
+  health checks are the evidence, and a failing check still rolls back.
+- One active model and one rollback model: after each verified promotion, older packages are removed
+  (records and measurements are kept). Nothing is removed during the upgrade itself.
+- Owner-only notifications (`/v1/admin/notifications`; HTTP 403 for every other account).
+- Workers are told about a newer worker release in every heartbeat and install it between jobs at once;
+  worker releases go to every worker immediately, and a failed install backs off (at most 6 hours).
+- The update agent asks GitHub conditionally (ETag, 304 Not Modified), reuses verified manifests and
+  waits out GitHub rate limits instead of retrying.
+
+The existing evolution, distributed workers, growth, held-out promotion gates, staged rollout, Genesis
+Reset safeguards, signed update agent and automatic rollback are kept. Genesis Reset never runs during an upgrade.
 
 Installing or auto-updating this release **never resets native AI data** or initializes replacement
 weights. Foundation training is not claimed complete. The existing updater transport/signing and
-rollback implementations are retained. Desktop and Worker 0.6.0 are compatible with this server.
+rollback implementations are retained. Desktop and Worker 0.6.0 and later are compatible with this server.
 
 | File | What it is |
 | --- | --- |

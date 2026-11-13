@@ -2,7 +2,9 @@
  * Automatic MOTH Code updates (Tauri 2 updater, served by the MOTH Cloud server this app is
  * connected to — the address in Settings → Connection, so no rebuild is needed when it changes).
  *
- * * checks at startup, every 6 hours, and immediately when MOTH Cloud says this version is too old;
+ * * checks at startup, every hour (a cheap 204 from MOTH Cloud, never GitHub), when the window regains
+ *   focus after an hour, and immediately when MOTH Cloud says this version is too old; a staged rollout
+ *   that has not reached this install yet is a normal wait, not an error to retry (0.7.1);
  * * downloads in the background (retried with backoff if the connection drops — a failed download
  *   is discarded and started again, never installed);
  * * the update's minisign signature is verified by the updater against the public key built into
@@ -17,7 +19,7 @@ import { accountStore, normalizeServerUrl } from "./account";
 import { APP_VERSION, CLIENT_HEADER } from "./endpoint";
 import { createStore } from "./store";
 
-export type UpdatePhase = "idle" | "checking" | "up-to-date" | "downloading" | "ready" | "installing" | "error" | "unavailable";
+export type UpdatePhase = "idle" | "checking" | "up-to-date" | "waiting" | "downloading" | "ready" | "installing" | "error" | "unavailable";
 
 export interface UpdaterState {
   phase: UpdatePhase;
@@ -34,7 +36,7 @@ export const updaterStore = createStore<UpdaterState>({
 });
 export const useUpdater = updaterStore.useStore;
 
-const CHECK_EVERY_MS = 6 * 3600 * 1000;
+const CHECK_EVERY_MS = 3600 * 1000;
 const PENDING_KEY = "moth.update.pending";
 let busy = false;
 
@@ -108,7 +110,14 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<
     updaterStore.setState({ phase: "ready", progress: 100, dismissed: false });
     storage(PENDING_KEY, JSON.stringify({ from: APP_VERSION, to: found.version, at: Date.now() }));
   } catch (e) {
-    const msg = describeUpdateError(String((e as Error)?.message ?? e));
+    const raw = String((e as Error)?.message ?? e);
+    if (isRolloutWait(raw)) {  // MOTH Cloud: "rolling out to N% of installations" — this install's turn comes later
+      ulog(`staged rollout: ${raw}`);
+      updaterStore.setState({ phase: "waiting", version: null, error: null,
+        notes: "A new version is rolling out in stages; this computer receives it automatically when its turn comes." });
+      return updaterStore.getState();
+    }
+    const msg = describeUpdateError(raw);
     ulog(`update error: ${String((e as Error)?.message ?? e)}`);
     updaterStore.setState({ phase: "error", error: msg });
     report(false, updaterStore.getState().version, msg);
@@ -117,6 +126,11 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<
     busy = false;
   }
   return updaterStore.getState();
+}
+
+/** The staged-rollout answer (HTTP 409 "… is rolling out to N% …") is not a failure. */
+export function isRolloutWait(raw: string): boolean {
+  return /HTTP 409/i.test(raw) && /rolling out/i.test(raw);
 }
 
 export function describeUpdateError(raw: string): string {
@@ -140,7 +154,14 @@ export async function installNow() {
     const { relaunch } = await import("@tauri-apps/plugin-process");
     await relaunch();
   } catch (e) {
-    const msg = describeUpdateError(String((e as Error)?.message ?? e));
+    const raw = String((e as Error)?.message ?? e);
+    if (isRolloutWait(raw)) {  // MOTH Cloud: "rolling out to N% of installations" — this install's turn comes later
+      ulog(`staged rollout: ${raw}`);
+      updaterStore.setState({ phase: "waiting", version: null, error: null,
+        notes: "A new version is rolling out in stages; this computer receives it automatically when its turn comes." });
+      return updaterStore.getState();
+    }
+    const msg = describeUpdateError(raw);
     updaterStore.setState({ phase: "error", error: msg });
     storage(PENDING_KEY, null);
     report(false, updaterStore.getState().version, msg);
@@ -200,6 +221,10 @@ export function startUpdater() {
   // Recover promptly after a relay delay or an offline check, without waiting six hours.
   setInterval(() => { if (updaterStore.getState().phase === "error") checkForUpdates(); }, 5 * 60 * 1000);
   window.addEventListener("online", () => checkForUpdates());
+  window.addEventListener("focus", () => {
+    const last = updaterStore.getState().lastCheck;
+    if (!last || Date.now() - last > CHECK_EVERY_MS) checkForUpdates();
+  });
   let required = accountStore.getState().updateRequired;
   let server = accountStore.getState().serverUrl;
   accountStore.subscribe(() => {

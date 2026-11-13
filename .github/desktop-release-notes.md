@@ -2,15 +2,21 @@
 
 ## MOTH Code __VERSION__ for Windows
 
-### LIVING INTELLIGENCE
+### What's new
 
-- Eight focused workspaces: Overview, Chat, Code, Intelligence, Data, Network, Activity and Settings.
-- Authoritative model/status synchronization, real activity-driven MOTH motion, keyboard feature search and reopenable beginner guidance.
-- Searchable/paged conversation history, copy/regenerate, safe project switching and preservation of newer unsaved edits.
-- Local profile-scoped Project Intelligence: incremental structure/import/dependency evidence, relevant files, confirmed decisions and explicit index deletion.
-- Dataset Quality Studio: licensed source inspection, import diagnostics, duplicate/repetition/overlap warnings, cleaning previews, tokenizer preview and prepared-file integrity checks. Sampling limits remain explicit.
-- Existing controlled evolution, real parameter growth, worker consent, signed updates and rollback are preserved. Reference-based capability/consistency evaluation does not equate training loss with answer quality.
-- Separate Owner-only **Genesis Reset — Delete All Native AI Data**, with reauthentication, reviewed inventory, typed confirmation, recovery fences and separately confirmed backup scope. It never runs during an upgrade or creates a replacement model automatically. Offline/retained copies are disclosed.
+- **AI → Model:** one place for the active MOTH model — an animated core drawn from its real layers and
+  attention heads, the parameter count counted from the saved weights, architecture, checkpoint,
+  tokenizer, deployment status and held-out capability benchmarks compared with the rollback model.
+- **One active model and one rollback model.** After each verified upgrade the older packages are removed
+  automatically (their measurements are kept); the Owner can roll back from the Model tab.
+- **What trains MOTH:** choose MOTH Cloud's server, workers and this computer, in any combination
+  (AI → AI Settings).
+- **Owner notifications:** promotions, rollbacks, deployment, worker and infrastructure problems. Only
+  the Owner account can see them; the server enforces it.
+- Evolution no longer waits for user requests before promoting a verified model (the minimum is 0;
+  passing health checks are the evidence).
+- Updates: checks every hour, and a staged rollout that has not reached this computer yet is shown as a
+  wait instead of an error.
 
 Installing this update preserves existing accounts, settings, projects, datasets, tokenizers, models and checkpoints.
 Foundation training is **not** claimed complete. Physical GPU verification requires compatible hardware.
