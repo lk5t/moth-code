@@ -133,7 +133,10 @@ def ensure_data(ctx: Ctx, wait: bool = False) -> dict:
                     ctx.extras['discovery_scan'] = False
             from moth_server.evolution.native_reset import spawn
             spawn(ctx,scan,'trusted-dataset-discovery')
+        from moth_server.intelligence import self_training
+
         sig = hashlib.sha256(json.dumps({"sources": approved, "pins": library.pins(ctx),
+                                         "self_training": self_training.generation(ctx),
                                         "factory_policy": 2, "policy": p, "tokenizer": str(library._lineage_tokenizer(ctx))},
                                        sort_keys=True).encode()).hexdigest()
         if st.get('signature') == sig:

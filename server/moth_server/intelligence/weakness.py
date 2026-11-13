@@ -90,6 +90,18 @@ def analyse(ctx: Ctx, version: int | None, parent: int | None = None,
             rows.append(hit)
         hit["feedback_negative_rate"] = w["negative_rate"]
         hit["weakness"] = round(min(1.0, (hit["weakness"] or 0.0) + 0.5 * w["negative_rate"]), 3)
+    try:  # 0.9.0: capabilities without a benchmark use MOTH's latest self-quiz on new, checked problems
+        from moth_server.intelligence import self_training
+
+        for cap, score in self_training.weakness_scores(ctx).items():
+            hit = next((r for r in rows if r["capability"] == cap), None)
+            if hit is None:
+                rows.append({"capability": cap, "value": round(1 - score, 3), "metric": "self-quiz pass rate",
+                             "weakness": score, "higher_is_better": True, "source": "self-quiz"})
+            elif hit.get("weakness") is None:
+                hit["weakness"], hit["source"] = score, "self-quiz"
+    except Exception:  # noqa: BLE001
+        pass
     ranked = sorted([r for r in rows if r.get("weakness") is not None], key=lambda r: -r["weakness"])
     measured = {r["capability"] for r in rows}
     not_measured = [c for c in ("conversation", "code", "reasoning", "math", "knowledge", "instruction", "consistency", "safety") if c not in measured]

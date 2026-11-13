@@ -149,6 +149,13 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
         if fb:
             extra.append({"id": "feedback", "name": "Approved user feedback (with consent)", "license": "user-consented",
                           "attribution": "MOTH users who opted in to training use", "records": fb})
+        from moth_server.intelligence import self_training
+
+        own = self_training.records(ctx)
+        if own:  # 0.9.0: MOTH's self-verified answers and corrections (checked by its generators; CC0)
+            extra.append({"id": "self-training", "name": "MOTH self-training (self-verified answers and corrections)",
+                          "license": "CC0-1.0", "attribution": "Generated and checked by MOTH (CC0)",
+                          "domain": "conversation", "records": own})
         cfg = {**config, "pins": pins(ctx)}
         manifest = factory.build(root(ctx) / "cache", out, cfg, log=progress, extra_sources=extra)
         tok_path = _lineage_tokenizer(ctx)

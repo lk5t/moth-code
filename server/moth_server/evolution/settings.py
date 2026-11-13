@@ -53,6 +53,8 @@ DEFAULTS: dict[str, Any] = {
     "use_curriculum": True,          # train on the dataset library's curriculum mixture when one exists
     # stops only diverging runs; "plateau": true also stops runs whose held-out loss stopped improving
     "early_stopping": {"enabled": True, "min_evals": 3, "patience": 3, "plateau": False},
+    # 0.9.0: MOTH quizzes itself hourly on new, automatically checked problems and learns from the results
+    "self_training": {"enabled": True},
     "growth": {"enabled": True, "approval_ratio": 1.25, "max_ratio": 1.5, "max_params": 400_000_000,
                "plateau_threshold": 0.01, "steps_multiplier": 2,
                # 0.6.3 capability-based growth (capacity.py): growth needs enough training for the size,

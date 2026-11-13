@@ -2,7 +2,7 @@
 
 ## MOTH Code __VERSION__ for Windows
 
-### What's new — 0.8.3: training runs now finish instead of stopping at about a tenth of their steps, and MOTH Cloud and your workers train the same experiment together (the network view shows whether MOTH Cloud joins in). A worker on a busy computer no longer holds an experiment while MOTH Cloud sits idle. 0.8.2: a stalled worker loses its experiment within minutes, so Evolution keeps moving. 0.8.1: Evolution keeps going (it explores when every plan was tried) and experiment times are measured by MOTH Cloud
+### What's new — 0.9.0: MOTH runs itself. It adds much bigger training data on its own (about 90 GB of licensed sources, downloaded part by part as it needs them), quizzes itself every hour and learns from its mistakes, repairs common problems by itself (Settings → Advanced → Diagnostics shows what it did), and a worker's progress is no longer lost when its job moves elsewhere. 0.8.3: training runs now finish instead of stopping at about a tenth of their steps, and MOTH Cloud and your workers train the same experiment together (the network view shows whether MOTH Cloud joins in). A worker on a busy computer no longer holds an experiment while MOTH Cloud sits idle. 0.8.2: a stalled worker loses its experiment within minutes, so Evolution keeps moving. 0.8.1: Evolution keeps going (it explores when every plan was tried) and experiment times are measured by MOTH Cloud
 
 ### COGNITIVE EVOLUTION (0.8.0)
 

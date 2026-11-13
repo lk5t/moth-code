@@ -242,6 +242,12 @@ def start(ctx: Ctx) -> threading.Thread | None:
     def loop() -> None:
         while not stop.wait(INTERVAL):
             run_checks(ctx)
+            try:  # 0.9.0: the autonomous self-quiz is scheduled from here too
+                from moth_server.intelligence import self_training
+
+                self_training.maybe_run(ctx)
+            except Exception:  # noqa: BLE001
+                log.exception("self-training scheduling failed")
 
     t = threading.Thread(target=loop, daemon=True, name="moth-supervisor")
     t.start()
