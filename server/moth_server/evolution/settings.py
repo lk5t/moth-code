@@ -35,7 +35,9 @@ DEFAULTS: dict[str, Any] = {
         "max_speed_regression": 0.25,  # generation speed may drop by at most 25 %
         "max_memory_growth": 0.25,     # peak memory may grow by at most 25 %
     },
-    "monitoring": {"minutes": 30.0, "max_error_rate": 0.05, "max_latency_factor": 2.0, "min_requests": 5},
+    # min_requests 0 (0.7.1): user traffic is never required. Without requests, repeated passing health
+    # checks on the deployed candidate are the evidence; with requests, error rate and latency are checked.
+    "monitoring": {"minutes": 30.0, "max_error_rate": 0.05, "max_latency_factor": 2.0, "min_requests": 0},
     "backends": {"local_gpu": True, "local_cpu": True, "workers": True},
     "worker_ids": None,             # optional owner-selected training participants; null = all
     "limits": {"cpu_threads": max(1, cpu_count() // 2), "min_free_memory_gb": 1.0,
@@ -139,6 +141,27 @@ def update(ctx: Ctx, changes: dict[str, Any]) -> dict[str, Any]:
     validate(merged)
     ctx.db.set_config(KEY, new_stored)
     return merged
+
+
+MIGRATION_V071 = "evolution_settings_v071_min_requests"
+
+
+def migrate(ctx: Ctx) -> bool:
+    """0.7.1: the minimum monitored requests becomes 0 on every installation, once.
+
+    Earlier versions stored 5 (or an Owner value) that held promotions waiting for user traffic that
+    may never come. Runs once (flagged), so a value the Owner sets afterwards persists across restarts
+    and updates. Nothing else in the stored settings changes.
+    """
+    if ctx.db.get_config(MIGRATION_V071, None):
+        return False
+    stored = ctx.db.get_config(KEY, {}) or {}
+    mon = stored.get("monitoring")
+    changed = isinstance(mon, dict) and "min_requests" in mon and mon["min_requests"] != 0
+    if changed:
+        ctx.db.set_config(KEY, {**stored, "monitoring": {**mon, "min_requests": 0}})
+    ctx.db.set_config(MIGRATION_V071, {"done": True, "previous": mon.get("min_requests") if isinstance(mon, dict) else None})
+    return changed
 
 
 def runtime(ctx: Ctx) -> dict[str, Any]:

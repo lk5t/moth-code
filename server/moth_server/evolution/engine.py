@@ -969,25 +969,28 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
         _schedule_next(ctx, failed=False)
         return
     if now() - started >= float(mon["minutes"]) * 60:
-        if stats["requests"] < int(mon["min_requests"]):
-            from moth_server.routes.admin import flags
+        min_requests = int(mon["min_requests"])
+        from moth_server.routes.admin import flags
 
-            if flags(ctx).get("cloud_inference_enabled"):
-                MEM.update_cycle(ctx, cyc["id"], result={**res, "monitor": stats,
-                                 "waiting_reason": "waiting for the configured minimum monitored requests"})
-                return
-            # Cloud answering is off, so no user requests can arrive: the health checks run during
-            # the whole window are the evidence. Require several, all of which passed (any failure
-            # above already rolled back).
+        cloud_on = bool(flags(ctx).get("cloud_inference_enabled"))
+        if stats["requests"] < min_requests and cloud_on:  # only when the Owner set a minimum above 0
+            MEM.update_cycle(ctx, cyc["id"], result={**res, "monitor": stats,
+                             "waiting_reason": "waiting for the configured minimum monitored requests"})
+            return
+        if stats["requests"] < max(1, min_requests):
+            # No user requests to judge (none arrived, or cloud answering is off): the health checks run
+            # during the whole window are the evidence. Require several, all of which passed (any
+            # failure above already rolled back). Zero requests therefore never blocks a promotion.
             if int(res.get("health_checks") or 0) < HEALTH_CHECKS_WITHOUT_TRAFFIC:
                 MEM.update_cycle(ctx, cyc["id"], result={**res, "monitor": stats,
                                  "waiting_reason": "running health checks on the new version"})
                 return
             if not res.get("verified_by"):
                 res = {**res, "verified_by": "health_checks"}
+                why = ("No user requests arrived during monitoring" if cloud_on
+                       else "Cloud answering is off, so no user requests were available to monitor")
                 MEM.event(ctx, "deploy.verified", f"v{cyc['candidate_version']} passed "
-                          f"{res['health_checks']} health checks during monitoring. Cloud answering is off, "
-                          "so no user requests were available to monitor.", cycle_id=cyc["id"])
+                          f"{res['health_checks']} health checks during monitoring. {why}.", cycle_id=cyc["id"])
         try:
             from moth_server.evolution import v2 as V2
 
