@@ -12,7 +12,7 @@ on:
       tag:
         description: "Desktop release tag (must match the app version, e.g. desktop-v0.3.1)"
         required: true
-        default: "desktop-v0.7.1"
+        default: "desktop-v0.7.2"
       publish:
         description: "Publish to GitHub Releases (requires explicit Owner approval; false builds verified candidates only)"
         type: boolean

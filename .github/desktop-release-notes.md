@@ -4,19 +4,15 @@
 
 ### What's new
 
-- **AI → Model:** one place for the active MOTH model — an animated core drawn from its real layers and
-  attention heads, the parameter count counted from the saved weights, architecture, checkpoint,
-  tokenizer, deployment status and held-out capability benchmarks compared with the rollback model.
-- **One active model and one rollback model.** After each verified upgrade the older packages are removed
-  automatically (their measurements are kept); the Owner can roll back from the Model tab.
-- **What trains MOTH:** choose MOTH Cloud's server, workers and this computer, in any combination
-  (AI → AI Settings).
-- **Owner notifications:** promotions, rollbacks, deployment, worker and infrastructure problems. Only
-  the Owner account can see them; the server enforces it.
-- Evolution no longer waits for user requests before promoting a verified model (the minimum is 0;
-  passing health checks are the evidence).
-- Updates: checks every hour, and a staged rollout that has not reached this computer yet is shown as a
-  wait instead of an error.
+- **AI → Model:** the active MOTH model in one place — an animated core drawn from its real layers and
+  heads, verified parameters, architecture, checkpoint, tokenizer, deployment and held-out capabilities
+  compared with the rollback model; Owner rollback and a compact history.
+- **What trains MOTH:** MOTH Cloud's server, workers and this computer, in any combination. MOTH Cloud
+  now trains together with the workers.
+- Workers also prepare training data (every result is checked by MOTH Cloud); new verified reasoning and
+  language data.
+- Owner-only notifications; smoother view and tab transitions, loading skeletons and consistent focus.
+- Updates are checked hourly; a staged rollout is shown as a wait, not an error.
 
 Installing this update preserves existing accounts, settings, projects, datasets, tokenizers, models and checkpoints.
 Foundation training is **not** claimed complete. Physical GPU verification requires compatible hardware.

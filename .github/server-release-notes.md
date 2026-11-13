@@ -4,18 +4,18 @@ The MOTH Cloud server for self-managing operation: one-time installation (no sud
 signed updates, verified backups, health checks with automatic rollback, the fixed model publishing
 workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
-This release (0.7.1) adds:
+This release (0.7.2) adds:
 
-- Evolution promotes a verified model without waiting for user requests: the minimum monitored
-  requests becomes 0 once (a value the Owner sets later persists); without traffic, repeated passing
-  health checks are the evidence, and a failing check still rolls back.
-- One active model and one rollback model: after each verified promotion, older packages are removed
-  (records and measurements are kept). Nothing is removed during the upgrade itself.
-- Owner-only notifications (`/v1/admin/notifications`; HTTP 403 for every other account).
-- Workers are told about a newer worker release in every heartbeat and install it between jobs at once;
-  worker releases go to every worker immediately, and a failed install backs off (at most 6 hours).
-- The update agent asks GitHub conditionally (ETag, 304 Not Modified), reuses verified manifests and
-  waits out GitHub rate limits instead of retrying.
+- Dataset preparation on workers: chunks are tokenized and hashed by workers 0.7.2+, re-encoded in
+  part and verified by MOTH Cloud, merged with exact deduplication; MOTH Cloud takes unclaimed or late
+  chunks itself. User-consented feedback is never sent to workers.
+- MOTH Cloud's built-in worker: the server joins distributed training rounds, preparation and
+  evaluations under the same verification (pauses during its own local experiments; follows the Owner's
+  "What trains MOTH" choice; `MOTH_CLOUD_WORKER=0` disables it). The bundle now includes the worker.
+- Failing training strategies are suspended while another strategy works.
+- Verified synthetic reasoning and language sources.
+- Still from 0.7.1: minimum monitored requests 0, one active + one rollback model, Owner-only
+  notifications, immediate worker updates, conditional GitHub requests in the update agent.
 
 The existing evolution, distributed workers, growth, held-out promotion gates, staged rollout, Genesis
 Reset safeguards, signed update agent and automatic rollback are kept. Genesis Reset never runs during an upgrade.

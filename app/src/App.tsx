@@ -97,8 +97,9 @@ export default function App() {
             <div className={view === "workspace" || view === "chat" ? "flex h-full" : "hidden"}>
               <ErrorBoundary label="The workspace"><WorkspaceShell /></ErrorBoundary>
             </div>
-            {view === "settings" && <ErrorBoundary label="Settings"><SettingsView /></ErrorBoundary>}
-            {Extra && <ErrorBoundary key={["intelligence", "evolution", "training", "models"].includes(view) ? "intelligence" : view} label="This view"><Extra /></ErrorBoundary>}
+            {view === "settings" && <div className="h-full animate-rise"><ErrorBoundary label="Settings"><SettingsView /></ErrorBoundary></div>}
+            {Extra && <div key={["intelligence", "evolution", "training", "models"].includes(view) ? "intelligence" : view} className="h-full animate-rise">
+              <ErrorBoundary label="This view"><Extra /></ErrorBoundary></div>}
           </main>
         </div>
         <StatusBar />

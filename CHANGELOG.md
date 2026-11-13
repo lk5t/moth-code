@@ -3,6 +3,15 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.7.2 — The whole network works on MOTH
+
+- Workers prepare data: dataset chunks are tokenized and hashed on workers; MOTH Cloud re-encodes sample records of every chunk and refuses any mismatch, takes unclaimed or late chunks itself, and removes exact duplicates when merging (the result is byte-identical to preparing everything on MOTH Cloud). Feedback data never leaves MOTH Cloud.
+- MOTH Cloud trains together with the workers: the server enrolls its own built-in worker ("MOTH Cloud server") and joins distributed training rounds, data preparation and evaluations under the same verification. It pauses during its own local experiments and follows AI Settings → What trains MOTH.
+- Evolution stops repeating what does not work: a strategy with 4+ runs and no accepted improvement is suspended while another strategy is producing improvements.
+- New verified synthetic sources: reasoning (sequences, orderings, multi-step problems) and language (plurals, opposites, alphabetical order, word counts, sentence casing).
+- Interface: view and tab transitions, skeleton loading states, consistent button press and focus feedback (reduced motion respected).
+- Details: [docs/GENESIS-ASCENSION.md](docs/GENESIS-ASCENSION.md#072).
+
 ## 0.7.1 — GENESIS ASCENSION, continued
 
 - AI → Model: the active MOTH model in one place: an animated core drawn from its real layers and heads, verified parameters, architecture, checkpoint, tokenizer, deployment, held-out capabilities compared with the rollback model, lifecycle and compact history. The numbered-circle diagram and the separate Cloud model registry section are gone (the registry API stays).

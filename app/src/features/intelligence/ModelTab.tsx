@@ -18,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty";
+import { LoadingBlock } from "@/components/ui/skeleton";
 import { MothEmblem } from "@/components/MothEmblem";
 import { cn } from "@/lib/utils";
 
@@ -108,7 +109,7 @@ export function ModelTab({ progress }: { progress: Any | null }) {
     return () => clearTimeout(t);
   }, [step]);
   const [confirm, setConfirm] = useState(false), [busy, setBusy] = useState(false), [msg, setMsg] = useState<string | null>(null);
-  if (!p) return <p role="status" className="text-xs text-muted">Loading the active model…</p>;
+  if (!p) return <Card><CardContent className="p-6"><LoadingBlock label="Loading the active model…" lines={4} /></CardContent></Card>;
   if (!cur) return <EmptyState title="No active MOTH model yet">Start Evolution in AI → Evolution. The first model is MOTH 0.0.1.</EmptyState>;
   const timeline: Any[] = p.timeline ?? [];
   const life = p.lifecycle ?? {};

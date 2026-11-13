@@ -107,3 +107,45 @@ MOTH Cloud, not on workers; there is no new genuine data-parallel training mode 
 sharded experiments; no new dataset sources were added; GPU and multi-machine performance were not
 verified on real hardware. Older workers (0.6.4/0.7.0) ignore the heartbeat announcement and update on
 their own schedule (every 30 minutes) — from 0.7.1 on they update at once.
+
+
+## 0.7.2
+
+**Dataset preparation on workers** (`server/moth_server/intelligence/distributed_prep.py`). When a library
+build is tokenized and workers 0.7.2+ are online, each public domain's training records are split into
+chunks of 2,000 and offered as `prep_tokenize` jobs (before training jobs, to any CPU or GPU worker).
+A worker downloads the chunk and the lineage tokenizer (SHA-256 checked) and runs
+`moth.datafactory.build.encode_chunk` — the same function MOTH Cloud uses — returning ids, loss mask,
+record offsets and a 16-byte hash per record. MOTH Cloud checks structure (record count, offsets,
+lengths, vocabulary bounds) and re-encodes the first, last and four random records, comparing ids,
+masks and hashes exactly; any difference refuses the chunk. MOTH Cloud also works the queue itself (it
+prepares unclaimed chunks) and after 15 minutes prepares anything still outstanding. Exact duplicates
+(same whitespace-normalised text) are dropped when chunks are merged in order; MOTH Cloud's own path
+deduplicates the same way, so the result is byte-identical whoever prepared each chunk (tested).
+Domains containing user-consented feedback are always prepared on MOTH Cloud.
+
+**MOTH Cloud's built-in worker** (`evolution/cloud_worker.py`). The server enrolls itself once as a
+`cloud` worker named "MOTH Cloud server" under the Owner's account and runs the ordinary worker loop in
+a background thread, talking to the server in-process. It takes distributed training shards (its
+deltas are validated and averaged like anyone's), preparation chunks and evaluation jobs. It pauses
+while MOTH Cloud runs a local experiment, follows AI Settings → What trains MOTH (MOTH Cloud server
+and Workers both on) and `distributed.cloud_participates`, and stays off once the Owner revokes it.
+`MOTH_CLOUD_WORKER=0` disables it. The server bundle now contains the worker package.
+
+**Strategy memory.** Evolution already ranked strategies by accepted improvements, tilted data towards
+measured weaknesses and never repeated an identical configuration. Now a strategy with at least four
+runs and no accepted improvement is suspended while another strategy produces improvements; it is
+never suspended when it is the only option, and it returns when the statistics change.
+
+**New verified sources.** `synthetic-reasoning` (15,000: sequences, orderings from comparisons,
+multi-step word problems — each answer re-derived) and `synthetic-language` (15,000: plurals,
+opposites, alphabetical order, word counts, sentence casing from checked tables), CC0, generated
+locally.
+
+**Interface.** Views rise in when switched, tab content fades in, loading states use skeletons, and
+every button has the same press and keyboard focus feedback. All motion stops under reduced-motion.
+
+**Still limited (honest).** Physical GPU training and multi-machine throughput have not been measured
+on real hardware (no GPU is available in this environment); the code paths are the same as on CPU and
+are covered by tests. Workers already installed at 0.6.4/0.7.0 update on their own 30-minute schedule;
+the immediate update announcement works from 0.7.1. Preparation jobs need workers 0.7.2 or newer.
