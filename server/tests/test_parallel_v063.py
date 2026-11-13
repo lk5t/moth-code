@@ -36,6 +36,12 @@ def _run(client, ctx, o, parallel, tmp_path):
         runner = WorkerRunner(WorkerClient("http://t", w["worker_token"], http=client), tmp_path / "w", allow_cpu=True,
                               log=lambda m: None, heartbeat_seconds=3600)
         runner.beat()
+        # 0.8.3 discounts an unmeasured worker by how busy its computer is; this worker shares the test
+        # machine with MOTH Cloud's own training, so give both a comparable measured speed instead
+        from moth_server.evolution import compute as C
+
+        C.record_throughput(ctx, f"worker:{w['worker_id']}", 1000, 1)
+        C.record_throughput(ctx, "local:cpu", 1000, 1)
 
         def work():  # a real worker loop: claim, train, upload
             while not stop.is_set():
