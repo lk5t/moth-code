@@ -36,6 +36,8 @@ export function StatusBar() {
               : cloud?.reason === "inference_disabled" ? "MOTH Cloud · inference turned off"
                 : cloud?.reason === "not_moth" ? "not a MOTH Cloud server"
                   : cloud?.reason === "unreachable" ? "MOTH Cloud unreachable · retrying"
+                    : cloud?.reason === "training_first_model" ? "MOTH Cloud · training the first model"
+                      : cloud?.reason === "model_loading" ? "MOTH Cloud · loading the model…"
                     : "MOTH Cloud · no model deployed yet";
   const dot = conn === "online" ? (signedIn && cloud?.available ? "bg-success" : "bg-warning")
     : conn === "offline" ? "bg-danger" : "bg-warning animate-pulse";

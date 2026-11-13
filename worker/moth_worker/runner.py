@@ -20,6 +20,7 @@ from moth_worker.client import ServerError, WorkerClient
 from moth_worker.hardware import measured_device, compute_kind, detect
 
 CHECKPOINT_EVERY = 25
+SNAPSHOT_SECONDS = 600.0  # 0.9.0: how often an evolution job sends its progress to MOTH Cloud
 
 
 class Stop(Exception):
@@ -413,6 +414,25 @@ class WorkerRunner:
                 self.training_metrics = {**(self.training_metrics or {}), 'step': completed_steps, 'tokens': n_tokens,
                                          'checkpoint_step': completed_steps}
 
+            last_snapshot = [time.time()]
+
+            def snapshot(force: bool = False) -> None:
+                """0.9.0: send the progress so far to MOTH Cloud (every 10 minutes, and when pausing), so if
+                this job is taken back the experiment continues from here instead of from step 0."""
+                if spec.get("round", 0) >= 0 or completed_steps <= 0 or (completed_steps <= start_step and not force):
+                    return  # evolution jobs only (shared rounds are short), and only with new progress
+                if not force and time.time() - last_snapshot[0] < SNAPSHOT_SECONDS:
+                    return
+                last_snapshot[0] = time.time()
+                try:
+                    st = model.state_dict()
+                    d = {k: st[k].detach().cpu().float() - base[k].float() for k in base}
+                    body = serialize_state(d)
+                    self.client.snapshot(jid, {"base_sha256": spec["base_sha256"], "delta_sha256": tensor_bytes_sha256(body),
+                                               "step": completed_steps, "tokens": n_tokens}, body)
+                except Exception as e:  # noqa: BLE001 — best effort; an older MOTH Cloud has no snapshots
+                    self.log(f"job {jid}: progress snapshot not sent ({e})")
+
             for step in range(start_step, train["steps"]):
                 if self.stop_event.is_set() or self.revoked or self.cancelled_job == jid:
                     if completed_steps > 0:
@@ -420,6 +440,7 @@ class WorkerRunner:
                     raise Stop()
                 if self.paused and completed_steps > 0:
                     checkpoint()
+                    snapshot(force=True)  # a pause may last: let MOTH Cloud continue elsewhere from here
                 while self.paused and not self.stop_event.is_set() and self.cancelled_job != jid:
                     time.sleep(1)
                 if self.stop_event.is_set() or self.revoked or self.cancelled_job == jid:
@@ -446,6 +467,7 @@ class WorkerRunner:
                 if (step + 1) % CHECKPOINT_EVERY == 0 and step + 1 < train["steps"]:
                     checkpoint()
                     self.client.progress(jid, self.progress)
+                    snapshot()
                 if duty < 1.0:
                     time.sleep((time.time() - t0) * (1 / duty - 1))
             checkpoint()  # an upload failure must not discard completed optimization steps

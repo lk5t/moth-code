@@ -526,13 +526,19 @@ def _take_back_stalled(ctx: Ctx, cyc: dict, exp: dict, j: dict, res: dict, setti
     done = float(j["progress"] or 0.0) * int(cfg.get("steps") or 0) * int(cfg.get("batch_size") or 0) * int(cfg.get("seq_len") or 0)
     began = float(res.get("leased_at") or now())
     C.record_throughput(ctx, f"worker:{j['worker_id']}", max(1.0, done), max(1.0, now() - began))
+    try:  # 0.9.0: continue from the progress the worker sent, not from step 0
+        resumed = B.resume_from_snapshot(ctx, exp, json.loads(j["spec"]))
+    except Exception:  # noqa: BLE001
+        resumed = None
     MEM.update_experiment(ctx, exp["id"], status="waiting", backend=None, job_id=None, worker_id=None,
                           error=None, resources={k: v for k, v in res.items()
                                                  if k not in ("leased_at", "leased_by", "last_progress", "last_progress_at")})
     MEM.event(ctx, "experiment.reassigned", f"Worker {j['worker_id']} kept experiment #{exp['id']} but made no training "
               f"progress for {stalled_min:.0f} minutes" + (f" (stuck while {stuck_in})" if stuck_in else
                                                            " (it may be paused or busy)") +
-              ". The job was taken back and the experiment is placed again on the fastest free compute.", level="warning",
+              ". The job was taken back and the experiment is placed again on the fastest free compute"
+              + (f", continuing from step {resumed['step']:,} (the progress the worker sent) for the remaining "
+                 f"{resumed['remaining']:,} steps." if resumed else "."), level="warning",
               cycle_id=cyc["id"], experiment_id=exp["id"], job=j["id"], worker=j["worker_id"])
     return True
 
@@ -652,6 +658,9 @@ def _finish_training(ctx: Ctx, cyc: dict, exp: dict, result: dict, seconds: floa
         return
     from pathlib import Path
 
+    if exp.get("backend") == "local" and (exp.get("config") or {}).get("resume"):  # 0.9.0: count resumed work too
+        result = {**result, "step": B._with_resume(exp, "step", result.get("step")),
+                  "tokens": B._with_resume(exp, "tokens", result.get("tokens"))}
     try:
         rel = B.register_candidate(ctx, exp, Path(result["package"]), result)
     except Exception as e:  # noqa: BLE001 — e.g. invalid package: the experiment failed, nothing else changes

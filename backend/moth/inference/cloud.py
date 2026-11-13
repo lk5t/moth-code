@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import uuid
 from typing import Any, Callable
 
@@ -72,12 +73,20 @@ class MothCloudClient:
     def health(self) -> dict[str, Any]:
         if not self.base_url and not hasattr(self.http, "app"):
             raise CloudUnavailable("No MOTH Cloud endpoint is configured. MOTH-operated servers are not available yet.")
-        try:
-            r = self.http.get(self._url("/v1/health"), headers=self._headers())
-            r.raise_for_status()
-            data = r.json()
-        except (httpx.HTTPError, ValueError) as e:
-            err = CloudUnavailable(_explain(e))
+        data: dict[str, Any] | None = None
+        last: Exception | None = None
+        for attempt in range(2):  # 0.9.0: one retry, so a single slow answer is not reported as "unreachable"
+            try:
+                r = self.http.get(self._url("/v1/health"), headers=self._headers())
+                r.raise_for_status()
+                data = r.json()
+                break
+            except (httpx.HTTPError, ValueError) as e:
+                last = e
+                if attempt == 0 and isinstance(e, (httpx.TimeoutException, httpx.HTTPStatusError, httpx.ConnectError)):
+                    time.sleep(2.0)
+        if data is None:
+            err = CloudUnavailable(_explain(last) if last else "MOTH Cloud did not answer.")
             err.reason = "unreachable"
             raise err from None
         if data.get("service") != "moth-cloud" or data.get("protocol") != PROTOCOL:

@@ -349,6 +349,24 @@ async def job_result(job_id: int, request: Request, w: dict = Depends(current_wo
     return {k: v for k, v in result.items() if k != "aggregated"} | {"aggregated": bool(result.get("aggregated"))}
 
 
+@router.post("/v1/worker/jobs/{job_id}/snapshot")
+async def job_snapshot(job_id: int, request: Request, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
+    """0.9.0: a worker's progress so far on an evolution job, verified and kept so a take-back resumes from it."""
+    j = _job(ctx, w, job_id)
+    if j["kind"] != "evolve_train":
+        raise HTTPException(404, "only evolution jobs keep progress snapshots")
+    try:
+        meta = json.loads(request.headers.get("x-moth-contribution", ""))
+    except json.JSONDecodeError:
+        raise HTTPException(400, "missing snapshot metadata") from None
+    payload = await request.body()
+    if len(payload) > 4 * 1024**3:
+        raise HTTPException(413, "snapshot too large")
+    from moth_server.evolution.backends import accept_snapshot
+
+    return accept_snapshot(ctx, j, meta, payload)
+
+
 @router.post("/v1/worker/jobs/{job_id}/fail")
 def job_fail(job_id: int, body: FailIn, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
     _job(ctx, w, job_id)

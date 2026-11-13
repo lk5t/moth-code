@@ -75,3 +75,17 @@ def test_diagnostics_page_shows_loops_repairs_and_redacted_errors(client, owner)
     assert "abcdefghijklmnop" not in err["message"]  # credentials are redacted before they are kept
     assert "Recent self-repairs" in d["report"] and "loaded v2" in d["report"] and "abcdefghijklmnop" not in d["report"]
     assert client.post("/v1/admin/evolution/diagnostics/check", headers=H(owner["token"])).status_code == 200
+
+
+def test_health_says_why_nothing_answers(client, owner, monkeypatch):
+    from moth_server.evolution import settings as S
+
+    ctx = client.app.state.ctx
+    assert client.get("/cloud/v1/health").json()["status"] == "no_model_deployed"
+    S.update(ctx, {"enabled": True})
+    monkeypatch.setattr(MEM, "active_cycle", lambda ctx: {"id": 1, "status": "training"})
+    monkeypatch.setattr(MEM, "experiments", lambda ctx, cid=None, **k: [{"id": 4, "status": "running"}])
+    h = client.get("/cloud/v1/health").json()
+    assert h["status"] == "training_first_model" and "training its first model (experiment #4)" in h["message"]
+    ctx.db.set_config("deployed_release", {"version": 1})
+    assert client.get("/cloud/v1/health").json()["status"] == "model_loading"

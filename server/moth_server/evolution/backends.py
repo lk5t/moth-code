@@ -87,7 +87,7 @@ def start_local(ctx: Ctx, exp: dict, device: str, settings: dict) -> dict:
             "device": device, "threads": int(lim["cpu_threads"]), "nice": 10, "duty_cycle": float(lim["duty_cycle"]),
             "gpu_memory_fraction": float(lim["gpu_memory_fraction"]) if device.startswith("cuda") else None,
             "from_scratch": cfg.get("method") == "from_scratch"}
-    spec.update(_v2_spec(base, cfg, exp))
+    spec.update(_v2_spec(base, cfg, exp, rd))
     spec["batch_autotune"] = bool(cfg.get("batch_autotune", True))
     spec_path = rd / "spec.json"
     spec_path.write_text(json.dumps(spec, indent=2))
@@ -104,7 +104,7 @@ def start_local(ctx: Ctx, exp: dict, device: str, settings: dict) -> dict:
     return {"pid": proc.pid, "device": device, "spec": str(spec_path), "started": now()}
 
 
-def _v2_spec(base: dict, cfg: dict, exp: dict) -> dict:
+def _v2_spec(base: dict, cfg: dict, exp: dict, rd: Path | None = None) -> dict:
     """Evolution 2.0 additions: curriculum mixture, development checkpoint, growth, lineage counters."""
     out: dict = {}
     if cfg.get("mixture"):
@@ -113,6 +113,9 @@ def _v2_spec(base: dict, cfg: dict, exp: dict) -> dict:
     dev = base["info"].get("dev_checkpoint") or {}
     if dev.get("path"):
         out["init_checkpoint"], out["init_checkpoint_sha256"] = dev["path"], dev.get("sha256")
+    if cfg.get("resume") and not cfg.get("grow") and rd is not None:  # 0.9.0: continue from a worker's progress
+        out["init_checkpoint"] = str(rd / "resume-base.pt")
+        out["init_checkpoint_sha256"] = cfg["resume"]["sha256"]
     if cfg.get("grow"):
         out["grow"] = {"add_layers": cfg["grow"]["add_layers"], "ffn_hidden": cfg["grow"]["ffn_hidden"]}
     tr = base["info"].get("training") or {}
@@ -352,6 +355,11 @@ def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0, worker_ids: list
         weights = rd / "growth-base.pt"
         atomic_torch_save(grown["model"], weights)
         model_config = grown["model_config"]
+    resume = cfg.get("resume") if not cfg.get("grow") else None
+    if resume:  # 0.9.0: continue from the progress kept when the previous compute lost the job
+        weights = rd / "resume-base.pt"
+        if not weights.is_file() or sha256_file(weights) != resume.get("sha256"):
+            raise ValueError("the kept progress of this experiment is missing or damaged")
     if cfg.get("mixture"):  # a curriculum shard: tokens sampled from every domain by weight
         from moth_server.evolution.v2 import write_mixture_shard
 
@@ -366,7 +374,7 @@ def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0, worker_ids: list
     spec = {"evolution_experiment": exp["id"], "round": -exp["id"], "model_version": base["version"],
             "worker_ids": worker_ids,
             "base_sha256": sha256_file(weights),
-            "model_config": model_config, "expanded": bool(cfg.get("grow")),
+            "model_config": model_config, "expanded": bool(cfg.get("grow")), "resume_base": bool(resume),
             "tokenizer_fingerprint": base["info"].get("tokenizer_fingerprint"),
             "shard_id": f"evolution-{exp['id']}", "shard_sha256": shard_sha, "shard_license": ds["license"],
             "job_id": f"evolution-{exp['id']}",
@@ -396,6 +404,8 @@ def job_files(ctx: Ctx, spec: dict) -> tuple[Path, Path]:
 
     exp = MEM.experiment(ctx, int(spec["evolution_experiment"]))
     base = M.release(ctx, exp["base_version"])
+    if spec.get("resume_base"):  # 0.9.0: continuing a taken-back experiment from its kept progress
+        return run_dir(ctx, exp) / "resume-base.pt", run_dir(ctx, exp) / "shard.bin"
     return (run_dir(ctx, exp) / "growth-base.pt" if spec.get("expanded") else Path(base["path"]) / "model.pt"), run_dir(ctx, exp) / "shard.bin"
 
 
@@ -403,6 +413,93 @@ def job_mask(ctx: Ctx, spec: dict) -> Path:
     """The loss mask of an evolution job's shard (exists only when the spec names one)."""
     exp = MEM.experiment(ctx, int(spec["evolution_experiment"]))
     return run_dir(ctx, exp) / "shard.mask"
+
+
+def _with_resume(exp: dict, key: str, value):
+    """Totals include the steps and tokens trained before a resume (0.9.0)."""
+    done = ((exp.get("config") or {}).get("resume") or {}).get(key)
+    return (int(value) + int(done)) if done and value is not None else value
+
+
+def accept_snapshot(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) -> dict:
+    """0.9.0: keep a worker's verified progress (a weight delta after ``step`` steps) for a possible resume."""
+    import torch
+
+    from moth.community.validation import deserialize_state, tensor_bytes_sha256, validate_delta
+    from moth.training.checkpoint import atomic_torch_save
+
+    spec = json.loads(job_row["spec"])
+    exp = MEM.experiment(ctx, int(spec["evolution_experiment"]))
+    steps = int(spec["train"]["steps"])
+    try:
+        step, tokens = int(meta.get("step")), int(meta.get("tokens") or 0)
+    except (TypeError, ValueError):
+        return {"accepted": False, "reasons": ["missing step count"]}
+    reasons = []
+    if meta.get("base_sha256") != spec["base_sha256"]:
+        reasons.append("the snapshot is based on different weights than the job's base model")
+    if tensor_bytes_sha256(payload) != meta.get("delta_sha256"):
+        reasons.append("checksum mismatch")
+    if not 0 < step < steps:
+        reasons.append("the step count is outside the job")
+    if (exp.get("config") or {}).get("grow") or spec.get("expanded"):
+        reasons.append("growth experiments restart from their verified grown base")
+    rd = run_dir(ctx, exp)
+    prev = rd / "snapshot.pt"
+    if not reasons and prev.exists():
+        old = torch.load(prev, map_location="cpu", weights_only=False)
+        if old.get("job_id") == job_row["id"] and int(old.get("step", 0)) >= step:
+            reasons.append("an equal or later snapshot is already kept")
+    if reasons:
+        return {"accepted": False, "reasons": reasons}
+    try:
+        delta = deserialize_state(payload)
+    except Exception as e:  # noqa: BLE001
+        return {"accepted": False, "reasons": [f"unreadable snapshot: {e}"]}
+    state = torch.load(job_files(ctx, spec)[0], map_location="cpu", weights_only=True)
+    report = validate_delta({k: v.float() for k, v in state.items()}, delta, max_relative_norm=EVOLUTION_MAX_RELATIVE_NORM)
+    if not report.ok:
+        return {"accepted": False, "reasons": report.reasons}
+    atomic_torch_save({"delta": delta, "step": step, "tokens": tokens, "job_id": job_row["id"],
+                       "base_sha256": spec["base_sha256"], "worker_id": job_row["worker_id"], "at": now()}, prev)
+    MEM.update_experiment(ctx, exp["id"], resources={**(exp.get("resources") or {}),
+                                                     "snapshot": {"step": step, "tokens": tokens, "at": now()}})
+    return {"accepted": True, "step": step}
+
+
+def resume_from_snapshot(ctx: Ctx, exp: dict, spec: dict) -> dict | None:
+    """Turn the kept snapshot into the experiment's new starting weights; the remaining steps continue
+    from there on whichever compute takes it next. None when there is nothing (valid) to resume from."""
+    import torch
+
+    from moth.community.aggregation import apply_delta
+    from moth.model.registry import sha256_file
+    from moth.training.checkpoint import atomic_torch_save
+
+    rd = run_dir(ctx, exp)
+    snap = rd / "snapshot.pt"
+    cfg = exp.get("config") or {}
+    if not snap.exists() or cfg.get("grow"):
+        return None
+    try:
+        s = torch.load(snap, map_location="cpu", weights_only=False)
+        if s.get("base_sha256") != spec.get("base_sha256"):
+            return None
+        state = torch.load(job_files(ctx, spec)[0], map_location="cpu", weights_only=True)
+        new = apply_delta({k: v.float() for k, v in state.items()}, s["delta"])
+        dtype = state[next(iter(state))].dtype
+        dest = rd / "resume-base.pt"
+        atomic_torch_save({k: v.to(dtype) if v.is_floating_point() else v for k, v in new.items()}, dest)
+    except Exception:  # noqa: BLE001 — a damaged snapshot only means starting over
+        return None
+    prev = cfg.get("resume") or {}
+    done_steps = int(prev.get("step", 0)) + int(s["step"])
+    resume = {"step": done_steps, "tokens": int(prev.get("tokens", 0)) + int(s.get("tokens") or 0),
+              "sha256": sha256_file(dest), "planned_steps": int(prev.get("planned_steps") or cfg["steps"])}
+    remaining = max(1, int(cfg["steps"]) - int(s["step"]))
+    MEM.update_experiment(ctx, exp["id"], config={**cfg, "steps": remaining, "resume": resume})
+    snap.unlink(missing_ok=True)
+    return {**resume, "remaining": remaining}
 
 
 def accept_worker_result(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) -> dict:
@@ -460,8 +557,9 @@ def accept_worker_result(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) ->
         manifest.pop(key, None)  # a candidate receives its own version only after acceptance
     manifest.update(name=f"moth-evolution-e{exp['id']}", created=now(), sha256=sha256_file(pkg / "model.pt"),
                     params=MothConfig.from_dict(spec["model_config"]).num_params(),
-                    training={"method": exp["config"].get("method", "continued"), "backend": "worker", "steps": meta.get("steps"),
-                              "tokens": meta.get("tokens"), "loss_before": meta.get("loss_before"),
+                    training={"method": exp["config"].get("method", "continued"), "backend": "worker",
+                              "steps": _with_resume(exp, "step", meta.get("steps")),
+                              "tokens": _with_resume(exp, "tokens", meta.get("tokens")), "loss_before": meta.get("loss_before"),
                               "train_loss": meta.get("train_loss"),
                               "loss_after": meta.get("loss_after")},
                     lineage={"base_sha256": base["sha256"], "base_name": base["name"], "method": exp["config"].get("method", "continued")})
@@ -469,7 +567,8 @@ def accept_worker_result(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) ->
     (rd / "result.json").write_text(json.dumps({"ok": True, "reason": "completed", "package": str(pkg),
                                                 "sha256": manifest["sha256"], "backend": "worker",
                                                 "loss_before": meta.get("loss_before"),
-                                                "step": meta.get('steps'), "train_loss": meta.get('train_loss'),
-                                                "loss_after": meta.get("loss_after"), "tokens": meta.get("tokens"),
+                                                "step": _with_resume(exp, "step", meta.get('steps')),
+                                                "train_loss": meta.get('train_loss'), "loss_after": meta.get("loss_after"),
+                                                "tokens": _with_resume(exp, "tokens", meta.get("tokens")),
                                                 "batch_tuning": meta.get("batch_tuning")}))
     return {"accepted": True, **report.stats}

@@ -47,14 +47,32 @@ def engine_or_503(ctx: Ctx):
     return engine
 
 
+def _no_model_status(ctx: Ctx) -> tuple[str, str]:
+    """0.9.0: say exactly why nothing is answering: loading, training the first model, or nothing yet."""
+    if ctx.db.get_config("deployed_release", None):
+        return "model_loading", ("MOTH Cloud is loading its model. Answers resume in a moment; it keeps retrying "
+                                 "and falls back to the previous model if the new one cannot be loaded.")
+    try:
+        from moth_server.evolution import memory as MEM, settings as S
+
+        cyc = MEM.active_cycle(ctx) if S.get(ctx).get("enabled") else None
+    except Exception:  # noqa: BLE001
+        cyc = None
+    if cyc:
+        exp = next((e for e in MEM.experiments(ctx, cyc["id"]) if e["status"] == "running"), None)
+        what = f" (experiment #{exp['id']})" if exp else ""
+        return "training_first_model", (f"MOTH is training its first model{what}. It starts answering as soon as "
+                                        "the model passes its checks.")
+    return "no_model_deployed", "MOTH has no model yet. The Owner creates and trains one in MOTH Code → AI → Evolution."
+
+
 @router.get("/health")
 def health(ctx: Ctx = Depends(get_ctx)):
     engine = ctx.extras.get("inference_engine")
     enabled = bool(flags(ctx).get("cloud_inference_enabled"))
     models = []
     if engine is None or not engine.manifest:
-        status, message = "no_model_deployed", ("MOTH has no model yet. The Owner creates and trains one in "
-                                                 "MOTH Code → AI → Evolution.")
+        status, message = _no_model_status(ctx)
     elif not enabled:
         status, message = "inference_disabled", ("A model is deployed, but MOTH Cloud inference is turned off. The Owner "
                                                  "turns it on in Settings → Administration → Policy & flags.")

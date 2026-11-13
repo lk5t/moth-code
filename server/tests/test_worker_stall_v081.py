@@ -102,3 +102,48 @@ def test_a_busy_computer_is_not_trusted_on_its_benchmark(client, owner, tmp_path
     busy, free = sp[ws[0]["worker_id"]], sp[ws[1]["worker_id"]]
     assert busy["ratio"] < C.PREFER_WORKER <= free["ratio"]
     assert "busy" in busy["basis"] and "low memory" in busy["basis"] and free["basis"] == "benchmark"
+
+
+def test_a_taken_back_experiment_continues_from_the_workers_progress(client, owner, tmp_path, monkeypatch):
+    """0.9.0: the worker's verified progress snapshot becomes the next start; only the remaining steps run."""
+    import hashlib
+
+    import torch
+    from moth.community.validation import serialize_state, tensor_bytes_sha256
+
+    ctx, cyc, exp, jid, w = _leased(client, owner, tmp_path, monkeypatch)
+    S.update(ctx, {"backends": {"local_cpu": False, "local_gpu": False, "workers": True}})
+    job = client.post(f"/v1/worker/jobs/{jid}/weights", headers=H(w["worker_token"]))  # POST is not allowed
+    assert job.status_code == 405
+    base = torch.load(__import__("io").BytesIO(client.get(f"/v1/worker/jobs/{jid}/weights",
+                                                          headers=H(w["worker_token"])).content), weights_only=True)
+    spec = json.loads(B.job(ctx, jid)["spec"])
+    steps = int(spec["train"]["steps"])
+    delta = {k: torch.full_like(v.float(), 1e-4) for k, v in base.items()}
+    body = serialize_state(delta)
+    meta = {"base_sha256": spec["base_sha256"], "delta_sha256": tensor_bytes_sha256(body), "step": steps // 2, "tokens": 1234}
+    snap = lambda m, b: client.post(f"/v1/worker/jobs/{jid}/snapshot", content=b, headers={
+        **H(w["worker_token"]), "x-moth-contribution": json.dumps(m), "content-type": "application/octet-stream"}).json()
+    assert not snap({**meta, "delta_sha256": "0" * 64}, body)["accepted"]  # checksum checked
+    assert snap(meta, body)["accepted"]
+    assert not snap(meta, body)["accepted"]  # not the same or an earlier step again
+    clock = [1_000_000.0]
+    monkeypatch.setattr(EN, "now", lambda: clock[0])
+    client.post("/v1/worker/heartbeat", json={"version": "0.9.0", "job_id": jid, "progress": 0.5}, headers=H(w["worker_token"]))
+    _tick(ctx, cyc, exp["id"])
+    clock[0] += 200
+    _tick(ctx, cyc, exp["id"])  # no progress for 2+ minutes after training started: taken back
+    e = MEM.experiment(ctx, exp["id"])
+    assert e["status"] == "waiting"
+    r = e["config"]["resume"]
+    assert r["step"] == steps // 2 and r["tokens"] == 1234 and e["config"]["steps"] == steps - steps // 2
+    ev = next(x for x in MEM.events(ctx, 10) if x["kind"] == "experiment.reassigned")
+    assert f"continuing from step {steps // 2:,}" in ev["message"]
+    # the next job starts from base + delta, for the remaining steps only
+    jid2 = B.create_worker_job(ctx, e)
+    spec2 = json.loads(B.job(ctx, jid2)["spec"])
+    assert spec2["resume_base"] and spec2["train"]["steps"] == steps - steps // 2
+    start = torch.load(B.job_files(ctx, spec2)[0], weights_only=True)
+    k = next(iter(base))
+    assert torch.allclose(start[k].float(), base[k].float() + 1e-4, atol=1e-6)
+    assert hashlib.sha256(B.job_files(ctx, spec2)[0].read_bytes()).hexdigest() == spec2["base_sha256"]

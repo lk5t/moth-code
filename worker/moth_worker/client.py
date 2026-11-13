@@ -86,6 +86,11 @@ class WorkerClient:
         headers = {**self._headers(), "x-moth-contribution": json.dumps(meta), "content-type": "application/octet-stream"}
         return self._check(self.http.post(f"/v1/worker/jobs/{job_id}/result", headers=headers, content=payload)).json()
 
+    def snapshot(self, job_id: int, meta: dict[str, Any], payload: bytes) -> dict:
+        """0.9.0: progress so far (a weight delta like the final result), so the work survives a take-back."""
+        headers = {**self._headers(), "x-moth-contribution": json.dumps(meta), "content-type": "application/octet-stream"}
+        return self._check(self.http.post(f"/v1/worker/jobs/{job_id}/snapshot", headers=headers, content=payload)).json()
+
     def leave(self) -> None:
         """Revoke this worker's own credential (used by ``moth-worker uninstall``)."""
         self._check(self.http.post("/v1/worker/leave", headers=self._headers()))
