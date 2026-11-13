@@ -3,8 +3,7 @@ import hashlib
 import json
 import random
 
-import pyarrow as pa
-import pyarrow.parquet as pq
+import pytest
 
 from moth.datafactory import build, catalog, fetch, parse
 from test_datafactory import FakeHTTP
@@ -40,6 +39,9 @@ def test_shards_follow_the_budget():
 
 
 def _parquet(path, table):
+    pa = pytest.importorskip("pyarrow")  # parquet support ships with MOTH Cloud (server dependency)
+    import pyarrow.parquet as pq
+
     pq.write_table(pa.table(table), path)
     return path
 
