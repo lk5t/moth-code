@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ api: vi.fn(), role: "owner" }));
 vi.mock("@/lib/account", () => ({ serverApi: mocks.api, useAccount: (fn: (s: any) => unknown) => fn({ token: "t", user: { role: mocks.role } }) }));
 vi.mock("@/features/owner/ops", () => ({ secure: (fn: () => Promise<unknown>) => fn() }));
 vi.mock("@/lib/cloud-progress", () => ({ refreshCloudProgress: vi.fn() }));
-import { ModelTab, benchmarkChange, benchmarkValue, capabilityLabel } from "@/features/intelligence/ModelTab";
+import { ModelTab, benchmarkChange, benchmarkValue, capabilityLabel, changeLabel } from "@/features/intelligence/ModelTab";
 
 const v3 = { version: 52, model_version: "0.0.3", name: "moth-evolution-v52-e8", display_name: "MOTH 0.0.3", params: 99648, params_verified: true,
   config: { n_layers: 4, d_model: 128, n_heads: 4, vocab_size: 272 }, deployed: true, retained: true, model_id: "moth-evolution-v52-e8",
@@ -48,5 +48,7 @@ describe("Model tab", () => {
     expect(benchmarkValue({ value: 2.31, metric: "loss" })).toBe("2.310 loss");
     expect(benchmarkChange({ value: 2.0, higher_is_better: false }, { value: 2.5 })).toBeCloseTo(0.5);
     expect(capabilityLabel("holdout_python")).toBe("Held-out python");
+    expect(changeLabel({ value: 3.3, metric: "loss" }, 0.327)).toBe("0.327");  // a loss change is not percentage points
+    expect(changeLabel({ value: 0.42, metric: "accuracy" }, 0.02)).toBe("2.0 pts");
   });
 });

@@ -30,12 +30,23 @@ const CAPABILITY: Record<string, string> = {
 export const capabilityLabel = (key: string) =>
   CAPABILITY[key] ?? (key.startsWith("holdout_") ? `Held-out ${key.slice(8).replaceAll("_", " ")}` : key.replaceAll("_", " "));
 
+/** Rates (accuracy, pass rate …) are 0–1 values shown as percentages; losses and the like are not. */
+export function isRate(b: Any | undefined): boolean {
+  return !!b && typeof b.value === "number" && !/loss|perplexity|bpb|bits/i.test(String(b.metric ?? "")) && b.value >= 0 && b.value <= 1;
+}
+
 /** A benchmark value as people read it: rates as percentages, losses as numbers. */
 export function benchmarkValue(b: Any | undefined): string {
   if (!b || typeof b.value !== "number" || !Number.isFinite(b.value)) return "—";
   const metric = String(b.metric ?? "");
-  if (/loss|perplexity|bpb|bits/i.test(metric) || b.value > 1 || b.value < 0) return `${b.value.toFixed(3)}${metric ? ` ${metric.replaceAll("_", " ")}` : ""}`;
+  if (!isRate(b)) return `${b.value.toFixed(3)}${metric ? ` ${metric.replaceAll("_", " ")}` : ""}`;
   return `${(b.value * 100).toFixed(1)}%`;
+}
+
+/** A change shown in the benchmark's own unit: percentage points for rates, the raw amount otherwise. */
+export function changeLabel(b: Any, change: number): string {
+  const mag = Math.abs(change);
+  return isRate(b) ? `${(mag * 100).toFixed(1)} pts` : mag.toFixed(3);
 }
 
 /** Change from the rollback model, signed so that positive always means better. */
@@ -155,10 +166,10 @@ export function ModelTab({ progress }: { progress: Any | null }) {
       {benches.length ? <ul className="mt-3 grid gap-2 sm:grid-cols-2">{benches.map(([k, b]) => {
         const prev = rollback?.benchmarks?.[k];
         const change = benchmarkChange(b, prev);
-        const pct = typeof b.value === "number" && b.value >= 0 && b.value <= 1 && b.higher_is_better !== false ? b.value * 100 : null;
+        const pct = isRate(b) && b.higher_is_better !== false ? b.value * 100 : null;
         return <li key={k} className="rounded-lg border border-border bg-bg/60 p-2.5">
           <div className="flex items-center justify-between gap-2 text-xs"><span className="text-fg">{capabilityLabel(k)}</span>
-            <span className="tabular-nums text-muted">{benchmarkValue(b)}{change != null && <span className={cn("ml-1.5", change > 0 ? "text-success" : change < 0 ? "text-danger" : "text-faint")}>{change > 0 ? "▲" : change < 0 ? "▼" : "="}{Math.abs(change) < 1 ? ` ${(Math.abs(change) * 100).toFixed(1)} pts` : ` ${Math.abs(change).toFixed(3)}`}</span>}</span></div>
+            <span className="tabular-nums text-muted">{benchmarkValue(b)}{change != null && <span className={cn("ml-1.5", change > 0 ? "text-success" : change < 0 ? "text-danger" : "text-faint")}><span className="sr-only">{change > 0 ? "better by" : change < 0 ? "worse by" : "unchanged"}</span>{change > 0 ? "▲" : change < 0 ? "▼" : "="} {changeLabel(b, change)}</span>}</span></div>
           {pct != null && <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full bg-accent transition-[width] duration-700" style={{ width: `${Math.max(2, pct)}%` }} /></div>}
         </li>;
       })}</ul> : <p className="mt-2 text-xs text-muted">No benchmark results are recorded for this version yet. They appear after its first evaluation.</p>}

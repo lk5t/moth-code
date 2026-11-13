@@ -111,7 +111,8 @@ def main(installer):
         ui.click('Evolution', control_type='TabItem')
         # 0.7.1: the active model, its measured architecture and lifecycle live in AI → Model
         ui.click('Model', control_type='TabItem')
-        wait(lambda: 'Active model' in ui.text(offscreen=True) and 'counted from the saved weights' in ui.text(offscreen=True),
+        # case-insensitive: Chromium exposes CSS-uppercased labels ("ACTIVE MODEL") to UI Automation
+        wait(lambda: 'active model' in ui.text(offscreen=True).lower() and 'counted from the saved weights' in ui.text(offscreen=True).lower(),
              'active model with its verified parameter count')
         ui.find('decoder layers', contains=True, timeout=30)  # the core visual is labelled with the real layer count
         print('::notice title=GENESIS native stage::Workspace drafts and the AI Evolution page passed', flush=True)
