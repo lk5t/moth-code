@@ -90,3 +90,23 @@ Evolution with the full curriculum and promoted only through the gates above.
   they were not available during development.
 * Coding benchmarks execute Python only; other languages are trained on text but not executed.
 * GPU and multi-machine performance were not measured on real hardware.
+
+
+## 0.8.1 — Evolution never runs dry
+
+**What happened.** Evolution never repeats a configuration on the same model. Once every planned
+variant (curricula × learning rates) had been tried and rejected — for example after early stopping
+with no held-out improvement — each new cycle found nothing to run and completed at once, so training
+looked stopped.
+
+**Fix.** When nothing new is left, Evolution explores (`v2._explore`): learning rates at ×0.5, ×2,
+×0.25, ×4, ×0.7, ×1.4, ×0.125 and ×8 of the best known one, 1–3× the steps, the weakness-tilted and
+balanced curricula in turn, and a fresh data sample; the exploration number is part of the
+configuration, so nothing is repeated. The first time a model runs out of ideas, the data library is
+also asked to grow. Exploration only creates candidates: the gates, monitoring and rollback decide.
+If a cycle still cannot plan anything (no prepared data yet), the next attempt is 5 minutes later.
+
+**Time estimates.** "Elapsed" used the experiment's first start time and the viewer's clock; a worker
+experiment that waited in the queue showed hours although it had trained for minutes. MOTH Cloud now
+sends `elapsed_seconds`, measured on its own clock from when a worker leased the job (or across the
+local training sessions). "Remaining" still prefers the trainer's own measured rate.

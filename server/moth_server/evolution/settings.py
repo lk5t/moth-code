@@ -67,6 +67,8 @@ DEFAULTS: dict[str, Any] = {
     "rollout": {"canary_percent": 20.0},
     # model retention after a promotion: the active model and the previous working one (0 = keep all)
     "retention": {"models": 2},
+    # 0.8.0: the held-out conversation and coding benchmarks are part of every candidate evaluation
+    "evaluation": {"builtin_suites": True},
 }
 
 _BOUNDS = {

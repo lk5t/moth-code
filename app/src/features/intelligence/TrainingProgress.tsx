@@ -52,7 +52,11 @@ function Experiment({ experiment, report, paused, nowSec }: { experiment: Any; r
   const pct = fraction != null && Number.isFinite(fraction) ? Math.max(0, Math.min(100, fraction * 100)) : null;
   const running = experiment.status === "running";
   const active = running && !paused && (step > 0 || (pct ?? 0) > 0);
-  const elapsed = running && num(experiment.started_at) ? nowSec - experiment.started_at : num(experiment.compute_seconds) && experiment.compute_seconds > 0 ? experiment.compute_seconds : null;
+  // 0.8.1: MOTH Cloud measures elapsed time itself (from when the compute actually took the work), so a
+  // job that waited in the queue, or a viewer whose clock differs from the server's, never inflates it.
+  const elapsed = num(experiment.elapsed_seconds) ? experiment.elapsed_seconds
+    : running && num(experiment.started_at) ? Math.max(0, nowSec - experiment.started_at)
+    : num(experiment.compute_seconds) && experiment.compute_seconds > 0 ? experiment.compute_seconds : null;
   // Remaining time only from measurements: the trainer's own estimate, or the measured step rate.
   const eta = num(report.eta_seconds) && report.eta_seconds > 0 ? report.eta_seconds
     : active && num(step) && step > 0 && num(max) && elapsed ? (max - step) * (elapsed / step) : null;

@@ -590,6 +590,9 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                           "candidate_version": e.get("candidate_version"), "error": e.get("error"),
                           # 0.6.2 telemetry: when it ran, on what data and at what settings (owner only below)
                           "started_at": e.get("started_at"), "finished_at": e.get("finished_at"),
+                          # 0.8.1: measured by MOTH Cloud's clock from when the compute actually took the work
+                          # (a worker experiment can wait in the queue long before a worker leases it)
+                          "elapsed_seconds": _elapsed(e),
                           "compute_seconds": e.get("compute_seconds"), "worker_id": e.get("worker_id"),
                           "data": {"stage": ((e["config"] or {}).get("mixture") or {}).get("stage"),
                                    "domains": ((e["config"] or {}).get("mixture") or {}).get("weights") or {},
@@ -657,6 +660,21 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                                                             .label("t")))["t"])},
         "measured": "every value is a measurement on held-out data or a recorded count, except fields named *_estimate",
     }
+
+
+def _elapsed(e: dict) -> float | None:
+    """Seconds of actual work on an experiment, measured on the server (never the viewer's clock)."""
+    import time as _t
+
+    res = e.get("resources") or {}
+    done = float(e.get("compute_seconds") or 0.0)
+    if e.get("status") != "running":
+        return round(done, 1) if done > 0 else None
+    if e.get("backend") == "worker":
+        start = res.get("leased_at")
+        return round(max(0.0, _t.time() - float(start)), 1) if start else None
+    start = res.get("started")
+    return round(done + max(0.0, _t.time() - float(start)), 1) if start else (round(done, 1) if done else None)
 
 
 def _lifecycle(ctx, current):

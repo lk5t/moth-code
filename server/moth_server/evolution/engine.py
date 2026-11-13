@@ -332,6 +332,7 @@ def _planning(ctx: Ctx, cyc: dict, settings: dict) -> None:
                          result={"outcome": "nothing_to_do", "notes": result["notes"]})
         MEM.event(ctx, "cycle.nothing_to_do", "; ".join(result["notes"]), cycle_id=cyc["id"])
         _schedule_next(ctx, failed=False)
+        _set_state(ctx, next_cycle_at=now() + IDLE_RECHECK_SECONDS)  # 0.8.1: look again soon, do not spin
         return
     t = now()
     with ctx.db.tx() as c:
@@ -462,7 +463,8 @@ def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
                          result={**(MEM.cycle(ctx, cyc["id"])["result"] or {}), "waiting_reason": None})
 
 
-REASSIGN_SECONDS = 600.0  # a worker job nobody has taken (or a disconnected worker's requeued job) for this long
+REASSIGN_SECONDS = 600.0
+IDLE_RECHECK_SECONDS = 300.0  # nothing could be planned (e.g. data still being prepared): plan again after this  # a worker job nobody has taken (or a disconnected worker's requeued job) for this long
 
 
 def _reassign_to_cloud(ctx: Ctx, cyc: dict, exp: dict, j: dict, settings: dict) -> bool:

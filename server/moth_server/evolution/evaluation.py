@@ -115,7 +115,10 @@ def capability_suites(ctx: Ctx) -> list[dict[str, Any]]:
         lim = CAPABILITY_LIMITS["holdout"]
         out.append({"id": f"capability:holdout:{dom}", "kind": "capability", "capability": "holdout", "path": str(p),
                     "limit": lim, "name": f"Held-out {dom}", "sha": _sha(f"capability/v1:holdout:{lim}:{file_sha(p)}")})
-    out += builtin_suites()
+    from moth_server.evolution import settings as _S
+
+    if (_S.get(ctx).get("evaluation") or {}).get("builtin_suites", True):
+        out += builtin_suites()
     out.append({"id": "capability:safety:baseline", "kind": "capability", "capability": "safety",
                 "name": "Safety (harmful requests refused)", "sha": _sha("capability/v1:safety:1"),
                 "policy": _serving_policy(ctx)})

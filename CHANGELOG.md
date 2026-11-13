@@ -3,6 +3,13 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.8.1 — Evolution never runs dry
+
+- Evolution no longer stalls once every planned configuration was tried on the current model: it explores new learning rates around the best known one, longer runs, the other curriculum and fresh data samples (never repeating a configuration), and asks the data library to grow. Every candidate still passes the same gates.
+- A cycle that genuinely cannot plan anything (for example while data is prepared) checks again after 5 minutes instead of looping.
+- Elapsed time is measured by MOTH Cloud from when the compute actually took the work (a worker job can wait in the queue first), never from the viewer's clock — fixing hours-long "Elapsed" values for experiments that had run for minutes.
+- The built-in conversation and coding benchmarks are a setting (`evaluation.builtin_suites`, on by default).
+
 ## 0.8.0 — COGNITIVE EVOLUTION
 
 - Conversation: verified multi-turn conversations that depend on earlier turns, conversation quality filters, and a held-out multi-turn benchmark scored per skill (context retention, follow-ups, clarifying questions, "I don't know", end of turn, repetition).

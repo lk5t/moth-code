@@ -52,3 +52,17 @@ def test_generated_curricula_are_adopted_once_where_generated_data_is_used(clien
     ctx.db.set_config("discovery_generated_v080", None)
     D.update(ctx, {"approved_sources": ["python-stdlib"]})  # never used generated data: left alone
     assert D.adopt_generated_sources(ctx) == []
+
+
+
+def test_builtin_suites_join_candidate_evaluation_unless_turned_off(client, tmp_path, monkeypatch):
+    from moth_server.evolution import settings as S
+    from moth_server.intelligence import library
+
+    ctx = client.app.state.ctx
+    (tmp_path / "eval").mkdir()
+    monkeypatch.setattr(library, "eval_dir", lambda c: tmp_path / "eval")
+    ids = {s["id"] for s in EV.capability_suites(ctx)}
+    assert {"capability:dialogue:builtin", "capability:codegen:builtin", "capability:debugging:builtin"} <= ids
+    S.update(ctx, {"evaluation": {"builtin_suites": False}})
+    assert not any(i.endswith(":builtin") for i in (s["id"] for s in EV.capability_suites(ctx)))

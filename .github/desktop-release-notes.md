@@ -2,7 +2,9 @@
 
 ## MOTH Code __VERSION__ for Windows
 
-### What's new — COGNITIVE EVOLUTION
+### What's new — 0.8.1: Evolution keeps going (it explores when every plan was tried) and experiment times are measured by MOTH Cloud
+
+### COGNITIVE EVOLUTION (0.8.0)
 
 - MOTH's evolution now focuses on **conversation** (50 %) and **coding** (40 %), with new verified
   training data: multi-turn conversations that depend on earlier messages, debugging exercises, code

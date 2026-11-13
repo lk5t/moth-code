@@ -244,6 +244,8 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
         cfg["strategy"] = strategy
         _add(ctx, out, cfg, src, f"{why} (stage {mix['stage']}); lr {lr:.2e}, {cfg['steps']} steps"
              + ("; continues the development checkpoint" if dev else ""), int(settings["max_experiments_per_cycle"]))
+    if not [e for e in out["experiments"] if e["config"].get("method") != "expansion"]:
+        _explore(ctx, out, base, arch, src, tilted, balanced, lrs, settings, cycle_seed)
     g = settings.get("growth") or {}
     # 0.6.3 capability-based growth: the decision comes from measured capabilities, training progress
     # and resources (see capacity.py); the engine passes the assessment it already made this cycle.
@@ -290,6 +292,51 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
                      f"{opt['params']:,} parameters). It is trained as a separate candidate and must pass every "
                      "gate against the deployed model; otherwise it is discarded.", 99)
     return out
+
+
+# 0.8.1: Evolution never runs out of work. Identical configurations are never repeated, so once every
+# planned variant was tried on the current model, each further cycle explores a new one: a learning rate
+# further from the best known one, longer training, a fresh data sample (the exploration number is part
+# of the configuration) and the other curriculum; the data library is also asked to grow. Every candidate
+# still passes the same gates, so exploration can never promote a worse model.
+EXPLORE_LR = (0.5, 2.0, 0.25, 4.0, 0.7, 1.4, 0.125, 8.0)
+EXPLORE_STEPS = (1, 2, 1, 3)
+
+
+def _explore(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, tilted: dict, balanced: dict,
+             lrs: list[float], settings: dict, seed: int) -> None:
+    key = f"evolution_explore:{base['version']}"
+    n = int(ctx.db.get_config(key, 0) or 0)
+    tr = settings["training"]
+    limit = int(settings["max_experiments_per_cycle"])
+    for i in range(n, n + 64):  # skip anything tried before, never loop forever
+        if len(out["experiments"]) >= limit:
+            break
+        f = EXPLORE_LR[i % len(EXPLORE_LR)]
+        lr = min(1e-2, max(1e-6, lrs[0] * f))
+        mix = (tilted, balanced)[(i // len(EXPLORE_LR)) % 2]
+        if not mix.get("weights"):
+            mix = balanced if mix is tilted else tilted
+        steps = int(tr["steps"]) * EXPLORE_STEPS[(i // 2) % len(EXPLORE_STEPS)]
+        cfg = _config(base, arch, src, mix, lr, steps, settings, seed + i)
+        cfg["strategy"] = "weakness" if mix is tilted else "balanced"
+        cfg["exploration"] = i + 1
+        before = len(out["experiments"])
+        _add(ctx, out, cfg, src, f"exploration #{i + 1}: every earlier configuration on this model was tried, so "
+             f"MOTH tries lr {lr:.2e} (×{f:g} of the best known), {steps} steps, the "
+             f"{'weakness-tilted' if mix is tilted else 'balanced'} curriculum and a fresh data sample", limit)
+        if len(out["experiments"]) > before:
+            ctx.db.set_config(key, i + 1)
+    if not n:  # the first time this model runs out of ideas: more data is the strongest new lever
+        try:
+            from moth_server.evolution import autopilot as AP
+
+            AP.scale_data(ctx, force=True, reason="every planned configuration was tried on this model")
+        except Exception:  # noqa: BLE001 — exploration continues without it
+            pass
+    if out["experiments"]:
+        out["notes"].append("Every planned configuration was already tried on this model; exploring new learning "
+                            "rates, longer training and fresh data samples instead of waiting.")
 
 
 def _config(base, arch, src, mix, lr, steps, settings, seed) -> dict[str, Any]:
