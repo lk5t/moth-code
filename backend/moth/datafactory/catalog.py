@@ -160,7 +160,16 @@ SOURCES: list[dict[str, Any]] = [
           ("reasoning", "Verified reasoning", "reasoning", 15_000,
            "Number sequences, orderings from comparisons and multi-step word problems, each re-derived."),
           ("language", "Verified language basics", "language", 15_000,
-           "Plurals, opposites, alphabetical order, word counts and sentence casing from checked tables."))],
+           "Plurals, opposites, alphabetical order, word counts and sentence casing from checked tables."),
+          ("dialogue", "Verified multi-turn conversations", "conversation", 30_000,
+           "Conversations that depend on earlier turns: remembering facts, corrections, follow-ups, list "
+           "recall, clarifying questions, saying \"I don't know\", greetings and formats — each answer re-derived."),
+          ("debugging", "Verified debugging exercises", "code", 15_000,
+           "Functions with one planted bug (confirmed to fail their tests) and the fix (confirmed to pass)."),
+          ("code_explain", "Verified code explanations", "code", 8_000,
+           "What a function does, its inputs and a worked example computed by running it."),
+          ("test_writing", "Verified test writing", "code", 8_000,
+           "Tests for a function; every assertion is executed against it before use."))],
 ]
 
 # Each Dolly category maps to the capability it mostly teaches.

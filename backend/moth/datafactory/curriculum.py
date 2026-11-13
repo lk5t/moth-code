@@ -28,9 +28,12 @@ STAGES: list[dict[str, Any]] = [
     {"id": "skills", "name": "Maths, reasoning and code",
      "priorities": {"code": 0.28, "math": 0.2, "reasoning": 0.17, "conversation": 0.15, "knowledge": 0.1,
                     "language": 0.06, "writing": 0.04}},
-    {"id": "balanced", "name": "Balanced improvement",
-     "priorities": {"conversation": 0.2, "code": 0.18, "knowledge": 0.16, "language": 0.12, "math": 0.12,
-                    "reasoning": 0.12, "writing": 0.1}},
+    # 0.8.0 COGNITIVE EVOLUTION: the steady state centres on conversation (50 %) and coding (40 %), with
+    # 10 % for the other foundations. These are starting proportions: measured weaknesses still shift
+    # them (``weakness``), replay floors protect what was learned, and repetition caps still apply.
+    {"id": "balanced", "name": "Conversation and coding focus",
+     "priorities": {"conversation": 0.42, "writing": 0.08, "code": 0.40, "knowledge": 0.03, "language": 0.03,
+                    "math": 0.02, "reasoning": 0.02}},
 ]
 
 REPLAY_FLOOR = 0.03  # every learned domain keeps at least this share (memory protection)

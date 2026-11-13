@@ -117,6 +117,26 @@ def _code_quality(text: str) -> tuple[float, str | None]:
     return round(min(1.0, score), 4), None
 
 
+def conversation_issue(msgs: list[dict[str, Any]]) -> str | None:
+    """Why a conversation is unsuitable for training, or None (0.8.0).
+
+    Roles must alternate user/assistant (an optional system message first); an assistant must not repeat
+    an earlier reply word for word; replies must not loop (few distinct word pairs in a long reply)."""
+    turns = [m for m in msgs if m["role"] != "system"]
+    if any(m["role"] not in ("user", "assistant") for m in turns) or not turns or turns[0]["role"] != "user":
+        return "bad_roles"
+    if any(turns[i]["role"] == turns[i + 1]["role"] for i in range(len(turns) - 1)):
+        return "roles_not_alternating"
+    replies = [normalize(m["content"]) for m in turns if m["role"] == "assistant"]
+    if len(replies) != len(set(replies)):
+        return "repeated_reply"
+    for r in replies:
+        w = words(r)
+        if len(w) >= 30 and len(set(zip(w, w[1:]))) / (len(w) - 1) < 0.35:
+            return "repetitive_reply"
+    return None
+
+
 def quality(rec: dict[str, Any]) -> tuple[float, str | None]:
     if "messages" in rec:
         msgs = rec["messages"]
@@ -124,6 +144,9 @@ def quality(rec: dict[str, Any]) -> tuple[float, str | None]:
             return 0.0, "incomplete_conversation"
         if any(not m["content"].strip() for m in msgs):
             return 0.0, "empty_turn"
+        issue = conversation_issue(msgs)  # 0.8.0: structure and repetition of multi-turn conversations
+        if issue:
+            return 0.0, issue
         answer = msgs[-1]["content"]
         if rec["domain"] == "code" or "```" in answer:
             return 0.85, None  # curated benchmark-style pairs: kept

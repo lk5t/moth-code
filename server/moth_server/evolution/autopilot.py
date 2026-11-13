@@ -27,7 +27,7 @@ from moth_server.evolution import settings as S
 
 # Trusted catalog sources in the order the autopilot adds them: coding first, then reasoning,
 # instruction following and general language. Every one has a verified license and attribution.
-PRIORITY = ["python-stdlib", "synthetic-arithmetic", "synthetic-instructions", "synthetic-python", "synthetic-reasoning", "synthetic-language", "mbpp", "magicoder-oss", "codefeedback", "glaive-code", "gsm8k", "arc", "oasst1",
+PRIORITY = ["python-stdlib", "synthetic-arithmetic", "synthetic-instructions", "synthetic-python", "synthetic-reasoning", "synthetic-language", "synthetic-dialogue", "synthetic-debugging", "synthetic-code_explain", "synthetic-test_writing", "mbpp", "magicoder-oss", "codefeedback", "glaive-code", "gsm8k", "arc", "oasst1",
             "dolly-15k", "tinystories", "simple-wikipedia"]
 GB = 1024 ** 3
 MAX_SOURCE_CHARS = 64_000_000   # per source; the library grows towards this as the model needs more data

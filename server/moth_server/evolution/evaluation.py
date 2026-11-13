@@ -115,9 +115,51 @@ def capability_suites(ctx: Ctx) -> list[dict[str, Any]]:
         lim = CAPABILITY_LIMITS["holdout"]
         out.append({"id": f"capability:holdout:{dom}", "kind": "capability", "capability": "holdout", "path": str(p),
                     "limit": lim, "name": f"Held-out {dom}", "sha": _sha(f"capability/v1:holdout:{lim}:{file_sha(p)}")})
+    out += builtin_suites()
     out.append({"id": "capability:safety:baseline", "kind": "capability", "capability": "safety",
                 "name": "Safety (harmful requests refused)", "sha": _sha("capability/v1:safety:1"),
                 "policy": _serving_policy(ctx)})
+    return out
+
+
+def builtin_suites() -> list[dict[str, Any]]:
+    """0.8.0: conversation and coding benchmarks that need no dataset build. Their items come from
+    value lists and functions that never appear in training data (moth.datafactory.dialogue/coding);
+    the suite hash covers the items, so a changed benchmark is never compared with old results."""
+    from moth.datafactory import coding, dialogue
+
+    conv = json.dumps(list(dialogue.conversations(48, 0, "eval")), sort_keys=True)
+    out = [{"id": "capability:dialogue:builtin", "kind": "capability", "capability": "dialogue", "limit": 48,
+            "name": "Conversation (multi-turn, held out)", "sha": _sha("capability/v1:dialogue:" + conv)}]
+    for kind, name in (("codegen", "Code generation (executed, held out)"), ("debugging", "Debugging (executed, held out)")):
+        items = json.dumps(coding.eval_items(kind), sort_keys=True)
+        out.append({"id": f"capability:{kind}:builtin", "kind": "capability", "capability": kind,
+                    "name": name, "sha": _sha(f"capability/v1:{kind}:" + items)})
+    return out
+
+
+# 0.8.0: capability groups that must stay balanced (conversation and coding are the priorities)
+GROUPS = {"conversation": ("dialogue", "instruction", "holdout_conversation"),
+          "coding": ("codegen", "debugging", "code", "holdout_code")}
+
+
+def group_changes(suites: list[dict], base: dict, cand: dict) -> dict[str, dict[str, Any]]:
+    """Mean change per capability group (accuracy: points; held-out loss: relative improvement)."""
+    out: dict[str, dict[str, Any]] = {}
+    for s in suites:
+        if s.get("kind") != "capability":
+            continue
+        key = f"holdout_{s['id'].split(':')[2]}" if s.get("capability") == "holdout" else s.get("capability")
+        group = next((g for g, members in GROUPS.items() if key in members), None)
+        b, c = base.get(s["id"]) or {}, cand.get(s["id"]) or {}
+        if group is None or not (b.get("ok") and c.get("ok")):
+            continue
+        bv, cv = float(b["value"]), float(c["value"])
+        change = (cv - bv) if c.get("higher_is_better") else ((bv - cv) / bv if bv else 0.0)
+        g = out.setdefault(group, {"changes": {}, "mean": 0.0})
+        g["changes"][key] = round(change, 4)
+    for g in out.values():
+        g["mean"] = round(sum(g["changes"].values()) / len(g["changes"]), 4)
     return out
 
 
@@ -279,6 +321,14 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
                       "detail": "the training data's validation split could not be scored"})
     if growth and growth.get("target_capabilities"):
         gates.append(growth_gate(growth["target_capabilities"], suites, base_scores["suites"], cand_scores["suites"]))
+    groups = group_changes(suites, base_scores["suites"], cand_scores["suites"])
+    if groups:  # 0.8.0: a better loss elsewhere never excuses worse conversation or coding as a whole
+        tol = float(g["task_tolerance"])
+        worse = {k: v["mean"] for k, v in groups.items() if v["mean"] < -tol}
+        gates.append({"gate": "balanced_capabilities", "passed": not worse, "groups": groups,
+                      "detail": "; ".join(f"{k}: mean change {v['mean']:+.1%}" for k, v in groups.items())
+                                + (f" — {', '.join(worse)} got worse beyond {tol:.0%}" if worse else
+                                   " — no capability group got worse")})
     bp, cp = base_scores["performance"], cand_scores["performance"]
     if bp.get("tokens_per_second") and cp.get("tokens_per_second") is not None:
         ratio = cp["tokens_per_second"] / bp["tokens_per_second"]

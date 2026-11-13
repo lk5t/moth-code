@@ -27,12 +27,14 @@ from moth_server.db import evaluation_reports
 TARGETS: dict[str, tuple[float, float]] = {
     "math": (0.0, 0.2), "reasoning": (0.25, 0.5), "code": (0.0, 0.15), "instruction": (0.0, 0.8),
     "safety": (0.0, 0.95),
+    # 0.8.0 priorities: multi-turn conversation and executed coding benchmarks
+    "dialogue": (0.0, 0.7), "codegen": (0.0, 0.3), "debugging": (0.0, 0.3),
 }
 # which Data Factory domains train a capability
 DOMAINS = {"math": ["math"], "reasoning": ["reasoning", "knowledge"], "code": ["code"],
            "instruction": ["conversation", "writing"], "safety": ["conversation"],
            "language": ["language"], "knowledge": ["knowledge"], "conversation": ["conversation"],
-           "writing": ["writing"]}
+           "writing": ["writing"], "dialogue": ["conversation"], "codegen": ["code"], "debugging": ["code"]}
 REGRESSION_TOLERANCE = 0.02
 
 
