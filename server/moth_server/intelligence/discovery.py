@@ -16,8 +16,9 @@ from moth_server.context import Ctx
 KEY = "library_discovery"
 DEFAULTS = {"enabled": True, "approved_sources": ["python-stdlib"],
             "max_download_bytes": 256_000_000, "max_source_chars": 500_000, "retry_seconds": 3600,
-            "check_updates_seconds": 86400}
-LICENSES = {"CC0-1.0", "PSF-2.0", "MIT", "Apache-2.0", "CC-BY-4.0", "CC-BY-SA-3.0", "CC-BY-SA-4.0", "CDLA-Sharing-1.0"}
+            "check_updates_seconds": 86400, "autonomous_sources": True}
+LICENSES = {"CC0-1.0", "PSF-2.0", "MIT", "Apache-2.0", "CC-BY-4.0", "CC-BY-SA-3.0", "CC-BY-SA-4.0", "CDLA-Sharing-1.0",
+            "ODC-By-1.0"}
 
 
 def policy(ctx: Ctx) -> dict:
@@ -30,7 +31,8 @@ def update(ctx: Ctx, changes: dict) -> dict:
     if set(changes) - set(DEFAULTS):
         raise ValueError("Unknown discovery policy setting")
     p = {**policy(ctx), **changes}
-    if not isinstance(p['enabled'], bool) or not isinstance(p['approved_sources'], list):
+    if not isinstance(p['enabled'], bool) or not isinstance(p['approved_sources'], list) \
+            or not isinstance(p['autonomous_sources'], bool):
         raise ValueError("Invalid discovery switches or sources")
     for sid in p['approved_sources']:
         try:
@@ -39,7 +41,7 @@ def update(ctx: Ctx, changes: dict) -> dict:
             raise ValueError("Only trusted catalog sources may be approved") from None
         if src['license'] not in LICENSES or not src.get('attribution'):
             raise ValueError(f"Unverified training license or attribution for {sid}")
-    for key, lo, hi in (("max_download_bytes", 0, 10**11), ("max_source_chars", 10000, 10**8),
+    for key, lo, hi in (("max_download_bytes", 0, 10**12), ("max_source_chars", 10000, 4 * 10**9),
                         ("retry_seconds", 60, 86400 * 30), ('check_updates_seconds', 3600, 86400 * 30)):
         if type(p[key]) is not int or not lo <= p[key] <= hi:
             raise ValueError(f"{key} must be an integer between {lo} and {hi}")
@@ -64,6 +66,26 @@ def status(ctx: Ctx) -> dict:
                            for s in catalog.SOURCES]}
 
 
+def download_bytes(ctx: Ctx, approved: list[dict], max_chars: int) -> int:
+    """Bytes the build downloads (or already has cached) for these sources at this character budget."""
+    from moth.datafactory import catalog
+    from moth_server.intelligence import library
+
+    return sum(f['size'] for s in approved
+               for f in catalog.limited(catalog.with_pin(s, library.pins(ctx).get(s['id'])), max_chars)['files'])
+
+
+def build_bytes(approved: list[dict], max_chars: int) -> int:
+    """Disk a build needs besides downloads: cleaned records, tokens and the temporary copy (~3 bytes/char)."""
+    from moth.datafactory import catalog
+
+    total = 0
+    for s in approved:
+        avail = sum(f['size'] for f in s['files'] if f['role'] == 'train') / catalog.BYTES_PER_CHAR.get(s['format'], 1.0)
+        total += int(min(max_chars, avail) if s['files'] else min(max_chars, 50_000_000))
+    return total * 3
+
+
 def ensure_data(ctx: Ctx, wait: bool = False) -> dict:
     from moth.datafactory import catalog
     from moth.training.checkpoint import RunLock
@@ -85,12 +107,20 @@ def ensure_data(ctx: Ctx, wait: bool = False) -> dict:
         approved = [s for s in approved if f"factory:{s['id']}" not in revoked_sources]
         if not approved:
             return {"status": "awaiting_source_approval"}
-        required = sum(f['size'] for s in approved for f in catalog.with_pin(s, library.pins(ctx).get(s['id']))['files'])
         from moth_server.evolution import settings as S
 
         reserve = S.get(ctx)['limits']['min_free_disk_gb'] * 1024**3
-        if required > p['max_download_bytes'] or shutil.disk_usage(library.root(ctx)).free < reserve + required * 3 + len(approved) * p['max_source_chars'] * 8:
-            return {"status": "storage_budget", "download_bytes": required}
+        free = shutil.disk_usage(library.root(ctx)).free
+        # 0.9.0: sharded sources download only what the character budget needs. When the disk cannot hold a
+        # build at this budget, the budget is halved until it fits instead of stopping data preparation.
+        max_chars = int(p['max_source_chars'])
+        while True:
+            required = download_bytes(ctx, approved, max_chars)
+            if required <= p['max_download_bytes'] and free >= reserve + required + build_bytes(approved, max_chars):
+                break
+            if max_chars <= DEFAULTS['max_source_chars']:
+                return {"status": "storage_budget", "download_bytes": required}
+            max_chars //= 2
         remote = [s for s in approved if s.get('repo')]
         checked = ctx.db.get_config(KEY + '_scan_at', 0) or 0
         if remote and time.time() - checked > p['check_updates_seconds'] and not ctx.extras.get('discovery_scan'):
@@ -119,7 +149,7 @@ def ensure_data(ctx: Ctx, wait: bool = False) -> dict:
         from moth_server.evalsets import BUILTIN_FILES
         bid = library.start_build(ctx, None, {"automatic": True, "excluded_stdlib_files": list(BUILTIN_FILES),
                                             "sources": [s['id'] for s in approved],
-                                            "max_chars": {s['id']: p['max_source_chars'] for s in approved}}, wait=wait)
+                                            "max_chars": {s['id']: max_chars for s in approved}}, wait=wait)
         st = {"signature": sig, "build": bid, "requested_at": time.time(),
               "retry_at": time.time() + p['retry_seconds'], "status": "preparing"}
         ctx.db.set_config(KEY + "_state", st)

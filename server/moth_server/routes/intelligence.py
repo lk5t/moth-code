@@ -586,7 +586,8 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                           "progress": e.get("progress"), "metrics": e.get("metrics"),
                           "measurement": B.progress(ctx, e)
                           if e.get('backend') == 'local' and e['status'] in ('running', 'paused')
-                          else (e.get('metrics') or {}).get('progress') or (e.get('metrics') or {}).get('training') or {},
+                          else (B.worker_report(ctx, e) if e.get('backend') == 'worker' and e['status'] == 'running' else {})
+                          or (e.get('metrics') or {}).get('progress') or (e.get('metrics') or {}).get('training') or {},
                           "candidate_version": e.get("candidate_version"), "error": e.get("error"),
                           # 0.6.2 telemetry: when it ran, on what data and at what settings (owner only below)
                           "started_at": e.get("started_at"), "finished_at": e.get("finished_at"),

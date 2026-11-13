@@ -172,6 +172,40 @@ SOURCES: list[dict[str, Any]] = [
            "Tests for a function; every assertion is executed against it before use."))],
 ]
 
+# 0.9.0: large licensed sources (tens of GB in total), pinned file by file. A ``sharded`` source is used one
+# file (shard) at a time: the library adds the next shard when MOTH needs more data (see ``shards_for``).
+from moth.datafactory.large_sources import SOURCES as _LARGE  # noqa: E402
+
+SOURCES += _LARGE
+
+# Rough bytes of downloaded file per character of text it yields (parquet is compressed).
+BYTES_PER_CHAR = {"parquet_text": 0.45, "parquet_messages": 0.45, "parquet_qa": 0.45, "stories": 1.0,
+                  "qa_json": 1.1, "oasst_trees": 0.5}
+
+
+def shards_for(src: dict[str, Any], max_chars: int | None) -> int:
+    """How many of a sharded source's train files are needed for ``max_chars`` characters (at least one)."""
+    train = [f for f in src["files"] if f["role"] == "train"]
+    if not src.get("sharded") or not max_chars:
+        return len(train)
+    need, total, n = max_chars * BYTES_PER_CHAR.get(src["format"], 1.0), 0, 0
+    for f in train:
+        if total >= need:
+            break
+        total += f["size"]
+        n += 1
+    return max(1, n)
+
+
+def limited(src: dict[str, Any], max_chars: int | None) -> dict[str, Any]:
+    """The source with only the shards needed for ``max_chars`` (eval files are always kept)."""
+    if not src.get("sharded"):
+        return src
+    n = shards_for(src, max_chars)
+    train = [f for f in src["files"] if f["role"] == "train"][:n]
+    return {**src, "files": [f for f in src["files"] if f["role"] != "train"] + train}
+
+
 # Each Dolly category maps to the capability it mostly teaches.
 DOLLY_DOMAINS = {"creative_writing": "writing", "brainstorming": "writing", "summarization": "writing",
                  "open_qa": "knowledge", "closed_qa": "knowledge", "information_extraction": "knowledge",

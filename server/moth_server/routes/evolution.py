@@ -6,6 +6,8 @@ model also require a recent sign-in (HTTP 428 asks for the password again).
 
 from __future__ import annotations
 
+import json
+
 import tempfile
 import time
 from pathlib import Path
@@ -64,6 +66,14 @@ def setup(ctx: Ctx) -> None:
             import logging
 
             logging.getLogger("moth_server").exception("MOTH Cloud worker could not start")
+    try:  # 0.9.0: the self-healing supervisor (and the error log the diagnostics page shows)
+        from moth_server.evolution import supervisor
+
+        supervisor.start(ctx)
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("moth_server").exception("the supervisor could not start")
 
 
 def _bad(e: Exception) -> HTTPException:
@@ -75,6 +85,8 @@ def _exp_summary(ctx: Ctx, e: dict) -> dict[str, Any]:
     prog = m.get("progress") or {}
     if e["status"] == "running" and e.get("backend") == "local":
         prog = B.progress(ctx, e)
+    elif e["status"] == "running" and e.get("backend") == "worker" and e.get("job_id"):
+        prog = {**prog, **B.worker_report(ctx, e)}  # 0.9.0: the worker's own report, incl. what it is doing
     ds = DS.get(ctx, e["dataset_id"])
     return {"id": e["id"], "cycle_id": e["cycle_id"], "status": e["status"], "backend": e.get("backend"),
             "rationale": e.get("rationale"), "dataset": {"id": e["dataset_id"], "name": ds["name"] if ds else None},
@@ -303,6 +315,23 @@ def put_settings(body: SettingsIn, auth: Auth = Depends(owner_reauthed), ctx: Ct
 
 class CleanupIn(BaseModel):
     items: list[str] = Field(min_length=1, max_length=500)
+
+
+@router.get("/diagnostics")
+def diagnostics(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """0.9.0: loops, serving, self-repairs and recent errors, plus a plain-text report to copy."""
+    from moth_server.evolution import supervisor
+
+    d = supervisor.diagnostics(ctx)
+    return {**d, "report": supervisor.report_text(d)}
+
+
+@router.post("/diagnostics/check")
+def diagnostics_check(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """Run the self-repair checks now (instead of waiting up to a minute)."""
+    from moth_server.evolution import supervisor
+
+    return {"repairs": supervisor.run_checks(ctx)}
 
 
 @router.get("/storage")

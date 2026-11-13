@@ -69,7 +69,9 @@ def build(cache: Path, out: Path, config: dict[str, Any] | None = None,
     (tmp / "domains").mkdir(parents=True)
     (tmp / "eval").mkdir()
     pins = cfg.get("pins") or {}
-    sources = [catalog.with_pin(catalog.source(s), pins.get(s)) for s in cfg["sources"]]
+    # 0.9.0: a sharded source downloads only the shards its character budget needs
+    sources = [catalog.limited(catalog.with_pin(catalog.source(s), pins.get(s)), cfg["max_chars"].get(s))
+               for s in cfg["sources"]]
     # extra local sources (e.g. Owner-approved feedback): {"id", "name", "license", "attribution", "records"}
     extras = [{"id": e["id"], "name": e["name"], "domain": e.get("domain", "conversation"), "repo": None,
                "revision": None, "format": "records", "license": e["license"], "license_url": e.get("license_url", ""),
@@ -94,7 +96,13 @@ def build(cache: Path, out: Path, config: dict[str, Any] | None = None,
             yield from src["records"]
             return
         if src["format"] == "synthetic":
-            yield from parse.train_records(src, {"path": ""}, Path("."))
+            # 0.9.0: MOTH's own verified data grows with the library budget (about 200 characters per example;
+            # repeats are removed by the deduplicator), up to 2 million examples per generator (100,000
+            # where every example is executed)
+            cap = cfg["max_chars"].get(src["id"])
+            most = 100_000 if src.get("kind") in ("python", "debugging", "code_explain", "test_writing") else 2_000_000
+            n = max(int(src.get("count", 1000)), min(most, int(cap or 0) // 200))  # executed kinds: fewer
+            yield from parse.train_records({**src, "count": n}, {"path": ""}, Path("."))
             return
         if src["format"] == "stdlib":
             excluded = set(cfg.get('excluded_stdlib_files') or [])
@@ -102,9 +110,20 @@ def build(cache: Path, out: Path, config: dict[str, Any] | None = None,
                 if rec['uid'].split(':', 1)[-1] not in excluded:
                     yield rec
             return
+        # 0.9.0: stop reading once enough text was read for the budget (both passes read the same records,
+        # so holdout and training stay disjoint); large sources are never read to the end needlessly
+        cap = cfg["max_chars"].get(src["id"])
+        limit = int(cap / max(0.05, 1 - frac(src["id"])) * 2) if cap else None
+        read = 0
         for f, path in files[src["id"]]:
-            if f["role"] == "train":
-                yield from parse.train_records(src, f, path)
+            if f["role"] != "train":
+                continue
+            for rec in parse.train_records(src, f, path):
+                yield rec
+                if limit:
+                    read += len(clean.record_text(rec))
+                    if read >= limit:
+                        return
 
     # ---- pass 1: evaluation items and holdouts ---------------------------------------------------------
     eval_out = {}

@@ -30,7 +30,13 @@ from moth_server.evolution import settings as S
 PRIORITY = ["python-stdlib", "synthetic-arithmetic", "synthetic-instructions", "synthetic-python", "synthetic-reasoning", "synthetic-language", "synthetic-dialogue", "synthetic-debugging", "synthetic-code_explain", "synthetic-test_writing", "mbpp", "magicoder-oss", "codefeedback", "glaive-code", "gsm8k", "arc", "oasst1",
             "dolly-15k", "tinystories", "simple-wikipedia"]
 GB = 1024 ** 3
-MAX_SOURCE_CHARS = 64_000_000   # per source; the library grows towards this as the model needs more data
+MAX_SOURCE_CHARS = 2_000_000_000   # per source; the library grows towards this as the model needs more data (0.9.0)
+# 0.9.0: large licensed sources the library adds by itself, one per growth step, conversation and code first
+# (the 50/40/10 focus), then knowledge, maths and general language. Each is pinned file by file and used shard
+# by shard, so adding one downloads only what the current budget needs.
+LADDER = ["oasst2", "smoltalk-code", "smoltalk-skills", "opencoder-sft", "metamathqa", "smoltalk-magpie",
+          "cosmopedia-textbooks", "opencoder-diverse", "cosmopedia-math", "cosmopedia-stories", "tinystories-full",
+          "fineweb-edu", "cosmopedia-web"]
 
 MIN_STEPS, MAX_STEPS = 50, 20_000
 STALL_CYCLES = 3          # cycles without an accepted improvement before the engine slows down
@@ -385,7 +391,7 @@ def scale_data(ctx: Ctx, force: bool = False, reason: str | None = None) -> dict
     dep = M.deployed(ctx)
     build = library.latest_ready(ctx)
     pol = discovery.policy(ctx)
-    if not dep or not build or not pol.get("enabled") or pol["max_source_chars"] >= MAX_SOURCE_CHARS:
+    if not dep or not build or not pol.get("enabled"):
         return None
     import json as _json
 
@@ -397,17 +403,53 @@ def scale_data(ctx: Ctx, force: bool = False, reason: str | None = None) -> dict
     if prepared <= 0 or (trained < 3 * prepared and not force):
         return None
     new = min(MAX_SOURCE_CHARS, int(pol["max_source_chars"]) * 2)
-    discovery.update(ctx, {"max_source_chars": new})
+    added = _next_large_source(ctx, pol)
+    if new == pol["max_source_chars"] and not added:
+        return None  # nothing left to grow: every source is at its maximum
+    free = shutil.disk_usage(library.root(ctx)).free
+    budget = max(int(pol["max_download_bytes"]), int(min(10**12, free * 0.5)))  # downloads may use half the free disk
+    changes = {"max_source_chars": new, "max_download_bytes": budget}
+    if added:
+        changes["approved_sources"] = list(dict.fromkeys(pol["approved_sources"] + [added]))
+    discovery.update(ctx, changes)
     why = (reason + ", so" if force and reason else
            f"MOTH has trained on {trained:,} tokens, more than three times the {prepared:,} prepared, so")
+    from moth.datafactory import catalog
+
+    extra = (f" It also adds a new licensed source: {catalog.source(added)['name']} "
+             f"({catalog.source(added)['license']}), downloaded shard by shard as needed." if added else "")
     MEM.event(ctx, "data.scaled", f"{why} each source now contributes up to {new:,} characters instead of "
-              f"{pol['max_source_chars']:,}. The larger library is prepared in the background; training continues meanwhile.",
-              trained_tokens=trained, prepared_tokens=prepared, max_source_chars=new)
+              f"{pol['max_source_chars']:,}.{extra} The larger library is prepared in the background; training "
+              "continues meanwhile.", trained_tokens=trained, prepared_tokens=prepared, max_source_chars=new, added=added)
     try:
         discovery.ensure_data(ctx)
     except Exception:  # noqa: BLE001 — preparation retries on its own
         pass
-    return {"max_source_chars": new, "trained": trained, "prepared": prepared}
+    return {"max_source_chars": new, "trained": trained, "prepared": prepared, "added": added}
+
+
+def _next_large_source(ctx: Ctx, pol: dict) -> str | None:
+    """The next large source to add (licence verified, not revoked by the Owner), or None."""
+    import json as _json
+
+    from moth.datafactory import catalog
+    from moth_server.evolution import datasets as DS
+    from moth_server.intelligence import discovery
+
+    if not pol.get("autonomous_sources", True):
+        return None
+    revoked = {s.get("spec") for d in DS.all_(ctx) if d["status"] == "revoked"
+               for s in _json.loads(d.get("sources") or "[]")}
+    for sid in LADDER:
+        try:
+            src = catalog.source(sid)
+        except KeyError:
+            continue
+        if sid in pol["approved_sources"] or f"factory:{sid}" in revoked:
+            continue
+        if src["license"] in discovery.LICENSES and src.get("attribution"):
+            return sid
+    return None
 
 
 # ---- which data helped: measured per-domain effect on held-out results ------------------------------------

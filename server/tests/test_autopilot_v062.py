@@ -236,3 +236,49 @@ def test_command_center_reports_workers_tasks_versions_and_bottleneck(client, ow
         c.execute(D.workers.update().where(D.workers.c.id == wid).values(last_heartbeat_at=now() - 600))
     st = client.get(f"{BASE}/autopilot", headers=H(owner["token"])).json()
     assert st["bottleneck"] == "1 job(s) wait for a MOTH worker, but none is online."
+
+
+def test_library_adds_large_sources_by_itself(client, owner, monkeypatch):
+    """0.9.0: each growth step also adds the next large licensed source (conversation and code first) and
+    lets downloads use half of the free disk; an Owner-revoked source is never added back."""
+    from moth.datafactory import catalog
+    from moth_server.intelligence import discovery, library
+    ctx = client.app.state.ctx
+    dep = {"version": 1, "info": {"lineage_totals": {"tokens": 4_000_000}}}
+    monkeypatch.setattr("moth_server.models.deployed", lambda ctx: dep)
+    monkeypatch.setattr(library, "latest_ready", lambda ctx: {"manifest": {"token_counts": {"code": {"train": 1_000_000}}}})
+    monkeypatch.setattr(discovery, "ensure_data", lambda ctx, wait=False: {"status": "preparing"})
+    r1 = AP.scale_data(ctx)
+    r2 = AP.scale_data(ctx)
+    assert (r1["added"], r2["added"]) == (AP.LADDER[0], AP.LADDER[1])
+    pol = discovery.policy(ctx)
+    assert AP.LADDER[0] in pol["approved_sources"] and AP.LADDER[1] in pol["approved_sources"]
+    assert pol["max_download_bytes"] > 256_000_000
+    ev = next(e for e in MEM.events(ctx, limit=5) if e["kind"] == "data.scaled")
+    assert catalog.source(AP.LADDER[1])["name"] in ev["message"]
+    discovery.update(ctx, {"autonomous_sources": False})  # the Owner can turn it off
+    assert AP.scale_data(ctx)["added"] is None
+
+
+def test_discovery_fits_the_budget_to_the_disk(client, owner, monkeypatch):
+    """0.9.0: a budget the disk cannot hold is halved until the build fits, instead of stopping."""
+    import shutil as _sh
+    from collections import namedtuple
+
+    from moth_server.intelligence import discovery, library
+    ctx = client.app.state.ctx
+    discovery.update(ctx, {"approved_sources": ["cosmopedia-stories"], "max_source_chars": 2_000_000_000,
+                           "max_download_bytes": 10**11})
+    usage = namedtuple("u", "total used free")
+    gb = 1024 ** 3
+    reserve = __import__("moth_server.evolution.settings", fromlist=["get"]).get(ctx)["limits"]["min_free_disk_gb"] * gb
+    monkeypatch.setattr(_sh, "disk_usage", lambda p: usage(0, 0, reserve + 3 * gb))
+    started = {}
+    monkeypatch.setattr(library, "start_build", lambda ctx, actor, cfg, wait=False: started.update(cfg) or 7)
+    monkeypatch.setattr(library, "check_updates", lambda ctx, sources=None: [])
+    st = discovery.ensure_data(ctx)
+    assert st["build"] == 7
+    cap = started["max_chars"]["cosmopedia-stories"]
+    assert 500_000 <= cap < 2_000_000_000
+    assert discovery.download_bytes(ctx, [__import__("moth.datafactory.catalog", fromlist=["x"]).source("cosmopedia-stories")],
+                                     cap) + discovery.build_bytes([__import__("moth.datafactory.catalog", fromlist=["x"]).source("cosmopedia-stories")], cap) <= 3 * gb

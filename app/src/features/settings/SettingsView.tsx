@@ -2,6 +2,7 @@ import { reopenWelcome } from "@/features/onboarding/Welcome";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { useSavedSection } from "@/lib/use-saved-section";
 import { NativeResetPanel } from "@/features/intelligence/NativeResetPanel";
+import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { GenesisPanel } from "@/features/intelligence/GenesisPanel";
 import { useEffect, useState } from "react";
 import { Info, RotateCcw, Shield } from "lucide-react";
@@ -83,6 +84,7 @@ export function SettingsView() {
         {tab === "Account" && <><Button variant="secondary" onClick={reopenWelcome}>Show the quick introduction</Button><AccountSection /><ConnectionSection /></>}
         {tab === "Advanced" && (owner ? <>
           <p className="text-xs text-muted">Rarely needed, irreversible operations for the Owner. Everyday settings are in the other tabs.</p>
+          <DiagnosticsPanel />
           <NativeResetPanel />
           <details className="rounded-xl border border-border p-4 text-xs"><summary className="cursor-pointer text-sm">Reversible lineage restart (keeps a verified backup of the current models)</summary><div className="mt-3"><GenesisPanel /></div></details>
         </> : <p className="text-xs text-muted">Advanced operations, including Genesis Reset, are available to the MOTH Owner only.</p>)}

@@ -132,6 +132,9 @@ def make_runner(ctx: Ctx, http):
 
         def beat(self) -> None:
             super().beat()
+            from moth_server.evolution.supervisor import beat as loop_beat
+
+            loop_beat(ctx, "cloud-worker")
             if not allowed(ctx):
                 self.paused = True
             elif local_busy(ctx) and self.current_job is None:

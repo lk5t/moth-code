@@ -322,8 +322,13 @@ class WorkerRunner:
         if not (self.state_dir/'jobs'/f'{jid}.pt').exists():
             owner_path.write_text(json.dumps({'scope':self.cache_scope()}))
         self.log(f"job {jid}: round {spec['round']}, shard {spec['shard_id']}")
+        def phase(name: str) -> None:  # 0.9.0: MOTH Cloud shows what the worker is doing before its first step
+            self.training_metrics = {"step": 0, "tokens": 0, **(self.training_metrics or {}), "phase": name}
+
         try:
+            phase("downloading the model")
             weights = self.client.download(jid, "weights", spec["base_sha256"])
+            phase("downloading the training data")
             shard = self.client.download(jid, "shard", spec["shard_sha256"])
             tokens = np.frombuffer(shard, dtype=np.uint32)
             # conversation data learns only the assistant's replies: apply the job's loss mask (0.6.3)
@@ -338,6 +343,7 @@ class WorkerRunner:
                 torch.set_num_threads(min(cpu_count(), max(1, int(limits.get("cpu_threads") or max(1, min(cpu_count() - 1, int((self.bench or {}).get("threads") or cpu_count())))))))
             if device == "cuda" and limits.get("gpu_memory_fraction"):
                 torch.cuda.set_per_process_memory_fraction(float(limits["gpu_memory_fraction"]))
+            phase("loading the model")
             base = torch.load(io.BytesIO(weights), map_location="cpu", weights_only=True)
             model = MothModel(MothConfig.from_dict(spec["model_config"])).to(device)
             model.load_state_dict(base)
@@ -382,6 +388,7 @@ class WorkerRunner:
             if tuning is None and train.get("batch_autotune", True):
                 from moth.training.autotune import tune_batch
 
+                phase("measuring the batch size")
                 tuning = tune_batch(model, train["batch_size"], 1,
                                     lambda b: sample(b, torch.Generator().manual_seed(jid)), device, seq_len=seq)
             micro = tuning["batch_size"] if tuning else train["batch_size"]
@@ -393,6 +400,7 @@ class WorkerRunner:
                 if device == "cuda" and saved_rng.get("cuda") is not None:
                     torch.cuda.set_rng_state_all([s.cpu() for s in saved_rng["cuda"]])
             completed_steps = start_step
+            phase("training")
 
             def checkpoint():
                 from moth.training.checkpoint import atomic_torch_save
@@ -453,6 +461,7 @@ class WorkerRunner:
                     "worker_version": __version__}
             meta["batch_tuning"] = tuning
             meta["train_loss"] = (self.training_metrics or {}).get('train_loss')
+            phase("uploading the result")
             result = self.client.result(jid, meta, payload)
             ckpt_path.unlink(missing_ok=True)
             ckpt_path.with_name(ckpt_path.name + ".sha256").unlink(missing_ok=True)

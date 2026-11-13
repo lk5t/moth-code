@@ -158,6 +158,24 @@ def kill_local(ctx: Ctx, exp: dict) -> None:
         pass
 
 
+def worker_report(ctx: Ctx, exp: dict) -> dict[str, Any]:
+    """0.9.0: what the worker last reported for a running worker experiment (step, tokens, training loss,
+    checkpoint step and what it is doing), with the planned steps; empty when nothing was reported yet."""
+    j = job(ctx, exp["job_id"]) if exp.get("job_id") else None
+    if not j or j["status"] != "leased":
+        return {}
+    try:
+        rep = (json.loads(j.get("result") or "{}").get("progress")) or {}
+    except (TypeError, ValueError):
+        return {}
+    out = {k: v for k, v in rep.items() if v is not None}
+    if out:
+        out["max_steps"] = (exp.get("config") or {}).get("steps")
+        if out.get("tokens") is not None:
+            out["tokens_seen"] = out["tokens"]
+    return out
+
+
 def progress(ctx: Ctx, exp: dict) -> dict[str, Any]:
     """Measured progress from the trainer's own events (no estimates without data)."""
     p = run_dir(ctx, exp) / "events.jsonl"

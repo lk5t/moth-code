@@ -51,6 +51,7 @@ class TrainingMetrics(BaseModel):
     tokens: int = Field(ge=0)
     train_loss: float | None = Field(default=None, allow_inf_nan=False)
     checkpoint_step: int | None = Field(default=None, ge=0)
+    phase: str | None = Field(default=None, max_length=60)  # 0.9.0: what the worker is doing before/while training
 
 
 class HeartbeatIn(BaseModel):

@@ -48,6 +48,7 @@ function SystemStrip({ resources, network }: { resources: Any | null; network: A
 
 function Experiment({ experiment, report, paused, nowSec }: { experiment: Any; report: Any; paused: boolean; nowSec: number }) {
   const step = report.step, max = report.max_steps ?? experiment.plan?.steps;
+  const phase: string | undefined = report.phase ?? experiment.progress?.phase; // 0.9.0: reported by the worker
   const fraction = num(report.fraction) ? report.fraction : num(step) && max > 0 ? step / max : num(experiment.progress) ? experiment.progress : null;
   const pct = fraction != null && Number.isFinite(fraction) ? Math.max(0, Math.min(100, fraction * 100)) : null;
   const running = experiment.status === "running";
@@ -69,6 +70,7 @@ function Experiment({ experiment, report, paused, nowSec }: { experiment: Any; r
       <span className="text-muted">{experiment.backend ? `${experiment.backend}${experiment.device ? ` · ${experiment.device}` : ""}${experiment.worker_id ? ` · worker ${experiment.worker_id}` : ""}` : "Compute not assigned yet"}</span>
       <span className="ml-auto text-muted">{paused && running ? "pausing" : experiment.status}</span>
     </div>
+    {running && phase && phase !== "training" && <p className="mb-2 text-[11px] text-muted">The worker is {phase}…</p>}
     {pct != null ? <div role="progressbar" aria-label={`Experiment ${experiment.id} completion`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
       className="h-1.5 overflow-hidden rounded-full bg-surface-3"><div className="h-full bg-accent shadow-[0_0_8px_var(--color-accent)] transition-[width]" style={{ width: `${pct}%` }} /></div>
       : <p className="text-[11px] text-faint">{running ? "Starting — waiting for the first progress report" : "Waiting for compute"}</p>}

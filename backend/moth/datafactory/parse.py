@@ -168,6 +168,26 @@ def train_records(src: dict[str, Any], f: dict[str, Any], path: Path) -> Iterato
             if q and a:
                 yield {"uid": f"{base}:{row.get('index', i)}", "source": sid, "domain": src.get("domain", "code"),
                        "messages": _msgs(("user", q[:12_000]), ("assistant", a[:16_000]))}
+    elif fmt == "parquet_text":  # 0.9.0: documents (Cosmopedia, FineWeb-Edu)
+        for i, row in enumerate(_parquet_rows(path, [src.get("text_field", "text")])):
+            text = (row.get(src.get("text_field", "text")) or "").strip()
+            if text:
+                yield {"uid": f"{base}:{i}", "source": sid, "domain": src["domain"], "text": text[:24_000]}
+    elif fmt == "parquet_messages":  # 0.9.0: chat transcripts (SmolTalk); system prompts are dropped
+        for i, row in enumerate(_parquet_rows(path, ["messages"])):
+            msgs = [{"role": m["role"], "content": (m.get("content") or "").strip()[:16_000]}
+                    for m in (row.get("messages") or []) if m.get("role") in ("user", "assistant")]
+            while msgs and msgs[0]["role"] != "user":
+                msgs.pop(0)
+            if len(msgs) >= 2 and any(m["role"] == "assistant" and m["content"] for m in msgs):
+                yield {"uid": f"{base}:{i}", "source": sid, "domain": src["domain"], "messages": msgs}
+    elif fmt == "parquet_qa":  # 0.9.0: instruction/answer columns (OpenCoder)
+        q_key, a_key = src.get("fields", ("instruction", "output"))
+        for i, row in enumerate(_parquet_rows(path, [q_key, a_key])):
+            q, a = (row.get(q_key) or "").strip(), (row.get(a_key) or "").strip()
+            if q and a:
+                yield {"uid": f"{base}:{i}", "source": sid, "domain": src["domain"],
+                       "messages": _msgs(("user", q[:12_000]), ("assistant", a[:16_000]))}
     elif fmt == "synthetic":  # generated and verified locally (0.7.0)
         from moth.datafactory.synthetic import generate
 

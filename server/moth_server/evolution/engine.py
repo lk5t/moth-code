@@ -518,6 +518,10 @@ def _take_back_stalled(ctx: Ctx, cyc: dict, exp: dict, j: dict, res: dict, setti
                               error=f"taken back: no training progress for {stalled_min:.0f} minutes")).rowcount
     if not n:
         return False
+    try:  # 0.9.0: say where the worker was stuck (it reports its phase with each heartbeat)
+        stuck_in = ((json.loads(j.get("result") or "{}").get("progress") or {}).get("phase"))
+    except (TypeError, ValueError):
+        stuck_in = None
     cfg = exp["config"] or {}
     done = float(j["progress"] or 0.0) * int(cfg.get("steps") or 0) * int(cfg.get("batch_size") or 0) * int(cfg.get("seq_len") or 0)
     began = float(res.get("leased_at") or now())
@@ -526,8 +530,9 @@ def _take_back_stalled(ctx: Ctx, cyc: dict, exp: dict, j: dict, res: dict, setti
                           error=None, resources={k: v for k, v in res.items()
                                                  if k not in ("leased_at", "leased_by", "last_progress", "last_progress_at")})
     MEM.event(ctx, "experiment.reassigned", f"Worker {j['worker_id']} kept experiment #{exp['id']} but made no training "
-              f"progress for {stalled_min:.0f} minutes (it may be paused or busy). The job was taken back and the "
-              "experiment is placed again on the fastest free compute.", level="warning",
+              f"progress for {stalled_min:.0f} minutes" + (f" (stuck while {stuck_in})" if stuck_in else
+                                                           " (it may be paused or busy)") +
+              ". The job was taken back and the experiment is placed again on the fastest free compute.", level="warning",
               cycle_id=cyc["id"], experiment_id=exp["id"], job=j["id"], worker=j["worker_id"])
     return True
 
@@ -1145,7 +1150,12 @@ def start_background(ctx: Ctx) -> None:
             wake.clear()
             if stop.is_set():
                 break
-            tick(ctx)
+            try:
+                tick(ctx)
+            finally:
+                from moth_server.evolution.supervisor import beat
+
+                beat(ctx, "evolution")  # 0.9.0: the supervisor watches that rounds keep finishing
 
     threading.Thread(target=loop, daemon=True, name="evolution").start()
 

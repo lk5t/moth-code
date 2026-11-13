@@ -24,10 +24,17 @@ PIPELINE_INTERVAL = 120.0
 
 def setup(ctx: Ctx) -> None:
     M.restore_on_startup(ctx)
-    stop = threading.Event()
-    ctx.extras["models_stop"] = stop
+    ctx.extras["models_stop"] = threading.Event()
     if ctx.extras.get("disable_background"):
         return
+    start_pipeline(ctx)
+
+
+def start_pipeline(ctx: Ctx) -> None:
+    """The model pipeline loop (also restarted by the supervisor if it ever stops, 0.9.0)."""
+    from moth_server.evolution.supervisor import beat
+
+    stop = ctx.extras["models_stop"]
 
     def loop() -> None:
         while not stop.wait(PIPELINE_INTERVAL):
@@ -40,6 +47,7 @@ def setup(ctx: Ctx) -> None:
                 spawn(ctx,lambda:M.auto_pipeline(ctx),"model-pipeline-work").join()
             except Exception:  # noqa: BLE001
                 M.log.exception("model pipeline failed")
+            beat(ctx, "pipeline")
 
     threading.Thread(target=loop, daemon=True, name="model-pipeline").start()
 
