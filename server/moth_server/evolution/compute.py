@@ -225,6 +225,17 @@ def worker_speeds(ctx: Ctx, need_bytes: int = 0, worker_ids: list[int] | None = 
                 ratio, basis = float(g) * NETWORK_FACTOR / lg, "benchmark"
             else:
                 ratio, basis = 1.0, "unmeasured"
+            # 0.8.3: a benchmark says what the computer *could* do, not what is left of it. A computer already
+            # busy with other programs (92 % CPU, 91 % memory: it swaps) trains far slower than its benchmark,
+            # so placement counts only the CPU it has to spare until a real job measures it.
+            util = hw.get("utilization") or {}
+            cpu, memu = util.get("cpu"), util.get("memory")
+            if isinstance(cpu, (int, float)) and cpu > 0.5:
+                ratio *= max(0.05, 1.0 - float(cpu))
+                basis += ", busy"
+            if isinstance(memu, (int, float)) and memu >= 0.9:
+                ratio *= 0.5
+                basis += ", low memory"
         out.append({"id": w["id"], "name": w["name"], "gpu": gpu, "ratio": round(ratio, 3), "basis": basis})
     return sorted(out, key=lambda x: -x["ratio"])
 

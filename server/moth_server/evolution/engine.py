@@ -494,6 +494,13 @@ def _reassign_to_cloud(ctx: Ctx, cyc: dict, exp: dict, j: dict, settings: dict) 
 # a worker holding a job without training progress loses it after this long (it reports progress every 30 s):
 WORKER_STALL_SECONDS = 120.0   # once training has started
 WORKER_START_SECONDS = 600.0   # before the first step (downloading the model and data, measuring the batch size)
+WORKER_START_IDLE_CLOUD_SECONDS = 180.0  # 0.8.3: ... but only 3 minutes while MOTH Cloud has nothing to train
+
+
+def _cloud_idle(ctx: Ctx, settings: dict) -> bool:
+    be = settings.get("backends") or {}
+    return bool(be.get("local_cpu") or be.get("local_gpu")) and not any(
+        e["backend"] == "local" and e["status"] in ("running", "paused") for e in MEM.experiments(ctx, limit=50))
 
 
 def _take_back_stalled(ctx: Ctx, cyc: dict, exp: dict, j: dict, res: dict, settings: dict) -> bool:
@@ -702,7 +709,8 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
                 if res_.get("last_progress") is None or prog > float(res_["last_progress"]) + 1e-9:
                     res_ = {**res_, "last_progress": prog, "last_progress_at": now()}
                 elif now() - float(res_.get("last_progress_at") or now()) > \
-                        (WORKER_STALL_SECONDS if float(res_["last_progress"]) > 0 else WORKER_START_SECONDS) \
+                        (WORKER_STALL_SECONDS if float(res_["last_progress"]) > 0
+                         else WORKER_START_IDLE_CLOUD_SECONDS if _cloud_idle(ctx, settings) else WORKER_START_SECONDS) \
                         and _take_back_stalled(ctx, cyc, exp, j, res_, settings):
                     return
             MEM.update_experiment(ctx, exp["id"], progress=j["progress"], worker_id=j["worker_id"], resources=res_)

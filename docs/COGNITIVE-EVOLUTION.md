@@ -148,6 +148,8 @@ by a re-enrollment). Now only a revoke by the Owner in Network keeps it out. Any
 registration makes it enroll again. The computing network shows its state ("Shared runs with
 workers: joins in / reconnecting / not working — reason / off").
 
+**Busy workers.** A worker's hardware benchmark is measured once and says what the computer could do when free. A computer that is already at 92 % CPU and 91 % memory from other programs trains far slower (seen in production: experiment #1 at step 0 for 9+ minutes while MOTH Cloud idled). Until a worker has a measured training speed, placement multiplies its benchmark by its spare CPU (when more than half is in use) and halves it when memory is at least 90 % used; the network view shows this as "benchmark, busy, low memory". While MOTH Cloud has no local experiment, a worker that has not started training after 3 minutes gives the experiment back (otherwise 10 minutes).
+
 **Serving recovery.** When MOTH Cloud has a deployed model but no model loaded (after a restart, or
 because loading failed), it loads the deployed version again. If that fails, it falls back to the
 rollback model and then to the newest verified release of the same model line. It retries every

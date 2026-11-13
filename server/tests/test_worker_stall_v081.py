@@ -56,6 +56,7 @@ def test_stalled_worker_job_is_taken_back(client, owner, tmp_path, monkeypatch):
 
 def test_worker_gets_time_to_start(client, owner, tmp_path, monkeypatch):
     ctx, cyc, exp, jid, w = _leased(client, owner, tmp_path, monkeypatch)
+    S.update(ctx, {"backends": {"local_cpu": False, "local_gpu": False, "workers": True}})  # nothing else can train it
     clock = [1_000_000.0]
     monkeypatch.setattr(EN, "now", lambda: clock[0])
     _tick(ctx, cyc, exp["id"])  # leased, progress 0: downloading
@@ -65,3 +66,39 @@ def test_worker_gets_time_to_start(client, owner, tmp_path, monkeypatch):
     clock[0] += 400
     _tick(ctx, cyc, exp["id"])
     assert MEM.experiment(ctx, exp["id"])["status"] == "waiting"  # never started within 10 minutes
+
+
+def test_idle_moth_cloud_takes_over_a_worker_that_never_starts(client, owner, tmp_path, monkeypatch):
+    """0.8.3: while MOTH Cloud has nothing to train, a worker gets 3 minutes (not 10) for its first step."""
+    ctx, cyc, exp, jid, w = _leased(client, owner, tmp_path, monkeypatch)
+    S.update(ctx, {"backends": {"local_cpu": True, "local_gpu": False, "workers": True}})
+    clock = [1_000_000.0]
+    monkeypatch.setattr(EN, "now", lambda: clock[0])
+    _tick(ctx, cyc, exp["id"])
+    clock[0] += 120
+    _tick(ctx, cyc, exp["id"])
+    assert MEM.experiment(ctx, exp["id"])["status"] == "running"
+    clock[0] += 90
+    _tick(ctx, cyc, exp["id"])
+    assert MEM.experiment(ctx, exp["id"])["status"] == "waiting"
+
+
+def test_a_busy_computer_is_not_trusted_on_its_benchmark(client, owner, tmp_path, monkeypatch):
+    """0.8.3: a worker whose computer is already at 92 % CPU and 91 % memory does not win placement over
+    an idle MOTH Cloud because of a benchmark taken when it was free."""
+    from moth_server.evolution import compute as C
+
+    ctx = client.app.state.ctx
+    monkeypatch.setattr(C, "local_gflops", lambda ctx: 10.0)
+    ws = []
+    for name, util in (("busy-serv", {"cpu": 0.92, "memory": 0.91}), ("free-pc", {"cpu": 0.1, "memory": 0.3})):
+        e = client.post("/v1/training/enrollments", json={"name": name}, headers=H(owner["token"])).json()
+        hw = {"compute": "cpu", "gpus": [], "ram_gb": 16, "cpu_count": 4, "benchmark": {"gflops": 50.0},
+              "utilization": util, "machine_id": name}
+        w = client.post("/v1/worker/enroll", json={"token": e["token"], "version": "0.8.3", "hardware": hw}).json()
+        client.post("/v1/worker/heartbeat", json={"version": "0.8.3", "hardware": hw}, headers=H(w["worker_token"]))
+        ws.append(w)
+    sp = {x["id"]: x for x in C.worker_speeds(ctx)}
+    busy, free = sp[ws[0]["worker_id"]], sp[ws[1]["worker_id"]]
+    assert busy["ratio"] < C.PREFER_WORKER <= free["ratio"]
+    assert "busy" in busy["basis"] and "low memory" in busy["basis"] and free["basis"] == "benchmark"
