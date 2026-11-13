@@ -555,8 +555,11 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
             "retained": bool(r.get("path")) and __import__("pathlib").Path(r["path"]).exists(),
             "growth": info.get("growth"), "lineage_totals": info.get("lineage_totals"),
             "datasets": ds_names(_json.loads(row["datasets"]) if isinstance(row["datasets"], str) else row["datasets"]),
-            "benchmarks": {k: {"value": v["value"], "metric": v.get("metric"), "higher_is_better": v.get("higher_is_better")}
-                           for k, v in reps.items()}})
+            "benchmarks": {k: {"value": v["value"], "metric": v.get("metric"), "higher_is_better": v.get("higher_is_better"),
+                               "evaluated_at": v.get("evaluated_at"), "skills": v.get("skills"),
+                               "context_retention": v.get("context_retention")}
+                           for k, v in reps.items()},
+            "performance": (info.get("serving") or {}).get("performance")})
     dev = next((v for v in reversed(versions) if v["has_dev_checkpoint"]), None)
     lineage_versions = {v['version'] for v in versions}
     cyc = next((c for c in MEM.cycles(ctx, 100) if c['base_version'] in lineage_versions), None)

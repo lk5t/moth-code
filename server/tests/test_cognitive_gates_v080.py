@@ -36,3 +36,19 @@ def test_suites_run_end_to_end_on_a_real_model(tmp_path):
         "remember", "correction", "list_recall", "follow_up", "clarify", "unknown", "greeting", "format"}
     c = C.run_suite(model, tok, {"capability": "debugging"})
     assert c["n"] == 10 and c["metric"] == "tests_passed" and 0.0 <= c["value"] <= 1.0
+
+
+def test_generated_curricula_are_adopted_once_where_generated_data_is_used(client):
+    from moth_server.intelligence import discovery as D
+
+    ctx = client.app.state.ctx
+    ctx.db.set_config("discovery_generated_v080", None)
+    D.update(ctx, {"enabled": True, "approved_sources": ["python-stdlib", "synthetic-arithmetic"]})
+    added = D.adopt_generated_sources(ctx)
+    assert "synthetic-dialogue" in added and "synthetic-debugging" in added
+    assert set(D.GENERATED_V080) <= set(D.policy(ctx)["approved_sources"])
+    D.update(ctx, {"approved_sources": ["python-stdlib", "synthetic-arithmetic"]})  # the Owner removes them later
+    assert D.adopt_generated_sources(ctx) == []  # once only: the Owner's choice stands
+    ctx.db.set_config("discovery_generated_v080", None)
+    D.update(ctx, {"approved_sources": ["python-stdlib"]})  # never used generated data: left alone
+    assert D.adopt_generated_sources(ctx) == []

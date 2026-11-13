@@ -34,6 +34,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import threading
 from pathlib import Path
 from typing import Any
@@ -432,13 +433,25 @@ def load_checked(ctx: Ctx, version: int, device: str = "auto"):
         raise ReleaseError("not enough resources to serve it: " + "; ".join(problems))
     path = Path(rel["path"])
     engine = LocalInference(path.parent)
+    t0 = time.perf_counter()
     engine.load(path.name, dev)
+    load_s = time.perf_counter() - t0
     if engine.manifest["sha256"] != rel["sha256"]:
         raise ReleaseError("served weights do not match the release checksum")
     out, stats = engine.complete("def ", GenerationParams(max_new_tokens=8, temperature=0.0, top_k=1))
     if stats.generated_tokens < 1:
         raise ReleaseError("health check failed: the model produced no tokens")
-    return engine, {"device": dev, "health_check": out[:120], "tokens_per_second": round(stats.tokens_per_sec, 1)}
+    serving = {"device": dev, "health_check": out[:120], "tokens_per_second": round(stats.tokens_per_sec, 1)}
+    try:  # 0.8.0: measured serving performance; a faster thread setting is kept only with identical output
+        from moth.inference.tuning import profile
+
+        perf = profile(engine, "cuda" if dev.startswith("cuda") else "cpu",
+                       tune_threads=not ctx.extras.get("disable_background"))
+        serving.update(performance={**perf, "load_seconds": round(load_s, 3), "measured_at": now()},
+                       tokens_per_second=perf["tokens_per_second"])
+    except Exception:  # noqa: BLE001 — measuring never blocks serving
+        pass
+    return engine, serving
 
 
 def deploy(ctx: Ctx, version: int, actor_id: int | None = None, device: str = "auto", engine=None,

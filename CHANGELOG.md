@@ -3,6 +3,15 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.8.0 — COGNITIVE EVOLUTION
+
+- Conversation: verified multi-turn conversations that depend on earlier turns, conversation quality filters, and a held-out multi-turn benchmark scored per skill (context retention, follow-ups, clarifying questions, "I don't know", end of turn, repetition).
+- Coding: verified debugging, code-explanation and test-writing curricula; held-out code-generation and debugging benchmarks executed in an isolated, resource-limited process.
+- Evolution 4.0: 50 % conversation / 40 % coding / 10 % other as the starting focus, weakness targets for the new benchmarks, and a gate that rejects candidates whose conversation or coding group gets worse overall.
+- Knowledge 2.0 (category, project, confidence, verification, review dates, near-duplicates) and an extractive, cited Research Engine.
+- AI → Model: benchmark history across promoted versions; measured serving performance with thread tuning kept only when faster with identical output.
+- Measured: see [docs/COGNITIVE-EVOLUTION.md](docs/COGNITIVE-EVOLUTION.md#measured-results-in-this-releases-development-environment).
+
 ## 0.7.2 — The whole network works on MOTH
 
 - Workers prepare data: dataset chunks are tokenized and hashed on workers; MOTH Cloud re-encodes sample records of every chunk and refuses any mismatch, takes unclaimed or late chunks itself, and removes exact duplicates when merging (the result is byte-identical to preparing everything on MOTH Cloud). Feedback data never leaves MOTH Cloud.

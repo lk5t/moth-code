@@ -2,17 +2,17 @@
 
 ## MOTH Code __VERSION__ for Windows
 
-### What's new
+### What's new — COGNITIVE EVOLUTION
 
-- **AI → Model:** the active MOTH model in one place — an animated core drawn from its real layers and
-  heads, verified parameters, architecture, checkpoint, tokenizer, deployment and held-out capabilities
-  compared with the rollback model; Owner rollback and a compact history.
-- **What trains MOTH:** MOTH Cloud's server, workers and this computer, in any combination. MOTH Cloud
-  now trains together with the workers.
-- Workers also prepare training data (every result is checked by MOTH Cloud); new verified reasoning and
-  language data.
-- Owner-only notifications; smoother view and tab transitions, loading skeletons and consistent focus.
-- Updates are checked hourly; a staged rollout is shown as a wait, not an error.
+- MOTH's evolution now focuses on **conversation** (50 %) and **coding** (40 %), with new verified
+  training data: multi-turn conversations that depend on earlier messages, debugging exercises, code
+  explanations and test writing.
+- New held-out benchmarks: multi-turn conversation, executed code generation and executed debugging.
+  A new model is promoted only if neither conversation nor coding gets worse overall.
+- **AI → Model** shows the benchmark history of every promoted version and measured serving speed.
+- **Knowledge 2.0** and **Research** (Settings → Intelligence): categories, projects, confidence,
+  verification, outdated and near-duplicate flags; cited research reports that separate corroborated
+  statements, conflicts and gaps.
 
 Installing this update preserves existing accounts, settings, projects, datasets, tokenizers, models and checkpoints.
 Foundation training is **not** claimed complete. Physical GPU verification requires compatible hardware.

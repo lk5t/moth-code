@@ -27,7 +27,13 @@ type Any = Record<string, any>;
 const CAPABILITY: Record<string, string> = {
   conversation: "Language & conversation", writing: "Writing", knowledge: "Knowledge", reasoning: "Reasoning",
   math: "Arithmetic", code: "Coding", instruction: "Instruction following", safety: "Safety",
+  dialogue: "Conversation (multi-turn)", codegen: "Code generation (executed)", debugging: "Debugging (executed)",
 };
+/** 0.8.0 priorities: conversation and coding first, then the other foundations. */
+export const PRIORITY = ["dialogue", "holdout_conversation", "codegen", "debugging", "code", "holdout_code", "instruction",
+  "reasoning", "math", "knowledge", "holdout_knowledge", "holdout_reasoning", "holdout_math", "holdout_language",
+  "holdout_writing", "safety"];
+const rank = (k: string) => { const i = PRIORITY.indexOf(k); return i < 0 ? 99 : i; };
 export const capabilityLabel = (key: string) =>
   CAPABILITY[key] ?? (key.startsWith("holdout_") ? `Held-out ${key.slice(8).replaceAll("_", " ")}` : key.replaceAll("_", " "));
 
@@ -119,7 +125,8 @@ export function ModelTab({ progress }: { progress: Any | null }) {
   const status = p.training?.paused ? "Paused by the Owner" : running ? "Training a candidate" : cycle ? cycle.status.replaceAll("_", " ") : "Waiting for the next round";
   const name = modelLabel(cur);
   const cfg = cur.config ?? {};
-  const benches: [string, Any][] = Object.entries(cur.benchmarks ?? {});
+  const benches = (Object.entries(cur.benchmarks ?? {}) as [string, Any][]).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
+  const perf = cur.performance;
   const roll = async () => {
     if (!rollback) return;
     setBusy(true); setMsg(null);
@@ -155,6 +162,8 @@ export function ModelTab({ progress }: { progress: Any | null }) {
             <Fact label="Internal identifier"><span className="font-mono" title={cur.model_id ?? cur.name}>{cur.model_id ?? cur.name ?? `v${cur.version}`}</span></Fact>
             <Fact label="Tokenizer identity"><span className="font-mono" title={cur.tokenizer_fingerprint}>{cur.tokenizer_fingerprint ?? "Not recorded"}</span></Fact>
             <Fact label="Lineage">{timeline.length} measured version{timeline.length === 1 ? "" : "s"} · release v{cur.version}</Fact>
+            {perf && <Fact label="Serving speed">{perf.tokens_per_second} tokens/s · {perf.threads} thread{perf.threads === 1 ? "" : "s"}{perf.tuned ? " (tuned)" : ""}</Fact>}
+            {perf?.load_seconds != null && <Fact label="Load time">{perf.load_seconds.toFixed(2)} s</Fact>}
           </div>
           {p.improvement?.verified && <p className="flex items-center gap-1.5 text-xs text-success"><ShieldCheck className="size-3.5" />Verified improvement: held-out score {(p.improvement.primary_improvement * 100).toFixed(2)}% better than its parent, every gate passed.</p>}
         </div>
@@ -175,6 +184,8 @@ export function ModelTab({ progress }: { progress: Any | null }) {
         </li>;
       })}</ul> : <p className="mt-2 text-xs text-muted">No benchmark results are recorded for this version yet. They appear after its first evaluation.</p>}
     </CardContent></Card>
+
+    <BenchmarkHistory timeline={timeline} />
 
     <Card aria-label="Model lifecycle"><CardContent className="flex flex-col gap-3 p-4 text-xs">
       <div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-sm font-medium">Lifecycle</h3>
@@ -199,4 +210,33 @@ export function ModelTab({ progress }: { progress: Any | null }) {
       </details>}
     </CardContent></Card>
   </div>;
+}
+
+
+/** Benchmarks of every promoted MOTH version side by side, with the change from the previous one (0.8.0). */
+export function BenchmarkHistory({ timeline }: { timeline: Any[] }) {
+  const versions = timeline.filter((v) => v.model_version && Object.keys(v.benchmarks ?? {}).length).slice(-5);
+  if (versions.length < 1) return null;
+  const caps = [...new Set(versions.flatMap((v) => Object.keys(v.benchmarks)))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  const date = (v: Any) => {
+    const ts = Math.max(0, ...(Object.values(v.benchmarks ?? {}) as Any[]).map((b) => Number(b.evaluated_at) || 0));
+    return ts ? new Date(ts * 1000).toLocaleDateString() : "—";
+  };
+  return <Card aria-label="Benchmark history"><CardContent className="p-4">
+    <div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-sm font-medium">Benchmark history</h3>
+      <span className="text-[11px] text-faint">Held-out benchmarks of each promoted version; ▲ better, ▼ worse than the version before</span></div>
+    <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[480px] text-xs">
+      <thead><tr className="text-left text-faint"><th className="py-1 pr-3 font-normal">Capability</th>
+        {versions.map((v) => <th key={v.version} className="px-2 py-1 text-right font-normal"><div className="text-fg">{modelLabel(v)}</div><div>{date(v)}</div></th>)}</tr></thead>
+      <tbody>{caps.map((k) => <tr key={k} className="border-t border-border">
+        <td className="py-1.5 pr-3 text-fg">{capabilityLabel(k)}</td>
+        {versions.map((v, i) => {
+          const b = v.benchmarks[k];
+          const ch = i > 0 ? benchmarkChange(b, versions[i - 1].benchmarks[k]) : null;
+          return <td key={v.version} className="px-2 py-1.5 text-right tabular-nums text-muted">{benchmarkValue(b)}
+            {ch != null && Math.abs(ch) > 1e-9 && <span className={cn("ml-1", ch > 0 ? "text-success" : "text-danger")}>{ch > 0 ? "▲" : "▼"}</span>}</td>;
+        })}
+      </tr>)}</tbody>
+    </table></div>
+  </CardContent></Card>;
 }

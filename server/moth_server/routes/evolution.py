@@ -38,6 +38,14 @@ def setup(ctx: Ctx) -> None:
         import logging
 
         logging.getLogger("moth_server").exception("evolution settings migration failed")
+    try:  # 0.8.0: conversation and coding curricula join the generated training data (once)
+        from moth_server.intelligence import discovery as _D
+
+        _D.adopt_generated_sources(ctx)
+    except Exception:  # noqa: BLE001 — never blocks start-up; retried on the next start
+        import logging
+
+        logging.getLogger("moth_server").exception("generated source adoption failed")
     try:  # 0.7.0: one public identity (MOTH 0.0.x); renumbers older versions once, weights untouched
         from moth_server.evolution import identity
 

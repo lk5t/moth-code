@@ -10,7 +10,7 @@ on:
       tag:
         description: "Server release tag (must match the server version, e.g. server-v0.3.1)"
         required: true
-        default: "server-v0.7.2"
+        default: "server-v0.8.0"
       publish:
         description: "Publish to GitHub Releases (requires explicit Owner approval; false builds verified candidates only)"
         type: boolean

@@ -53,7 +53,7 @@ def capability_reports(ctx: Ctx, version: int | None) -> dict[str, dict[str, Any
             cap = m["capability"]
         else:continue
         if m.get("ok"):
-            out[cap] = m
+            out[cap] = {**m, "evaluated_at": r["created_at"]}
     return out
 
 

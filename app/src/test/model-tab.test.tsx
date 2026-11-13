@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ api: vi.fn(), role: "owner" }));
 vi.mock("@/lib/account", () => ({ serverApi: mocks.api, useAccount: (fn: (s: any) => unknown) => fn({ token: "t", user: { role: mocks.role } }) }));
 vi.mock("@/features/owner/ops", () => ({ secure: (fn: () => Promise<unknown>) => fn() }));
 vi.mock("@/lib/cloud-progress", () => ({ refreshCloudProgress: vi.fn() }));
-import { ModelTab, benchmarkChange, benchmarkValue, capabilityLabel, changeLabel } from "@/features/intelligence/ModelTab";
+import { BenchmarkHistory, ModelTab, benchmarkChange, benchmarkValue, capabilityLabel, changeLabel } from "@/features/intelligence/ModelTab";
 
 const v3 = { version: 52, model_version: "0.0.3", name: "moth-evolution-v52-e8", display_name: "MOTH 0.0.3", params: 99648, params_verified: true,
   config: { n_layers: 4, d_model: 128, n_heads: 4, vocab_size: 272 }, deployed: true, retained: true, model_id: "moth-evolution-v52-e8",
@@ -25,9 +25,9 @@ describe("Model tab", () => {
     expect(screen.queryByText(/^moth-evolution-v52-e8$/, { selector: "h2" })).toBeNull();  // never the public name
     expect(screen.getByText("99,648 parameters · counted from the saved weights")).toBeInTheDocument();
     expect(screen.getByText("4 layers · 128 dimensions")).toBeInTheDocument();
-    expect(screen.getByText("Coding")).toBeInTheDocument();
-    expect(screen.getByText("Arithmetic")).toBeInTheDocument();
-    expect(screen.getByText(/42.0%/)).toBeInTheDocument();
+    expect(screen.getAllByText("Coding").length).toBe(2);  // capabilities card and benchmark history
+    expect(screen.getAllByText("Arithmetic").length).toBe(2);
+    expect(screen.getAllByText(/42.0%/).length).toBeGreaterThan(0);
     expect(screen.getAllByText("MOTH 0.0.2").length).toBeGreaterThan(0);  // the rollback model
     expect(screen.getByText(/Verified improvement/)).toBeInTheDocument();
     expect(screen.getByText("Version history (3)")).toBeInTheDocument();
@@ -42,6 +42,21 @@ describe("Model tab", () => {
     cleanup(); mocks.role = "user";
     render(<ModelTab progress={progress} />);
     expect(screen.queryByRole("button", { name: "Roll back" })).toBeNull();
+  });
+  it("compares promoted versions in the benchmark history, conversation and coding first", () => {
+    const tl = [
+      { version: 50, model_version: "0.0.2", display_name: "MOTH 0.0.2", benchmarks: { math: { value: 0.3, higher_is_better: true, evaluated_at: 1794400000 },
+        dialogue: { value: 0.2, higher_is_better: true, evaluated_at: 1794400000 } } },
+      { version: 51, model_version: null, benchmarks: { dialogue: { value: 0.9, higher_is_better: true } } },  // a rejected candidate
+      { version: 52, model_version: "0.0.3", display_name: "MOTH 0.0.3", benchmarks: { math: { value: 0.25, higher_is_better: true, evaluated_at: 1794500000 },
+        dialogue: { value: 0.35, higher_is_better: true, evaluated_at: 1794500000 } } }];
+    render(<BenchmarkHistory timeline={tl} />);
+    const rows = screen.getAllByRole("row").slice(1).map((r) => r.textContent);
+    expect(rows[0]).toContain("Conversation (multi-turn)");  // priority order
+    expect(rows[0]).toContain("35.0%▲");
+    expect(rows[1]).toContain("Arithmetic");
+    expect(rows[1]).toContain("25.0%▼");
+    expect(screen.queryByText("90.0%")).toBeNull();  // candidates that were not promoted are not listed
   });
   it("formats benchmarks honestly", () => {
     expect(benchmarkValue({ value: 0.5, metric: "accuracy" })).toBe("50.0%");

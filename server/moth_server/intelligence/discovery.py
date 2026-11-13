@@ -124,3 +124,30 @@ def ensure_data(ctx: Ctx, wait: bool = False) -> dict:
               "retry_at": time.time() + p['retry_seconds'], "status": "preparing"}
         ctx.db.set_config(KEY + "_state", st)
         return st
+
+
+
+GENERATED_V080 = ("synthetic-reasoning", "synthetic-language", "synthetic-dialogue", "synthetic-debugging",
+                  "synthetic-code_explain", "synthetic-test_writing")
+
+
+def adopt_generated_sources(ctx: Ctx) -> list[str]:
+    """0.8.0, once: when Evolution already trains on MOTH's own verified generated data, add the new
+    generated sources too (conversation and coding curricula; CC0, nothing is downloaded). The next
+    automatic preparation then builds them (the approved list is part of its signature). Installations
+    that never approved generated data are left as they are."""
+    flag = "discovery_generated_v080"
+    if ctx.db.get_config(flag, None):
+        return []
+    p = policy(ctx)
+    added = []
+    if p["enabled"] and any(s.startswith("synthetic-") for s in p["approved_sources"]):
+        added = [s for s in GENERATED_V080 if s not in p["approved_sources"]]
+        if added:
+            update(ctx, {"approved_sources": list(dict.fromkeys(p["approved_sources"] + added))})
+            from moth_server.evolution import memory as MEM
+
+            MEM.event(ctx, "data.selected", "Added MOTH's verified conversation and coding curricula to the training "
+                      "data: " + ", ".join(added) + ". They are prepared automatically.", sources=added)
+    ctx.db.set_config(flag, {"done": True, "added": added})
+    return added
