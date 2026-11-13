@@ -232,6 +232,11 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
         out["strategy_note"] = note
     order = {k: i for i, k in enumerate(ranked)}
     variants.sort(key=lambda v: order.get(v[3], 99))
+    suspended, why_not = AP.suspended_strategies(ctx, [v[3] for v in variants])
+    if suspended:  # 0.7.2: repeated failures are not repeated again while something else works
+        variants = [v for v in variants if v[3] not in suspended]
+        out["notes"].append(why_not)
+        out["suspended_strategies"] = sorted(suspended)
     for why, mix, lr, strategy in variants:
         if not mix.get("weights"):
             continue

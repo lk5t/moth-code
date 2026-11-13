@@ -156,7 +156,11 @@ SOURCES: list[dict[str, Any]] = [
           ("instructions", "Verified simple instructions", "conversation", 20_000,
            "Short, checkable instructions (repeat, sort, count, compare) with correct replies."),
           ("python", "Verified Python fundamentals", "code", 5_000,
-           "Small Python functions, each executed against its tests before it is used."))],
+           "Small Python functions, each executed against its tests before it is used."),
+          ("reasoning", "Verified reasoning", "reasoning", 15_000,
+           "Number sequences, orderings from comparisons and multi-step word problems, each re-derived."),
+          ("language", "Verified language basics", "language", 15_000,
+           "Plurals, opposites, alphabetical order, word counts and sentence casing from checked tables."))],
 ]
 
 # Each Dolly category maps to the capability it mostly teaches.

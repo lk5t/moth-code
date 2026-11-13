@@ -260,6 +260,49 @@ class WorkerRunner:
             self.current_job, self.progress = None, None
             self.training_metrics = None
 
+    def run_prep(self, job: dict) -> dict:
+        """Tokenize one chunk of a dataset build (0.7.2). MOTH Cloud re-encodes records to check it."""
+        import tempfile
+
+        from moth.community.validation import tensor_bytes_sha256
+        from moth.datafactory.build import chunk_bytes, encode_chunk
+        from moth.model.tokenizer import Tokenizer
+
+        jid, spec = job["id"], job["spec"]
+        self.cancelled_job = None
+        self.current_job, self.progress = jid, 0.0
+        self.log(f"job {jid}: preparing data chunk {spec['shard_id']}")
+        try:
+            tok_bytes = self.client.download(jid, "weights", spec["base_sha256"])  # the lineage's tokenizer
+            chunk = self.client.download(jid, "shard", spec["shard_sha256"])
+            with tempfile.TemporaryDirectory() as d:
+                (Path(d) / "tokenizer.json").write_bytes(tok_bytes)
+                (Path(d) / "chunk.jsonl").write_bytes(chunk)
+                tok = Tokenizer.load(Path(d) / "tokenizer.json")
+                if tok.fingerprint() != spec["tokenizer_fingerprint"]:
+                    raise RuntimeError("the tokenizer does not match the build")
+                arrays = encode_chunk(tok, Path(d) / "chunk.jsonl")
+            payload = chunk_bytes(arrays)
+            self.progress = 1.0
+            meta = {"round": -1, "base_sha256": spec["base_sha256"], "delta_sha256": tensor_bytes_sha256(payload),
+                    "tokens": 0, "steps": 0, "records": int(len(arrays["offsets"]) - 1),
+                    "protocol": spec.get("protocol", 1), "worker_version": __version__}
+            result = self.client.result(jid, meta, payload)
+            self.log(f"job {jid}: {len(arrays['ids']):,} tokens from {meta['records']} records "
+                     f"({'accepted' if result.get('accepted') else 'rejected'})")
+            return result
+        except ServerError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            self.log(f"job {jid} failed: {e}")
+            try:
+                self.client.fail(jid, f"{type(e).__name__}: {e}")
+            except Exception:  # noqa: BLE001
+                pass
+            return {"accepted": False, "error": str(e)}
+        finally:
+            self.current_job, self.progress = None, None
+
     # ---- one training round ------------------------------------------------------------------
     def run_job(self, job: dict) -> dict:
         from moth.community.client import batch_loss
@@ -269,6 +312,8 @@ class WorkerRunner:
 
         if job.get("kind") == "eval_loss":
             return self.run_eval(job)
+        if job.get("kind") == "prep_tokenize":
+            return self.run_prep(job)
         jid, spec = job["id"], job["spec"]
         self.cancelled_job = None
         self.training_metrics = None

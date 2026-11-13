@@ -8,7 +8,7 @@ set -a
 set +a
 RELEASE=$(readlink -f "$H/current")
 RUNTIME=$(cat "$RELEASE/RUNTIME")
-export PYTHONPATH="$RELEASE/server:$RELEASE/backend"
+export PYTHONPATH="$RELEASE/server:$RELEASE/backend:$RELEASE/worker"
 echo $$ > "$H/run/server.pid"
 cd "$H"
 exec "$RUNTIME/bin/python" -m moth_server.cli serve --host 127.0.0.1 --port "${MOTH_SERVER_PORT:-@PORT@}"

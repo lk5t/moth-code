@@ -7,7 +7,7 @@ if [ "$1" = "server" ]; then
   shift
   set -a; . "$H/config/moth.env"; set +a
   RELEASE=$(readlink -f "$H/current")
-  export PYTHONPATH="$RELEASE/server:$RELEASE/backend"
+  export PYTHONPATH="$RELEASE/server:$RELEASE/backend:$RELEASE/worker"
   cd "$H" && exec "$(cat "$RELEASE/RUNTIME")/bin/python" -m moth_server.cli "$@"
 fi
 MOTH_HOME="$H" exec "@PYTHON@" "$H/agent/current/moth_agent.py" "$@"

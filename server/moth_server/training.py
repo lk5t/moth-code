@@ -240,6 +240,8 @@ def job_shareable(ctx: Ctx, job: dict) -> bool:
     if job.get('kind') == 'eval_loss':
         from moth_server.evolution.remote_eval import public_evaluation
         return public_evaluation(ctx)
+    if job.get('kind') == 'prep_tokenize':
+        return True  # only public licensed domains are ever split into preparation jobs (distributed_prep)
     if spec.get('evolution_experiment'):
         from moth_server.evolution import memory as MEM, backends as B
         exp = MEM.experiment(ctx, int(spec['evolution_experiment']))
@@ -288,7 +290,12 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
             job = None
             from moth_server.evolution.remote_eval import _version_ok
 
-            if _version_ok(worker.get("version")):
+            # dataset preparation first: training waits for its data (0.7.2, any CPU or GPU worker)
+            if version_at_least(worker.get("version"), "0.7.2"):
+                job = c.execute(select(training_jobs).where(training_jobs.c.status == "queued",
+                                                            training_jobs.c.kind == "prep_tokenize")
+                                .order_by(training_jobs.c.id)).mappings().first()
+            if not job and _version_ok(worker.get("version")):
                 # evaluation jobs: CPU workers first (GPUs keep training); never both replicas to one worker
                 mine = {(json.loads(r["spec"]).get("eval") or {}).get("suite_id"): json.loads(r["spec"])["eval"]["version"]
                         for r in c.execute(select(training_jobs).where(training_jobs.c.kind == "eval_loss",
@@ -391,6 +398,11 @@ def submit_result(ctx: Ctx, worker: dict, job_id: int, meta: dict, payload: byte
         from moth_server.evolution.remote_eval import accept
 
         result = accept(ctx, job, meta, payload)
+    elif job["kind"] == "prep_tokenize":
+        from moth_server.intelligence.distributed_prep import accept as accept_prep
+
+        result = accept_prep(ctx, job, meta, payload)
+        meta = {**meta, "tokens": 0}  # preparation is counted as a verified job, not as trained tokens
     else:
         coord = coordinator(ctx)
         if coord is None:

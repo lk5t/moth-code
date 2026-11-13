@@ -27,7 +27,7 @@ from moth_server.evolution import settings as S
 
 # Trusted catalog sources in the order the autopilot adds them: coding first, then reasoning,
 # instruction following and general language. Every one has a verified license and attribution.
-PRIORITY = ["python-stdlib", "synthetic-arithmetic", "synthetic-instructions", "synthetic-python", "mbpp", "magicoder-oss", "codefeedback", "glaive-code", "gsm8k", "arc", "oasst1",
+PRIORITY = ["python-stdlib", "synthetic-arithmetic", "synthetic-instructions", "synthetic-python", "synthetic-reasoning", "synthetic-language", "mbpp", "magicoder-oss", "codefeedback", "glaive-code", "gsm8k", "arc", "oasst1",
             "dolly-15k", "tinystories", "simple-wikipedia"]
 GB = 1024 ** 3
 MAX_SOURCE_CHARS = 64_000_000   # per source; the library grows towards this as the model needs more data
@@ -351,6 +351,28 @@ def rank_strategies(ctx: Ctx, candidates: list[str]) -> tuple[list[str], str | N
             f"(mean {sa['mean_improvement'] * 100:+.1f}%) versus {sb['passed']} of {sb['runs']} for {b} "
             f"(mean {sb['mean_improvement'] * 100:+.1f}%), so {a} experiments run first.")
     return ranked, note
+
+
+SUSPEND_AFTER = 4  # runs without a single accepted improvement
+
+
+def suspended_strategies(ctx: Ctx, candidates: list[str]) -> tuple[set[str], str | None]:
+    """0.7.2: stop repeating what does not work. A strategy that ran ``SUSPEND_AFTER`` or more times on
+    this lineage without one accepted improvement is suspended while another strategy is still
+    producing accepted improvements. It is never suspended if it is the only option, and comes back
+    as soon as the statistics change (for example after new data or a new model)."""
+    stats = strategy_stats(ctx)
+    uniq = list(dict.fromkeys(candidates))
+    working = [k for k in uniq if stats.get(k, {}).get("passed", 0) > 0]
+    failing = {k for k in uniq if stats.get(k, {}).get("runs", 0) >= SUSPEND_AFTER and stats[k]["passed"] == 0}
+    if not working or not failing or failing >= set(uniq):
+        return set(), None
+    names = ", ".join(sorted(failing))
+    best = max(working, key=lambda k: (stats[k]["passed"] / stats[k]["runs"], stats[k]["mean_improvement"]))
+    note = (f"Suspended {names} training: {sum(stats[k]['runs'] for k in failing)} runs without an accepted "
+            f"improvement, while {best} training improved the model in {stats[best]['passed']} of "
+            f"{stats[best]['runs']} runs.")
+    return failing, note
 
 
 # ---- data scaling: grow the library when the model has trained on it many times over ---------------------

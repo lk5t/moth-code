@@ -41,3 +41,54 @@ def test_catalog_lists_the_synthetic_sources_as_cc0():
     for k in synthetic.KINDS:
         s = ids[f"synthetic-{k}"]
         assert s["format"] == "synthetic" and s["license"] == "CC0-1.0" and s["files"] == []
+
+
+def test_reasoning_examples_are_correct():
+    import re
+
+    from moth.datafactory import synthetic as S
+
+    seen = {"seq": 0, "order": 0, "word": 0}
+    for ex in S.generate("reasoning", 300, seed=3):
+        q, a = ex["messages"][0]["content"], ex["messages"][1]["content"]
+        assert ex["domain"] == "reasoning"
+        if q.startswith("What number comes next"):
+            nums = [int(x) for x in re.findall(r"\d+", q)]
+            nxt = int(re.findall(r"\d+", a)[-1])
+            ok = nxt == nums[-1] + (nums[1] - nums[0]) or (nums[0] and nxt == nums[-1] * (nums[1] // nums[0]))
+            assert ok, (q, a)
+            seen["seq"] += 1
+        elif "Who is the" in q:
+            facts = re.findall(r"(\w+) is \w+ than (\w+)\.", q)
+            above = dict(facts)
+            names = set(above) | set(above.values())
+            top = next(n for n in names if n not in above.values())
+            bottom = next(n for n in names if n not in above)
+            want = top if re.search(r"Who is the (tallest|oldest|fastest)", q) else bottom
+            assert a.endswith(f"is {want}."), (q, a)
+            seen["order"] += 1
+        else:
+            a1, b1, c1 = (int(x) for x in re.findall(r"\d+", q)[:3])
+            assert a.endswith(f"has {a1 + b1 - c1} " + q.split()[3].rstrip(".") + " now."), (q, a)
+            seen["word"] += 1
+    assert all(v > 30 for v in seen.values())
+
+
+def test_language_examples_are_correct():
+    from moth.datafactory import synthetic as S
+
+    n = 0
+    for ex in S.generate("language", 300, seed=5):
+        q, a = ex["messages"][0]["content"], ex["messages"][1]["content"]
+        assert ex["domain"] == "language"
+        if q.startswith("Put these words"):
+            ws = q.split(": ", 1)[1].rstrip(".").split(", ")
+            assert a == ", ".join(sorted(ws))
+        elif q.startswith("How many words"):
+            s = q.split('"')[1]
+            assert a == f"The sentence has {len(s.split())} words."
+        elif q.startswith("Rewrite"):
+            s = q.split('"')[1]
+            assert a == s[0].upper() + s[1:] + "."
+        n += 1
+    assert n == 300

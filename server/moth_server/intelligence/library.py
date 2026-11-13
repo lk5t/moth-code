@@ -158,7 +158,14 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
             train_bpe(factory.iter_texts(out, per_domain_chars=int(config.get("tokenizer_chars", 4_000_000))),
                       vocab).save(tok_path)
         tok = Tokenizer.load(tok_path)
-        mix = factory.tokenize_build(out, tok, tok_path, log=progress)
+        chunks = None
+        try:  # 0.7.2: workers tokenize public domains with MOTH Cloud (verified); None = no workers online
+            from moth_server.intelligence import distributed_prep as DP
+
+            chunks = DP.prepare(ctx, bid, out, tok, tok_path, progress)
+        except Exception as exc:  # noqa: BLE001 — preparation on MOTH Cloud alone always works
+            progress(f"worker preparation unavailable ({exc}); preparing on MOTH Cloud")
+        mix = factory.tokenize_build(out, tok, tok_path, log=progress, train_chunks=chunks)
         registered = 0
         registration_errors = []
         for d, info in mix["domains"].items():

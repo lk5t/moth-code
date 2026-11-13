@@ -8,6 +8,10 @@ Each example is verified before it is emitted, so a wrong example can never reac
   larger number, reverse a word); the reply is produced by the operation itself and re-checked.
 * ``python`` — small Python functions with a docstring; each one is executed against its tests in an
   isolated namespace (no imports, no builtins beyond a safe set) and kept only if every test passes.
+* ``reasoning`` (0.7.2) — number sequences, orderings from comparisons and multi-step word problems;
+  the answer is derived by a separate computation and must agree with the stated one.
+* ``language`` (0.7.2) — plurals, opposites, alphabetical order, word counts and sentence casing from
+  fixed, checked tables; each answer is re-derived before the example is kept.
 
 Examples are deterministic for a seed, so builds are reproducible. The evaluation benchmarks (GSM8K
 word problems, ARC, MBPP) are not generated here; the library build's decontamination still applies.
@@ -19,7 +23,7 @@ import random
 import re
 from typing import Any, Callable, Iterator
 
-KINDS = ("arithmetic", "instructions", "python")
+KINDS = ("arithmetic", "instructions", "python", "reasoning", "language")
 WORDS = ["moth", "river", "garden", "rocket", "pencil", "planet", "violin", "lantern", "harbor", "meadow",
          "crystal", "falcon", "thunder", "pepper", "window", "summer", "orbit", "maple", "anchor", "copper"]
 SAFE_BUILTINS = {"len": len, "range": range, "sum": sum, "min": min, "max": max, "sorted": sorted, "abs": abs,
@@ -134,8 +138,93 @@ def python(rng: random.Random) -> tuple[str, str] | None:
     return rng.choice(PY_PROMPTS).format(task=task), f"```python\n{code}\n```\n\nFor example, `{call}` returns `{want!r}`."
 
 
-GENERATORS = {"arithmetic": arithmetic, "instructions": instructions, "python": python}
-DOMAINS = {"arithmetic": "math", "instructions": "conversation", "python": "code"}
+# ---- reasoning (0.7.2) ------------------------------------------------------------------------------------
+NAMES = ["Ada", "Ben", "Cleo", "Dev", "Eli", "Fay", "Gus", "Hana", "Ivo", "June"]
+TRAITS = [("taller", "tallest", "shortest"), ("older", "oldest", "youngest"), ("faster", "fastest", "slowest")]
+ITEMS = ["apples", "books", "stamps", "marbles", "cards", "shells"]
+
+
+def reasoning(rng: random.Random) -> tuple[str, str] | None:
+    kind = rng.randrange(3)
+    if kind == 0:  # sequences: arithmetic or geometric, the next term computed two ways
+        start, step = rng.randint(1, 20), rng.randint(2, 9)
+        geometric = rng.random() < 0.4
+        seq = [start * step ** i for i in range(4)] if geometric else [start + step * i for i in range(4)]
+        nxt = seq[-1] * step if geometric else seq[-1] + step
+        check = seq[-1] * (seq[1] // seq[0]) if geometric else seq[-1] + (seq[1] - seq[0])
+        if nxt != check:
+            return None
+        rule = f"each number is {step} times the previous one" if geometric else f"each number is {step} more than the previous one"
+        return (f"What number comes next: {', '.join(map(str, seq))}, …?",
+                f"The pattern is that {rule}, so the next number is {nxt}.")
+    if kind == 1:  # ordering from pairwise comparisons
+        people = rng.sample(NAMES, rng.randint(3, 4))  # people[0] has the most of the trait
+        more, most, least = rng.choice(TRAITS)
+        facts = [f"{people[i]} is {more} than {people[i + 1]}." for i in range(len(people) - 1)]
+        rng.shuffle(facts)
+        ask_most = rng.random() < 0.5
+        # independent check: rebuild the order from the facts
+        above = {f.split(" is ")[0]: f.split(" than ")[1].rstrip(".") for f in facts}
+        top = next(p for p in people if p not in above.values())
+        bottom = next(p for p in people if p not in above)
+        want = people[0] if ask_most else people[-1]
+        if want != (top if ask_most else bottom):
+            return None
+        return (f"{' '.join(facts)} Who is the {most if ask_most else least}?",
+                f"Putting them in order: {', '.join(people)}. The {most if ask_most else least} is {want}.")
+    # multi-step word problem
+    name, item = rng.choice(NAMES), rng.choice(ITEMS)
+    a, b, c = rng.randint(2, 30), rng.randint(1, 20), rng.randint(1, 15)
+    if c > a + b:
+        return None
+    r = a + b - c
+    steps = f"{name} starts with {a}, gets {b} more ({a} + {b} = {a + b}) and gives away {c} ({a + b} - {c} = {r})."
+    return (f"{name} has {a} {item}. {name} gets {b} more and then gives {c} to a friend. "
+            f"How many {item} does {name} have now?", f"{steps} {name} has {r} {item} now.") if r == (a - c) + b else None
+
+
+# ---- language (0.7.2) -------------------------------------------------------------------------------------
+PLURALS = {"cat": "cats", "box": "boxes", "city": "cities", "leaf": "leaves", "child": "children", "mouse": "mice",
+           "bus": "buses", "baby": "babies", "knife": "knives", "tooth": "teeth", "story": "stories", "dish": "dishes",
+           "person": "people", "wolf": "wolves", "glass": "glasses", "foot": "feet"}
+OPPOSITES = {"hot": "cold", "big": "small", "fast": "slow", "early": "late", "happy": "sad", "light": "dark",
+             "open": "closed", "full": "empty", "strong": "weak", "begin": "end", "high": "low", "push": "pull",
+             "true": "false", "inside": "outside", "above": "below", "win": "lose"}
+SENTENCES = ["the moth flew toward the lantern", "rivers carry water to the sea", "she wrote a short program today",
+             "every planet follows an orbit", "the garden is quiet after the rain", "maple trees turn red in autumn"]
+
+
+def language(rng: random.Random) -> tuple[str, str] | None:
+    kind = rng.randrange(5)
+    if kind == 0:
+        w = rng.choice(sorted(PLURALS))
+        return f"What is the plural of \"{w}\"?", f"The plural of \"{w}\" is \"{PLURALS[w]}\"."
+    if kind == 1:
+        w = rng.choice(sorted(OPPOSITES))
+        o = OPPOSITES[w]
+        if {v: k for k, v in OPPOSITES.items()}[o] != w:
+            return None
+        return f"What is the opposite of \"{w}\"?", f"The opposite of \"{w}\" is \"{o}\"."
+    if kind == 2:
+        ws = rng.sample(WORDS, rng.randint(3, 5))
+        ordered = sorted(ws)
+        if any(a > b for a, b in zip(ordered, ordered[1:])):
+            return None
+        return f"Put these words in alphabetical order: {', '.join(ws)}.", ", ".join(ordered)
+    s = rng.choice(SENTENCES)
+    if kind == 3:
+        n = len(s.split())
+        return f"How many words are in this sentence: \"{s}\"?", f"The sentence has {n} words."
+    fixed = s[0].upper() + s[1:] + "."
+    if not (fixed[0].isupper() and fixed.endswith(".") and fixed[1:-1] == s[1:]):
+        return None
+    return f"Rewrite this as a correctly punctuated sentence: \"{s}\"", fixed
+
+
+GENERATORS = {"arithmetic": arithmetic, "instructions": instructions, "python": python,
+              "reasoning": reasoning, "language": language}
+DOMAINS = {"arithmetic": "math", "instructions": "conversation", "python": "code",
+           "reasoning": "reasoning", "language": "language"}
 
 
 def generate(kind: str, n: int, seed: int = 0, source_id: str | None = None) -> Iterator[dict[str, Any]]:

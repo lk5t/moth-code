@@ -59,7 +59,10 @@ DEFAULTS: dict[str, Any] = {
                "min_tokens_per_param": 20.0, "foundation_tokens_per_param": 2.0, "capability_window": 3,
                "cooldown_cycles": 3, "max_failed_attempts": 3, "min_domain_share": 0.03},
     "distributed": {"enabled": True, "min_participants": 2, "max_participants": 8, "rounds": 3,
-                    "eval_on_workers": True, "eval_wait_minutes": 10.0},
+                    "eval_on_workers": True, "eval_wait_minutes": 10.0,
+                    # 0.7.2: MOTH Cloud's built-in worker joins distributed rounds, data preparation and
+                    # evaluations; workers tokenize dataset chunks (verified by re-encoding)
+                    "cloud_participates": True, "prepare_on_workers": True},
     # staged rollout: a promoted candidate first serves this share of users while it is monitored
     "rollout": {"canary_percent": 20.0},
     # model retention after a promotion: the active model and the previous working one (0 = keep all)

@@ -272,6 +272,10 @@ def job_weights(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depen
         from moth_server.evolution.remote_eval import files as eval_files
 
         return FileResponse(eval_files(ctx, spec)[0], media_type="application/octet-stream")
+    if j["kind"] == "prep_tokenize":
+        from moth_server.intelligence.distributed_prep import files as prep_files
+
+        return FileResponse(prep_files(ctx, spec)[0], media_type="application/octet-stream")
     if j["kind"] == "evolve_train":
         from moth_server.evolution.backends import job_files
 
@@ -292,6 +296,10 @@ def job_shard(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depends
         from moth_server.evolution.remote_eval import files as eval_files
 
         return FileResponse(eval_files(ctx, spec)[1], media_type="application/octet-stream")
+    if j["kind"] == "prep_tokenize":
+        from moth_server.intelligence.distributed_prep import files as prep_files
+
+        return FileResponse(prep_files(ctx, spec)[1], media_type="application/octet-stream")
     if j["kind"] == "evolve_train":
         from moth_server.evolution.backends import job_files
 

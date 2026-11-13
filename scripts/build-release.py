@@ -178,6 +178,7 @@ def build_server_bundles(out: Path, v: str) -> dict:
     def cloud(tar):
         add_tree(tar, ROOT / "server", f"{name}/server")
         add_tree(tar, ROOT / "backend", f"{name}/backend")
+        add_tree(tar, ROOT / "worker", f"{name}/worker")  # 0.7.2: MOTH Cloud's built-in worker
         add_tree(tar, ROOT / "deploy" / "agent", f"{name}/agent")
         for f in ("install-server.sh",):
             add_file(tar, ROOT / "deploy" / f, f"{name}/deploy/{f}", mode=0o755)

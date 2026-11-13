@@ -79,6 +79,7 @@ def create_app(settings: Settings | None = None, extras: dict | None = None) -> 
     app = FastAPI(title="MOTH Server", version=__version__, docs_url="/docs" if settings.dev_mode else None,
                   redoc_url=None, openapi_url="/openapi.json" if settings.dev_mode else None)
     app.state.ctx = ctx
+    ctx.extras.setdefault("app", app)  # 0.7.2: the built-in cloud worker talks to this app in-process
     app.state.started_at = time.time()
     log_handler = DbErrorLog(db)
     for name in ("moth_server", "uvicorn.error"):

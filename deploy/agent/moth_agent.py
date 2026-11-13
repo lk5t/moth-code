@@ -521,7 +521,7 @@ class Agent:
 
     def release_env(self, release_dir: Path) -> dict:
         env = {**os.environ, **self.i.env}
-        env["PYTHONPATH"] = f"{release_dir / 'server'}{os.pathsep}{release_dir / 'backend'}"
+        env["PYTHONPATH"] = os.pathsep.join(str(release_dir / d) for d in ("server", "backend", "worker"))
         env.setdefault("MOTH_AGENT_TOKEN_FILE", str(self.i.config_dir / "agent.token"))
         return env
 

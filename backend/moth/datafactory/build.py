@@ -246,8 +246,80 @@ def _encode(tok, rec: dict[str, Any]) -> tuple[list[int], list[int]]:
     return ids + [tok.eos_id], mask + [1]
 
 
+# ---- chunked preparation (0.7.2): identical on MOTH Cloud and on workers -------------------------------
+def record_hash(rec: dict[str, Any]) -> bytes:
+    """16-byte identity of a record's text (whitespace-normalised) for exact deduplication."""
+    import hashlib
+
+    return hashlib.sha256(" ".join(clean.record_text(rec).split()).encode("utf-8")).digest()[:16]
+
+
+def encode_chunk(tok, path: Path) -> dict[str, np.ndarray]:
+    """Tokenize one chunk of records: concatenated ids and loss mask, per-record offsets and text hashes.
+
+    The same function runs on MOTH Cloud and on workers, so a worker's output can be checked by
+    re-encoding any of its records (tokenization is deterministic)."""
+    ids_all: list[int] = []
+    mask_all: list[int] = []
+    offsets = [0]
+    hashes = bytearray()
+    for rec in _iter_jsonl(Path(path)):
+        ids, mask = _encode(tok, rec)
+        ids_all += ids
+        mask_all += mask
+        offsets.append(len(ids_all))
+        hashes += record_hash(rec)
+    return {"ids": np.asarray(ids_all, dtype=np.uint32), "mask": np.asarray(mask_all, dtype=np.uint8),
+            "offsets": np.asarray(offsets, dtype=np.int64),
+            "hashes": np.frombuffer(bytes(hashes), dtype=np.uint8).reshape(-1, 16) if hashes else np.zeros((0, 16), np.uint8)}
+
+
+def chunk_bytes(arrays: dict[str, np.ndarray]) -> bytes:
+    import io
+
+    buf = io.BytesIO()
+    np.savez(buf, **arrays)
+    return buf.getvalue()
+
+
+def load_chunk(data: bytes) -> dict[str, np.ndarray]:
+    import io
+
+    with np.load(io.BytesIO(data), allow_pickle=False) as z:
+        return {k: z[k] for k in ("ids", "mask", "offsets", "hashes")}
+
+
+def split_records(src: Path, dest_dir: Path, per_chunk: int) -> list[Path]:
+    """Split a domain's JSONL into chunks of ``per_chunk`` records (in order)."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    out: list[Path] = []
+    fh = None
+    n = 0
+    with open(src, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            if fh is None or n >= per_chunk:
+                if fh:
+                    fh.close()
+                p = dest_dir / f"{src.stem}-{len(out):05d}.jsonl"
+                out.append(p)
+                fh = open(p, "w", encoding="utf-8")
+                n = 0
+            fh.write(line if line.endswith("\n") else line + "\n")
+            n += 1
+    if fh:
+        fh.close()
+    return out
+
+
 def tokenize_build(build_dir: Path, tok, tokenizer_path: Path, out: Path | None = None,
-                   log: Callable[[str], None] = print) -> dict[str, Any]:
+                   log: Callable[[str], None] = print,
+                   train_chunks: dict[str, list[dict[str, np.ndarray]]] | None = None) -> dict[str, Any]:
+    """Tokenize a build. Exact duplicate records (same normalised text) are written once.
+
+    ``train_chunks``: per domain, already-encoded chunks of its training records in order (from
+    ``encode_chunk``, e.g. prepared by workers and verified); other domains are encoded here."""
     build_dir = Path(build_dir)
     out = Path(out or build_dir / "tokens")
     manifest = json.loads((build_dir / "manifest.json").read_text())
@@ -263,11 +335,31 @@ def tokenize_build(build_dir: Path, tok, tokenizer_path: Path, out: Path | None 
         ddir = out / d
         ddir.mkdir(parents=True, exist_ok=True)
         counts = {}
+        duplicates = 0
         for split, src in (("train", p), ("val", build_dir / "eval" / f"holdout_{d}.jsonl")):
             n = 0
+            seen: set[bytes] = set()
             with open(ddir / f"{split}.bin.tmp", "wb") as fb, open(ddir / f"{split}.mask.tmp", "wb") as fm:
-                if src.exists():
+                if split == "train" and train_chunks and d in train_chunks:
+                    for ch in train_chunks[d]:
+                        offs = ch["offsets"]
+                        for r in range(len(offs) - 1):
+                            h = bytes(ch["hashes"][r])
+                            if h in seen:
+                                duplicates += 1
+                                continue
+                            seen.add(h)
+                            a, b = int(offs[r]), int(offs[r + 1])
+                            fb.write(ch["ids"][a:b].astype(dtype).tobytes())
+                            fm.write(ch["mask"][a:b].tobytes())
+                            n += b - a
+                elif src.exists():
                     for rec in _iter_jsonl(src):
+                        h = record_hash(rec)
+                        if h in seen:
+                            duplicates += split == "train"
+                            continue
+                        seen.add(h)
                         ids, mask = _encode(tok, rec)
                         fb.write(np.asarray(ids, dtype=dtype).tobytes())
                         fm.write(np.asarray(mask, dtype=np.uint8).tobytes())
@@ -291,8 +383,10 @@ def tokenize_build(build_dir: Path, tok, tokenizer_path: Path, out: Path | None 
                 "sources": [{"spec": f"factory:{s['id']}", "license": s["license"]}
                             for s in manifest["sources"] if s["domain"] == d or d in _domains_of(s)]}
         (ddir / "meta.json").write_text(json.dumps(meta, indent=1))
-        mixture["domains"][d] = {"dir": d, "tokens": counts}
-        log(f"tokenized {d}: {counts['train']:,} train / {counts['val']:,} val tokens")
+        mixture["domains"][d] = {"dir": d, "tokens": counts, "duplicates_removed": duplicates,
+                                 "prepared_by": "workers" if train_chunks and d in train_chunks else "server"}
+        log(f"tokenized {d}: {counts['train']:,} train / {counts['val']:,} val tokens"
+            + (f", {duplicates} duplicate record(s) removed" if duplicates else ""))
     (out / "mixture.json").write_text(json.dumps(mixture, indent=1))
     return mixture
 

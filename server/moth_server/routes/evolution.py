@@ -48,6 +48,14 @@ def setup(ctx: Ctx) -> None:
         logging.getLogger("moth_server").exception("model identity migration failed")
     if not ctx.extras.get("disable_background"):
         EN.start_background(ctx)
+        try:  # 0.7.2: MOTH Cloud trains together with the workers (built-in, verified like any worker)
+            from moth_server.evolution import cloud_worker
+
+            cloud_worker.start(ctx)
+        except Exception:  # noqa: BLE001
+            import logging
+
+            logging.getLogger("moth_server").exception("MOTH Cloud worker could not start")
 
 
 def _bad(e: Exception) -> HTTPException:
