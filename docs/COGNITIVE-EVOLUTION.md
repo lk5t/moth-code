@@ -110,3 +110,16 @@ If a cycle still cannot plan anything (no prepared data yet), the next attempt i
 experiment that waited in the queue showed hours although it had trained for minutes. MOTH Cloud now
 sends `elapsed_seconds`, measured on its own clock from when a worker leased the job (or across the
 local training sessions). "Remaining" still prefers the trainer's own measured rate.
+
+
+## 0.8.2 — Stalled workers
+
+A worker keeps its lease while it sends heartbeats — also while it is paused (its computer is busy or
+low on resources). Such a worker could hold an experiment, and so its cycle, for hours without training
+(seen in production: step 845 for hours). MOTH Cloud now records the last time each leased job made
+progress (workers report it every 30 seconds). Without progress for 2 minutes after training started
+(or 10 minutes before the first step, while the model and data download), the job is cancelled (the
+worker is told on its next heartbeat; a late result is refused), the worker's measured pace is recorded
+for placement, and the experiment is placed again on MOTH Cloud or another free worker. Early stopping
+("no held-out improvement for 3 evaluations") is unchanged: it ends a run whose held-out loss stopped
+improving, and since 0.8.1 the next cycle tries a different configuration instead of stalling.

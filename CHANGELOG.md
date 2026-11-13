@@ -3,6 +3,10 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.8.2 — Stalled workers lose their job within minutes
+
+- A worker that holds an experiment but makes no training progress (for example while paused because its computer is busy) kept it — and the whole Evolution cycle — waiting indefinitely. MOTH Cloud now takes the job back after 2 minutes without progress once training has started (10 minutes to start: downloading the model and data), tells the worker to stop, records its real pace so placement prefers faster compute, and places the experiment again.
+
 ## 0.8.1 — Evolution never runs dry
 
 - Evolution no longer stalls once every planned configuration was tried on the current model: it explores new learning rates around the best known one, longer runs, the other curriculum and fresh data samples (never repeating a configuration), and asks the data library to grow. Every candidate still passes the same gates.

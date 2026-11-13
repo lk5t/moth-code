@@ -491,6 +491,40 @@ def _reassign_to_cloud(ctx: Ctx, cyc: dict, exp: dict, j: dict, settings: dict) 
     return True
 
 
+# a worker holding a job without training progress loses it after this long (it reports progress every 30 s):
+WORKER_STALL_SECONDS = 120.0   # once training has started
+WORKER_START_SECONDS = 600.0   # before the first step (downloading the model and data, measuring the batch size)
+
+
+def _take_back_stalled(ctx: Ctx, cyc: dict, exp: dict, j: dict, res: dict, settings: dict) -> bool:
+    """0.8.1: a worker that keeps its lease (it still sends heartbeats, e.g. while paused because its
+    computer is busy) but makes no progress would hold the experiment — and so the whole cycle — forever.
+    Its job is cancelled (the worker is told on its next heartbeat and stops; a late result is refused),
+    its real pace is recorded so placement prefers faster compute, and the experiment is placed again:
+    on MOTH Cloud or another worker, whichever is free."""
+    from moth_server.db import training_jobs
+
+    stalled_min = (now() - float(res.get("last_progress_at") or now())) / 60
+    with ctx.db.tx() as c:
+        n = c.execute(training_jobs.update().where(training_jobs.c.id == j["id"], training_jobs.c.status == "leased")
+                      .values(status="cancelled", lease_expires_at=None, updated_at=now(),
+                              error=f"taken back: no training progress for {stalled_min:.0f} minutes")).rowcount
+    if not n:
+        return False
+    cfg = exp["config"] or {}
+    done = float(j["progress"] or 0.0) * int(cfg.get("steps") or 0) * int(cfg.get("batch_size") or 0) * int(cfg.get("seq_len") or 0)
+    began = float(res.get("leased_at") or now())
+    C.record_throughput(ctx, f"worker:{j['worker_id']}", max(1.0, done), max(1.0, now() - began))
+    MEM.update_experiment(ctx, exp["id"], status="waiting", backend=None, job_id=None, worker_id=None,
+                          error=None, resources={k: v for k, v in res.items()
+                                                 if k not in ("leased_at", "leased_by", "last_progress", "last_progress_at")})
+    MEM.event(ctx, "experiment.reassigned", f"Worker {j['worker_id']} kept experiment #{exp['id']} but made no training "
+              f"progress for {stalled_min:.0f} minutes (it may be paused or busy). The job was taken back and the "
+              "experiment is placed again on the fastest free compute.", level="warning",
+              cycle_id=cyc["id"], experiment_id=exp["id"], job=j["id"], worker=j["worker_id"])
+    return True
+
+
 def _is_training(ctx: Ctx, exp: dict) -> bool:
     if exp["status"] != "running":
         return False
@@ -663,6 +697,14 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
             res_ = exp["resources"] or {}
             if leased and res_.get("leased_by") != j["worker_id"]:  # (re)assigned: the clock starts now
                 res_ = {**res_, "leased_at": now(), "leased_by": j["worker_id"]}
+            if leased:  # 0.8.1: remember when the worker last made training progress
+                prog = float(j["progress"] or 0.0)
+                if res_.get("last_progress") is None or prog > float(res_["last_progress"]) + 1e-9:
+                    res_ = {**res_, "last_progress": prog, "last_progress_at": now()}
+                elif now() - float(res_.get("last_progress_at") or now()) > \
+                        (WORKER_STALL_SECONDS if float(res_["last_progress"]) > 0 else WORKER_START_SECONDS) \
+                        and _take_back_stalled(ctx, cyc, exp, j, res_, settings):
+                    return
             MEM.update_experiment(ctx, exp["id"], progress=j["progress"], worker_id=j["worker_id"], resources=res_)
             MEM.update_cycle(ctx, cyc["id"], status="training" if leased else "waiting_for_compute",
                              result={**(cyc["result"] or {}),
