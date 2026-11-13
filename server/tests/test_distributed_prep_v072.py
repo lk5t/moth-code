@@ -65,7 +65,7 @@ def test_workers_prepare_chunks_and_merge_is_identical(client, settings, owner, 
 
     t = threading.Thread(target=work)
     t.start()
-    chunks = DP.prepare(ctx, 1, b, tok, tp, lambda m: None, wait_seconds=30, poll=0.2)
+    chunks = DP.prepare(ctx, 1, b, tok, tp, lambda m: None, wait_seconds=60, poll=0.2, head_start=20)
     t.join()
     assert chunks and len(chunks["code"]) == 5  # 95 records in chunks of 20
     assert done and all(r.get("accepted") for r in done)  # the worker's chunks passed verification

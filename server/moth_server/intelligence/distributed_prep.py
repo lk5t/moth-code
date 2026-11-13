@@ -35,6 +35,7 @@ from moth_server.db import now, training_jobs, workers
 CHUNK_RECORDS = 2000
 MIN_WORKER_VERSION = "0.7.2"
 WAIT_SECONDS = 900.0
+HEAD_START = 5.0  # seconds a fresh chunk is left to the workers before MOTH Cloud may take it
 SPOT_CHECKS = 4
 
 
@@ -78,7 +79,8 @@ def _encode_local(tok, chunk: Path) -> dict:
 
 
 def prepare(ctx: Ctx, bid: int, build_dir: Path, tok, tok_path: Path, log: Callable[[str], None],
-            wait_seconds: float = WAIT_SECONDS, poll: float = 0.5) -> dict[str, list[dict]] | None:
+            wait_seconds: float = WAIT_SECONDS, poll: float = 0.5,
+            head_start: float = HEAD_START) -> dict[str, list[dict]] | None:
     """Encode the public domains' training records with the help of workers. None: no workers."""
     from moth.datafactory.build import load_chunk, split_records
 
@@ -125,7 +127,10 @@ def prepare(ctx: Ctx, bid: int, build_dir: Path, tok, tok_path: Path, log: Calla
         if not outstanding:
             break
         late = time.time() - started >= wait_seconds
-        take = next((j for j in outstanding if rows[j]["status"] in ("queued", "failed", "cancelled")
+        # workers get a short head start; afterwards MOTH Cloud takes unclaimed chunks (work stealing)
+        ready = time.time() - started >= head_start or not eligible_workers(ctx)
+        take = next((j for j in outstanding if rows[j]["status"] in ("failed", "cancelled")
+                     or (ready and rows[j]["status"] == "queued")
                      or (late and rows[j]["status"] == "leased")), None)
         if take is None:
             time.sleep(poll)
