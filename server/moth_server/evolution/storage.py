@@ -217,3 +217,30 @@ def apply_retention(ctx: Ctx, previous_version: int | None) -> dict[str, Any]:
                   + f"; removed {len(removed)} older version(s), freeing {freed / 1024**2:.1f} MB.",
                   removed=removed, bytes=freed)
     return {"removed": removed, "freed_bytes": freed, "kept": sorted(keep)}
+
+
+def rollback_target(ctx: Ctx) -> int | None:
+    """The one rollback model: the nearest working ancestor of the active model whose files still exist.
+
+    A version qualifies when it was verified (status ``published``) and its package is on disk. Falls
+    back to the newest such version older than the active one (models from before lineage tracking).
+    """
+    from moth_server import models as M
+
+    deployed = M.deployed(ctx)
+    if deployed is None:
+        return None
+
+    def usable(v: int) -> bool:
+        try:
+            r = M.release(ctx, v)
+        except M.ReleaseError:
+            return False
+        return r["status"] == "published" and bool(r.get("path")) and Path(r["path"]).exists()
+
+    for a in MEM.ancestors(ctx, deployed["version"])[1:]:
+        if usable(a["version"]):
+            return a["version"]
+    older = sorted((r["version"] for r in M.list_releases(ctx) if r["version"] < deployed["version"]), reverse=True)
+    return next((v for v in older if usable(v)), None)
+

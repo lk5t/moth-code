@@ -88,6 +88,10 @@
 @keyframes moth-left { 0%, 60%, 100% { transform: none; } 78% { transform: rotate(4deg) scaleX(.9); } }
 @keyframes moth-right { 0%, 60%, 100% { transform: none; } 78% { transform: rotate(-4deg) scaleX(.9); } }
 
+/* Model tab: the layer rings turn slowly only while a candidate is actually training (0.7.1). */
+.model-core-spin { animation: model-core-spin 48s linear infinite; }
+@keyframes model-core-spin { to { transform: rotate(360deg); } }
+
 /* Respect the OS preference across existing and GENESIS views. */
 @media (prefers-reduced-motion: reduce) {
   .moth-emblem, .moth-wing { animation: none !important; transform: none !important; }

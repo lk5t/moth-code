@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 const mocks = vi.hoisted(() => ({ api: vi.fn(), get: vi.fn(), put: vi.fn() }));
 vi.mock("@/lib/account", () => ({ serverApi: mocks.api, useAccount: (fn: (s: any) => unknown) => fn({ token: "test-session", user: { role: "owner" } }) }));
 vi.mock("@/lib/backend", () => ({ get: mocks.get, put: mocks.put }));
@@ -11,7 +11,7 @@ vi.mock("@/features/owner/ModelOverview", () => ({ ModelOverview: () => <p>Basel
 vi.mock("@/features/training/TrainingView", () => ({ TrainingView: () => <p>Local training controls</p> }));
 vi.mock("@/features/models/ModelsView", () => ({ ModelsView: () => <p>Local package controls</p> }));
 vi.mock("@/features/network/NetworkView", () => ({ NetworkView: () => <p>Existing worker enrollment controls</p> }));
-import { IntelligenceHub, ModelActivity } from "@/features/intelligence/IntelligenceHub";
+import { IntelligenceHub } from "@/features/intelligence/IntelligenceHub";
 import { appStore } from "@/lib/app-state";
 
 const progress = { current: { version: 1, model_version: "0.01", name: "MOTH 0.01", params: 99648,
@@ -35,11 +35,11 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("Intelligence consolidation", () => {
-  it("groups AI into Evolution, Data, History and AI Settings, with training on the Evolution page", async () => {
+  it("groups AI into Evolution, Model, Data, History and AI Settings, with training on the Evolution page", async () => {
     render(<IntelligenceHub />);
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Evolution", "Data", "History", "AI Settings"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Evolution", "Model", "Data", "History", "AI Settings"]);
     await screen.findByRole("button", { name: "Pause Evolution" });
-    expect(screen.queryByText("Model Architecture")).toBeNull();  // 0.7.0: the diagram lives in AI Settings → Advanced
+    expect(screen.queryByText("Model Architecture")).toBeNull();  // 0.7.1: the model lives in its own Model tab
     expect(screen.getByText("Training has slowed down: testing a lower learning rate.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Train MOTH now" })).toBeNull();  // manual controls live in AI Settings
     expect(screen.queryByRole("switch", { name: "Contribute this computer" })).toBeNull();
@@ -50,35 +50,28 @@ describe("Intelligence consolidation", () => {
     expect(appStore.getState().intelligenceTab).toBe("data");
     fireEvent.mouseDown(screen.getByRole("tab", { name: "AI Settings" }), { button: 0 });
     await screen.findByText("Growth approval and rollback controls");
-    fireEvent.click(screen.getByText("Model Architecture"));
-    await screen.findByRole("button", { name: "Inspect layer 2" });
-    fireEvent.click(screen.getByRole("button", { name: "Inspect layer 2" }));
-    expect(screen.getByRole("button", { name: "Inspect layer 2" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("Model Architecture")).toBeNull();
+    expect(screen.queryByText("Cloud model registry and evaluation data")).toBeNull();  // merged into the Model tab
+    expect(screen.queryByText("Cloud registry controls")).toBeNull();
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Model" }), { button: 0 });
+    expect(await screen.findByRole("heading", { name: "MOTH 0.01" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /2 decoder layers, 4 attention heads per layer, 64 dimensions/ })).toBeInTheDocument();
     expect(screen.queryByText("Manual training controls")).toBeNull();  // Evolution is the only training control
     expect(screen.queryByRole("button", { name: "Train MOTH now" })).toBeNull();
-  });
-  it("never animates a training claim without reported progress", async () => {
-    const props = { progress: { ...progress, training: { cycle: { status: "training" } } }, resources: { training: { running: [{ progress: { step: 0 } }] } } };
-    const { rerender } = render(<ModelActivity {...props} />);
-    expect(screen.queryByText("Training progress received")).not.toBeInTheDocument();
-    rerender(<ModelActivity {...props} resources={{ training: { running: [{ progress: { step: 1 } }] } }} />);
-    await waitFor(() => expect(screen.getByText("Training progress received")).toBeInTheDocument());
-    expect(screen.getByText(/Fresh, untrained baseline/)).toBeInTheDocument();
   });
 });
 
 
-it("clears model activity after a failed refresh instead of showing stale state as current", async () => {
+it("clears the model after a failed refresh instead of showing stale state as current", async () => {
   vi.useFakeTimers();
   try {
-    appStore.setState({ view: "intelligence", intelligenceTab: "settings" });
+    appStore.setState({ view: "intelligence", intelligenceTab: "model" });
     await act(async () => { render(<IntelligenceHub />); });
-    fireEvent.click(screen.getByText("Model Architecture"));
     await act(async () => {await vi.advanceTimersByTimeAsync(0);});
-    expect(screen.getByRole("button", { name: "Inspect layer 2" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "MOTH 0.01" })).toBeInTheDocument();
     mocks.api.mockRejectedValue(new Error("connection lost"));
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    expect(screen.queryByRole("button", { name: "Inspect layer 2" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "MOTH 0.01" })).not.toBeInTheDocument();
     expect(screen.getAllByText(/Live status unavailable/).length).toBeGreaterThan(0);
   } finally { vi.useRealTimers(); }
 });

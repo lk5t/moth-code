@@ -508,6 +508,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
             "parent": row["parent_version"], "created_at": row["created_at"], "status": r["status"],
             "deployed": row["version"] == deployed, "stable": row["version"] == stable,
             "has_dev_checkpoint": bool((info.get("dev_checkpoint") or {}).get("path")),
+            "retained": bool(r.get("path")) and __import__("pathlib").Path(r["path"]).exists(),
             "growth": info.get("growth"), "lineage_totals": info.get("lineage_totals"),
             "datasets": ds_names(_json.loads(row["datasets"]) if isinstance(row["datasets"], str) else row["datasets"]),
             "benchmarks": {k: {"value": v["value"], "metric": v.get("metric"), "higher_is_better": v.get("higher_is_better")}
@@ -588,6 +589,8 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
         "observed_at": now(), "serving": {'loaded': bool(loaded), 'accepting_requests': accepting,
             'reason': 'Native reset recovery is required' if reset_fenced else 'Ready to answer' if accepting else 'Cloud answering is turned off' if loaded else 'No native model is loaded'},
         "checkpoint": checkpoint, "improvement": improvement,
+        # 0.7.1: exactly one active model and one rollback model keep their weights
+        "lifecycle": _lifecycle(ctx, current),
         "activity": recent_activity(ctx,auth.uid,auth.user["role"]=="owner",limit=25),
         "current": current, "stable": next((v for v in versions if v["stable"]), None),
         "development": dev, "rollout": serving.loaded_versions(ctx), "timeline": versions,
@@ -607,6 +610,20 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                                                             .label("t")))["t"])},
         "measured": "every value is a measurement on held-out data or a recorded count, except fields named *_estimate",
     }
+
+
+def _lifecycle(ctx, current):
+    from moth_server.evolution import storage as ST
+    from moth_server import models as M
+
+    try:
+        rollback = ST.rollback_target(ctx) if current else None
+        r = M.release(ctx, rollback) if rollback else None
+    except Exception:  # noqa: BLE001 — never breaks the progress page
+        rollback, r = None, None
+    return {"active": current["version"] if current else None, "rollback": rollback,
+            "rollback_name": ((r or {}).get("info") or {}).get("display_name") if r else None,
+            "policy": "one active model and one rollback model keep their weights; older versions keep history only"}
 
 
 @router.get('/v1/intelligence/activity')

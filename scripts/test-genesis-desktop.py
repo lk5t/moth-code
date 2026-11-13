@@ -109,11 +109,11 @@ def main(installer):
             ui.find(label, ('Button',))
         ui.click('AI', control_type='Button')
         ui.click('Evolution', control_type='TabItem')
-        # the architecture diagram lives in AI Settings → Advanced → Model Architecture (0.7.0)
-        ui.click('AI Settings', control_type='TabItem')
-        ui.click('Model Architecture')
-        ui.click('Inspect layer 2')
-        wait(lambda: 'Layer 2 selected' in ui.text(offscreen=True), 'selected architecture layer')  # below the fold in AI Settings
+        # 0.7.1: the active model, its measured architecture and lifecycle live in AI → Model
+        ui.click('Model', control_type='TabItem')
+        wait(lambda: 'Active model' in ui.text(offscreen=True) and 'counted from the saved weights' in ui.text(offscreen=True),
+             'active model with its verified parameter count')
+        ui.find('decoder layers', contains=True, timeout=30)  # the core visual is labelled with the real layer count
         print('::notice title=GENESIS native stage::Workspace drafts and the AI Evolution page passed', flush=True)
         worker_backend = api('/v1/admin/evolution/status')['settings']['backends']['workers']
         ui.click('Network', control_type='Button')  # computers and consent live in Network

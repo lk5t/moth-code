@@ -15,7 +15,7 @@ export function workspaceOf(view: View): View {
   return view;
 }
 export function navigate(view: View) {
-  const legacy: Partial<Record<View, string>> = { overview: "evolution", training: "evolution", data: "data", activity: "history", evolution: "history", models: "settings" };
+  const legacy: Partial<Record<View, string>> = { overview: "evolution", training: "evolution", data: "data", activity: "history", evolution: "history", models: "model" };
   if (legacy[view]) { appStore.setState({ view: "intelligence", intelligenceTab: aiTab(legacy[view]) }); return; }
   appStore.setState({ view });
 }
