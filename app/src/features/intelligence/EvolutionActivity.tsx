@@ -43,7 +43,7 @@ export function EvolutionActivity() {
     {!owner ? <CloudActivity /> : error ? <p role="alert" className="text-xs text-danger">Activity unavailable: {error}</p>
       : !data ? <p className="text-xs text-muted">Loading…</p>
       : !data.length ? <p className="text-xs text-muted">Nothing has happened yet. Start Evolution and every step appears here.</p>
-      : <ol className="max-h-96 space-y-1 overflow-y-auto pr-1">{data.map((e) => {
+      : <ol className="stagger max-h-96 space-y-1 overflow-y-auto pr-1">{data.map((e) => {
           const Icon = e.level === "error" ? XCircle : e.level === "warning" ? AlertTriangle : CircleDot;
           const details = { kind: e.kind, ...(e.cycle_id ? { cycle: e.cycle_id } : {}), ...(e.experiment_id ? { experiment: e.experiment_id } : {}), ...(e.data ?? {}) };
           return <li key={e.id}><details className="group rounded-md px-2 py-1.5 hover:bg-surface-2">

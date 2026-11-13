@@ -303,7 +303,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
             ) : (
               <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
                 {messages.map((m,index) => {
-                  const content = <div key={m.id} className={cn("flex animate-rise", m.role === "user" && "justify-end")}>
+                  const content = <div key={m.id} className={cn("flex animate-message-in", m.role === "user" && "justify-end")}>
                     {m.role === "user" ? (
                       <div className="selectable max-w-[85%] whitespace-pre-wrap rounded-xl rounded-br-sm border border-border bg-surface-2 px-3.5 py-2 text-[13px]">{m.content}</div>
                     ) : m.role === "error" ? (

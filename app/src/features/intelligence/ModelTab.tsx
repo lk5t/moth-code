@@ -173,7 +173,7 @@ export function ModelTab({ progress }: { progress: Any | null }) {
     <Card aria-label="Capability benchmarks"><CardContent className="p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-sm font-medium">Capabilities</h3>
         <span className="text-[11px] text-faint">Held-out benchmarks of {name}{rollback ? `, compared with ${modelLabel(rollback)}` : ""}</span></div>
-      {benches.length ? <ul className="mt-3 grid gap-2 sm:grid-cols-2">{benches.map(([k, b]) => {
+      {benches.length ? <ul className="stagger mt-3 grid gap-2 sm:grid-cols-2">{benches.map(([k, b]) => {
         const prev = rollback?.benchmarks?.[k];
         const change = benchmarkChange(b, prev);
         const pct = isRate(b) && b.higher_is_better !== false ? b.value * 100 : null;
@@ -203,7 +203,7 @@ export function ModelTab({ progress }: { progress: Any | null }) {
       {msg && <p role="status" className="text-muted">{msg}</p>}
       {timeline.length > 1 && <details className="rounded-lg border border-border">
         <summary className="flex cursor-pointer items-center gap-2 p-2.5 text-muted"><History className="size-3.5" />Version history ({timeline.length})</summary>
-        <ul className="divide-y divide-border border-t border-border">{[...timeline].reverse().map((v) => <li key={v.version} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <ul className="stagger divide-y divide-border border-t border-border">{[...timeline].reverse().map((v) => <li key={v.version} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
           <span className="text-fg">{modelLabel(v)}{v.deployed && <Badge variant="accent" className="ml-2">active</Badge>}{v.version === life.rollback && <Badge className="ml-2">rollback</Badge>}</span>
           <span className="text-faint">{v.params != null ? `${Number(v.params).toLocaleString()} parameters · ` : ""}{v.retained ? "weights kept" : "measurements only"}{v.deployed_at ? ` · ${new Date(v.deployed_at * 1000).toLocaleDateString()}` : ""}</span>
         </li>)}</ul>

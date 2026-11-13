@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 /** A quiet placeholder while real data loads (0.7.2). Announced once to screen readers via `label`. */
 export function Skeleton({ className }: { className?: string }) {
-  return <div aria-hidden className={cn("rounded-md bg-surface-2 motion-safe:animate-pulse", className)} />;
+  return <div aria-hidden className={cn("shimmer rounded-md bg-surface-2", className)} />;
 }
 
 export function LoadingBlock({ label, lines = 3, className }: { label: string; lines?: number; className?: string }) {

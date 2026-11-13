@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import { PanelLeft, PanelRight, SquareTerminal } from "lucide-react";
 import { appStore, useApp } from "@/lib/app-state";
@@ -7,8 +7,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tip } from "@/components/ui/tooltip";
 import { ChatPanel } from "@/features/chat/ChatPanel";
 import { Explorer } from "./Explorer";
-import { EditorPanel } from "./EditorPanel";
-import { TerminalPanel } from "./TerminalPanel";
+// 0.9.1: the code editor (Monaco) and terminal (xterm) are several MB; load them only when shown
+const EditorPanel = lazy(() => import("./EditorPanel").then((m) => ({ default: m.EditorPanel })));
+const TerminalPanel = lazy(() => import("./TerminalPanel").then((m) => ({ default: m.TerminalPanel })));
+const PanelLoading = ({ what }: { what: string }) => (
+  <div role="status" className="flex h-full items-center justify-center gap-2 text-xs text-faint">
+    <span className="size-1.5 animate-ping rounded-full bg-accent" />Loading {what}…
+  </div>
+);
 import { ChangesPanel } from "./ChangesPanel";
 import { ActivityPanel } from "./ActivityPanel";
 import { ProjectIntelligencePanel } from "@/features/agent/ProjectIntelligencePanel";
@@ -130,7 +136,7 @@ export function WorkspaceView() {
                   <TabsTrigger value="activity">Activity</TabsTrigger>
                   <TabsTrigger value="project">Project</TabsTrigger>
                 </TabsList>
-                <TabsContent value="editor" className="min-h-0 flex-1"><EditorPanel /></TabsContent>
+                <TabsContent value="editor" className="min-h-0 flex-1"><Suspense fallback={<PanelLoading what="the editor" />}><EditorPanel /></Suspense></TabsContent>
                 <TabsContent value="changes" className="min-h-0 flex-1"><ChangesPanel /></TabsContent>
                 <TabsContent value="activity" className="min-h-0 flex-1"><ActivityPanel /></TabsContent>
                 <TabsContent value="project" className="min-h-0 flex-1"><ProjectIntelligencePanel /></TabsContent>
@@ -139,7 +145,7 @@ export function WorkspaceView() {
             {terminalOpen && <Separator />}
             {terminalOpen && (
               <Panel defaultSize="35%" minSize="12%">
-                <TerminalPanel />
+                <Suspense fallback={<PanelLoading what="the terminal" />}><TerminalPanel /></Suspense>
               </Panel>
             )}
           </Group>

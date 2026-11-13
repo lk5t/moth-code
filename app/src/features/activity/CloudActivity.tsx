@@ -25,7 +25,7 @@ export function CloudActivity(){
   {(loadError||error)&&<p role="alert">{loadError||error}</p>}
   {!data&&!loadError&&<p role="status">Loading recorded activity…</p>}
   {data&&!events.length&&<p className="text-xs text-muted">No events in this category.</p>}
-  <ol className="space-y-2">{events.map(event=><li key={event.id} className="rounded border border-border p-2 text-xs"><p>{event.message}</p><p className="text-muted">{event.category} · {event.level} · {timeAgo(event.ts)}</p></li>)}</ol>
+  <ol className="stagger space-y-2">{events.map(event=><li key={event.id} className="lift rounded border border-border p-2 text-xs"><p>{event.message}</p><p className="text-muted">{event.category} · {event.level} · {timeAgo(event.ts)}</p></li>)}</ol>
   {cursor&&events.length<500&&<button disabled={busy} onClick={()=>void more()}>{busy?'Loading…':'Load older activity'}</button>}
  </section>;
 }

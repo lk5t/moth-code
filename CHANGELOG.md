@@ -3,6 +3,14 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.9.1 — Faster and smoother
+
+No new features: the same MOTH, measured faster and with a motion pass.
+
+- **App starts with ~90 % less code.** The code editor and terminal (several MB) load only when a project is opened, Settings and the Owner dashboard load on first use, and React, UI, icon and Tauri libraries sit in separate long-cached chunks. The startup bundle went from 5.1 MB (1.33 MB compressed) to about 0.6 MB (≈ 180 kB compressed).
+- **Data preparation 2.65× faster** (a 21,000-record build: 20.7 s → 7.8 s): near-duplicate and benchmark-overlap detection hash each distinct word once and combine word hashes with vectorised arithmetic; overlap checks search a sorted array in bulk; credential scrubbing skips patterns whose required text is absent (identical output); a record's words are split once instead of four times. It matters most for 0.9.0's much larger datasets.
+- **Motion:** views glide in, lists and cards enter one after another, live progress bars carry a light sweep, step and token counters count up and glow when they change, working machines pulse, dialogs pop, chat messages slide in, loading placeholders shimmer, buttons press in. Everything respects the system's "reduce motion" setting.
+
 ## 0.9.0 — Autonomous MOTH: bigger data, self-repair, self-training
 
 - **Much bigger training data, added by MOTH itself.** 13 large, openly licensed sources (about 90 GB, every file pinned by revision, size and SHA-256): Cosmopedia (stories, textbooks, maths, web-seeded articles), FineWeb-Edu, SmolTalk (conversations, constraints, rewriting, summaries, code), OpenCoder code instructions, MetaMathQA, OpenAssistant oasst2 and the full TinyStories set. Sharded sources are downloaded one file at a time, only as far as the current budget needs, and a build stops reading a source once it has enough. Whenever MOTH has trained on its data three times over, the library doubles each source's budget (now up to 2 billion characters per source) and adds the next large source, conversation and code first. Downloads may use half of the free disk; a budget the disk cannot hold is halved until it fits. MOTH's own verified generators produce up to 100 times more examples as the library grows. The Owner can turn automatic sources off (`autonomous_sources`); a revoked source is never added back.

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import ast
+import functools
 import hashlib
 import re
 import unicodedata
@@ -68,8 +69,14 @@ def record_text(rec: dict[str, Any]) -> str:
     return rec["text"]
 
 
+@functools.lru_cache(maxsize=16)
+def _words(text: str) -> tuple[str, ...]:
+    return tuple(WORD.findall(text.lower()))
+
+
 def words(text: str) -> list[str]:
-    return WORD.findall(text.lower())
+    """Lower-case words. 0.9.1: cached, because a build splits the same record several times."""
+    return list(_words(text))
 
 
 def _prose_quality(text: str) -> tuple[float, str | None]:
@@ -179,14 +186,61 @@ _A = _RNG.integers(1, _P - 1, size=N_PERM, dtype=np.uint64)
 _B = _RNG.integers(0, _P - 1, size=N_PERM, dtype=np.uint64)
 
 
+# 0.9.1: shingles are hashed from cached per-word hashes with vectorised arithmetic (one blake2b per distinct
+# word instead of one per shingle); deterministic across processes like before.
+_WORD_HASH: dict[str, int] = {}
+_MIX = np.array([0x9E3779B97F4A7C15, 0xC2B2AE3D27D4EB4F, 0x165667B19E3779F9, 0xD6E8FEB86659FD93,
+                 0xFF51AFD7ED558CCD, 0xC4CEB9FE1A85EC53, 0x94D049BB133111EB, 0xBF58476D1CE4E5B9,
+                 0x2545F4914F6CDD1D, 0x9FB21C651E98DF25, 0x5851F42D4C957F2D, 0x14057B7EF767814F,
+                 0xD1B54A32D192ED03], dtype=np.uint64)
+
+
+def _word_hashes(w) -> np.ndarray:
+    out = np.empty(len(w), dtype=np.uint64)
+    cache = _WORD_HASH
+    for i, x in enumerate(w):
+        h = cache.get(x)
+        if h is None:
+            h = h64(x)
+            if len(cache) < 2_000_000:
+                cache[x] = h
+        out[i] = h
+    return out
+
+
+def _fmix(h: np.ndarray) -> np.ndarray:
+    """64-bit finaliser (MurmurHash3): spreads the combined word hashes."""
+    with np.errstate(over="ignore"):
+        h = h ^ (h >> np.uint64(33))
+        h = h * np.uint64(0xFF51AFD7ED558CCD)
+        h = h ^ (h >> np.uint64(33))
+        h = h * np.uint64(0xC4CEB9FE1A85EC53)
+        return h ^ (h >> np.uint64(33))
+
+
+def ngram_hashes(w, n: int) -> np.ndarray:
+    """Hashes of every run of ``n`` consecutive words (one hash of all words when there are fewer)."""
+    wh = _word_hashes(w)
+    if len(wh) < n:
+        n = max(1, len(wh))
+        if not len(wh):
+            return np.zeros(0, dtype=np.uint64)
+    m = len(wh) - n + 1
+    acc = np.zeros(m, dtype=np.uint64)
+    with np.errstate(over="ignore"):
+        for j in range(n):
+            acc = acc + wh[j:j + m] * _MIX[j % len(_MIX)] + np.uint64(j)
+    return _fmix(acc ^ np.uint64(n))
+
+
 def minhash(text: str, max_words: int = 1500) -> np.ndarray | None:
     w = words(text)[:max_words]
     if len(w) < 8:
         return None
-    sh = np.fromiter((h64(" ".join(w[i:i + 5])) & 0x1FFFFFFFFFFFFFFF for i in range(len(w) - 4)), dtype=np.uint64)
-    sh = np.unique(sh)
+    sh = np.unique(ngram_hashes(w, 5) & np.uint64(0x1FFFFFFFFFFFFFFF))
     # universal hashing with 64-bit wrap-around: enough mixing for deduplication
-    vals = (sh[None, :] * _A[:, None] + _B[:, None]) & np.uint64(_P)
+    with np.errstate(over="ignore"):
+        vals = (sh[None, :] * _A[:, None] + _B[:, None]) & np.uint64(_P)
     return vals.min(axis=1)
 
 
@@ -221,20 +275,16 @@ class Decontaminator:
     N = 13
 
     def __init__(self, eval_texts: Iterable[str]) -> None:
-        self.grams: set[int] = set()
-        for t in eval_texts:
-            w = words(t)
-            if len(w) < self.N:
-                self.grams.add(h64(" ".join(w)))  # short items: the whole item must not appear verbatim
-                continue
-            for i in range(len(w) - self.N + 1):
-                self.grams.add(h64(" ".join(w[i:i + self.N])))
+        parts = [ngram_hashes(words(t), self.N) for t in eval_texts]
+        # 0.9.1: a sorted array searched in bulk instead of one Python set lookup per 13-word window
+        self.grams = np.unique(np.concatenate(parts)) if parts else np.zeros(0, dtype=np.uint64)
 
     def contaminated(self, text: str) -> bool:
-        w = words(text)
-        if len(w) < self.N:
-            return h64(" ".join(w)) in self.grams
-        for i in range(len(w) - self.N + 1):
-            if h64(" ".join(w[i:i + self.N])) in self.grams:
-                return True
-        return False
+        if not len(self.grams):
+            return False
+        h = ngram_hashes(words(text), self.N)
+        if not len(h):
+            return False
+        pos = np.searchsorted(self.grams, h)
+        pos[pos >= len(self.grams)] = 0
+        return bool(np.any(self.grams[pos] == h))

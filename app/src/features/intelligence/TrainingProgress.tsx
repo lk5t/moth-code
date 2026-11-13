@@ -3,6 +3,7 @@ import { Cpu, HardDrive, MemoryStick, Network } from "lucide-react";
 import { MothEmblem } from "@/components/MothEmblem";
 import { Card, CardContent } from "@/components/ui/card";
 import { modelLabel } from "@/lib/model-label";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 
 type Any = Record<string, any>;
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -40,8 +41,8 @@ function SystemStrip({ resources, network }: { resources: Any | null; network: A
   }
   if (network) cells.push([<Network key="n" />, "Workers online", `${network.workers_online} (${network.gpu_online} GPU · ${network.cpu_online} CPU)`]);
   if (!cells.length) return null;
-  return <dl aria-label="Compute right now" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-    {cells.map(([icon, label, value]) => <div key={label} className="flex items-start gap-2 rounded-lg border border-border bg-bg px-3 py-2 text-xs [&_svg]:mt-0.5 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-accent">
+  return <dl aria-label="Compute right now" className="stagger grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+    {cells.map(([icon, label, value]) => <div key={label} className="lift flex items-start gap-2 rounded-lg border border-border bg-bg px-3 py-2 text-xs [&_svg]:mt-0.5 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-accent">
       {icon}<div className="min-w-0"><dt className="text-faint">{label}</dt><dd className="mt-0.5 truncate text-fg" title={value}>{value}</dd></div></div>)}
   </dl>;
 }
@@ -64,7 +65,7 @@ function Experiment({ experiment, report, paused, nowSec }: { experiment: Any; r
   const domains = Object.entries(experiment.data?.domains ?? {}).sort((a: any, b: any) => b[1] - a[1]).slice(0, 4);
   const improvement = experiment.metrics?.primary_improvement;
   const failedGates = (experiment.metrics?.gates ?? []).filter((g: Any) => !g.passed).map((g: Any) => g.gate);
-  return <section aria-label={`Experiment ${experiment.id} progress`} className="rounded-lg border border-border bg-bg p-3">
+  return <section aria-label={`Experiment ${experiment.id} progress`} className="lift animate-rise rounded-lg border border-border bg-bg p-3">
     <div className="mb-2 flex flex-wrap items-center gap-2 text-xs"><MothEmblem motion={active ? "training" : "none"} className="size-5 shrink-0" />
       <span className="font-medium">Experiment #{experiment.id}</span>
       <span className="text-muted">{experiment.backend ? `${experiment.backend}${experiment.device ? ` · ${experiment.device}` : ""}${experiment.worker_id ? ` · worker ${experiment.worker_id}` : ""}` : "Compute not assigned yet"}</span>
@@ -72,11 +73,11 @@ function Experiment({ experiment, report, paused, nowSec }: { experiment: Any; r
     </div>
     {running && phase && phase !== "training" && <p className="mb-2 text-[11px] text-muted">The worker is {phase}…</p>}
     {pct != null ? <div role="progressbar" aria-label={`Experiment ${experiment.id} completion`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
-      className="h-1.5 overflow-hidden rounded-full bg-surface-3"><div className="h-full bg-accent shadow-[0_0_8px_var(--color-accent)] transition-[width]" style={{ width: `${pct}%` }} /></div>
+      className="h-1.5 overflow-hidden rounded-full bg-surface-3"><div className={`h-full bg-accent shadow-[0_0_8px_var(--color-accent)] transition-[width] duration-700 ease-out${active ? " progress-live" : ""}`} style={{ width: `${pct}%` }} /></div>
       : <p className="text-[11px] text-faint">{running ? "Starting — waiting for the first progress report" : "Waiting for compute"}</p>}
     <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4">
-      <div><dt className="text-faint">Steps</dt><dd className="mt-0.5 font-mono">{measured(step)}{max != null && ` / ${measured(max)}`}</dd></div>
-      <div><dt className="text-faint">Tokens processed</dt><dd className="mt-0.5 font-mono">{measured(report.tokens_seen ?? report.tokens)}</dd></div>
+      <div><dt className="text-faint">Steps</dt><dd className="mt-0.5 font-mono">{num(step) ? <AnimatedNumber value={step} /> : measured(step)}{max != null && ` / ${measured(max)}`}</dd></div>
+      <div><dt className="text-faint">Tokens processed</dt><dd className="mt-0.5 font-mono">{num(report.tokens_seen ?? report.tokens) ? <AnimatedNumber value={report.tokens_seen ?? report.tokens} /> : measured(report.tokens_seen ?? report.tokens)}</dd></div>
       <div><dt className="text-faint">Training loss</dt><dd className="mt-0.5 font-mono">{measured(report.train_loss, 4)}</dd></div>
       <div><dt className="text-faint">Validation loss</dt><dd className="mt-0.5 font-mono">{measured(report.val_loss ?? report.best_val, 4)}</dd></div>
       <div><dt className="text-faint">Speed</dt><dd className="mt-0.5 font-mono">{num(report.tokens_per_sec) ? `${measured(report.tokens_per_sec)} tok/s` : "Not reported"}</dd></div>

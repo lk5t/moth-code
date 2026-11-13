@@ -35,5 +35,33 @@ def redact(text: str) -> tuple[str, list[str]]:
         return inner
 
     for name, rx in SECRET_PATTERNS:
-        text = rx.sub(sub(name), text)
+        if _could_match(name, text):  # 0.9.1: skip patterns whose required literal is absent (same result)
+            text = rx.sub(sub(name), text)
     return text, found
+
+
+_GENERIC_WORDS = ("secret", "password", "passwd", "token", "api", "access")
+
+
+def _could_match(name: str, text: str) -> bool:
+    """A cheap necessary condition for each pattern: every match contains these literals."""
+    if name == "private_key":
+        return "PRIVATE KEY-----" in text
+    if name == "aws_access_key":
+        return "AKIA" in text or "ASIA" in text
+    if name == "github_token":
+        return "gh" in text or "github_pat_" in text
+    if name == "slack_token":
+        return "xox" in text
+    if name == "google_api_key":
+        return "AIza" in text
+    if name == "stripe_key":
+        return "_live_" in text or "_test_" in text
+    if name == "jwt":
+        return "eyJ" in text
+    if name == "generic_secret_assignment":
+        if ":" not in text and "=" not in text:
+            return False
+        low = text.lower()
+        return any(w in low for w in _GENERIC_WORDS)
+    return True

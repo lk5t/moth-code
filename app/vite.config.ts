@@ -23,6 +23,19 @@ export default defineConfig({
   build: {
     target: "es2022",
     chunkSizeWarningLimit: 6000,
+    // 0.9.1: stable vendor chunks stay cached across app updates
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return "react";
+          if (id.includes("@radix-ui") || id.includes("react-resizable-panels")) return "ui";
+          if (id.includes("lucide-react")) return "icons";
+          if (id.includes("@tauri-apps")) return "tauri";
+          return undefined;
+        },
+      },
+    },
   },
   test: {
     environment: "jsdom",
