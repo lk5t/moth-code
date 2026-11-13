@@ -466,8 +466,20 @@ def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None,
                                                            training_jobs.c.worker_id == worker['id'])
                               .values(result=json.dumps({'progress': metrics})))
     return {"reset_generation":generation,"paused": NR.fenced(ctx) or bool(worker["paused"]) or not worker_allowed(ctx, worker), "revoked": worker["revoked_at"] is not None,
-            "job_cancelled": job_cancelled,
+            "job_cancelled": job_cancelled, "update": _worker_update(ctx, worker, version),
             "limits": json.loads(worker["limits"] or "{}"), "server_time": t}
+
+
+def _worker_update(ctx: Ctx, worker: dict, version: str | None) -> str | None:
+    """0.7.1: the newest worker release this worker should install now, announced in every heartbeat
+    so workers update between jobs immediately instead of at their next scheduled check."""
+    from moth_server import releases as R
+
+    try:
+        found = R.eligible(ctx, "worker", version or worker.get("version") or "0.0.0", f"worker-{worker['id']}")
+    except Exception:  # noqa: BLE001 — an update lookup never fails a heartbeat
+        return None
+    return found[0]["version"] if found else None
 
 
 def leave(ctx: Ctx, worker: dict) -> None:

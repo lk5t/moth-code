@@ -78,7 +78,10 @@ def _safe_extract(archive: Path, dest: Path) -> None:
         for m in tar.getmembers():
             if m.issym() or m.islnk() or m.isdev() or m.name.startswith("/") or ".." in Path(m.name).parts:
                 raise UpdateError("update bundle contains unsafe paths")
-        tar.extractall(dest)
+        if hasattr(tarfile, "data_filter"):  # also refuse unsafe modes/devices where Python supports it
+            tar.extractall(dest, filter="data")
+        else:
+            tar.extractall(dest)
 
 
 def apply(info: dict, home: Path, download: Callable[[str, Path], None], log: Callable[[str], None] = print) -> str:

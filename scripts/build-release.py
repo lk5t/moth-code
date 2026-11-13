@@ -150,7 +150,9 @@ def main() -> None:
         "destructive_migrations": [m[0] for m in MIGRATIONS if m[2]], "min_upgrade_from": "0.2.0",
         "min_client_versions": dict(compat.FLOOR), "components": components,
         "rollout": {"desktop": {"stages": stages, "interval_hours": 6, "max_failure_rate": 0.2, "min_reports": 5},
-                    "worker": {"stages": [25, 100], "interval_hours": 2, "max_failure_rate": 0.3, "min_reports": 3}},
+                    # 0.7.1: every worker moves to a new release at once (an outdated worker cannot
+                    # take current jobs); failures above the limit still halt the rollout
+                    "worker": {"stages": [100], "interval_hours": 2, "max_failure_rate": 0.3, "min_reports": 3}},
         "notes": args.notes or f"MOTH {'Code' if args.kind == 'desktop' else 'Cloud'} {v}",
     }
     raw = json.dumps(manifest, indent=2, sort_keys=True).encode()

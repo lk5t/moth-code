@@ -47,7 +47,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-AGENT_VERSION = "0.5.8"
+AGENT_VERSION = "0.7.1"
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import ed25519_verify  # noqa: E402  (stdlib-only verifier shipped next to this file)
@@ -280,8 +280,8 @@ class Agent:
                     found.append((mf.read_bytes(), sig.read_text(), lambda name, size=None, d=mf.parent: self._dir_fetch(d, name)))
         elif src.startswith("github:"):
             repo = src[7:]
-            data = json.loads(self._http_get(f"https://api.github.com/repos/{repo}/releases?per_page=20",
-                                             {"Accept": "application/vnd.github+json"}))
+            cache = self._gh_cache()
+            data = self._gh_releases(f"https://api.github.com/repos/{repo}/releases?per_page=20", cache)
             token_file = self.cfg.get("github_token_file")
             authenticated = bool(token_file and Path(token_file).is_file() and Path(token_file).read_text().strip())
             unavailable = []
@@ -296,13 +296,22 @@ class Agent:
                 if not mf or mf + ".sig" not in assets:
                     continue
                 try:
-                    raw = self._http_get(assets[mf], {"Accept": "application/octet-stream"})
-                    sig = self._http_get(assets[mf + ".sig"], {"Accept": "application/octet-stream"}).decode()
+                    known = cache["manifests"].get(assets[mf])
+                    if known and known[2] == assets[mf + ".sig"]:  # unchanged asset: no download needed
+                        raw, sig = base64.b64decode(known[0]), known[1]
+                    else:
+                        raw = self._http_get(assets[mf], {"Accept": "application/octet-stream"})
+                        sig = self._http_get(assets[mf + ".sig"], {"Accept": "application/octet-stream"}).decode()
+                        cache["manifests"][assets[mf]] = [base64.b64encode(raw).decode(), sig, assets[mf + ".sig"]]
                 except AgentError as e:
                     unavailable.append(str(e))
                     self.log(f"could not read GitHub release {rel.get('tag_name') or mf}: {e}")
                     continue  # an unavailable historical release must not block verified newer ones
                 found.append((raw, sig, lambda name, size=None, a=assets: self._gh_fetch(a, name, size)))
+            live = {a["url"] if authenticated else a.get("browser_download_url") or a["url"]
+                    for rel in data for a in rel.get("assets", [])}
+            cache["manifests"] = {k: v for k, v in cache["manifests"].items() if k in live}
+            self._gh_save(cache)
             if not found and unavailable:
                 raise AgentError("no GitHub release manifests could be read: " + unavailable[0])
         elif src:
@@ -316,6 +325,75 @@ class Agent:
             out.append({"version": m["version"], "manifest": m, "raw": raw, "sig": sig.strip(), "fetch": fetch})
         out.sort(key=lambda r: _vt(r["version"]), reverse=True)
         return out
+
+    # ---- GitHub: conditional requests and rate limits (0.7.1) -------------------------------------
+    # The release list is requested with the ETag of the previous answer: an unchanged list returns
+    # 304 Not Modified, which GitHub does not count against the rate limit, and the signed manifests
+    # read before are reused from the cache (each is still verified against its signature below).
+    # A rate-limit answer (403/429 with Retry-After or X-RateLimit-Remaining: 0) is not retried: the
+    # agent waits until GitHub's reset time and serves the cached list meanwhile.
+    def _gh_cache_file(self) -> Path:
+        return self.i.home / "state" / "github-cache.json"
+
+    def _gh_cache(self) -> dict:
+        try:
+            c = json.loads(self._gh_cache_file().read_text())
+        except (OSError, ValueError):
+            c = {}
+        return {"etag": c.get("etag"), "data": c.get("data"), "manifests": c.get("manifests") or {},
+                "wait_until": float(c.get("wait_until") or 0)}
+
+    def _gh_save(self, cache: dict) -> None:
+        f = self._gh_cache_file()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cache))
+        os.replace(tmp, f)
+
+    def _gh_releases(self, url: str, cache: dict) -> list:
+        if time.time() < cache["wait_until"]:
+            if cache["data"] is not None:
+                return cache["data"]
+            raise AgentError(f"GitHub rate limit: waiting until {time.ctime(cache['wait_until'])}")
+        h = {"User-Agent": f"moth-agent/{AGENT_VERSION}", "Accept": "application/vnd.github+json"}
+        tok_file = self.cfg.get("github_token_file")
+        if tok_file and Path(tok_file).exists() and Path(tok_file).read_text().strip():
+            h["Authorization"] = "Bearer " + Path(tok_file).read_text().strip()
+        if cache["etag"] and cache["data"] is not None:
+            h["If-None-Match"] = cache["etag"]
+        last = None
+        for delay in (0, 2, 5):
+            time.sleep(delay)
+            try:
+                with urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=30) as r:
+                    data = json.loads(r.read())
+                    cache.update(etag=r.headers.get("ETag"), data=data, wait_until=0)
+                    return data
+            except urllib.error.HTTPError as e:
+                if e.code == 304 and cache["data"] is not None:
+                    return cache["data"]
+                if e.code in (403, 429):
+                    retry = e.headers.get("Retry-After")
+                    reset = e.headers.get("X-RateLimit-Reset")
+                    limited = e.code == 429 or retry or e.headers.get("X-RateLimit-Remaining") == "0"
+                    if limited:
+                        until = time.time() + float(retry) if retry and retry.isdigit() else \
+                            float(reset) if reset and reset.isdigit() else time.time() + 3600
+                        cache["wait_until"] = min(until, time.time() + 6 * 3600)
+                        self._gh_save(cache)
+                        self.log(f"GitHub rate limit reached; next release check after {time.ctime(cache['wait_until'])}")
+                        if cache["data"] is not None:
+                            return cache["data"]
+                    raise AgentError(f"GitHub refused the release list: HTTP {e.code}") from None
+                if e.code in (401, 404):
+                    raise AgentError(f"GitHub release list: HTTP {e.code}") from None
+                last = e
+            except (urllib.error.URLError, OSError, ValueError) as e:
+                last = e
+        if cache["data"] is not None:
+            self.log(f"GitHub unreachable ({last}); using the last known release list")
+            return cache["data"]
+        raise AgentError(f"GitHub release list unavailable: {last}")
 
     def _dir_fetch(self, d: Path, name: str) -> Path:
         hits = list(d.rglob(name)) or list(d.parent.rglob(name))

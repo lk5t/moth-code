@@ -44,7 +44,7 @@ def utilization(hw: dict[str, Any]) -> dict[str, float | None]:
 class WorkerRunner:
     def __init__(self, client: WorkerClient, state_dir: Path, allow_cpu: bool = False,
                  log: Callable[[str], None] = print, heartbeat_seconds: float = 30.0,
-                 update_check_seconds: float | None = 1800.0):
+                 update_check_seconds: float | None = 900.0):
         self.client = client
         self.state_dir = Path(state_dir)
         (self.state_dir / "jobs").mkdir(parents=True, exist_ok=True)
@@ -61,6 +61,8 @@ class WorkerRunner:
         self.stop_event = threading.Event()
         self.update_check_seconds = update_check_seconds
         self._next_update_check = 0.0
+        self._update_retry_after = 0.0  # after a failed install: wait before trying again (backoff)
+        self._update_failures = 0
         self.updated_to: str | None = None
         self.device: str | None = None
         self.bench: dict[str, Any] | None = None
@@ -93,6 +95,10 @@ class WorkerRunner:
         self.paused, self.revoked, self.limits = bool(resp["paused"] or pressure_reason(pressure())), resp["revoked"], resp.get("limits") or {}
         if resp.get("job_cancelled"):
             self.cancelled_job = self.current_job
+        offered = resp.get("update")
+        if offered and offered != __version__ and self.update_check_seconds is not None \
+                and time.time() >= self._update_retry_after:
+            self._next_update_check = 0.0  # MOTH Cloud announced a newer worker: install it between jobs
         from moth_worker import updater
 
         done = updater.confirm_healthy(self.state_dir)
@@ -151,7 +157,12 @@ class WorkerRunner:
             self.updated_to = updater.apply(info, self.state_dir, self.client.download_file, self.log)
             return True
         except Exception as e:  # noqa: BLE001 — a failed update never stops the worker
-            self.log(f"update to {info.get('version')} was not installed: {e}")
+            # exponential backoff (5 min, 10, 20 … at most 6 h): a refused or broken update is not retried
+            # in a loop, whatever the heartbeat announces
+            self._update_failures += 1
+            wait = min(6 * 3600.0, 300.0 * 2 ** (self._update_failures - 1))
+            self._update_retry_after = self._next_update_check = time.time() + wait
+            self.log(f"update to {info.get('version')} was not installed: {e} (next attempt in {wait / 60:.0f} min)")
             try:
                 self.client.report_update(__version__, info.get("version", "?"), False, str(e))
             except Exception:  # noqa: BLE001

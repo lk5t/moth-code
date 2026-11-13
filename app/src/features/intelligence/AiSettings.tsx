@@ -3,7 +3,8 @@
  * writes the existing MOTH Cloud settings (evolution settings, trusted-data policy, storage);
  * parameter counts, optimiser settings and experiments stay in Advanced below.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { get, put } from "@/lib/backend";
 import { HardDrive } from "lucide-react";
 import { serverApi, useAccount } from "@/lib/account";
 import { useResource } from "@/lib/hooks";
@@ -56,8 +57,20 @@ export function AiSettings() {
               onClick={() => void change({ budget: { ...s.budget, max_compute_hours_per_day: h } })}
               className={cn("rounded-md px-3 py-1", hours === h ? "bg-accent text-white" : "text-muted hover:text-fg")}>{label}</button>)}
           </div></Row>
-        <Row title="Use MOTH workers" help="Let enrolled workers (with their owners' consent) take training jobs. Each worker keeps its own limits and can stop at any time.">
-          <Switch aria-label="Use MOTH workers" checked={s.cloud_workers !== false} disabled={busy} onCheckedChange={(v) => void change({ cloud_workers: v })} /></Row>
+        <div className="border-b border-border py-3" role="group" aria-label="What trains MOTH">
+          <p className="text-sm text-fg">What trains MOTH</p>
+          <p className="mt-0.5 text-xs text-muted">Choose any combination. MOTH places each experiment on the fastest available choice, runs independent experiments side by side and shards one experiment across workers when that is faster.</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            <ComputeChoice title="MOTH Cloud server" help="The server MOTH Cloud runs on (its CPU, and GPU if it has one)."
+              checked={!!(s.backends?.local_cpu || s.backends?.local_gpu)} disabled={busy}
+              onChange={(v) => void change({ backends: { ...s.backends, local_cpu: v, local_gpu: v } })} />
+            <ComputeChoice title="Workers" help="Enrolled workers, with their owners' consent. Each keeps its own limits and updates itself automatically."
+              checked={s.backends?.workers !== false && s.cloud_workers !== false} disabled={busy}
+              onChange={(v) => void change({ cloud_workers: v, backends: { ...s.backends, workers: v } })} />
+            <ThisComputerChoice />
+          </div>
+          {!(s.backends?.local_cpu || s.backends?.local_gpu || s.backends?.workers) && <p role="alert" className="mt-2 text-xs text-warning">Nothing is selected, so Evolution cannot train. Turn on at least one choice.</p>}
+        </div>
         <Row title="Deploy verified improvements automatically" help={`A new version must beat the current one on data it never trained on and pass every safety and quality gate. It first serves ${s.rollout?.canary_percent ?? 20}% of users while monitored and is rolled back if it misbehaves. Off: you deploy passed versions yourself.`}>
           <Switch aria-label="Deploy verified improvements automatically" checked={!!s.auto_deploy} disabled={busy} onCheckedChange={(v) => void change({ auto_deploy: v })} /></Row>
       </>}
@@ -77,6 +90,26 @@ export function AiSettings() {
 
     <StorageManager />
     {notice && <p role="alert" className="text-xs text-danger">{notice}</p>}
+  </div>;
+}
+
+function ComputeChoice({ title, help, checked, disabled, onChange }: { title: string; help: string; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
+  return <label className={cn("flex items-start justify-between gap-3 rounded-lg border p-3 transition-colors", checked ? "border-accent/50 bg-accent-soft" : "border-border")}>
+    <span className="min-w-0"><span className="block text-xs text-fg">{title}</span><span className="mt-0.5 block text-[11px] text-muted">{help}</span></span>
+    <Switch aria-label={`Train with ${title}`} checked={checked} disabled={disabled} onCheckedChange={onChange} />
+  </label>;
+}
+
+/** This computer trains through the desktop's own worker (with this user's consent, between uses). */
+function ThisComputerChoice() {
+  const [st, setSt] = useState<Any | null>(null), [err, setErr] = useState<string | null>(null);
+  const reload = () => get<Any>("/api/participant").then(setSt).catch(() => setSt({ available: false }));
+  useEffect(() => { reload(); }, []);
+  return <div>
+    <ComputeChoice title="This computer" help={st?.available === false ? "This build cannot train for the network." : "This PC trains between your own work; it pauses when you need it. Stop at any time."}
+      checked={!!st?.enabled} disabled={!st?.available}
+      onChange={(v) => { setErr(null); put("/api/participant", { enabled: v }).then(reload).catch((e) => setErr((e as Error).message)); }} />
+    {err && <p className="mt-1 text-[11px] text-danger">{err}</p>}
   </div>;
 }
 
