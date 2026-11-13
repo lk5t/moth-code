@@ -78,7 +78,8 @@ def public(d: dict) -> dict:
 
 
 def add(ctx: Ctx, owner_id: int | None, title: str, text: str, source: str = "", license_: str = "",
-        key: str | None = None) -> dict[str, Any]:
+        key: str | None = None, category: str | None = None, project: str | None = None,
+        confidence: float | None = None) -> dict[str, Any]:
     text = text.replace("\r\n", "\n").strip()
     title = (title or "").strip()[:200] or "Untitled"
     if not text:
@@ -116,7 +117,12 @@ def add(ctx: Ctx, owner_id: int | None, title: str, text: str, source: str = "",
             if tf:
                 c.execute(knowledge_terms.insert(), [{"term": t, "chunk_id": cid, "tf": n} for t, n in tf.items()])
         doc = c.execute(select(knowledge_docs).where(knowledge_docs.c.id == did)).mappings().first()
-    return {"document": public(dict(doc)), "duplicate": False, "replaced_version": prev["version"] if prev else None}
+    from moth_server.intelligence import knowledge2 as K2  # 0.8.0: category, project, confidence, review date
+
+    out = public(dict(doc))
+    meta = K2.on_added(ctx, out, text, category, project, confidence, prev["id"] if prev else None)
+    return {"document": out | {"meta": meta}, "duplicate": False, "replaced_version": prev["version"] if prev else None,
+            "near_duplicate_of": meta["near_duplicate_of"]}
 
 
 def _unindex(c, doc_id: int) -> None:
@@ -134,7 +140,10 @@ def list_docs(ctx: Ctx, user_id: int | None, include_shared: bool = True) -> lis
     cond = _visible(user_id) if include_shared else (knowledge_docs.c.owner_id == user_id)
     rows = ctx.db.all(select(knowledge_docs).where(cond, knowledge_docs.c.status == "active")
                       .order_by(knowledge_docs.c.updated_at.desc()))
-    return [public(r) for r in rows]
+    from moth_server.intelligence import knowledge2 as K2
+
+    meta = K2.meta_for(ctx, [r["id"] for r in rows])
+    return [public(r) | {"meta": meta.get(r["id"])} for r in rows]
 
 
 def versions(ctx: Ctx, user_id: int | None, doc_id: int) -> list[dict]:
@@ -163,7 +172,7 @@ def remove(ctx: Ctx, user_id: int | None, doc_id: int, is_owner: bool = False) -
                                                                                         updated_at=now()))
 
 
-def search(ctx: Ctx, user_id: int | None, query: str, k: int = 5) -> list[dict[str, Any]]:
+def search(ctx: Ctx, user_id: int | None, query: str, k: int = 5, project: str | None = None) -> list[dict[str, Any]]:
     q = list(dict.fromkeys(t[:48] for t in terms(query)))[:24]
     if not q:
         return []
@@ -188,9 +197,16 @@ def search(ctx: Ctx, user_id: int | None, query: str, k: int = 5) -> list[dict[s
         for term, tf, cid, length in rows:
             idf = math.log(1 + (n_chunks - df[term] + 0.5) / (df[term] + 0.5))
             scores[cid] = scores.get(cid, 0.0) + idf * tf * (k1 + 1) / (tf + k1 * (1 - b + b * length / avg_len))
-        best = sorted(scores.items(), key=lambda kv: -kv[1])[:k]
-        if not best:
+        if not scores:
             return []
+        from moth_server.intelligence import knowledge2 as K2  # reliable, current, same-project first
+
+        cand = sorted(scores.items(), key=lambda kv: -kv[1])[: k * 4]
+        doc_of = dict(c.execute(select(knowledge_chunks.c.id, knowledge_chunks.c.doc_id)
+                                .where(knowledge_chunks.c.id.in_([cid for cid, _ in cand]))).all())
+        meta = K2.meta_for(ctx, list(set(doc_of.values())))
+        best = sorted(((cid, sc * K2.weight(meta.get(doc_of.get(cid)), project)) for cid, sc in cand),
+                      key=lambda kv: -kv[1])[:k]
         info = {r["id"]: r for r in c.execute(
             select(knowledge_chunks.c.id, knowledge_chunks.c.text, knowledge_chunks.c.ord, knowledge_docs.c.id.label("doc_id"),
                    knowledge_docs.c.title, knowledge_docs.c.source, knowledge_docs.c.version, knowledge_docs.c.owner_id)
@@ -198,7 +214,8 @@ def search(ctx: Ctx, user_id: int | None, query: str, k: int = 5) -> list[dict[s
             .where(knowledge_chunks.c.id.in_([cid for cid, _ in best]))).mappings()}
     return [{"chunk_id": cid, "score": round(s, 4), "text": info[cid]["text"], "doc_id": info[cid]["doc_id"],
              "title": info[cid]["title"], "source": info[cid]["source"], "version": info[cid]["version"],
-             "shared": info[cid]["owner_id"] is None} for cid, s in best if cid in info]
+             "shared": info[cid]["owner_id"] is None, "meta": meta.get(info[cid]["doc_id"])}
+            for cid, s in best if cid in info]
 
 
 def context_for(ctx: Ctx, user_id: int | None, question: str, k: int = 3, max_chars: int = 2400,

@@ -5,7 +5,7 @@
  * Private knowledge is visible only to its owner; shared knowledge is added by the Owner.
  */
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Brain, FileUp, Search, Trash2 } from "lucide-react";
+import { BookOpen, Brain, CheckCircle2, FileUp, FlaskConical, Search, Trash2 } from "lucide-react";
 import { serverApi, useAccount } from "@/lib/account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -134,26 +134,76 @@ function Knowledge({ docs, reload, enabled }: { docs: Any[]; reload: () => void;
       </div>
       {docs.length > 0 && (
         <div className="flex flex-col gap-1">
-          {docs.map((d) => (
-            <div key={d.id} className="flex items-center justify-between gap-2 text-xs">
-              <span className="truncate text-fg">{d.title} <span className="text-muted">v{d.version} · {timeAgo(d.updated_at)}</span>
-                {d.shared && <Badge className="ml-2">shared</Badge>}</span>
-              {!d.shared && (
-                <Button size="sm" variant="ghost" aria-label={`Delete ${d.title}`}
-                  onClick={() => serverApi(`/v1/knowledge/${d.id}`, { method: "DELETE" }).then(reload)}><Trash2 /></Button>
-              )}
-            </div>
-          ))}
+          {docs.map((d) => <DocRow key={d.id} d={d} reload={reload} />)}
         </div>
       )}
       <div className="flex gap-2">
         <Input placeholder="Try a search…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && q && search()} />
         <Button size="sm" variant="secondary" disabled={!q} onClick={search}><Search />Search</Button>
       </div>
+      <Research />
       {hits && (hits.length ? hits.map((h) => (
         <div key={h.chunk_id} className="rounded-md bg-surface-2 p-2 text-xs"><div className="text-fg">{h.title}</div>
           <div className="line-clamp-3 text-muted">{h.text}</div></div>
       )) : <div className="text-xs text-muted">Nothing found.</div>)}
     </div>
   );
+}
+
+
+/** One document: category, project, confidence and review status, with the person's controls (0.8.0). */
+export function DocRow({ d, reload }: { d: Any; reload: () => void }) {
+  const m = d.meta ?? {};
+  const set = (json: Any) => serverApi(`/v1/knowledge/${d.id}`, { method: "PATCH", json }).then(reload).catch(() => undefined);
+  return <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-1.5 text-xs last:border-0">
+    <span className="min-w-0 truncate text-fg">{d.title} <span className="text-muted">v{d.version} · {timeAgo(d.updated_at)}</span>
+      {d.shared && <Badge className="ml-2">shared</Badge>}
+      {m.category && <Badge className="ml-1">{m.category}</Badge>}
+      {m.project && <Badge className="ml-1">project: {m.project}</Badge>}
+      {m.verified && <Badge variant="success" className="ml-1">verified</Badge>}
+      {m.stale && <Badge variant="warning" className="ml-1">review: may be outdated</Badge>}
+      {m.near_duplicate_of && <Badge className="ml-1">similar to another document</Badge>}
+      {m.confidence != null && <span className="ml-2 text-faint">confidence {Math.round(m.confidence * 100)}%</span>}
+    </span>
+    {!d.shared && <span className="flex shrink-0 items-center gap-1">
+      <Button size="sm" variant="ghost" aria-label={m.verified ? `Mark ${d.title} unverified` : `Mark ${d.title} verified`}
+        onClick={() => void set({ verified: !m.verified })}><CheckCircle2 className={m.verified ? "text-success" : ""} /></Button>
+      <Button size="sm" variant="ghost" aria-label={`Delete ${d.title}`}
+        onClick={() => serverApi(`/v1/knowledge/${d.id}`, { method: "DELETE" }).then(reload)}><Trash2 /></Button>
+    </span>}
+  </div>;
+}
+
+/** MOTH Research Engine: cited, extractive research over the knowledge this account may see. */
+export function Research() {
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [r, setR] = useState<Any | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const run = async (save = false) => {
+    setBusy(true); setErr(null);
+    try { setR(await serverApi<Any>("/v1/research", { method: "POST", json: { question: q, save } })); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  return <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+    <div className="flex items-center gap-2 text-[13px] text-fg"><FlaskConical className="size-4 text-accent" />Research</div>
+    <div className="text-xs text-muted">MOTH gathers what your knowledge says about a question, with citations. It marks single-source statements, conflicts and gaps — it does not treat them as verified facts.</div>
+    <div className="flex gap-2">
+      <Input placeholder="Ask a research question…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && q.trim().length > 1 && void run()} />
+      <Button size="sm" variant="secondary" disabled={busy || q.trim().length < 2} onClick={() => void run()}>{busy ? "Researching…" : "Research"}</Button>
+    </div>
+    {err && <div className="text-xs text-danger">{err}</div>}
+    {r && <div className="flex flex-col gap-2 text-xs animate-fade-in" aria-label="Research report">
+      <div className="text-muted">{r.summary.sources} source(s) · {r.summary.corroborated} corroborated · {r.summary.single_source} single-source · {r.summary.conflicts} conflict(s)</div>
+      {r.findings.length ? <ul className="flex flex-col gap-1">{r.findings.map((f: Any, i: number) =>
+        <li key={i} className="text-fg">{f.text} <span className="text-accent">[{f.cite}]</span> <span className="text-faint">({f.status})</span></li>)}</ul>
+        : <div className="text-muted">None of your sources cover this question.</div>}
+      {r.conflicts.length > 0 && <div><div className="text-warning">Conflicts</div>{r.conflicts.map((c: Any, i: number) =>
+        <div key={i} className="text-muted">[{c.a.cite}] vs [{c.b.cite}]: {c.why}</div>)}</div>}
+      {r.gaps.length > 0 && <div className="text-muted">Not covered by any source: {r.gaps.join(", ")}</div>}
+      <div className="text-faint">{r.sources.map((s: Any) => `[${s.n}] ${s.title}${s.verified ? " (verified)" : ""}`).join(" · ")}</div>
+      {r.findings.length > 0 && !r.saved && <Button size="sm" variant="ghost" className="self-start" onClick={() => void run(true)}>Save as a research note</Button>}
+      {r.saved && <div className="text-success">Saved as a research note (unverified, low confidence).</div>}
+    </div>}
+  </div>;
 }

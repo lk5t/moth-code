@@ -289,6 +289,22 @@ class DocIn(BaseModel):
     source: str = Field(default="", max_length=500)
     license: str = Field(default="", max_length=64)
     key: str | None = Field(default=None, max_length=200)
+    category: str | None = Field(default=None, max_length=40)       # 0.8.0 Knowledge 2.0
+    project: str | None = Field(default=None, max_length=200)
+
+
+class DocMetaIn(BaseModel):
+    category: str | None = Field(default=None, max_length=40)
+    project: str | None = Field(default=None, max_length=200)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    verified: bool | None = None
+    review_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class ResearchIn(BaseModel):
+    question: str = Field(min_length=2, max_length=500)
+    project: str | None = Field(default=None, max_length=200)
+    save: bool = False
 
 
 def _kerr(e: K.KnowledgeError):
@@ -303,7 +319,8 @@ def my_knowledge(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)
 @router.post("/v1/knowledge")
 def add_knowledge(body: DocIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     try:
-        return K.add(ctx, auth.uid, body.title, body.text, body.source, body.license, body.key)
+        return K.add(ctx, auth.uid, body.title, body.text, body.source, body.license, body.key,
+                     category=body.category, project=body.project)
     except K.KnowledgeError as e:
         raise _kerr(e) from None
 
@@ -311,14 +328,41 @@ def add_knowledge(body: DocIn, auth: Auth = Depends(current_auth), ctx: Ctx = De
 @router.post("/v1/admin/knowledge")
 def add_shared_knowledge(body: DocIn, auth: Auth = Depends(owner_reauthed), ctx: Ctx = Depends(get_ctx)):
     try:
-        return K.add(ctx, None, body.title, body.text, body.source, body.license, body.key)
+        return K.add(ctx, None, body.title, body.text, body.source, body.license, body.key,
+                     category=body.category, project=body.project)
     except K.KnowledgeError as e:
         raise _kerr(e) from None
 
 
 @router.get("/v1/knowledge/search")
-def search_knowledge(q: str, k: int = 5, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
-    return {"results": K.search(ctx, auth.uid, q[:500], max(1, min(k, 20)))}
+def search_knowledge(q: str, k: int = 5, project: str | None = None, auth: Auth = Depends(current_auth),
+                     ctx: Ctx = Depends(get_ctx)):
+    return {"results": K.search(ctx, auth.uid, q[:500], max(1, min(k, 20)), project=project)}
+
+
+@router.patch("/v1/knowledge/{doc_id}")
+def update_knowledge(doc_id: int, body: DocMetaIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """Category, project, confidence, verification and review date of a document (Knowledge 2.0)."""
+    from moth_server.intelligence import knowledge2 as K2
+
+    try:
+        return {"meta": K2.update(ctx, auth.uid, doc_id, body.model_dump(exclude_none=True), is_owner=auth.is_owner)}
+    except K.KnowledgeError as e:
+        raise _kerr(e) from None
+
+
+@router.post("/v1/research")
+def research(body: ResearchIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """A cited, extractive research report over the knowledge this account may see (Research Engine)."""
+    from moth_server.intelligence import research as R
+
+    try:
+        report = R.run(ctx, auth.uid, body.question, body.project)
+        if body.save and report["findings"]:
+            report["saved"] = R.save(ctx, auth.uid, report)["document"]
+    except K.KnowledgeError as e:
+        raise _kerr(e) from None
+    return report
 
 
 @router.get("/v1/knowledge/{doc_id}/versions")

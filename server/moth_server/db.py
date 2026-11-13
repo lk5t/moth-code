@@ -515,6 +515,18 @@ knowledge_docs = Table(
     Column("updated_at", Float, nullable=False),
 )
 
+# 0.8.0 Knowledge 2.0: organisation and trust per document version (a new table: created by create_all)
+knowledge_meta = Table(
+    "knowledge_meta", metadata,
+    Column("doc_id", Integer, ForeignKey("knowledge_docs.id"), primary_key=True),
+    Column("category", String(40), nullable=False, default="general"),
+    Column("project", String(200)),                # project-specific memory (None = everywhere)
+    Column("confidence", Float, nullable=False, default=0.5),   # 0..1: how much MOTH may rely on it
+    Column("verified", Boolean, nullable=False, default=False),  # a person confirmed it
+    Column("review_after", Float),                 # after this time the document is flagged as possibly outdated
+    Column("near_duplicate_of", Integer),          # a very similar active document (kept, but flagged)
+)
+
 knowledge_chunks = Table(
     "knowledge_chunks", metadata,
     Column("id", Integer, primary_key=True),
