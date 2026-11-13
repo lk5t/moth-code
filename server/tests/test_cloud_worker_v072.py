@@ -23,7 +23,10 @@ def test_cloud_worker_enrolls_once_and_pauses_for_local_training(client, owner):
         c.execute(evolution_experiments.insert().values(cycle_id=1, status="running", backend="local", dataset_id=1, base_version=1, base_sha256="0" * 64,
                   config="{}", config_hash="x", created_at=now(), updated_at=now()))
     r.beat()
-    assert r.paused is True  # never two trainings on the server at once
+    assert r.paused is True  # it does not start new work while MOTH Cloud trains locally
+    r.current_job = 99  # but a job already under way is finished, not paused into a stall (0.8.3)
+    r.beat()
+    assert r.paused is False
 
 
 def test_owner_choice_turns_it_off(client, owner):
@@ -35,8 +38,34 @@ def test_owner_choice_turns_it_off(client, owner):
                    "distributed": {"cloud_participates": False}})
     assert not CW.allowed(ctx)
     S.update(ctx, {"distributed": {"cloud_participates": True}})
-    ctx.db.set_config("cloud_worker_revoked", True)  # revoked by the Owner in Network
-    assert not CW.allowed(ctx)
+    assert CW.status(ctx)["state"] in ("starting", "running", "off", "waiting", "re-enrolling", "error")
+
+
+def test_lost_registration_enrolls_again_but_an_owner_revoke_stands(client, owner):
+    """0.8.3: a registration lost any other way (replaced, invalid credential) no longer keeps MOTH Cloud
+    out of shared training for good; only the Owner's revoke in Network does."""
+    from starlette.testclient import TestClient
+
+    from conftest import H
+    from moth_server.db import now
+
+    ctx = client.app.state.ctx
+    r = CW.make_runner(ctx, TestClient(ctx.extras["app"]))
+    first = ctx.db.one(select(workers))
+    with ctx.db.tx() as c:  # lost without the Owner deciding it (e.g. replaced by a re-enrollment)
+        c.execute(workers.update().where(workers.c.id == first["id"]).values(
+            revoked_at=now(), status="revoked", token_hash=f"replaced-{first['id']}-1"))
+    assert CW.allowed(ctx)
+    r2 = CW.make_runner(ctx, TestClient(ctx.extras["app"]))
+    assert r2 is not None
+    live = ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
+    assert len(live) == 1 and live[0]["id"] != first["id"] and live[0]["name"] == CW.NAME
+    # the Owner revokes it in Network: it stays revoked and never enrolls again
+    assert client.post(f"/v1/training/workers/{live[0]['id']}/revoke", headers=H(owner["token"])).status_code == 200
+    assert CW.owner_revoked(ctx) and not CW.allowed(ctx)
+    assert CW.make_runner(ctx, TestClient(ctx.extras["app"])) is None
+    assert CW.status(ctx)["state"] == "revoked"
+    assert len(ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))) == 0
 
 
 def test_cloud_worker_and_a_real_worker_on_the_same_computer_coexist(client, settings, owner):

@@ -3,6 +3,14 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.8.3 — Training runs finish, and MOTH Cloud and workers train together
+
+- Runs finish: early stopping no longer ends a run just because held-out loss stopped improving for a few evaluations (that cut most runs at around a tenth of their steps). A run now stops early only when held-out loss clearly rises (overfitting); stopping on a plateau is an opt-in setting (`early_stopping.plateau`).
+- MOTH Cloud's built-in worker no longer pauses in the middle of a job when MOTH Cloud starts a local experiment, which made the job stall, get taken back and restart from zero. It finishes the job and only then waits.
+- MOTH Cloud and the workers train the same experiment: shared training rounds now carry the conversation data's loss mask (checked by SHA-256 like the shard), so mixtures with conversation data no longer have to be split into separate experiments. Private training data still never leaves MOTH Cloud.
+- MOTH Cloud's built-in worker enrolls again when its registration was lost some other way than an Owner revoke, instead of staying out of shared training for good. Only a revoke in Network stops it. The computing network shows whether MOTH Cloud joins shared runs, and why if not.
+- MOTH Cloud always serves a model when it can: after a restart, or when the deployed model cannot be loaded, it loads the deployed version again or falls back to the rollback model of the same model line, and keeps retrying. It never brings back a model from before a Genesis Reset or from another model line.
+
 ## 0.8.2 — Stalled workers lose their job within minutes
 
 - A worker that holds an experiment but makes no training progress (for example while paused because its computer is busy) kept it — and the whole Evolution cycle — waiting indefinitely. MOTH Cloud now takes the job back after 2 minutes without progress once training has started (10 minutes to start: downloading the model and data), tells the worker to stop, records its real pace so placement prefers faster compute, and places the experiment again.

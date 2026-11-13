@@ -568,12 +568,66 @@ def restore_on_startup(ctx: Ctx) -> None:
     recover_interrupted(ctx)
     from moth_server.evolution.native_reset import fenced
     if fenced(ctx):return
+    ensure_serving(ctx)
+
+
+def ensure_serving(ctx: Ctx) -> dict[str, Any] | None:
+    """0.8.3: MOTH Cloud must never stay without a serving model while one is deployed.
+
+    Called at start-up and on every pipeline pass. When no engine is loaded, the deployed release is
+    loaded again; if that fails, the rollback model, then the newest other verified release with files,
+    is served instead. Every failure is recorded with its reason (Owner notifications) instead of only
+    a log line, so a model that cannot load is visible and the service recovers by itself."""
+    from moth_server.evolution.native_reset import fenced
+
+    if fenced(ctx) or ctx.extras.get("inference_engine") is not None:
+        return None
     version = ctx.db.get_config("deployed_release")
-    if version and "inference_engine" not in ctx.extras:
+    if not version:
+        return None
+    from moth_server.evolution import memory as MEM
+
+    tried, errors = [], []
+    candidates = [int(version)]
+    try:
+        from moth_server.evolution import storage as ST
+
+        rb = ST.rollback_target(ctx)
+        if rb:
+            candidates.append(rb)
+    except Exception:  # noqa: BLE001
+        pass
+    try:  # only versions of the same lineage: never a model from before a Genesis Reset or another lineage
+        lineage = (release(ctx, int(version))["info"] or {}).get("lineage_id")
+    except ReleaseError:
+        lineage = None
+    candidates = [c for c in candidates if c == int(version) or
+                  ((release(ctx, c)["info"] or {}).get("lineage_id") == lineage and lineage)]
+    candidates += [r["version"] for r in sorted(list_releases(ctx), key=lambda r: -r["version"])
+                   if lineage and (r["info"] or {}).get("lineage_id") == lineage
+                   and r["status"] in ("published", "deployed") and r.get("path") and Path(r["path"]).exists()]
+    for v in dict.fromkeys(candidates):
+        tried.append(v)
         try:
-            deploy(ctx, int(version))
-        except ReleaseError:
-            log.error("the deployed model v%s could not be restored after restart", version)
+            rel = deploy(ctx, v)
+        except Exception as e:  # noqa: BLE001 — try the next working version
+            errors.append(f"v{v}: {str(e)[:200]}")
+            log.error("model v%s could not be served: %s", v, e)
+            continue
+        if v != int(version) or errors:
+            MEM.event(ctx, "deploy.failed" if v != int(version) else "deploy.done",
+                      (f"The deployed model v{version} could not be loaded ({'; '.join(errors)}). "
+                       f"MOTH Cloud now serves v{v} instead so answering continues.") if v != int(version) else
+                      f"MOTH Cloud is serving v{v} again.", level="error" if v != int(version) else "info")
+        return rel
+    if errors:
+        key = "serving_restore_error"
+        msg = "; ".join(errors)
+        if ctx.db.get_config(key) != msg:  # report a new problem once, not on every pass
+            ctx.db.set_config(key, msg)
+            MEM.event(ctx, "deploy.failed", "MOTH Cloud has no serving model: no verified version could be loaded "
+                      f"({msg}). It keeps retrying.", level="error")
+    return None
 
 
 def retry_candidates(ctx: Ctx) -> list[int]:

@@ -10,7 +10,7 @@ It works only while the Owner allows it: AI Settings → What trains MOTH → "M
 (``backends.local_cpu``/``local_gpu``) and ``distributed.cloud_participates`` (default on). It pauses
 whenever MOTH Cloud is running a local experiment of its own, so the server never trains two things at
 once, and it respects the usual resource pressure checks. If the Owner revokes it in Network, it stays
-revoked (it never re-enrolls by itself). ``MOTH_CLOUD_WORKER=0`` turns it off entirely.
+revoked; a registration lost any other way is enrolled again (0.8.3). ``MOTH_CLOUD_WORKER=0`` turns it off entirely.
 """
 
 from __future__ import annotations
@@ -34,7 +34,43 @@ def allowed(ctx: Ctx) -> bool:
     s = S.get(ctx)
     be = s.get("backends") or {}
     return bool((be.get("local_cpu") or be.get("local_gpu")) and (s.get("distributed") or {}).get("cloud_participates", True)
-                and not ctx.db.get_config("cloud_worker_revoked", False))
+                and not owner_revoked(ctx))
+
+
+def _rows(ctx: Ctx) -> list[dict]:
+    import json
+
+    from sqlalchemy import select
+
+    from moth_server.db import workers
+
+    return [w for w in ctx.db.all(select(workers).where(workers.c.name == NAME).order_by(workers.c.id.desc()))
+            if json.loads(w.get("hardware") or "{}").get("worker_kind") == "cloud"]
+
+
+def owner_revoked(ctx: Ctx) -> bool:
+    """Only the Owner's revoke in Network stops it for good (0.8.3).
+
+    Earlier versions also stopped it for good when its registration was lost another way (replaced by
+    a re-enrollment, an invalid credential), which left MOTH Cloud out of every shared training run.
+    """
+    rows = _rows(ctx)
+    return bool(rows and rows[0]["revoked_at"] is not None and str(rows[0]["token_hash"]).startswith("revoked-"))
+
+
+def set_status(ctx: Ctx, state: str, detail: str | None = None) -> None:
+    ctx.db.set_config("cloud_worker_status", {"state": state, "detail": (detail or "")[:500] or None, "at": time.time()})
+
+
+def status(ctx: Ctx) -> dict:
+    st = dict(ctx.db.get_config("cloud_worker_status", {}) or {})
+    if os.environ.get("MOTH_CLOUD_WORKER", "1") == "0":
+        st = {"state": "disabled", "detail": "turned off on this server (MOTH_CLOUD_WORKER=0)"}
+    elif owner_revoked(ctx):
+        st = {"state": "revoked", "detail": "revoked by the Owner in Network"}
+    elif not allowed(ctx):
+        st = {"state": "off", "detail": "turned off in AI Settings (What trains MOTH)"}
+    return {"state": st.get("state") or "starting", "detail": st.get("detail"), "at": st.get("at")}
 
 
 def local_busy(ctx: Ctx) -> bool:
@@ -62,9 +98,14 @@ def credential(ctx: Ctx) -> str | None:
     from moth_server import training as T
     from moth_server.db import users
 
+    if owner_revoked(ctx):
+        return None  # the Owner's decision stands
     f = Path(ctx.settings.data_dir) / "cloud-worker" / "credential"
     if f.exists():
-        return f.read_text().strip() or None
+        cred = f.read_text().strip()
+        if cred and T.worker_by_token(ctx, cred):
+            return cred
+        f.unlink()  # 0.8.3: the registration was lost (not revoked by the Owner): enroll again
     owner = ctx.db.one(select(users).where(users.c.role == "owner", users.c.status == "active"))
     if not owner:
         return None
@@ -91,7 +132,11 @@ def make_runner(ctx: Ctx, http):
 
         def beat(self) -> None:
             super().beat()
-            if not allowed(ctx) or local_busy(ctx):
+            if not allowed(ctx):
+                self.paused = True
+            elif local_busy(ctx) and self.current_job is None:
+                # 0.8.3: do not *start* work while MOTH Cloud trains locally, but finish a job already
+                # under way (pausing it mid-run made it stall, be taken back and restart from zero)
                 self.paused = True
 
     cred = credential(ctx)
@@ -114,19 +159,25 @@ def start(ctx: Ctx, delay: float = 20.0) -> threading.Thread | None:
         while True:
             try:
                 if not allowed(ctx):
+                    set_status(ctx, "off")
                     time.sleep(60)
                     continue
                 http = http or TestClient(ctx.extras["app"])
                 runner = make_runner(ctx, http)
                 if runner is None:
+                    set_status(ctx, "waiting", "no active Owner account to enroll with yet")
                     time.sleep(60)
                     continue
-                runner.run(idle_sleep=15.0)  # returns when revoked or stopped
-                if runner.revoked:
-                    ctx.db.set_config("cloud_worker_revoked", True)  # the Owner's decision stands
-                    log.info("the MOTH Cloud worker was revoked; it will not re-enroll")
-            except Exception:  # noqa: BLE001 — the server keeps running; try again later
+                set_status(ctx, "running")
+                runner.run(idle_sleep=15.0)  # returns when revoked, its credential stopped working, or stopped
+                if owner_revoked(ctx):
+                    log.info("the MOTH Cloud worker was revoked by the Owner; it will not re-enroll")
+                else:  # the registration was lost some other way: enroll again on the next pass
+                    set_status(ctx, "re-enrolling", "its worker registration was no longer valid")
+                    (Path(ctx.settings.data_dir) / "cloud-worker" / "credential").unlink(missing_ok=True)
+            except Exception as e:  # noqa: BLE001 — the server keeps running; try again later
                 log.exception("MOTH Cloud worker stopped unexpectedly")
+                set_status(ctx, "error", f"{type(e).__name__}: {e}")
             time.sleep(60)
 
     t = threading.Thread(target=loop, daemon=True, name="moth-cloud-worker")

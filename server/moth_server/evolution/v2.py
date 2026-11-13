@@ -392,9 +392,13 @@ def early_stop_reason(history: list[float], settings: dict) -> str | None:
     if any(not math.isfinite(x) for x in history):
         return "held-out loss became non-finite (diverged)"
     best_i = min(range(len(history)), key=history.__getitem__)
-    if history[-1] > history[0] * 1.05 and len(history) >= min_evals:
+    # divergence: the last two measurements are both clearly worse than the start (one noisy reading is not)
+    if len(history) >= 2 and min(history[-2:]) > history[0] * 1.05:
         return f"held-out loss rose from {history[0]:.3f} to {history[-1]:.3f}"
-    if len(history) - 1 - best_i >= patience:
+    # 0.8.3: a plateau no longer ends a run (it stopped almost every run at ~10 % of its steps, so none
+    # completed). Runs train all planned steps and the promotion gates decide. Owners can turn the
+    # plateau rule back on with early_stopping.plateau.
+    if es.get("plateau", False) and len(history) - 1 - best_i >= patience:
         return f"no held-out improvement for {patience} evaluations (best {history[best_i]:.3f})"
     return None
 

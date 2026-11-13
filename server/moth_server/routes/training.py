@@ -313,8 +313,12 @@ def job_mask(job_id: int, w: dict = Depends(current_worker), ctx: Ctx = Depends(
     """The loss mask of an evolution job's shard (1 = learn this token)."""
     j = _job(ctx, w, job_id)
     spec = json.loads(j["spec"])
-    if j["kind"] != "evolve_train" or not spec.get("mask_sha256"):
+    if j["kind"] not in ("evolve_train", "dist_shard") or not spec.get("mask_sha256"):
         raise HTTPException(404, "this job has no loss mask")
+    if j["kind"] == "dist_shard":
+        from moth_server.evolution.distributed import job_mask as dist_mask
+
+        return FileResponse(dist_mask(ctx, spec), media_type="application/octet-stream")
     from moth_server.evolution.backends import job_mask as mask_path
 
     return FileResponse(mask_path(ctx, spec), media_type="application/octet-stream")

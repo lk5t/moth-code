@@ -51,7 +51,8 @@ DEFAULTS: dict[str, Any] = {
     "retention_days": 180,           # evolution events and experiment logs (model versions are kept)
     # 0.5.3 Evolution 2.0
     "use_curriculum": True,          # train on the dataset library's curriculum mixture when one exists
-    "early_stopping": {"enabled": True, "min_evals": 3, "patience": 3},
+    # stops only diverging runs; "plateau": true also stops runs whose held-out loss stopped improving
+    "early_stopping": {"enabled": True, "min_evals": 3, "patience": 3, "plateau": False},
     "growth": {"enabled": True, "approval_ratio": 1.25, "max_ratio": 1.5, "max_params": 400_000_000,
                "plateau_threshold": 0.01, "steps_multiplier": 2,
                # 0.6.3 capability-based growth (capacity.py): growth needs enough training for the size,

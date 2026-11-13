@@ -93,6 +93,9 @@ const share = (v: number | null | undefined) => (typeof v === "number" ? `${Math
 const tokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(0)}k` : `${n}`);
 
 /** MOTH Cloud and every worker as one computing network: task, load, speed and real contributions. */
+const SHARED: Record<string, string> = { running: "joins in", starting: "starting", waiting: "waiting", "re-enrolling": "reconnecting",
+  error: "not working", off: "off", revoked: "revoked", disabled: "off" };
+
 function Machines({ server, workers }: { server?: Any; workers: Any[] }) {
   const rows = [...(server ? [server] : []), ...workers.filter((w) => w.online || w.last_error)];
   const offline = workers.filter((w) => !w.online && !w.last_error).length;
@@ -101,7 +104,8 @@ function Machines({ server, workers }: { server?: Any; workers: Any[] }) {
     <p className="mb-1 text-faint">Computing network{offline ? ` · ${offline} worker(s) offline` : ""}</p>
     <ul className="space-y-1">{rows.map((m) => <li key={m.id} className="grid gap-x-3 border-b border-border py-1 last:border-0 sm:grid-cols-[1.4fr_1.6fr_1fr_1fr]">
       <span className="text-fg">{m.id === "cloud" ? m.name : `Worker #${m.id} · ${m.name}`} <span className={m.state === "working" ? "text-accent" : m.state === "unavailable" ? "text-warning" : "text-faint"}>· {STATE[m.state] ?? m.state}</span> <span className="text-faint">· {m.compute}{m.speed ? ` · ${m.speed.ratio.toFixed(1)}× this server's speed (${m.speed.basis})` : ""}{m.throughput ? ` · ${Math.round(m.throughput).toLocaleString()} tokens/s measured` : ""}</span>
-        {m.last_error && <span className="block text-warning">Last problem: {m.last_error}</span>}</span>
+        {m.last_error && <span className="block text-warning">Last problem: {m.last_error}</span>}
+        {m.id === "cloud" && m.shared_training && <span className={`block ${["error", "re-enrolling"].includes(m.shared_training.state) ? "text-warning" : "text-faint"}`}>Shared runs with workers: {SHARED[m.shared_training.state] ?? m.shared_training.state}{m.shared_training.detail ? ` — ${m.shared_training.detail}` : ""}</span>}</span>
       <span className="text-muted">{m.paused ? "paused by its owner" : m.task ? `${TASK[m.task.kind] ?? m.task.kind}${m.task.experiment ? ` experiment #${m.task.experiment}` : ""}${typeof m.task.progress === "number" ? ` · ${Math.round(m.task.progress * 100)}%` : ""}` : "idle"}</span>
       <span className="text-faint">CPU {share(m.utilization?.cpu)} · memory {share(m.utilization?.memory)}</span>
       <span className="text-faint">{m.contribution?.runs ? `${m.contribution.runs} run(s) · ${tokens(m.contribution.tokens)} tokens trained` : "no finished runs yet"}</span>

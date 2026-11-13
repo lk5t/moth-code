@@ -519,6 +519,7 @@ def command_center(ctx: Ctx, cyc: dict | None, st: dict, data: dict) -> dict:
                               "memory": round((hw0.get("memory") or {}).get("percent", 0) / 100, 3)
                               if (hw0.get("memory") or {}).get("percent") is not None else None},
               "contribution": contrib.get("server", {"runs": 0, "tokens": 0}),
+              "shared_training": _cloud_worker_status(ctx),
               "task": {"kind": "evolve_train", "experiment": local_run["id"],
                        "progress": ((local_run.get("metrics") or {}).get("progress") or {}).get("fraction")}
               if local_run else None}
@@ -559,3 +560,13 @@ def _public_name(ctx: Ctx, version: int | None) -> str | None:
     except Exception:  # noqa: BLE001
         return None
     return info.get("display_name") or (f"MOTH {info['model_version']}" if info.get("model_version") else None)
+
+
+def _cloud_worker_status(ctx: Ctx) -> dict:
+    """Whether MOTH Cloud's built-in worker can join shared runs with the workers (0.8.3)."""
+    try:
+        from moth_server.evolution import cloud_worker as CW
+
+        return CW.status(ctx)
+    except Exception as e:  # noqa: BLE001
+        return {"state": "error", "detail": str(e)[:300], "at": None}

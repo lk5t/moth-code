@@ -123,3 +123,34 @@ worker is told on its next heartbeat; a late result is refused), the worker's me
 for placement, and the experiment is placed again on MOTH Cloud or another free worker. Early stopping
 ("no held-out improvement for 3 evaluations") is unchanged: it ends a run whose held-out loss stopped
 improving, and since 0.8.1 the next cycle tries a different configuration instead of stalling.
+
+## 0.8.3 — Runs finish; MOTH Cloud and workers share one experiment
+
+**Early stopping.** Until 0.8.2 a run stopped after 3 held-out evaluations without a new best loss. On
+small, noisy held-out sets that ended almost every run after about 10 % of its steps. A run now stops
+early only when held-out loss clearly rises: the last two evaluations are both more than 5 % above the
+first one (overfitting). Stopping on a plateau is still available as `early_stopping.plateau: true`.
+
+**Cloud worker mid-job.** MOTH Cloud's built-in worker paused whenever MOTH Cloud trained a local
+experiment, also in the middle of a job. The paused job made no progress, was taken back (0.8.2) and
+restarted from zero. It now finishes a job it already holds and only waits before taking a new one.
+
+**Shared rounds with conversation data.** A distributed experiment writes each participant's shard
+together with its loss mask (`shard-{i}.mask`, 1 = learn this token). The job spec carries
+`mask_sha256` and requires a worker that applies masks (0.6.4+); the worker downloads the mask from
+`/v1/worker/jobs/{id}/mask` and checks its hash, as for an `evolve_train` job. So MOTH Cloud's
+built-in worker and the external workers can train rounds of the same experiment on the 50/40/10
+mixture. Private training data (feedback) is still trained only on MOTH Cloud.
+
+**Cloud worker registration.** Earlier versions marked the built-in worker as revoked for good
+whenever its credential stopped working, also when nobody revoked it (for example when it was replaced
+by a re-enrollment). Now only a revoke by the Owner in Network keeps it out. Any other loss of the
+registration makes it enroll again. The computing network shows its state ("Shared runs with
+workers: joins in / reconnecting / not working — reason / off").
+
+**Serving recovery.** When MOTH Cloud has a deployed model but no model loaded (after a restart, or
+because loading failed), it loads the deployed version again. If that fails, it falls back to the
+rollback model and then to the newest verified release of the same model line. It retries every
+2 minutes and records one event per distinct problem. It never loads a model from another line. After
+a Genesis Reset there is no deployed model, so nothing old is brought back.
+

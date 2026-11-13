@@ -580,7 +580,7 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict, parallel: bool = 
     # conversation data (assistant-only loss mask) can go to workers that apply the mask
     choice, reasons = C.choose_backend(ctx, settings, need, None if not token_only or private else B.MASK_WORKER_VERSION)
     ok, n = D.available(ctx, settings, need)
-    ok = ok and not token_only
+    ok = ok and not private  # 0.8.3: shared rounds carry the loss mask, so conversation data can be shared
     # Sharding one experiment across all workers only pays when nothing else could use them.
     if ok and not parallel and not (choice and choice.get("device", "").startswith("cuda")) and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
         st = D.start(ctx, exp, settings, need)

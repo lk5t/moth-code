@@ -31,6 +31,10 @@ def setup(ctx: Ctx) -> None:
 
     def loop() -> None:
         while not stop.wait(PIPELINE_INTERVAL):
+            try:  # 0.8.3: a model that failed to load (e.g. at a restart) is loaded again
+                M.ensure_serving(ctx)
+            except Exception:  # noqa: BLE001
+                M.log.exception("restoring the serving model failed")
             try:
                 from moth_server.evolution.native_reset import spawn
                 spawn(ctx,lambda:M.auto_pipeline(ctx),"model-pipeline-work").join()

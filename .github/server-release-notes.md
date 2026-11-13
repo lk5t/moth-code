@@ -4,7 +4,7 @@ The MOTH Cloud server for self-managing operation: one-time installation (no sud
 signed updates, verified backups, health checks with automatic rollback, the fixed model publishing
 workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
-This release (0.8.2) takes an experiment back from a worker that makes no training progress for 2 minutes (10 before its first step) and places it again. 0.8.1 makes Evolution explore instead of stalling once every planned configuration was tried, waits 5 minutes before re-planning when nothing can be planned, and measures experiment elapsed time on MOTH Cloud. From 0.8.0 (COGNITIVE EVOLUTION):
+This release (0.8.3) lets training runs finish (early stopping only on rising held-out loss), lets MOTH Cloud and the workers train the same experiment with conversation data (shared rounds carry the loss mask), re-enrolls MOTH Cloud's built-in worker when its registration was lost, and restores a serving model after a restart or a failed load (same model line only, never across a Genesis Reset). 0.8.2 takes an experiment back from a worker that makes no training progress for 2 minutes (10 before its first step) and places it again. 0.8.1 makes Evolution explore instead of stalling once every planned configuration was tried, waits 5 minutes before re-planning when nothing can be planned, and measures experiment elapsed time on MOTH Cloud. From 0.8.0 (COGNITIVE EVOLUTION):
 
 - Conversation and coding curricula (verified generated data), held-out multi-turn and executed coding
   benchmarks, a 50/40/10 conversation/coding/other starting focus and a balanced-capabilities promotion

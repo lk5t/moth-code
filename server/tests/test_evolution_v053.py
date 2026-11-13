@@ -83,7 +83,11 @@ def test_curriculum_cycle_dev_checkpoint_and_model_version(client, owner, tmp_pa
 def test_early_stopping_rules():
     s = {"early_stopping": {"enabled": True, "min_evals": 3, "patience": 3}}
     assert V2.early_stop_reason([3.0, 2.5, 2.2], s) is None
-    assert "rose" in V2.early_stop_reason([3.0, 3.1, 3.3], s)
+    assert "rose" in V2.early_stop_reason([3.0, 3.2, 3.3], s)
+    assert V2.early_stop_reason([3.0, 2.8, 3.3], s) is None  # one noisy reading is not divergence
+    assert V2.early_stop_reason([3.0, 2.0, 2.1, 2.05, 2.2], s) is None  # 0.8.3: a plateau trains on
+    assert V2.early_stop_reason([3.0, 2.0, 2.1, 2.05, 2.2] * 4, s) is None
+    s["early_stopping"]["plateau"] = True  # the Owner's opt-in
     assert "no held-out improvement" in V2.early_stop_reason([3.0, 2.0, 2.1, 2.05, 2.2], s)
     assert V2.early_stop_reason([3.0, 2.0], s) is None  # too early to judge
 

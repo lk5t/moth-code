@@ -103,8 +103,8 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     expected_sha = dev.get("sha256") if dev.get("path") else base["sha256"]
     if not src.is_file() or not expected_sha or _sha(src) != expected_sha:
         raise ValueError("distributed training requires an intact, checksum-verified base checkpoint")
-    if not worker_training_supported(ctx, exp):
-        raise ValueError("assistant-masked data cannot use token-only distributed shards")
+    if not worker_training_supported(ctx, exp, masks=True):
+        raise ValueError("private training data never leaves MOTH Cloud")
     raw = torch.load(src, map_location="cpu", weights_only=False)
     state = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
     torch.save({k: v.float() if v.is_floating_point() else v for k, v in state.items()}, _round_weights(rd, 0))
@@ -112,10 +112,10 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     if cfg.get("mixture"):
         from moth_server.evolution.v2 import write_mixture_shard
 
-        for i in range(n):
+        for i in range(n):  # 0.8.3: with the loss mask, so conversation data can be shared too
             write_mixture_shard(cfg["mixture"]["path"], cfg["mixture"]["weights"],
                                 local_steps * int(cfg["batch_size"]) * int(cfg["seq_len"]) * rounds * 2,
-                                int(cfg["seed"]) * 1000 + i, rd / f"shard-{i}.bin")
+                                int(cfg["seed"]) * 1000 + i, rd / f"shard-{i}.bin", mask_dest=rd / f"shard-{i}.mask")
         _probe_from_mixture(cfg["mixture"], rd / "probe.bin")
     else:
         import numpy as np
@@ -154,7 +154,7 @@ def _create_round_jobs(ctx: Ctx, exp: dict, base: dict, st: dict, need_bytes: in
                        only: list[int] | None = None) -> None:
     from moth.community.protocol import PROTOCOL
 
-    from moth_server.evolution.backends import run_dir
+    from moth_server.evolution.backends import MASK_WORKER_VERSION, run_dir
 
     cfg = exp["config"]
     rd = run_dir(ctx, exp)
@@ -169,6 +169,8 @@ def _create_round_jobs(ctx: Ctx, exp: dict, base: dict, st: dict, need_bytes: in
                     "tokenizer_fingerprint": base["info"].get("tokenizer_fingerprint"),
                     "shard_id": f"evolution-{exp['id']}-shard-{i}", "shard_sha256": _sha(rd / f"shard-{i}.bin"),
                     "shard_license": "approved library data", "job_id": f"evolution-{exp['id']}-r{r}-s{i}",
+                    **({"mask_sha256": _sha(rd / f"shard-{i}.mask"), "min_worker_version": MASK_WORKER_VERSION}
+                       if (rd / f"shard-{i}.mask").exists() else {}),
                     "train": {"steps": st["local_steps"], "lr": cfg["lr"], "batch_size": cfg["batch_size"],
                               "batch_autotune": bool(cfg.get("batch_autotune", True)),
                               "seq_len": cfg["seq_len"], "weight_decay": cfg["weight_decay"]},
@@ -206,6 +208,13 @@ def job_files(ctx: Ctx, spec: dict) -> tuple[Path, Path]:
     exp = MEM.experiment(ctx, int(spec["evolution_experiment"]))
     rd = run_dir(ctx, exp)
     return _round_weights(rd, int(spec["dist"]["round"])), rd / f"shard-{int(spec['dist']['shard'])}.bin"
+
+
+def job_mask(ctx: Ctx, spec: dict) -> Path:
+    from moth_server.evolution.backends import run_dir
+
+    exp = MEM.experiment(ctx, int(spec["evolution_experiment"]))
+    return run_dir(ctx, exp) / f"shard-{int(spec['dist']['shard'])}.mask"
 
 
 def accept_shard(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) -> dict:

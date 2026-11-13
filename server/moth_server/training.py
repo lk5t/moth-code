@@ -245,7 +245,7 @@ def job_shareable(ctx: Ctx, job: dict) -> bool:
     if spec.get('evolution_experiment'):
         from moth_server.evolution import memory as MEM, backends as B
         exp = MEM.experiment(ctx, int(spec['evolution_experiment']))
-        return bool(exp and B.worker_training_supported(ctx, exp, masks=job.get('kind') == 'evolve_train'))
+        return bool(exp and B.worker_training_supported(ctx, exp, masks=job.get('kind') in ('evolve_train', 'dist_shard')))
     return True
 
 
