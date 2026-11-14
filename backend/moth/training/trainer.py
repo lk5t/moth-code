@@ -66,6 +66,9 @@ class TrainConfig:
     init_from: str | None = None  # start from an exported model / checkpoint instead of random init
     init_optimizer: bool = True  # continuing a lineage: also restore the optimizer moments when compatible
     mixture: dict[str, float] | None = None  # Data Factory mixture weights (curriculum)
+    # 0.10.1: phases of the run with their own mixture weights: [{"until": 0.1, "weights": {...}}, ...]
+    # (fractions of max_steps; after the last phase the run uses ``mixture``)
+    mixture_schedule: list[dict[str, Any]] | None = None
     threads: int | None = None  # CPU threads (None = all but one)
     lineage: dict[str, Any] = field(default_factory=dict)  # lineage id, parent checkpoint, cumulative counters
 
@@ -105,6 +108,15 @@ def pick_device(requested: str = "auto") -> str:
         if requested.startswith("cuda"):
             raise RuntimeError("CUDA was requested but no working CUDA device is available")
     return "cpu"
+
+
+def phase_weights(cfg: TrainConfig, step: int) -> dict[str, float] | None:
+    """The mixture weights of the schedule phase ``step`` falls in (None: the run's own mixture)."""
+    frac = step / max(1, cfg.max_steps)
+    for ph in cfg.mixture_schedule or []:
+        if frac < float(ph["until"]):
+            return ph["weights"]
+    return None
 
 
 def lr_at(step: int, cfg: TrainConfig) -> float:
@@ -339,6 +351,11 @@ class Trainer:
                     stop_reason = "stopped"
                     break
                 t_step = time.time()
+                if cfg.mixture_schedule and hasattr(train, "set_weights"):
+                    phase = phase_weights(cfg, self.step)
+                    if phase is not getattr(train, "_phase", None):
+                        train.set_weights(phase or cfg.mixture)
+                        train._phase = phase
                 lr = lr_at(self.step, cfg)
                 for g in optimizer.param_groups:
                     g["lr"] = lr

@@ -149,7 +149,9 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
         from moth_server.evolution.v2 import write_mixture_shard
 
         for i in range(n):  # 0.8.3: with the loss mask, so conversation data can be shared too
-            write_mixture_shard(cfg["mixture"]["path"], cfg["mixture"]["weights"],
+            from moth_server.evolution.v2 import blended_weights
+
+            write_mixture_shard(cfg["mixture"]["path"], blended_weights(cfg["mixture"]["weights"], cfg.get("mixture_schedule")),
                                 local_steps * int(cfg["batch_size"]) * int(cfg["seq_len"]) * rounds * 2,
                                 int(cfg["seed"]) * 1000 + i, rd / f"shard-{i}.bin", mask_dest=rd / f"shard-{i}.mask")
         _probe_from_mixture(cfg["mixture"], rd / "probe.bin")

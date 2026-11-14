@@ -33,3 +33,16 @@ def test_replies_never_repeat_an_ngram_and_end_by_the_limit():
     b = out.encode()
     grams = [b[i:i + 24] for i in range(len(b) - 23) if b[i:i + 24].strip()]
     assert len(grams) == len(set(grams))
+
+
+def test_mixture_schedule_phases():
+    from moth.training.trainer import TrainConfig, phase_weights
+
+    cfg = TrainConfig(run_name="t", dataset="d", out_dir="o", max_steps=100,
+                      mixture={"conversation": 0.5, "code": 0.5},
+                      mixture_schedule=[{"until": 0.1, "weights": {"conversation": 1.0}},
+                                        {"until": 0.8, "weights": {"conversation": 0.5, "code": 0.5}},
+                                        {"until": 1.01, "weights": {"conversation": 0.7, "code": 0.3}}])
+    assert phase_weights(cfg, 0) == {"conversation": 1.0}
+    assert phase_weights(cfg, 50)["code"] == 0.5
+    assert phase_weights(cfg, 99)["conversation"] == 0.7

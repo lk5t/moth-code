@@ -110,6 +110,8 @@ def _v2_spec(base: dict, cfg: dict, exp: dict, rd: Path | None = None) -> dict:
     if cfg.get("mixture"):
         out["dataset"] = cfg["mixture"]["path"]
         out["mixture"] = cfg["mixture"]["weights"]
+        if cfg.get("mixture_schedule"):
+            out["mixture_schedule"] = cfg["mixture_schedule"]
     dev = base["info"].get("dev_checkpoint") or {}
     if dev.get("path"):
         out["init_checkpoint"], out["init_checkpoint_sha256"] = dev["path"], dev.get("sha256")

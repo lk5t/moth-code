@@ -3,6 +3,10 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.10.1 — Successors learn to chat first
+
+- The first right-sized successor (2.9M parameters) was rejected: besides the old speed rule (fixed in 0.10.0), its replies did not end cleanly as often as the current model's. A successor now trains in three phases: a chat warm-up (the first 8 % of its steps on conversations only: who speaks, when a reply ends), the whole curriculum, and a chat-heavy finish (the last 15 %: 70 % conversations). Shared rounds use the same mix on average. It is still promoted only if it passes every check; until then the current model keeps answering.
+
 ## 0.10.0 — Bigger, fairer successors, cleaner replies, and a training view you can watch
 
 - **A bigger model is no longer rejected for being bigger.** The speed and memory gates compared a candidate with the model it replaces ("at most 25 % slower"), so any successor or grown model many times larger failed them, however much better it was. Bigger candidates are now held to absolute limits instead: at least 15 tokens/s when chatting, and at most half of the server's memory.

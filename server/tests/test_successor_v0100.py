@@ -73,6 +73,8 @@ def test_successor_is_trained_by_the_workers_together(client, owner, tmp_path, m
     assert exp["backend"] == "distributed", exp["error"]
     st = exp["resources"]["distributed"]
     assert st["started_from"] == "successor_init"
+    # 0.10.1: chat warm-up first, chat-heavy finish last
+    assert [p["phase"] for p in exp["config"]["mixture_schedule"]] == ["chat warm-up", "curriculum", "chat finish"]
     arch = exp["config"]["rebirth"]["architecture"]
     jobs = ctx.db.all(select(training_jobs).where(training_jobs.c.kind == "dist_shard"))
     assert len(jobs) == 2 and all(json.loads(j["spec"])["model_config"]["d_model"] == arch["d_model"] for j in jobs)

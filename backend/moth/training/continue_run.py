@@ -109,7 +109,7 @@ def _run(spec: dict[str, Any]) -> dict[str, Any]:
         device=spec.get("device", "auto"), seed=int(spec.get("seed", 1337)),
         duty_cycle=float(spec.get("duty_cycle", 1.0)), gpu_memory_fraction=spec.get("gpu_memory_fraction"),
         init_from=None if spec.get("from_scratch") else str(init_path or (base / "model.pt")),
-        init_optimizer=True, mixture=spec.get("mixture"), keep_every=0,
+        init_optimizer=True, mixture=spec.get("mixture"), mixture_schedule=spec.get("mixture_schedule"), keep_every=0,
         lineage=dict(spec.get("lineage") or {}),
     )
     trainer = Trainer(cfg)

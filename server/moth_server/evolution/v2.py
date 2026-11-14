@@ -348,11 +348,46 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
                         "planned_hours": round(steps * tokens_per_step / max(1.0, speed) / 3600, 1)})
     cfg["eval_interval"] = max(int(cfg["eval_interval"]), steps // 40)
     cfg["checkpoint_interval"] = max(int(cfg["checkpoint_interval"]), steps // 40)
+    sched = chat_schedule(cfg["mixture"]["weights"])
+    if sched:  # 0.10.1: chat warm-up first, a chat-heavy finish last
+        cfg["mixture_schedule"] = sched
     a = rs["architecture"]
     _add(ctx, out, cfg, src, f"Right-sized successor: {rs['params_before']:,} → {rs['params_after']:,} parameters, "
          f"{a.get('max_seq_len', 0):,}-token context{', new BPE tokenizer' if tok else ''}, trained from scratch for "
          f"{steps:,} steps (about {cfg['rebirth']['planned_hours']} h at the measured speed; shared with the workers "
          "when they are online). It replaces the current model only if it passes every gate.", 99)
+
+
+CHAT_WARMUP = 0.08   # the first 8 % of a successor's steps: conversations only
+CHAT_FINISH = 0.85   # the last 15 %: mostly conversations (70 %), the rest as planned
+
+
+def chat_schedule(weights: dict[str, float]) -> list[dict] | None:
+    """0.10.1: a successor starts from nothing. It first learns the shape of a conversation (who speaks,
+    when a reply ends), then the whole curriculum, and ends on mostly conversation so its replies finish
+    cleanly — the check the first successor failed. None when the mixture has no conversation data."""
+    if not weights.get("conversation"):
+        return None
+    rest = {d: w for d, w in weights.items() if d != "conversation"}
+    total = sum(rest.values()) or 1.0
+    finish = {"conversation": 0.7, **{d: round(0.3 * w / total, 4) for d, w in rest.items()}}
+    return [{"until": CHAT_WARMUP, "weights": {"conversation": 1.0}, "phase": "chat warm-up"},
+            {"until": CHAT_FINISH, "weights": dict(weights), "phase": "curriculum"},
+            {"until": 1.01, "weights": finish, "phase": "chat finish"}]
+
+
+def blended_weights(weights: dict[str, float], schedule: list[dict] | None) -> dict[str, float]:
+    """The average mixture over a schedule (shared rounds sample their shards once)."""
+    if not schedule:
+        return weights
+    out: dict[str, float] = {}
+    start = 0.0
+    for ph in schedule:
+        span = min(1.0, float(ph["until"])) - start
+        for d, w in ph["weights"].items():
+            out[d] = out.get(d, 0.0) + span * float(w)
+        start = min(1.0, float(ph["until"]))
+    return out
 
 
 # 0.8.1: Evolution never runs out of work. Identical configurations are never repeated, so once every
