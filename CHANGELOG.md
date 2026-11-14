@@ -3,6 +3,11 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 0.9.2 — MOTH outgrows the seed
+
+- **Why MOTH could not write sentences:** One-click Start (and every Genesis Reset) begins with the "Seed" model — 99,648 parameters, 64 wide and 2 layers deep, described in the code itself as "learns very little; useful to verify the pipeline". Growth could only add layers or FFN width (never width of the model itself) by at most 50 % per step, behind several waiting gates, so after a night of training MOTH was still the same size. No amount of training makes a 100k-parameter model fluent; models that write simple coherent English start at a few million parameters.
+- **Right-sized successor (new):** each cycle MOTH computes the size its *measured* compute (MOTH Cloud plus workers) can train properly in about a day (≈ 20 training tokens per parameter). When the model is at least 4× smaller than that, MOTH trains a successor of that size from scratch on MOTH Cloud — wider and deeper, same tokenizer and curriculum — and promotes it only if it passes every gate against the current model (held-out loss, release check, retention, benchmarks). A rejected successor is retried once with twice the training; the Owner's parameter ceiling is respected and `growth.rebirth: false` turns it off. On a server like yours (≈ 50,000 tokens/s on the seed) that is a model of about 4–5 million parameters.
+
 ## 0.9.1 — Faster and smoother
 
 No new features: the same MOTH, measured faster and with a motion pass.

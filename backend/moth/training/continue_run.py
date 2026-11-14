@@ -89,6 +89,11 @@ def _run(spec: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("grown initialization checkpoint failed integrity verification")
         init_path = grown_path
         base_cfg = MothConfig.from_dict(grown["model_config"])
+    if spec.get("architecture") and spec.get("from_scratch"):
+        # 0.9.2: a right-sized successor keeps the vocabulary and context, with a new width and depth
+        keep = {k: v for k, v in spec["architecture"].items()
+                if k in ("d_model", "n_layers", "n_heads", "n_kv_heads", "ffn_hidden")}
+        base_cfg = MothConfig.from_dict({**base_cfg.to_dict(), **keep})
     seq_len = min(int(spec.get("seq_len", 256)), base_cfg.max_seq_len)
     cfg = TrainConfig(
         run_name=spec.get("name", "evolution"), dataset=str(spec["dataset"]), out_dir=str(run_dir),

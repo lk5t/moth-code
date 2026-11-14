@@ -401,11 +401,13 @@ def _need_bytes(ctx: Ctx, exp: dict) -> int:
     base = M.release(ctx, exp["base_version"])
     cfg = base["info"].get("config") or {}
     growth = exp["config"].get("grow") or {}
-    params = max(int(base["info"].get("params") or 0), int(growth.get("params_after") or 0))
-    layers = int(cfg.get("n_layers", 12)) + int(growth.get("add_layers", 0))
+    rebirth = exp["config"].get("rebirth") or {}
+    params = max(int(base["info"].get("params") or 0), int(growth.get("params_after") or 0),
+                 int(rebirth.get("params_after") or 0))
+    layers = int((rebirth.get("architecture") or {}).get("n_layers") or cfg.get("n_layers", 12)) + int(growth.get("add_layers", 0))
+    d_model = int((rebirth.get("architecture") or {}).get("d_model") or cfg.get("d_model", 512))
     return C.estimate_training_memory(params, exp["config"]["batch_size"],
-                                      exp["config"]["seq_len"], int(cfg.get("d_model", 512)),
-                                      layers)
+                                      exp["config"]["seq_len"], d_model, layers)
 
 
 def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
@@ -593,12 +595,12 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict, parallel: bool = 
     need = _need_bytes(ctx, exp)
     private = not B.worker_training_supported(ctx, exp, masks=True)  # never leaves MOTH Cloud
     token_only = private or not B.worker_training_supported(ctx, exp)  # sharded rounds carry no masks
-    if private:
+    if private or (exp.get("config") or {}).get("local_only"):  # 0.9.2: successors train on MOTH Cloud
         settings = {**settings, "backends": {**settings["backends"], "workers": False}}
     # conversation data (assistant-only loss mask) can go to workers that apply the mask
     choice, reasons = C.choose_backend(ctx, settings, need, None if not token_only or private else B.MASK_WORKER_VERSION)
     ok, n = D.available(ctx, settings, need)
-    ok = ok and not private  # 0.8.3: shared rounds carry the loss mask, so conversation data can be shared
+    ok = ok and not private and not (exp.get("config") or {}).get("local_only")  # 0.8.3: shared rounds carry the loss mask, so conversation data can be shared
     # Sharding one experiment across all workers only pays when nothing else could use them.
     if ok and not parallel and not (choice and choice.get("device", "").startswith("cuda")) and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
         st = D.start(ctx, exp, settings, need)

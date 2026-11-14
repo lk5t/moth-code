@@ -118,6 +118,10 @@ def _v2_spec(base: dict, cfg: dict, exp: dict, rd: Path | None = None) -> dict:
         out["init_checkpoint_sha256"] = cfg["resume"]["sha256"]
     if cfg.get("grow"):
         out["grow"] = {"add_layers": cfg["grow"]["add_layers"], "ffn_hidden": cfg["grow"]["ffn_hidden"]}
+    if cfg.get("rebirth"):  # 0.9.2: a right-sized successor: new shape, same tokenizer, trained from scratch
+        out["architecture"] = cfg["rebirth"]["architecture"]
+        out.pop("init_checkpoint", None)
+        out.pop("init_checkpoint_sha256", None)
     tr = base["info"].get("training") or {}
     out["lineage"] = {"lineage_id": base["info"].get("lineage_id"), "parent_version": base["version"],
                       "base_tokens": (base["info"].get("lineage_totals") or {}).get("tokens", tr.get('tokens')),

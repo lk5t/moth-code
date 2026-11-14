@@ -255,6 +255,9 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
 
         decision = CAP.assess(ctx, base, settings)
     out["growth"] = decision
+    if decision.get("action") == "rebirth" and decision.get("rebirth"):
+        _plan_rebirth(ctx, out, base, arch, src, tilted if tilted.get("weights") else balanced, settings,
+                      cycle_seed, decision)
     if g.get("enabled", True):
         cfg_model = MothConfig.from_dict(json.loads((Path(base["path"]) / "config.json").read_text()))
         if decision["grow"]:
@@ -292,6 +295,38 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
                      f"{opt['params']:,} parameters). It is trained as a separate candidate and must pass every "
                      "gate against the deployed model; otherwise it is discarded.", 99)
     return out
+
+
+REBIRTH_LR = 1e-3          # a fresh model learns fastest with a larger rate than continued training
+REBIRTH_MAX_HOURS = 10.0   # one successor run at most (it is checkpointed and resumable like any run)
+
+
+def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: dict, settings: dict, seed: int,
+                  decision: dict) -> None:
+    """0.9.2: a right-sized successor, trained from scratch on MOTH Cloud (see capacity.right_size)."""
+    rs = decision["rebirth"]
+    tr = settings["training"]
+    tokens_per_step = int(tr["batch_size"]) * int(tr["seq_len"])
+    # the successor trains about params_before/params_after as fast as the current model (compute-bound)
+    speed = float(rs["tokens_per_second_now"]) * rs["params_before"] / max(1, rs["params_after"])
+    # a successor that did not beat the current model is retried once with twice the training
+    retry = sum(1 for e in MEM.experiments(ctx, limit=200) if (e.get("config") or {}).get("rebirth")
+                and int(e["config"]["rebirth"].get("params_after") or 0) == rs["params_after"]
+                and e["status"] in ("rejected", "failed"))
+    hours = min(REBIRTH_MAX_HOURS * (2 ** retry), float(settings["budget"]["max_cycle_hours"]) * 0.9)
+    tokens = min(int(rs["tokens_target"]) * (2 ** retry), int(speed * hours * 3600))
+    steps = max(500, tokens // max(1, tokens_per_step))
+    cfg = _config(base, arch, src, mix, REBIRTH_LR, steps, settings, seed)
+    cfg.update(method="from_scratch", strategy="rebirth", local_only=True,
+               rebirth={"architecture": rs["architecture"], "params_before": rs["params_before"], "attempt": retry + 1,
+                        "params_after": rs["params_after"], "optimal_params": rs["optimal_params"],
+                        "planned_tokens": steps * tokens_per_step,
+                        "planned_hours": round(steps * tokens_per_step / max(1.0, speed) / 3600, 1)})
+    cfg["eval_interval"] = max(int(cfg["eval_interval"]), steps // 40)
+    cfg["checkpoint_interval"] = max(int(cfg["checkpoint_interval"]), steps // 40)
+    _add(ctx, out, cfg, src, f"Right-sized successor: {rs['params_before']:,} → {rs['params_after']:,} parameters, "
+         f"trained from scratch for {steps:,} steps (about {cfg['rebirth']['planned_hours']} h on MOTH Cloud) on the same "
+         "curriculum and tokenizer. It replaces the current model only if it passes every gate.", 99)
 
 
 # 0.8.1: Evolution never runs out of work. Identical configurations are never repeated, so once every

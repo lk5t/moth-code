@@ -49,7 +49,19 @@ CAPS: dict[str, tuple[str, list[str]]] = {
 }
 DEFAULTS = {"min_tokens_per_param": 20.0, "foundation_tokens_per_param": 2.0, "capability_window": 3,
             "cooldown_cycles": 3, "max_failed_attempts": 3, "min_domain_share": 0.03}
-ACTIONS = ("continue_training", "improve_data", "adjust_training", "foundation_training", "grow")
+ACTIONS = ("continue_training", "improve_data", "adjust_training", "foundation_training", "grow", "rebirth")
+
+# 0.9.2: right-sizing. Growth adds layers or FFN width step by step (≤ 1.5× each, behind several gates):
+# from a 100k-parameter seed it would take weeks to reach a size that can write sentences, and it can never
+# widen the model. When the model is far smaller than what the measured compute can train properly in a
+# day, MOTH instead trains a properly sized *successor* from scratch: same tokenizer (so held-out losses
+# stay comparable), same curriculum, same promotion gates — it replaces the current model only if it is
+# measurably better. Shapes grow in width and depth together, like the presets.
+SHAPES = ((128, 4, 4, 384), (192, 6, 6, 576), (256, 6, 4, 768), (320, 8, 5, 960), (384, 8, 6, 1152),
+          (512, 8, 8, 1536), (512, 12, 8, 1536), (640, 12, 10, 1920), (768, 12, 12, 2304))
+REBIRTH_FACTOR = 4.0          # a successor is planned when the right size is at least this many times larger
+TOKENS_PER_PARAM_TARGET = 20.0
+DAY_SECONDS = 86400.0
 
 
 def _cfg(settings: dict) -> dict:
@@ -220,6 +232,23 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
         out.update(action=action, headline=headline, reason=reason)
         return out
 
+    # 0.9.2: a model far too small for the available compute is replaced, not grown step by step
+    try:
+        rs = right_size(ctx, base, settings)
+    except Exception:  # noqa: BLE001 — sizing only refines the plan
+        rs = None
+    if rs:
+        blocked = rebirth_blocked(ctx, rs["params_after"])
+        cause("too_small", True, f"{params:,} parameters, while the measured compute can train about "
+              f"{rs['optimal_params']:,} properly in a day")
+        if not blocked:
+            out.update(rebirth=rs, params_after=rs["params_after"])
+            return decide("rebirth", f"MOTH is far too small to write sentences. Training a right-sized successor "
+                          f"({rs['params_after']:,} parameters).",
+                          f"{rs['params_before']:,} parameters is {rs['params_after'] / max(1, rs['params_before']):.0f}× "
+                          f"smaller than what the measured compute can train in about a day; growth adds at most 50% "
+                          f"per step and cannot widen the model, so a successor is trained from scratch on the same "
+                          f"data and tokenizer and replaces the current model only if it is measurably better")
     if not caps and not imps:
         return decide("continue_training", "Measuring MOTH's capabilities before deciding anything else.",
                       "no capability benchmark or held-out result has been recorded for this model yet")
@@ -331,6 +360,57 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
                target_capabilities=[r["capability"] for r in stalled])
     return decide("grow", "Current architecture may be limiting progress. Testing a larger candidate.",
                   out["causes"][-1]["detail"] + f": grow {best['ratio'] - 1:.0%} ({params:,} → {best['params']:,} parameters)")
+
+
+def right_size(ctx: Ctx, base: dict, settings: dict) -> dict | None:
+    """The architecture MOTH's measured compute can train properly in about a day (≈ 20 tokens per parameter),
+    or None when the current model is already close to it or nothing has been measured yet."""
+    from moth.model.config import MothConfig
+
+    from moth_server.evolution import compute as C
+
+    g = settings.get("growth") or {}
+    if not g.get("enabled", True) or g.get("rebirth", True) is False:
+        return None
+    cfg_model = MothConfig.from_dict(json.loads((Path(base["path"]) / "config.json").read_text()))
+    params = cfg_model.num_params()
+    tp = C.throughput(ctx)
+    local = float(tp.get("local:cuda") or tp.get("local:cpu") or 0.0)
+    if local <= 0:
+        return None  # nothing measured yet: the first runs measure it
+    workers = sum(float(v) for k, v in tp.items() if k.startswith("worker:") and v)
+    flops_per_s = 6.0 * params * (local + workers)  # compute is roughly 6 × parameters × tokens
+    optimal = math.sqrt(flops_per_s * DAY_SECONDS / (6.0 * TOKENS_PER_PARAM_TARGET))
+    max_params = int(g.get("max_params", 0)) or None
+    if max_params:
+        optimal = min(optimal, float(max_params))
+    shapes = []
+    for d, layers, heads, ffn in SHAPES:
+        c = MothConfig.from_dict({**cfg_model.to_dict(), "d_model": d, "n_layers": layers, "n_heads": heads,
+                                  "n_kv_heads": heads, "ffn_hidden": ffn})
+        shapes.append((c.num_params(), c))
+    fitting = [x for x in shapes if x[0] <= optimal]
+    if not fitting:
+        return None
+    n, cfg_new = max(fitting, key=lambda x: x[0])
+    if n < params * REBIRTH_FACTOR:
+        return None
+    return {"params_before": params, "params_after": n, "optimal_params": int(optimal),
+            "architecture": {k: getattr(cfg_new, k) for k in ("d_model", "n_layers", "n_heads", "n_kv_heads", "ffn_hidden")},
+            "tokens_per_second_now": local + workers,
+            "tokens_target": int(TOKENS_PER_PARAM_TARGET * n)}
+
+
+def rebirth_blocked(ctx: Ctx, params_after: int) -> str | None:
+    """A successor of this size is not tried again while one is running or soon after one was rejected."""
+    recent = [e for e in MEM.experiments(ctx, limit=200) if (e.get("config") or {}).get("rebirth")]
+    same = [e for e in recent if int(e["config"]["rebirth"].get("params_after") or 0) == params_after]
+    if any(e["status"] in ("planned", "waiting", "running", "paused", "trained", "evaluating") for e in recent):
+        return "a right-sized successor is already being trained"
+    failed = [e for e in same if e["status"] in ("rejected", "failed")]
+    if len(failed) >= 2:
+        return f"two successors of this size ({params_after:,} parameters) did not beat the current model"
+    return None
 
 
 def coherence_for(ctx: Ctx, base: dict) -> dict | None:
