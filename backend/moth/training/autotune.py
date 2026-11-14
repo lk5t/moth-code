@@ -13,6 +13,31 @@ from pathlib import Path
 import torch
 
 
+def _available_ram() -> int | None:
+    """RAM the kernel can hand out now: free pages *plus* reclaimable file cache (MemAvailable).
+
+    Free pages alone (SC_AVPHYS_PAGES) leave out the page cache, which on a server full of downloaded
+    datasets makes an almost idle machine look out of memory.
+    """
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        import psutil  # Windows / macOS
+        return int(psutil.virtual_memory().available)
+    except Exception:  # noqa: BLE001
+        pass
+    if hasattr(os, "sysconf"):
+        try:
+            return os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
+        except (OSError, ValueError):
+            return None
+    return None
+
+
 def tune_batch(model, batch, accumulation, sample, device, amp_dtype=None, max_trials=4, seq_len=None):
     if batch < 1 or accumulation < 1:
         raise ValueError("batch size and accumulation must be positive")
@@ -38,7 +63,7 @@ def tune_batch(model, batch, accumulation, sample, device, amp_dtype=None, max_t
                         fraction = read_fraction() if read_fraction else 1.0
                         available = min(free, total * fraction - torch.cuda.memory_allocated())
                     else:
-                        available = os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else None
+                        available = _available_ram()
                         try:
                             cap = Path("/sys/fs/cgroup/memory.max").read_text().strip()
                             if cap != "max":
@@ -49,7 +74,9 @@ def tune_batch(model, batch, accumulation, sample, device, amp_dtype=None, max_t
                     params = sum(p.numel() for p in model.parameters())
                     c = model.cfg
                     needed = params * 12 + micro * (seq_len or c.max_seq_len) * (c.d_model * c.n_layers * 136 + c.vocab_size * 4)
-                    if available is not None and needed > available * 0.8:
+                    # The estimate only skips *larger* microbatches: the smallest is always tried for real,
+                    # so a pessimistic estimate can never block training (a real failure is caught below).
+                    if micro != divisors[0] and available is not None and needed > available * 0.8:
                         trials.append({"batch_size": micro, "ok": False, "reason": "memory reserve"})
                         break
                     # Each probe gets its own fixed sample; the real sampler is never consumed.

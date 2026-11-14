@@ -3,6 +3,10 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.1 — Server fix: bigger successor could not start training
+
+- Fixed "RuntimeError: no microbatch fits" on MOTH Cloud. The memory check counted only completely free RAM and ignored the file cache (which fills up with downloaded datasets and is freed on demand), so an almost idle server looked full and the 7.2M successor was refused even at batch 1. It now reads the RAM the system can actually hand out, and the smallest batch is always tried for real instead of being skipped on an estimate.
+
 ## 1.0.0 — The biggest update: smarter assistant, agent, live app, connections
 
 **Training**

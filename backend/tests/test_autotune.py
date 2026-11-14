@@ -64,3 +64,22 @@ def test_no_random_restart_when_every_resumable_checkpoint_is_damaged(tmp_path):
             run({**spec, "steps": 3})
     assert checkpoint.with_name(checkpoint.name + ".corrupt").exists()
     assert (checkpoint.parent / "best.pt").read_bytes() == best
+
+
+def test_pessimistic_memory_estimate_never_blocks_the_smallest_batch(monkeypatch):
+    """1.0.1: a busy page cache made an idle server look full ("no microbatch fits")."""
+    import moth.training.autotune as at
+    monkeypatch.setattr(at, "_available_ram", lambda: 1024)  # absurdly low estimate
+    model = MothModel(preset("moth-tiny", vocab_size=320))
+    def sample(b):
+        ids = torch.randint(0, 320, (b, 17))
+        return ids[:, :-1], ids[:, 1:], None
+    result = tune_batch(model, 4, 2, sample, "cpu")
+    assert result["batch_size"] == 1 and result["grad_accum"] == 8
+    assert result["trials"][0]["ok"] and result["trials"][-1]["reason"] == "memory reserve"
+
+
+def test_available_ram_counts_reclaimable_cache():
+    from moth.training.autotune import _available_ram
+    ram = _available_ram()
+    assert ram is None or ram > 0
