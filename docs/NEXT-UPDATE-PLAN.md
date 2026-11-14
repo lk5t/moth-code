@@ -28,6 +28,13 @@ Agreed with the Owner. Nothing here is started until the Owner says go.
 - **Empty screens with personality** — a moth animation and a friendly tip instead of "nothing here".
 - All motion respects "reduce motion".
 
+## Training (agreed)
+- **Smart data cleaning** — MOTH scores every training text for quality and drops the junk automatically.
+- **Longer memory in chats + compaction** — train on long conversations; when a chat grows past the context,
+  MOTH summarises the earlier part itself and keeps going (like Claude Code's compaction), so long chats never
+  "forget" or break.
+- **Never forget** — replay a slice of older data in every run so new skills don't erase old ones.
+
 ## AI (recommended earlier; confirm)
 - 2–3× faster training (sequence packing, faster CPU maths, fused optimizer).
 - GPU support for workers.
