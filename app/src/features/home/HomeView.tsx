@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { requestChat } from "@/components/SidebarCollections";
 import { pickProject, openProjectPath } from "@/features/workspace/project-actions";
 import { StageMeter } from "@/features/intelligence/live/Learning";
+import { CloneGitHub } from "./CloneGitHub";
 
 type Any = Record<string, any>;
 
@@ -63,6 +64,8 @@ export function HomeView() {
           </div>
         </div>
       </header>
+
+      <CloneGitHub />
 
       <section aria-label="Today" className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile icon={<Zap />} label="Tokens learned (this run)" value={typeof m.tokens_seen === "number" ? m.tokens_seen : null} live={!!running} />

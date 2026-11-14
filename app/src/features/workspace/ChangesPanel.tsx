@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { GitBranch, GitCommitHorizontal, History, RefreshCw, Undo2 } from "lucide-react";
+import { GitBranch, GitCommitHorizontal, GitPullRequest, History, RefreshCw, Undo2, UploadCloud } from "lucide-react";
+import { gh } from "@/lib/github";
+import { openExternal } from "@/lib/external";
 import { get, post } from "@/lib/backend";
 import { useApp } from "@/lib/app-state";
 import { useEvent } from "@/lib/events";
@@ -29,6 +31,22 @@ function GitChanges() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  const [ghNote, setGhNote] = useState<string | null>(null);
+  const github = async (what: "push" | "pr") => {  // 1.0 GitHub connection: always on the user's click
+    if (!project) return;
+    try {
+      if (what === "push") {
+        const r = await gh<{ repo: string; branch: string }>(`/api/projects/${project.id}/github/push`, {});
+        setGhNote(`Pushed ${r.branch} to ${r.repo}.`);
+      } else {
+        const title = prompt("Pull request title", message || status?.branch || "");
+        if (!title) return;
+        const r = await gh<{ number: number; url: string }>(`/api/projects/${project.id}/github/pr`, { title, body: "Opened from MOTH Code." });
+        setGhNote(`Opened pull request #${r.number}.`);
+        if (r.url) void openExternal(r.url);
+      }
+    } catch (e) { setGhNote(String((e as Error).message ?? e)); }
+  };
   const load = async () => {
     if (!project) return;
     try {
@@ -78,8 +96,13 @@ function GitChanges() {
     <div className="flex h-full flex-col">
       <div className="flex h-9 items-center justify-between border-b border-border px-3">
         <span className="flex items-center gap-1.5 text-xs text-muted"><GitBranch className="size-3.5" />{status?.branch ?? "…"}</span>
-        <Button variant="ghost" size="icon-sm" onClick={load}><RefreshCw /></Button>
+        <span className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" title="Push this branch to GitHub" onClick={() => void github("push")}><UploadCloud /> Push</Button>
+          <Button variant="ghost" size="sm" title="Open a pull request on GitHub" onClick={() => void github("pr")}><GitPullRequest /> PR</Button>
+          <Button variant="ghost" size="icon-sm" onClick={load}><RefreshCw /></Button>
+        </span>
       </div>
+      {ghNote && <div role="status" className="px-3 py-1.5 text-[11px] text-muted">{ghNote}</div>}
       {error && <div className="px-3 py-1.5 text-[11px] text-danger">{error}</div>}
       <div className="flex gap-2 border-b border-border p-2">
         <Input placeholder="Commit message" value={message} onChange={(e) => setMessage(e.target.value)} />

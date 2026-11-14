@@ -47,6 +47,7 @@ class LoginIn(BaseModel):
     password: str = Field(max_length=256)
     remember: bool = True
     device_name: str | None = Field(default=None, max_length=128)
+    otp: str | None = Field(default=None, max_length=12)  # 1.0 two-factor code
 
 
 class TokenIn(BaseModel):
@@ -181,6 +182,16 @@ def login(body: LoginIn, request: Request, ctx: Ctx = Depends(get_ctx)):
     if user["email_verified_at"] is None:
         raise HTTPException(403, "Please verify your email address before signing in.",
                             headers={"X-Moth-Reason": "email_unverified"})
+    from moth_server import totp
+
+    if totp.enabled(ctx.db, user["id"]):  # 1.0 two-factor sign-in
+        if not body.otp:
+            raise HTTPException(401, "Enter the 6-digit code from your authenticator app.",
+                                headers={"X-Moth-Reason": "two_factor_required"})
+        if not totp.verify(totp.state(ctx.db, user["id"])["secret"], body.otp):
+            audit(ctx.db, "auth.login_failed", user["id"], "two_factor", ip=ip)
+            raise HTTPException(401, "That code is not right. Use the current code from your authenticator app.",
+                                headers={"X-Moth-Reason": "two_factor_required"})
     ctx.limiter.clear(f"login:user:{uname}")
     token = new_token()
     t = now()
@@ -378,3 +389,56 @@ def avatar(user_id: int, ctx: Ctx = Depends(get_ctx)):
         raise HTTPException(404, "No avatar.")
     return Response(row["avatar"], media_type=row["avatar_type"],
                     headers={"Cache-Control": "public, max-age=300", "X-Content-Type-Options": "nosniff"})
+
+
+# ---- 1.0 two-factor sign-in --------------------------------------------------------------------
+class OtpIn(BaseModel):
+    code: str = Field(max_length=12)
+    password: str | None = Field(default=None, max_length=256)
+
+
+@me_router.get("/me/2fa")
+def two_factor_status(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    from moth_server import totp
+
+    return {"enabled": totp.enabled(ctx.db, auth.uid)}
+
+
+@me_router.post("/me/2fa/setup")
+def two_factor_setup(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """Start setup: a new secret to add to an authenticator app (not active until confirmed with a code)."""
+    from moth_server import totp
+
+    if totp.enabled(ctx.db, auth.uid):
+        raise HTTPException(409, "Two-factor sign-in is already on.")
+    secret = totp.new_secret()
+    ctx.db.set_config(totp.KEY.format(auth.uid), {"secret": secret, "enabled": False})
+    return {"secret": secret, "uri": totp.uri(secret, auth.user["username"])}
+
+
+@me_router.post("/me/2fa/enable")
+def two_factor_enable(body: OtpIn, request: Request, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    from moth_server import totp
+
+    limit(ctx, f"2fa:user:{auth.uid}", 10, 900)
+    st = totp.state(ctx.db, auth.uid)
+    if not st.get("secret") or not totp.verify(st["secret"], body.code):
+        raise HTTPException(400, "That code is not right. Check the time on your phone and try the current code.")
+    ctx.db.set_config(totp.KEY.format(auth.uid), {"secret": st["secret"], "enabled": True})
+    audit(ctx.db, "auth.2fa_enabled", auth.uid, f"user:{auth.uid}", ip=client_ip(request))
+    return {"enabled": True}
+
+
+@me_router.post("/me/2fa/disable")
+def two_factor_disable(body: OtpIn, request: Request, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    from moth_server import totp
+
+    limit(ctx, f"2fa:user:{auth.uid}", 10, 900)
+    st = totp.state(ctx.db, auth.uid)
+    if not st.get("enabled"):
+        return {"enabled": False}
+    if not totp.verify(st["secret"], body.code) or not verify_password(auth.user["password_hash"], body.password or ""):
+        raise HTTPException(400, "Enter your password and the current code to turn two-factor sign-in off.")
+    ctx.db.set_config(totp.KEY.format(auth.uid), {})
+    audit(ctx.db, "auth.2fa_disabled", auth.uid, f"user:{auth.uid}", ip=client_ip(request))
+    return {"enabled": False}

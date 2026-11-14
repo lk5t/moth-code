@@ -256,3 +256,4 @@ button:not(:disabled):active { transform: scale(0.97); }
   .ambient, .ambient-hero::after, .moth-motion-sleeping, .moth-motion-cheering, .moth-motion-error { animation: none !important; }
   .lift:hover { transform: none; }
 }
+@keyframes bar-grow { from { transform: scaleY(0) } to { transform: scaleY(1) } }

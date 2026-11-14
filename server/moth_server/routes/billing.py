@@ -47,6 +47,30 @@ def usage_summary(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx
     return billing.summary(ctx.db, auth.user)
 
 
+@router.get("/usage-daily")
+def usage_daily(days: int = 30, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """1.0 usage page: tokens used per day (settled requests) for the last ``days`` days."""
+    import datetime as _dt
+
+    from moth_server.db import now as _now, usage_events
+
+    days = min(max(days, 1), 90)
+    since = _now() - days * 86400
+    rows = ctx.db.all(select(usage_events.c.settled_at, usage_events.c.input_tokens, usage_events.c.output_tokens)
+                      .where(usage_events.c.user_id == auth.uid, usage_events.c.status == "settled",
+                             usage_events.c.settled_at >= since))
+    per: dict[str, int] = {}
+    for r in rows:
+        day = _dt.datetime.fromtimestamp(float(r["settled_at"]), _dt.timezone.utc).strftime("%Y-%m-%d")
+        per[day] = per.get(day, 0) + int(r["input_tokens"] or 0) + int(r["output_tokens"] or 0)
+    today = _dt.datetime.now(_dt.timezone.utc).date()
+    out = []
+    for i in range(days - 1, -1, -1):
+        d = (today - _dt.timedelta(days=i)).isoformat()
+        out.append({"day": d, "tokens": per.get(d, 0)})
+    return out
+
+
 @router.get("/transactions")
 def list_transactions(limit: int = 100, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     return billing.transactions(ctx.db, auth.uid, min(max(limit, 1), 500))

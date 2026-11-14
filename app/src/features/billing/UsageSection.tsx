@@ -51,12 +51,14 @@ export function UsageSection() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [tx, setTx] = useState<{ usage: UsageEvent[]; ledger: LedgerRow[] }>({ usage: [], ledger: [] });
   const [msg, setMsg] = useState<string | null>(null);
+  const [daily, setDaily] = useState<{ day: string; tokens: number }[]>([]);
 
   const load = () => {
     serverApi<Plan[]>("/v1/billing/plans", { token: null }).then(setPlans).catch(() => {});
     if (user) {
       serverApi<Summary>("/v1/billing/summary").then(setSummary).catch(() => {});
       serverApi<{ usage: UsageEvent[]; ledger: LedgerRow[] }>("/v1/billing/transactions?limit=50").then(setTx).catch(() => {});
+      serverApi<{ day: string; tokens: number }[]>("/v1/billing/usage-daily?days=30").then(setDaily).catch(() => setDaily([]));
     }
   };
   useEffect(load, [user?.id]);
@@ -86,6 +88,7 @@ export function UsageSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        <UsageChart days={daily} />
         {summary && (
           <div className="rounded-lg border border-border p-3">
             <div className="flex items-center justify-between text-xs">
@@ -171,4 +174,20 @@ export function UsageSection() {
       </CardContent>
     </Card>
   );
+}
+
+
+/** 1.0 usage page: tokens used per day over the last 30 days (bars grow in; hover for the exact number). */
+function UsageChart({ days }: { days: { day: string; tokens: number }[] }) {
+  if (!days.length) return null;
+  const max = Math.max(1, ...days.map((d) => d.tokens));
+  const total = days.reduce((a, d) => a + d.tokens, 0);
+  return <figure aria-label="Tokens used per day" className="rounded-lg border border-border bg-bg p-3">
+    <figcaption className="mb-2 flex items-baseline justify-between text-xs"><span className="text-faint">Last 30 days</span>
+      <span className="font-mono text-fg">{total.toLocaleString()} tokens</span></figcaption>
+    <div className="flex h-24 items-end gap-[3px]">{days.map((d, i) =>
+      <div key={d.day} title={`${d.day}: ${d.tokens.toLocaleString()} tokens`} className="group relative flex-1">
+        <div className="w-full origin-bottom rounded-t bg-accent/70 transition-colors group-hover:bg-accent animate-[bar-grow_600ms_cubic-bezier(0.16,1,0.3,1)_both]"
+          style={{ height: `${Math.max(2, (d.tokens / max) * 96)}px`, animationDelay: `${i * 12}ms` }} /></div>)}</div>
+  </figure>;
 }

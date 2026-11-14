@@ -34,3 +34,18 @@ export async function pickProject() {
   }
   if (path) await openProjectPath(path);
 }
+
+/** 1.0: clone a GitHub repository into a folder the user picks, then open it. */
+export async function cloneFromGitHub(fullName: string) {
+  const { gh } = await import("@/lib/github");
+  let parent: string | null = null;
+  if (isTauri()) {
+    const res = await open({ directory: true, multiple: false, title: `Where should ${fullName} be cloned?` });
+    parent = typeof res === "string" ? res : null;
+  } else {
+    parent = window.prompt("Folder to clone into");
+  }
+  if (!parent) return;
+  const r = await gh<{ path: string }>("/api/github/clone", { full_name: fullName, parent_dir: parent });
+  await openProjectPath(r.path);
+}

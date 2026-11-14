@@ -19,6 +19,8 @@ export function AccountDialog() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");            // 1.0 two-factor sign-in
+  const [needOtp, setNeedOtp] = useState(false);
   const [remember, setRemember] = useState(true);
   const [code, setCode] = useState("");
   const [server, setServer] = useState(serverUrl);
@@ -49,7 +51,7 @@ export function AccountDialog() {
     try {
       if (server !== accountStore.getState().serverUrl) setServerUrl(server);
       if (mode === "login") {
-        await login(username, password, remember);
+        await login(username, password, remember, needOtp ? otp : undefined);
         close();
       } else if (mode === "register") {
         const r = await register(username, email, password, code);
@@ -63,6 +65,7 @@ export function AccountDialog() {
     } catch (err) {
       const se = err as ServerError;
       setUnverified(se.reason === "email_unverified");
+      if (se.reason === "two_factor_required") setNeedOtp(true);
       setError(se.status === 429 ? `Too many attempts. Try again in ${se.retryAfter || 60}s.` : se.message);
     } finally {
       setBusy(false);
@@ -110,6 +113,13 @@ export function AccountDialog() {
                 </div>
                 <Input className="mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                   autoComplete={mode === "register" ? "new-password" : "current-password"} required minLength={mode === "register" ? 10 : 1} />
+              </div>
+            )}
+            {mode === "login" && needOtp && (
+              <div className="animate-pop">
+                <Label>Code from your authenticator app</Label>
+                <Input className="mt-1 font-mono tracking-[0.3em]" inputMode="numeric" autoComplete="one-time-code" maxLength={6}
+                  value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} autoFocus required />
               </div>
             )}
             {mode === "register" && (

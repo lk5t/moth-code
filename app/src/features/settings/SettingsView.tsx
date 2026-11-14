@@ -23,6 +23,7 @@ import { ChatRetention } from "./ChatRetention";
 import { ConnectionSection } from "./ConnectionSection";
 import { AlertsSection } from "./AlertsSection";
 import { ConnectionsSection } from "./ConnectionsSection";
+import { TwoFactorSection } from "@/features/account/TwoFactorSection";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 /** Settings in a few plain groups instead of one long page (0.5.4). */
@@ -83,7 +84,7 @@ export function SettingsView() {
           ))}
         </TabsList>
         <TabsContent value={tab} className="flex flex-col gap-3">
-        {tab === "Account" && <><Button variant="secondary" onClick={reopenWelcome}>Show the quick introduction</Button><AccountSection /><ConnectionsSection /><ConnectionSection /></>}
+        {tab === "Account" && <><Button variant="secondary" onClick={reopenWelcome}>Show the quick introduction</Button><AccountSection /><TwoFactorSection /><ConnectionsSection /><ConnectionSection /></>}
         {tab === "Advanced" && (owner ? <>
           <p className="text-xs text-muted">Rarely needed, irreversible operations for the Owner. Everyday settings are in the other tabs.</p>
           <DiagnosticsPanel />

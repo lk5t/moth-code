@@ -359,12 +359,13 @@ export async function restoreSessionIfNeeded() {
   }
 }
 
-export async function login(username: string, password: string, remember = true) {
+export async function login(username: string, password: string, remember = true, otp?: string) {
   const server = normalizeServerUrl(accountStore.getState().serverUrl);
   const r = await serverApi<{ token: string; user: MothUser; remember: boolean }>("/v1/auth/login", {
     method: "POST",
     token: null,
-    json: { username, password, remember, device_name: navigator.platform ? `MOTH Code (${navigator.platform})` : "MOTH Code" },
+    json: { username, password, remember, device_name: navigator.platform ? `MOTH Code (${navigator.platform})` : "MOTH Code",
+      ...(otp ? { otp } : {}) },
   });
   const acct: SavedAccount = {
     server, username: r.user.username, display_name: r.user.display_name, avatar_url: r.user.avatar_url,
