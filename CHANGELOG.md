@@ -3,6 +3,49 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.0 — The biggest update: smarter assistant, agent, live app, connections
+
+**Training**
+- About 1.5× faster training steps: long runs use compiled training (with a safe fallback), and the optimizer updates all weights at once.
+- Learned data quality: each data preparation learns what good text looks like from the curated sources (textbooks, stories, Wikipedia, hand-written conversations) and drops the weakest 15 % of web text.
+- Never forget: older data now makes up to 10 % of every training mix (it was a fixed small slice), so new skills don't erase old ones.
+- Every run now ends on mostly conversation (the last 15 %), and successors also start with a chat warm-up, targeting the checks that rejected v124 and v125.
+- Long chats are compacted: older messages are summarised instead of cut off mid-message, and MOTH says when that happened.
+- AMD graphics cards on Linux (ROCm) join NVIDIA as automatic GPU workers.
+
+**Assistant**
+- MOTH remembers you: say "remember that …", "my name is …" or "I prefer …" and it keeps it in mind in every chat (Settings → Memory shows and deletes it).
+- Project brain: answers about your project also see which files use the ones found, and which they use.
+- Plan first: tick "Show me the plan first", edit MOTH's plan, then approve it before anything changes.
+- Self-check: before finishing, MOTH checks that every file it changed still parses, and fixes it if not.
+- Undo anything: Changes lists MOTH's changes; go back to before any of them in one click (later changes are undone too).
+- Fix this: select an error in the terminal (or use the last output) and MOTH finds the cause and fixes it.
+- Error watcher: when a command prints an error, MOTH offers to fix it.
+- Learns from your fixes: an undone change is remembered so the next task avoids it; 👍/👎 with corrections still feed training (with consent).
+- Honest answers: a reply that looks garbled is labelled as such, with "Try again".
+
+**Agent**
+- Live preview: when a command starts a local web server, its page opens in a preview that reloads as files change.
+- Background tasks: tasks keep running while you chat; a notification arrives when one finishes or its plan is ready.
+- Write & run tests in one click.
+
+**The app feels alive**
+- New Home screen: a greeting, what MOTH is doing, today's numbers, the learning stage, recent projects and chats, and live activity.
+- The moth has moods: it sleeps when nothing happens, cheers after a promotion and looks worried on errors.
+- A soft ambient glow that follows what MOTH is doing; code blocks unfold; links glow; cards lift and tilt; pages slide in; empty screens get a moth and a tip.
+- Live counters in the status bar (tokens learned, workers online); optional sounds (off by default).
+
+**Network and accounts**
+- GitHub connection (Settings → Account → Connections): clone your repositories from Home, and pull, push, open pull requests and invite friends to a shared project from Changes. The token stays in your computer's credential vault and never ends up in git config or logs.
+- Two-factor sign-in with any authenticator app.
+- Usage page: tokens used per day for the last 30 days.
+- Compute marketplace: your own computers now earn credits too (5 per 1,000 trained tokens, within the monthly limit), alongside referral rewards.
+- Offline mode (MOTH on your own computer) is part of the Pro and Max plans.
+- Faster updates: the app checks every 10 minutes, rollout stages last 30 minutes instead of 6 hours, and MOTH Cloud's update agent checks every 5 minutes. Signatures, health checks and automatic rollback are unchanged.
+- Backups: the Owner Dashboard lists MOTH Cloud's verified backups and has "Back up now".
+
+Not included, honestly: AMD/Intel graphics cards on Windows (training there is not reliable enough yet), and live co-editing of the same files at the same moment (shared projects work through GitHub instead).
+
 ## 0.10.1 — Successors learn to chat first
 
 - The first right-sized successor (2.9M parameters) was rejected: besides the old speed rule (fixed in 0.10.0), its replies did not end cleanly as often as the current model's. A successor now trains in three phases: a chat warm-up (the first 8 % of its steps on conversations only: who speaks, when a reply ends), the whole curriculum, and a chat-heavy finish (the last 15 %: 70 % conversations). Shared rounds use the same mix on average. It is still promoted only if it passes every check; until then the current model keeps answering.

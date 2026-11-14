@@ -1,4 +1,4 @@
-# Next big update — plan (approved: build everything, ship as one release)
+# 1.0.0 plan — built and shipped as one release (see CHANGELOG 1.0.0 for what was delivered)
 
 Agreed with the Owner. Build order (each part tested before the next): training → assistant → agent → app alive →
 network & accounts. Published together as one release.
