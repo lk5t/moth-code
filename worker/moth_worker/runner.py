@@ -451,6 +451,9 @@ class WorkerRunner:
                 train_loss = 0.0
                 for _ in range(accumulation):
                     x, y, m = sample(micro)
+                    if train.get("short_context"):  # 1.0.5: early shared rounds train on short rows (same tokens)
+                        from moth.training.speedups import fold
+                        x, y, m = fold(x, y, m, int(train["short_context"]))
                     _, loss = model(x, y, loss_mask=m)
                     if not torch.isfinite(loss):
                         raise RuntimeError("training diverged (non-finite loss)")

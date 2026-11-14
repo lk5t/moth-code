@@ -28,6 +28,7 @@ from moth.model.tokenizer import Tokenizer
 from moth.model.transformer import MothModel
 from moth.training.checkpoint import (RunLock, latest_checkpoint, load_checkpoint, load_latest_verified,
                                      save_checkpoint)
+from moth.training.speedups import fold, physical_cores
 from moth.training.data import MixtureDataset, dataset_meta, open_dataset
 
 
@@ -70,6 +71,9 @@ class TrainConfig:
     # 0.10.1: phases of the run with their own mixture weights: [{"until": 0.1, "weights": {...}}, ...]
     # (fractions of max_steps; after the last phase the run uses ``mixture``)
     mixture_schedule: list[dict[str, Any]] | None = None
+    # 1.0.5: train the first ``short_until`` of the run on ``short_context``-token rows (same tokens)
+    short_context: int = 0
+    short_until: float = 0.0
     threads: int | None = None  # CPU threads (None = all but one)
     lineage: dict[str, Any] = field(default_factory=dict)  # lineage id, parent checkpoint, cumulative counters
 
@@ -271,7 +275,8 @@ class Trainer:
             torch.cuda.set_per_process_memory_fraction(float(cfg.gpu_memory_fraction))
         if self.device == "cpu":
             from moth.training.resources import cpu_count
-            torch.set_num_threads(min(cpu_count(), max(1, int(cfg.threads or max(1, cpu_count() - 1)))))
+            # 1.0.5: one thread per physical core (hyper-threads slow training down)
+            torch.set_num_threads(min(cpu_count(), max(1, int(cfg.threads or min(physical_cores(), max(1, cpu_count() - 1))))))
         if self.device == "cuda":
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
@@ -390,6 +395,8 @@ class Trainer:
                 loss_acc = 0.0
                 for _ in range(cfg.grad_accum):
                     x, y, m = train.batch(cfg.batch_size, data_gen, self.device)
+                    if cfg.short_context and self.step < cfg.short_until * cfg.max_steps:
+                        x, y, m = fold(x, y, m, cfg.short_context)
                     with torch.autocast(self.device, dtype=amp_dtype, enabled=amp_dtype is not None):
                         _, loss = fwd(x, y, loss_mask=m)
                         loss = loss / cfg.grad_accum

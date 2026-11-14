@@ -3,6 +3,13 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.5 — Faster training
+
+- Short context first: long-context runs (the 1,024-token successor) train their first 70 % on 256-token rows cut from the same batches (same tokens, same schedule), then the rest at full length. Attention over 256 instead of 1,024 tokens makes those steps much cheaper; shared rounds and workers do the same.
+- Fuller steps: a successor now trains at least 8,192 tokens per step (it was 2,048: two 1,024-token rows left the CPU mostly idle). The token budget is unchanged.
+- One training thread per physical CPU core (hyper-threads slowed training down).
+- A successor that is resumed (e.g. handed over to shared training) continues from its checkpoint instead of from fresh weights.
+
 ## 1.0.4 — Windows installer finds NVIDIA GPUs
 
 - The Windows worker install missed every NVIDIA GPU (e.g. an RTX 3050) and installed CPU-only PyTorch: PowerShell's `-match` on nvidia-smi's list of lines never records the CUDA version. It now joins the lines, also looks in NVIDIA's install folders and Windows' list of graphics cards, and replaces a CPU-only PyTorch from an earlier install with the GPU build.

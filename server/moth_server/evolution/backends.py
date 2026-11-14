@@ -112,6 +112,13 @@ def _v2_spec(base: dict, cfg: dict, exp: dict, rd: Path | None = None) -> dict:
         out["mixture"] = cfg["mixture"]["weights"]
         if cfg.get("mixture_schedule"):
             out["mixture_schedule"] = cfg["mixture_schedule"]
+    if cfg.get("short_context"):  # 1.0.5: a resumed run keeps the short phase where the whole run had it
+        until = float(cfg.get("short_until") or 0)
+        res = cfg.get("resume") or {}
+        if res.get("step"):
+            planned = int(res.get("planned_steps") or cfg["steps"])
+            until = max(0.0, (until * planned - int(res["step"])) / max(1, int(cfg["steps"])))
+        out["short_context"], out["short_until"] = int(cfg["short_context"]), round(min(1.0, until), 4)
     dev = base["info"].get("dev_checkpoint") or {}
     if dev.get("path"):
         out["init_checkpoint"], out["init_checkpoint_sha256"] = dev["path"], dev.get("sha256")
@@ -122,8 +129,9 @@ def _v2_spec(base: dict, cfg: dict, exp: dict, rd: Path | None = None) -> dict:
         out["grow"] = {"add_layers": cfg["grow"]["add_layers"], "ffn_hidden": cfg["grow"]["ffn_hidden"]}
     if cfg.get("rebirth"):  # 0.9.2: a right-sized successor: new shape, same tokenizer, trained from scratch
         out["architecture"] = cfg["rebirth"]["architecture"]
-        out.pop("init_checkpoint", None)
-        out.pop("init_checkpoint_sha256", None)
+        if not (cfg.get("resume") and rd is not None):  # 1.0.5: a resumed successor keeps its own progress
+            out.pop("init_checkpoint", None)
+            out.pop("init_checkpoint_sha256", None)
     tr = base["info"].get("training") or {}
     out["lineage"] = {"lineage_id": base["info"].get("lineage_id"), "parent_version": base["version"],
                       "base_tokens": (base["info"].get("lineage_totals") or {}).get("tokens", tr.get('tokens')),

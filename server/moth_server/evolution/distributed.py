@@ -229,7 +229,10 @@ def _create_round_jobs(ctx: Ctx, exp: dict, base: dict, st: dict, need_bytes: in
                        if (rd / f"shard-{i}.mask").exists() else {}),
                     "train": {"steps": st["local_steps"], "lr": cfg["lr"], "batch_size": cfg["batch_size"],
                               "batch_autotune": bool(cfg.get("batch_autotune", True)),
-                              "seq_len": cfg["seq_len"], "weight_decay": cfg["weight_decay"]},
+                              "seq_len": cfg["seq_len"], "weight_decay": cfg["weight_decay"],
+                              # 1.0.5: early rounds use the short context, like a local run
+                              **({"short_context": int(cfg["short_context"])}
+                                 if cfg.get("short_context") and r < float(cfg.get("short_until") or 0) * st["rounds"] else {})},
                     "protocol": PROTOCOL, "requirements": {"memory_bytes": int(need_bytes)}, "prefer_gpu": True}
             jid = c.execute(training_jobs.insert().values(**next_job_values(ctx,c), kind="dist_shard", status="queued", spec=json.dumps(spec),
                                                           attempts=0, max_attempts=3, created_at=now(),

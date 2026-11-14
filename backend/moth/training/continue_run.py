@@ -108,8 +108,10 @@ def _run(spec: dict[str, Any]) -> dict[str, Any]:
         checkpoint_interval=int(spec.get("checkpoint_interval", 50)), keep_checkpoints=2,
         device=spec.get("device", "auto"), seed=int(spec.get("seed", 1337)),
         duty_cycle=float(spec.get("duty_cycle", 1.0)), gpu_memory_fraction=spec.get("gpu_memory_fraction"),
-        init_from=None if spec.get("from_scratch") else str(init_path or (base / "model.pt")),
+        init_from=(str(init_path) if init_path else None) if spec.get("from_scratch")
+        else str(init_path or (base / "model.pt")),  # 1.0.5: a resumed successor continues from its checkpoint
         init_optimizer=True, mixture=spec.get("mixture"), mixture_schedule=spec.get("mixture_schedule"), keep_every=0,
+        short_context=int(spec.get("short_context") or 0), short_until=float(spec.get("short_until") or 0.0),
         lineage=dict(spec.get("lineage") or {}),
     )
     trainer = Trainer(cfg)

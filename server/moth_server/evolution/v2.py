@@ -315,6 +315,10 @@ REBIRTH_MAX_HOURS = 10.0   # one successor run at most (it is checkpointed and r
 REBIRTH_MIN_STEPS = 500
 
 
+MIN_SUCCESSOR_STEP_TOKENS = 8192
+from moth.training.speedups import SHORT_CONTEXT, SHORT_UNTIL  # noqa: E402
+
+
 def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: dict, settings: dict, seed: int,
                   decision: dict) -> None:
     """0.9.2: a right-sized successor, trained from scratch (see capacity.right_size).
@@ -338,6 +342,9 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
     seq = int(rs.get("seq_len") or tr["seq_len"])
     # the same tokens per step as other runs: a longer context uses a smaller batch
     batch = max(1, int(tr["batch_size"]) * int(tr["seq_len"]) // seq)
+    # 1.0.5: at least 8,192 tokens per step: two 1,024-token rows left a CPU mostly idle each step
+    # (the token budget is unchanged: fewer, fuller steps)
+    batch = max(batch, MIN_SUCCESSOR_STEP_TOKENS // seq)
     tokens_per_step = batch * seq
     speed = float(rs.get("successor_tokens_per_second")
                   or float(rs["tokens_per_second_now"]) * rs["params_before"] / max(1, rs["params_after"]))
@@ -349,6 +356,8 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
     tokens = min(int(rs["tokens_target"]) * (2 ** retry), int(speed * hours * 3600))
     steps = max(REBIRTH_MIN_STEPS, tokens // max(1, tokens_per_step))
     cfg = _config(base, arch, src, mix, REBIRTH_LR, steps, settings, seed)
+    if seq > SHORT_CONTEXT and seq % SHORT_CONTEXT == 0:  # 1.0.5: short context first, full length at the end
+        cfg.update(short_context=SHORT_CONTEXT, short_until=SHORT_UNTIL)
     cfg.update(method="from_scratch", strategy="rebirth", batch_size=batch, seq_len=seq, no_single_worker=True,
                rebirth={"architecture": rs["architecture"], "params_before": rs["params_before"], "attempt": retry + 1,
                         "params_after": rs["params_after"], "optimal_params": rs["optimal_params"],
