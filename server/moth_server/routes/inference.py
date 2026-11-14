@@ -137,7 +137,8 @@ def chat(request: Request, body: dict, auth: Auth = Depends(current_auth), ctx: 
             yield json.dumps({"text": out.text if out.allowed else out.message}) + "\n"
             yield json.dumps({"done": True, "stats": {
                 "prompt_tokens": stats.prompt_tokens, "generated_tokens": stats.generated_tokens,
-                "seconds": stats.seconds, "stop_reason": stats.stop_reason}}) + "\n"
+                "seconds": stats.seconds, "stop_reason": stats.stop_reason,
+                "compacted": bool(getattr(stats, "compacted", False))}}) + "\n"
             ok = True
         except Exception as e:  # noqa: BLE001
             yield json.dumps({"error": f"{type(e).__name__}"}) + "\n"

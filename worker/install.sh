@@ -58,7 +58,11 @@ if [[ $SYSTEM_TORCH -eq 0 ]] && ! "$PREFIX/bin/python" -c 'import torch' 2>/dev/
   else
     if [[ -z "$TORCH_INDEX" ]]; then
       CUDA="$(nvidia-smi 2>/dev/null | sed -n 's/.*CUDA Version: \([0-9]*\)\.\([0-9]*\).*/\1\2/p' | head -1 || true)"
-      if [[ -z "$CUDA" ]]; then TORCH_INDEX="https://download.pytorch.org/whl/cpu"; say "no NVIDIA GPU found: this will be a CPU worker"
+      ROCM=""
+      if [[ -z "$CUDA" ]] && { command -v rocminfo >/dev/null 2>&1 || [[ -d /opt/rocm ]]; } \
+         && rocminfo 2>/dev/null | grep -q "gfx"; then ROCM=1; fi
+      if [[ -n "$ROCM" ]]; then TORCH_INDEX="https://download.pytorch.org/whl/rocm6.3"; say "AMD GPU found (ROCm): this will be a GPU worker"
+      elif [[ -z "$CUDA" ]]; then TORCH_INDEX="https://download.pytorch.org/whl/cpu"; say "no supported GPU found: this will be a CPU worker"
       elif (( CUDA >= 128 )); then TORCH_INDEX="https://download.pytorch.org/whl/cu128"
       elif (( CUDA >= 126 )); then TORCH_INDEX="https://download.pytorch.org/whl/cu126"
       else TORCH_INDEX="https://download.pytorch.org/whl/cu118"; fi

@@ -46,3 +46,20 @@ def test_mixture_schedule_phases():
     assert phase_weights(cfg, 0) == {"conversation": 1.0}
     assert phase_weights(cfg, 50)["code"] == 0.5
     assert phase_weights(cfg, 99)["conversation"] == 0.7
+
+
+def test_long_chats_are_compacted_not_cut():
+    from moth.model.chat_format import Message, compact, encode_chat
+
+    tok = Tokenizer([])
+    msgs = [Message("system", "You are MOTH.")]
+    for i in range(30):
+        msgs += [Message("user", f"Question number {i}: what is {i} plus {i}? Please explain."),
+                 Message("assistant", f"The answer is {2 * i}. Adding {i} twice gives {2 * i}.")]
+    msgs.append(Message("user", "And what was my first question?"))
+    out, did = compact(tok, msgs, 600)
+    assert did and len(encode_chat(tok, out)[0]) <= 600
+    assert out[0].content == "You are MOTH." and out[-1].content == "And what was my first question?"
+    assert any("Earlier in this conversation" in m.content for m in out)
+    short, did = compact(tok, msgs[:3], 600)
+    assert not did and short == msgs[:3]

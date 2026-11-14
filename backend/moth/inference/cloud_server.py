@@ -55,7 +55,8 @@ def create_cloud_app(engine: LocalInference, api_key: str | None = None) -> Fast
                     yield json.dumps({"text": c}) + "\n"
                 yield json.dumps({"done": True, "stats": {
                     "prompt_tokens": stats.prompt_tokens, "generated_tokens": stats.generated_tokens,
-                    "seconds": stats.seconds, "stop_reason": stats.stop_reason}}) + "\n"
+                    "seconds": stats.seconds, "stop_reason": stats.stop_reason,
+                    "compacted": bool(getattr(stats, "compacted", False))}}) + "\n"
             except Exception as e:
                 yield json.dumps({"error": f"{type(e).__name__}: {e}"}) + "\n"
 

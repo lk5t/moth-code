@@ -58,6 +58,7 @@ class TrainConfig:
     keep_every: int = 0  # also keep every N-th step's checkpoint (milestones)
     device: str = "auto"  # auto | cuda | cpu
     precision: str = "auto"  # auto | bf16 | fp16 | fp32
+    compile: str = "auto"    # 1.0: auto (long runs) | on | off — torch.compile, ≈1.4× faster steps after ~30 s warm-up
     seed: int = 1337
     gradient_checkpointing: bool = False
     # Resource limits (used by community training and user scheduling)
@@ -179,6 +180,32 @@ class Trainer:
             self.emit("sample", step=self.step, prompt=self.SAMPLE_PROMPT, text=text.strip()[:240])
         except Exception:  # noqa: BLE001 — a sample is only for watching; it never stops training
             model.train()
+
+    COMPILE_MIN_STEPS = 1500
+
+    def _fast_forward(self, model):
+        """1.0: the training forward pass, compiled with torch.compile for long runs (worth its ~30 s warm-up).
+        Any compile problem falls back to the normal forward pass, so training never fails because of it.
+        Weights, checkpoints and samples always use the plain model (no compiled-module key prefixes)."""
+        mode = (self.cfg.compile or "auto").lower()
+        if mode == "off" or (mode == "auto" and self.cfg.max_steps - self.step < self.COMPILE_MIN_STEPS):
+            return model
+        try:
+            compiled = torch.compile(model)
+        except Exception:  # noqa: BLE001 — not available on this platform
+            return model
+        state = {"fn": compiled}
+
+        def forward(*a, **k):
+            try:
+                return state["fn"](*a, **k)
+            except Exception as e:  # noqa: BLE001 — compile failed at first use: train normally
+                if state["fn"] is model:
+                    raise
+                self.emit("compile_fallback", error=f"{type(e).__name__}: {e}"[:300])
+                state["fn"] = model
+                return model(*a, **k)
+        return forward
 
     def emit(self, kind: str, **data: Any) -> None:
         event = {"kind": kind, "run": self.cfg.run_name, "step": self.step, "tokens_seen": self.tokens_seen, **data}
@@ -345,6 +372,7 @@ class Trainer:
             }, keep=cfg.keep_checkpoints, keep_every=cfg.keep_every)
             self.emit("checkpoint", path=str(latest_checkpoint(self.run_dir)))
 
+        fwd = self._fast_forward(model)
         try:
             while self.step < cfg.max_steps:
                 if self.should_stop():
@@ -363,7 +391,7 @@ class Trainer:
                 for _ in range(cfg.grad_accum):
                     x, y, m = train.batch(cfg.batch_size, data_gen, self.device)
                     with torch.autocast(self.device, dtype=amp_dtype, enabled=amp_dtype is not None):
-                        _, loss = model(x, y, loss_mask=m)
+                        _, loss = fwd(x, y, loss_mask=m)
                         loss = loss / cfg.grad_accum
                     if not torch.isfinite(loss):
                         raise FloatingPointError(f"non-finite loss at step {self.step}")

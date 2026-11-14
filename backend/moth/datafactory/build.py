@@ -163,6 +163,7 @@ def build(cache: Path, out: Path, config: dict[str, Any] | None = None,
     domain_out: dict[str, Any] = {}
     domain_stats: dict[str, dict[str, int]] = {}
     digest = hashlib.sha256()
+    learned, thresholds = _learned_quality(sources, records, cfg, log)
     for src in sources:
         st = stats.setdefault(src["id"], {"read": 0, "kept": 0, "holdout": 0, "chars": 0, "pii_redactions": 0})
         cap = cfg["max_chars"].get(src["id"])
@@ -183,6 +184,12 @@ def build(cache: Path, out: Path, config: dict[str, Any] | None = None,
                 why = "too_short"
             if why is None and score < cfg["min_quality"].get(d, 0.5):
                 why = "low_quality"
+            if why is None and src["id"] in thresholds:
+                lq = learned.score(text)
+                if lq < thresholds[src["id"]]:
+                    why = "learned_low_quality"  # 1.0: reads least like the curated reference text
+                else:
+                    rec["learned_quality"] = round(lq, 4)
             if why is None and decon.contaminated(text):
                 why = "eval_overlap"
             if why is None:
@@ -414,3 +421,37 @@ def _domains_of(src: dict[str, Any]) -> set[str]:
     if src["id"] == "dolly-15k":
         return set(catalog.DOLLY_DOMAINS.values())
     return {src["domain"]}
+
+
+LEARNED_SAMPLE = 3000
+
+
+def _learned_quality(sources, records, cfg, log):
+    """1.0: fit the learned quality model on samples of the reference and web sources of this build."""
+    from moth.datafactory import quality_model as QM
+
+    drop = float(cfg.get("learned_quality_drop", 0.15))
+    web = [s for s in sources if s["id"] in QM.FILTERED]
+    ref = [s for s in sources if s["id"] in QM.REFERENCE]
+    model = QM.QualityModel()
+    if drop <= 0 or not web or not ref:
+        return model, {}
+    samples: dict[str, list[str]] = {}
+    for group, is_ref in ((ref, True), (web, False)):
+        for src in group:
+            texts = []
+            for rec in records(src):
+                texts.append(clean.record_text(rec))
+                if len(texts) >= LEARNED_SAMPLE:
+                    break
+            for t in texts:
+                model.add(t, is_ref)
+            if not is_ref:
+                samples[src["id"]] = texts
+    model.fit()
+    if not model.ready:
+        return model, {}
+    thresholds = {sid: QM.threshold((model.score(t) for t in texts), drop) for sid, texts in samples.items()}
+    log(f"learned quality filter: dropping the lowest {drop:.0%} of {', '.join(thresholds)} "
+        "(compared with the curated reference text)")
+    return model, thresholds

@@ -63,8 +63,14 @@ class LocalInference:
         with self._lock:
             if self.model is None:
                 raise NoModelLoaded("No MOTH model is loaded. Train and export a model, then load it in Models.")
+            # 1.0: long chats are compacted (older turns summarised) instead of cut mid-message
+            from moth.model.chat_format import compact
+
+            budget = max(32, self.model.cfg.max_seq_len - min(params.max_new_tokens, self.model.cfg.max_seq_len // 2))
+            messages, compacted = compact(self.tokenizer, messages, budget)
             ids, _ = encode_chat(self.tokenizer, messages, add_generation_prompt=True)
             stats = GenerationStats()
+            stats.compacted = compacted
             params = chat_quality(params, byte_level=not self.tokenizer.merges)  # 0.10.0: cleaner replies
             for piece in generate_stream(self.model, self.tokenizer, ids, params, cancel_event=cancel_event,
                                          stats=stats):

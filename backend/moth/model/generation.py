@@ -72,6 +72,7 @@ class GenerationStats:
     prompt_tokens: int = 0
     generated_tokens: int = 0
     seconds: float = 0.0
+    compacted: bool = False  # 1.0: older turns of a long chat were summarised to fit the context
     stop_reason: str = ""  # eos | stop_string | max_tokens | context | cancelled | repetition | sentence_end
 
     @property

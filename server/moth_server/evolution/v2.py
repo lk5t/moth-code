@@ -60,6 +60,12 @@ def mixture_source(ctx: Ctx, base: dict, fingerprint: str | None = None) -> dict
     return None
 
 
+REPLAY_VERSION = 2
+REPLAY_SHARE = 0.10
+REPLAY_MIN = 65_536
+REPLAY_MAX = 5_000_000
+
+
 def _replay_source(ctx, base, source, builds, approved):
     """Compose current data with bounded historical samples; never alter original builds."""
     import numpy as np
@@ -91,7 +97,7 @@ def _replay_source(ctx, base, source, builds, approved):
             shas.append(b["content_sha256"])
     if len(shas) == 1 and set(parts) == set(source["domain_tokens"]):
         return source
-    digest = MEM.config_hash({"builds": shas, "datasets": sorted(ids), "replay_tokens": 65536})
+    digest = MEM.config_hash({"builds": shas, "datasets": sorted(ids), "replay": REPLAY_VERSION})
     dest = Path(ctx.settings.data_dir) / "evolution" / "mixtures" / digest
     if not (dest / "mixture.json").exists():
         dest.mkdir(parents=True, exist_ok=True)
@@ -111,7 +117,11 @@ def _replay_source(ctx, base, source, builds, approved):
                         sources.update(json.dumps(s, sort_keys=True) for s in old_meta.get("sources", []))
                         tokens = np.memmap(path / f"{split}.bin", dtype=old_meta["dtype"], mode="r")
                         mask = np.memmap(path / f"{split}.mask", dtype=np.uint8, mode="r")
-                        n = len(tokens) if current else min(len(tokens), 65536)
+                        # 1.0 "never forget": each older build contributes up to 10 % of the current
+                        # build's tokens for that domain (at least 64k, at most 5M), not a fixed 64k
+                        quota = min(REPLAY_MAX, max(REPLAY_MIN, int(REPLAY_SHARE * int(
+                            (source.get("domain_tokens") or {}).get(domain) or 0))))
+                        n = len(tokens) if current else min(len(tokens), quota)
                         np.asarray(tokens[:n], dtype=meta["dtype"]).tofile(toks)
                         np.asarray(mask[:n], dtype=np.uint8).tofile(masks)
                         count += n

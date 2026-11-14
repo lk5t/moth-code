@@ -177,3 +177,23 @@ def test_cli_end_to_end(tmp_path, corpus_dir):
     p = subprocess.run([*env_py, "generate", "--model", str(tmp_path / "m/cli-model"), "--prompt", "def ",
                         "--max-new-tokens", "10"], cwd=cwd, capture_output=True, text=True, timeout=120)
     assert p.returncode == 0, p.stderr
+
+
+def test_compiled_training_learns_and_falls_back_safely(tiny_pipeline, tmp_path, monkeypatch):
+    """1.0: long runs train through torch.compile; a compile failure falls back to the normal forward pass."""
+    import torch
+
+    events = []
+    result = Trainer(cfg(tiny_pipeline, tmp_path / "c", compile="on", max_steps=30), on_event=events.append).run()
+    assert result["reason"] == "completed" and result["step"] == 30
+    losses = [e["loss"] for e in events if e["kind"] == "metrics" and e["split"] == "train"]
+    assert losses[-1] < losses[0]
+
+    def broken(model, *a, **k):
+        def fail(*a, **k):
+            raise RuntimeError("no compiler on this computer")
+        return fail
+    monkeypatch.setattr(torch, "compile", broken)
+    events = []
+    result = Trainer(cfg(tiny_pipeline, tmp_path / "f", compile="on", max_steps=10), on_event=events.append).run()
+    assert result["reason"] == "completed" and any(e["kind"] == "compile_fallback" for e in events)

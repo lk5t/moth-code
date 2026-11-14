@@ -55,10 +55,12 @@ def detect() -> dict[str, Any]:
 
         torch_version = torch.__version__
         torch_cuda = torch.cuda.is_available()
-        if torch_cuda and not gpus:
+        if torch_cuda and not gpus:  # AMD (ROCm builds use the same torch.cuda API) or no nvidia-smi
+            vendor = "amd" if getattr(torch.version, "hip", None) else "nvidia"
             for i in range(torch.cuda.device_count()):
                 p = torch.cuda.get_device_properties(i)
-                gpus.append({"name": p.name, "memory_gb": round(p.total_memory / 2**30, 1), "driver": None})
+                gpus.append({"name": p.name, "memory_gb": round(p.total_memory / 2**30, 1), "driver": None,
+                             "vendor": vendor})
     except Exception:  # noqa: BLE001 - torch missing or broken driver
         pass
     ram_gb = None
