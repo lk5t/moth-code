@@ -1,6 +1,12 @@
-# Next big update — plan (not built, not published)
+# Next big update — plan (approved: build everything, ship as one release)
 
-Agreed with the Owner. Nothing here is started until the Owner says go.
+Agreed with the Owner. Build order (each part tested before the next): training → assistant → agent → app alive →
+network & accounts. Published together as one release.
+
+## Safety and trust (agreed)
+- **Honest answers** — if a MOTH reply looks broken (gibberish, loops, empty), the app says so and offers to retry.
+- **Two-factor sign-in** — authenticator-app codes (TOTP) for accounts, recommended for the Owner.
+- **Visible backups** — MOTH Cloud's backups listed with a "restore" action for models and settings.
 
 ## App
 - **Home screen** — recent projects and chats, MOTH's status and today's progress.
