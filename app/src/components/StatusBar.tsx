@@ -1,4 +1,5 @@
 import { useCloudProgress } from "@/lib/cloud-progress";
+import { AnimatedNumber } from "./AnimatedNumber";
 import { modelLabel } from "@/lib/model-label";
 import { useState } from "react";
 import { useEvent } from "@/lib/events";
@@ -12,6 +13,9 @@ import { cn } from "@/lib/utils";
 /** One quiet line of status. Nothing here ever opens a popup by itself. */
 export function StatusBar() {
   const {data: live} = useCloudProgress();
+  // 1.0 live counters: measured by the trainer and the worker network
+  const runningExp = (live?.training?.experiments ?? []).find((e: any) => e.status === "running");
+  const liveTokens: number | null = typeof runningExp?.measurement?.tokens_seen === "number" ? runningExp.measurement.tokens_seen : null;
   const project = useApp((s) => s.project);
   const [backendUp, setBackendUp] = useState(true);
   const { status: cloud } = useCloudStatus();
@@ -50,6 +54,10 @@ export function StatusBar() {
       {project && <span className="truncate" title={project.path}>{project.path}</span>}
       <div className="flex-1" />
       {training && <span className="text-[#ff6b75]">{training}</span>}
+      {liveTokens != null && <span className="flex items-center gap-1" title="Tokens MOTH has learned in the current training run">
+        <span className="live-dot" /><AnimatedNumber value={liveTokens} className="font-mono" /> tokens learned</span>}
+      {typeof live?.network?.workers_online === "number" && live.network.workers_online > 0 &&
+        <span title="Computers training MOTH right now"><AnimatedNumber value={live.network.workers_online} /> worker{live.network.workers_online === 1 ? "" : "s"} online</span>}
       {signedIn && live?.current && <span aria-label="Active MOTH model" className="text-muted">{modelLabel(live.current)}</span>}
       {required && upd.phase !== "ready" && (
         <span className="text-warning">MOTH Cloud needs version {required} · {upd.phase === "downloading" ? `downloading ${Math.round(upd.progress)}%` : "updating automatically"}</span>

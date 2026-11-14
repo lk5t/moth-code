@@ -17,10 +17,11 @@ export const dismissAlert = (id: number) => alertsStore.setState((s) => ({ toast
 export const celebrate = () => alertsStore.setState((s) => ({ celebrate: s.celebrate + 1 }));
 
 const PREFS = "moth.alerts.prefs";
-export type AlertPrefs = { notifications: boolean; keepInTray: boolean; infoAlerts: boolean };
+export type AlertPrefs = { notifications: boolean; keepInTray: boolean; infoAlerts: boolean; sounds: boolean };
+const DEFAULT_PREFS: AlertPrefs = { notifications: true, keepInTray: true, infoAlerts: false, sounds: false };
 export function alertPrefs(): AlertPrefs {
-  try { return { notifications: true, keepInTray: true, infoAlerts: false, ...JSON.parse(localStorage.getItem(PREFS) || "{}") }; }
-  catch { return { notifications: true, keepInTray: true, infoAlerts: false }; }
+  try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS) || "{}") }; }
+  catch { return { ...DEFAULT_PREFS }; }
 }
 export function setAlertPrefs(p: Partial<AlertPrefs>) {
   const next = { ...alertPrefs(), ...p };
@@ -63,6 +64,7 @@ export async function pollAlerts(): Promise<void> {
       toasts: [...st.toasts, ...fresh].slice(-4),
       celebrate: fresh.some((a) => a.tone === "promoted") ? st.celebrate + 1 : st.celebrate,
     }));
+    void import("./sounds").then(({ sounds }) => (fresh.some((a) => a.tone === "promoted") ? sounds.flourish() : sounds.chime()));
     for (const a of fresh.slice(-3)) await notify(a);
   } catch { /* offline or signed out: try again next minute */ }
 }
@@ -83,6 +85,7 @@ function startTaskAlerts() {
     const [tone, title] = TASK_DONE[e.status];
     const a: Alert = { id: Date.now(), ts: Date.now() / 1000, kind: `task.${e.status}`, tone, message: title };
     alertsStore.setState((st) => ({ toasts: [...st.toasts, a].slice(-4) }));
+    void import("./sounds").then(({ sounds }) => sounds.chime());
     if (typeof document !== "undefined" && document.hidden) void notify(a);
   }));
 }

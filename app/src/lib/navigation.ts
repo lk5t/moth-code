@@ -1,7 +1,8 @@
 import { appStore, aiTab, type View } from "./app-state";
 
-/** The five main sections. Everything else lives inside one of them. */
+/** The main sections. Everything else lives inside one of them. */
 export const WORKSPACES: { view: View; label: string; description: string }[] = [
+  { view: "home", label: "Home", description: "What MOTH is doing, your recent work and today's progress" },
   { view: "chat", label: "Chat", description: "Conversations with MOTH" },
   { view: "workspace", label: "Projects", description: "Coding projects, files, editor and autonomous tasks" },
   { view: "intelligence", label: "AI", description: "Evolution, live training, data and model history" },

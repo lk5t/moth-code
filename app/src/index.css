@@ -207,3 +207,52 @@ button:not(:disabled):active { transform: scale(0.97); }
   animation: glow-spin 4s linear infinite; }
 @property --a { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
 @keyframes glow-spin { to { --a: 360deg } }
+
+/* ---- 1.0 the app feels alive -------------------------------------------------------------------- */
+/* the moth's moods */
+.moth-motion-sleeping { animation: moth-sleep 5s ease-in-out infinite; opacity: 0.75; }
+.moth-motion-sleeping .moth-wing { transform: scaleX(0.92); }
+@keyframes moth-sleep { 0%, 100% { transform: translateY(0) rotate(-3deg) } 50% { transform: translateY(1px) rotate(-3deg) scale(0.97) } }
+.moth-motion-cheering { animation: moth-cheer 0.6s ease-in-out 5; }
+.moth-motion-cheering .moth-wing-left { animation: moth-left 0.3s ease-in-out infinite; }
+.moth-motion-cheering .moth-wing-right { animation: moth-right 0.3s ease-in-out infinite; }
+@keyframes moth-cheer { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-4px) scale(1.06) } }
+.moth-motion-error { animation: moth-worry 2.4s ease-in-out infinite; }
+@keyframes moth-worry { 0%, 100% { transform: rotate(0) } 25% { transform: rotate(-4deg) } 75% { transform: rotate(4deg) } }
+
+/* ambient background: a slow glow that follows what MOTH is doing (set on <html data-ambient>) */
+.ambient { position: fixed; inset: -20%; z-index: 0; pointer-events: none; opacity: 0.55; transition: opacity 1.5s ease;
+  background: radial-gradient(40% 35% at 15% 10%, rgb(193 18 31 / var(--amb, 0.07)), transparent 70%),
+              radial-gradient(35% 30% at 85% 90%, rgb(193 18 31 / calc(var(--amb, 0.07) * 0.7)), transparent 70%);
+  animation: ambient-drift 28s ease-in-out infinite alternate; }
+html[data-ambient="thinking"] .ambient, html[data-ambient="generating"] .ambient { --amb: 0.12; animation-duration: 12s; }
+html[data-ambient="training"] .ambient { --amb: 0.14; animation-duration: 9s; }
+html[data-ambient="error"] .ambient { --amb: 0.05; filter: hue-rotate(25deg); }
+html[data-ambient="sleeping"] .ambient { opacity: 0.25; }
+@keyframes ambient-drift { from { transform: translate3d(-2%, -1%, 0) scale(1) } to { transform: translate3d(2%, 2%, 0) scale(1.06) } }
+.ambient-hero { background: radial-gradient(80% 120% at 0% 0%, rgb(193 18 31 / 0.22), transparent 60%), var(--color-surface); }
+.ambient-hero::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(110deg, transparent 30%, rgb(255 255 255 / 0.04) 50%, transparent 70%);
+  animation: hero-sheen 7s ease-in-out infinite; }
+@keyframes hero-sheen { from { transform: translateX(-100%) } to { transform: translateX(100%) } }
+
+/* typing feel: code blocks unfold, links glow */
+.prose-moth pre { animation: unfold 420ms cubic-bezier(0.16, 1, 0.3, 1) both; transform-origin: top; }
+@keyframes unfold { from { opacity: 0; transform: scaleY(0.6); clip-path: inset(0 0 100% 0) } to { opacity: 1; transform: none; clip-path: inset(0 0 0 0) } }
+.prose-moth a { color: #ff6b75; text-decoration: underline; text-decoration-color: rgb(255 107 117 / 0.4); transition: text-shadow 200ms, text-decoration-color 200ms; }
+.prose-moth a:hover { text-shadow: 0 0 10px rgb(255 90 100 / 0.6); text-decoration-color: currentColor; }
+
+/* hover life: cards lift and tilt a touch, buttons glow, icons nudge */
+.lift:hover { transform: translateY(-2px) perspective(800px) rotateX(1.2deg); }
+button:not(:disabled):hover > svg:first-child { animation: icon-nudge 420ms ease-out; }
+@keyframes icon-nudge { 0% { transform: none } 40% { transform: translateY(-1px) rotate(-8deg) scale(1.08) } 100% { transform: none } }
+button:not(:disabled):active { transform: scale(0.97); }
+
+/* smooth page changes */
+@keyframes page-in { from { opacity: 0; transform: translateX(14px) } to { opacity: 1; transform: none } }
+.animate-view-in { animation: page-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient, .ambient-hero::after, .moth-motion-sleeping, .moth-motion-cheering, .moth-motion-error { animation: none !important; }
+  .lift:hover { transform: none; }
+}

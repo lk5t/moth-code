@@ -65,3 +65,13 @@ describe("1.0 live preview", () => {
     expect(spotPreviewUrl("see https://example.com")).toBeNull();
   });
 });
+
+describe("1.0 home", () => {
+  it("greets by the time of day", async () => {
+    const { greeting } = await import("@/features/home/HomeView");
+    expect(greeting(8)).toBe("Good morning");
+    expect(greeting(14)).toBe("Good afternoon");
+    expect(greeting(20)).toBe("Good evening");
+    expect(greeting(2)).toBe("Good night");
+  });
+});

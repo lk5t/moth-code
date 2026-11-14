@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 /** The MOTH emblem (source of truth: branding/moth-emblem.svg). */
 export function MothEmblem({ className, glow = false, motion = "none" }: {
-  className?: string; glow?: boolean; motion?: "none" | "idle" | "working" | "thinking" | "generating" | "training" | "evaluating" | "deploying" | "error" | "offline";
+  className?: string; glow?: boolean; motion?: "none" | "idle" | "working" | "thinking" | "generating" | "training" | "evaluating" | "deploying" | "error" | "offline" | "sleeping" | "cheering";
 }) {
   const ref = useRef<SVGSVGElement>(null);
   const [onScreen, setOnScreen] = useState(true);

@@ -5,6 +5,7 @@ import { lazy, Suspense } from "react";
 
 const OwnerDashboard = lazy(() => import("@/features/owner/OwnerDashboard").then((m) => ({ default: m.OwnerDashboard })));
 import { IntelligenceHub } from "@/features/intelligence/IntelligenceHub";
+import { HomeView } from "@/features/home/HomeView";
 
 /** Owner-only tools, grouped under one Owner entry: dashboard, local training, model packaging. */
 function ownerOnly(C: React.ComponentType): React.ComponentType {
@@ -21,6 +22,7 @@ function ownerOnly(C: React.ComponentType): React.ComponentType {
 
 /** Top-level views other than workspace/settings. */
 export const views: Partial<Record<View, React.ComponentType>> = {
+  home: HomeView,
   overview: IntelligenceHub,
   data: IntelligenceHub,
   activity: IntelligenceHub,

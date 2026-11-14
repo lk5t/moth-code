@@ -20,6 +20,7 @@ import { startConnectionMonitor } from "@/lib/connection";
 import { startUpdater } from "@/lib/updater";
 import { startAlerts } from "@/lib/alerts";
 import { Celebrations } from "@/components/Celebrations";
+import { Ambient } from "@/components/Ambient";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { Welcome, useWelcomeVisible } from "@/features/onboarding/Welcome";
 
@@ -110,6 +111,7 @@ export default function App() {
         <AccountDialog />
         <ReauthDialog />
         <Celebrations />
+        <Ambient />
       </div>
     </TooltipProvider>
   );

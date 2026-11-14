@@ -11,6 +11,7 @@ const ROWS: [keyof AlertPrefs, string, string][] = [
   ["notifications", "Desktop notifications", "When MOTH is promoted, finishes its successor or needs a look."],
   ["keepInTray", "Keep running in the tray when closed", "Closing the window hides MOTH Code next to the clock; alerts keep arriving. Quit from the tray icon."],
   ["infoAlerts", "Also notify about smaller news", "New training data, workers joining or leaving, finished cycles."],
+  ["sounds", "Sounds", "A soft click when you send, a chime when MOTH finishes, a flourish when it gets smarter."],
 ];
 
 export function AlertsSection() {

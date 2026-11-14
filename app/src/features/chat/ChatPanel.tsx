@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { Markdown, CopyText } from "./Markdown";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { AgentPanel } from "@/features/agent/AgentPanel";
+import { sounds } from "@/lib/sounds";
 import { AnswerFooter, type AnswerMeta } from "@/features/intelligence/AnswerFooter";
 import { useCloudProgress } from "@/lib/cloud-progress";
 import { modelLabel } from "@/lib/model-label";
@@ -164,7 +165,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
       return cur;
     });
     if (e.kind === "done" || e.kind === "error") setBusy(false);
-    if(e.kind === "done") reloadConversations();
+    if(e.kind === "done") { reloadConversations(); sounds.chime(); }
   };
 
   useEvent("chat", (e) => {
@@ -179,6 +180,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     const text = regenerate ? [...messages].reverse().find((m)=>m.role === "user")?.content ?? "" : input.trim();
     if (!text || busy) return;
     if(!regenerate) {setInput("");setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: text }]);}
+    sounds.click();
     followTail.current=true;setBusy(true);
     const isNew = cid === null;
     if (isNew) {

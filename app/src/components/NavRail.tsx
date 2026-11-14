@@ -1,6 +1,6 @@
 import { ActivityNotices } from "./ActivityNotices";
 import { useEffect } from "react";
-import { Brain, FolderGit2, MessageSquare, Network, Settings, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
+import { Brain, FolderGit2, Home, MessageSquare, Network, Settings, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import { appStore, useApp } from "@/lib/app-state";
 import { WORKSPACES, navigate, workspaceOf } from "@/lib/navigation";
 import { Tip } from "@/components/ui/tooltip";
@@ -10,7 +10,7 @@ import { AccountMenu } from "@/features/account/AccountMenu";
 import { SidebarCollections, requestChat } from "./SidebarCollections";
 import { FeatureSearch } from "./FeatureSearch";
 
-const icons = [MessageSquare, FolderGit2, Brain, Network, Settings];
+const icons = [Home, MessageSquare, FolderGit2, Brain, Network, Settings];
 export function NavRail() {
   const view = useApp((s) => s.view);
   const collapsed=useApp(s=>s.sidebarCollapsed),busy=useApp(s=>s.chatSession.busy);
