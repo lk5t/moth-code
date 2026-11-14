@@ -3,6 +3,12 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.3 — Everyone trains together; chat data matches real chats
+
+- A run that started on MOTH Cloud alone (nobody else online) moves to shared rounds with MOTH Cloud and the workers as soon as other computers come online, continuing from its latest checkpoint instead of training alone for hours.
+- CPU computers (MOTH Cloud included) now join GPU training rounds when they are at least a quarter as fast as the typical GPU; each gets a share of steps that matches its speed.
+- Conversation training data now starts with MOTH's system prompt in half of the conversations, like every real chat does. Before, the model never saw that prompt in training.
+
 ## 1.0.2 — Windows worker install fix
 
 - Desktop: Network now says clearly that MOTH Code already includes training for this computer (off until you turn on "Contribute this computer"); the install command is only for extra machines without the app.
