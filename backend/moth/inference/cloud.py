@@ -147,6 +147,7 @@ class MothCloudClient:
                         stats.generated_tokens = s.get("generated_tokens", 0)
                         stats.seconds = s.get("seconds", 0.0)
                         stats.stop_reason = s.get("stop_reason", "")
+                        stats.compacted = bool(s.get("compacted"))
         except httpx.HTTPError as e:
             raise CloudUnavailable(f"MOTH Cloud request failed: {e}") from None
         return stats
@@ -198,6 +199,7 @@ class MothCloudClient:
                         s = ev.get("stats") or {}
                         stats.prompt_tokens = int(s.get("prompt_tokens") or 0)
                         stats.generated_tokens = int(s.get("generated_tokens") or 0)
+                        stats.compacted = bool(s.get("compacted"))
                         stats.seconds = float(s.get("seconds") or 0.0)
                         stats.stop_reason = s.get("stop_reason", "")
                         stats.extra.update({k: ev.get(k) for k in ("model", "model_version", "provider",  # type: ignore[attr-defined]

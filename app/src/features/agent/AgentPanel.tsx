@@ -28,9 +28,11 @@ interface TaskRow { id: string; goal: string; status: string; created_at: number
 const tone: Record<string, "accent" | "success" | "warning" | "danger" | "default"> = {
   running: "accent", queued: "accent", completed: "success", needs_review: "warning", incomplete: "warning",
   cancelled: "default", interrupted: "warning", model_incapable: "danger", failed: "danger", reverted: "default",
+  plan_ready: "accent",
 };
-const label: Record<string, string> = { model_incapable: "beyond current model", needs_review: "needs review" };
-const RESUMABLE = ["interrupted", "cancelled", "incomplete", "model_incapable", "failed", "needs_review"];
+const label: Record<string, string> = { model_incapable: "beyond current model", needs_review: "needs review",
+  plan_ready: "plan ready — approve to start" };
+const RESUMABLE = ["interrupted", "cancelled", "incomplete", "model_incapable", "failed", "needs_review"];  // plan_ready uses "Approve"
 
 export function AgentPanel() {
   const project = useApp((s) => s.project);
@@ -40,6 +42,8 @@ export function AgentPanel() {
   const [goal, setGoal] = useState("");
   const [live, setLive] = useState<{ phase: string; output: string }>({ phase: "", output: "" });
   const [error, setError] = useState<string | null>(null);
+  const [planFirst, setPlanFirst] = useState(true);
+  const [draft, setDraft] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
   const load = (id: string) => get<Task>(`/api/tasks/${id}`).then(setTask).catch(() => {});
@@ -50,6 +54,11 @@ export function AgentPanel() {
   useEffect(() => {
     setSelected(null);
   }, [project?.id]);
+  useEffect(() => {  // 1.0: a task started elsewhere ("Fix this", error watcher) is shown here
+    const show = (e: Event) => { const id = (e as CustomEvent<string>).detail; if (id) { setSelected(id); reload(); } };
+    window.addEventListener("moth:open-agent", show);
+    return () => window.removeEventListener("moth:open-agent", show);
+  }, []);
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [task?.steps.length, live.output.length]);
@@ -86,7 +95,7 @@ export function AgentPanel() {
     act(async () => {
       let t: Task;
       try {
-        t = await post<Task>("/api/tasks", { project_id: project!.id, goal });
+        t = await post<Task>("/api/tasks", { project_id: project!.id, goal, approve_plan: planFirst });
       } catch (e) {
         if ((e as ApiError).status === 401) {
           openAccountDialog("login");
@@ -98,7 +107,7 @@ export function AgentPanel() {
         );
         if (!ok) throw new Error("MOTH Cloud access for this workspace was not granted.");
         await put(`/api/projects/${project!.id}/cloud-consent`, { granted: true });
-        t = await post<Task>("/api/tasks", { project_id: project!.id, goal });
+        t = await post<Task>("/api/tasks", { project_id: project!.id, goal, approve_plan: planFirst });
       }
       setGoal("");
       setSelected(t.id);
@@ -143,7 +152,22 @@ export function AgentPanel() {
               )}
             </div>
 
-            {task.plan.length > 0 && (
+            {task.status === "plan_ready" && (
+              <div className="animate-pop rounded-lg border border-accent/50 bg-accent-soft p-3">
+                <div className="mb-1.5 text-xs font-medium">MOTH's plan — change anything, then approve to start</div>
+                <Textarea rows={Math.min(10, task.plan.length + 1)} className="font-mono text-xs"
+                  value={draft ?? task.plan.map((p, i) => `${i + 1}. ${p}`).join("\n")} onChange={(e) => setDraft(e.target.value)} />
+                <div className="mt-2 flex gap-2">
+                  <Button size="sm" onClick={() => act(async () => {
+                    const plan = (draft ?? task.plan.join("\n")).split("\n").map((l) => l.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean);
+                    await post(`/api/tasks/${task.id}/plan`, { plan });
+                    setDraft(null); load(task.id);
+                  })}><Play /> Approve and start</Button>
+                  <Button size="sm" variant="ghost" onClick={() => act(() => post(`/api/tasks/${task.id}/cancel`).then(() => load(task.id)))}>Cancel</Button>
+                </div>
+              </div>
+            )}
+            {task.plan.length > 0 && task.status !== "plan_ready" && (
               <div className="rounded-lg border border-border bg-surface p-3">
                 <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">Plan (by MOTH)</div>
                 <ol className="space-y-1 text-xs">
@@ -173,6 +197,13 @@ export function AgentPanel() {
             className="min-h-8 border-0 bg-transparent px-2 py-1.5 [field-sizing:content] max-h-40 focus:shadow-none" onChange={(e) => setGoal(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && goal.trim()) start(); }} />
           <Button disabled={!goal.trim() || !!running} onClick={start}><Play /> Start</Button>
+        </div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-3 px-1 text-[11px] text-muted">
+          <label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={planFirst}
+            onChange={(e) => setPlanFirst(e.target.checked)} className="accent-[var(--color-accent)]" /> Show me the plan first</label>
+          <button className="cursor-pointer hover:text-fg" onClick={() => setGoal("Write tests for the most important functions in this project, run them, and fix anything they reveal.")}>
+            Write & run tests</button>
+          <span className="text-faint">Tasks keep running while you chat or close this panel.</span>
         </div>
       </div>
     </div>

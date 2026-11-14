@@ -63,3 +63,13 @@ def test_long_chats_are_compacted_not_cut():
     assert any("Earlier in this conversation" in m.content for m in out)
     short, did = compact(tok, msgs[:3], 600)
     assert not did and short == msgs[:3]
+
+
+def test_remember_requests_are_recognised():
+    from moth.server.routes_model import remember_request
+
+    assert remember_request("Remember that I use TypeScript with React") == "I use TypeScript with React."
+    assert remember_request("my name is Sam") == "my name is Sam."
+    assert remember_request("I prefer short answers.") == "I prefer short answers."
+    assert remember_request("never mind, how do loops work?") is None
+    assert remember_request("Can you remember how loops work?") is None

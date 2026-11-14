@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { Square, X } from "lucide-react";
+import { Sparkles, Square, Wrench, X } from "lucide-react";
 import { del, post } from "@/lib/backend";
 import { subscribe } from "@/lib/events";
 import { appStore, useApp } from "@/lib/app-state";
@@ -18,6 +18,9 @@ export function TerminalPanel() {
   const [running, setRunning] = useState(false);
   const sessionRef = useRef<string | null>(null);
   const termRef = useRef<Terminal | null>(null);
+  const recent = useRef("");                      // 1.0: the last output, for "Fix this"
+  const [problem, setProblem] = useState<string | null>(null);  // 1.0 error watcher
+  const [fixNote, setFixNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!host.current) return;
@@ -50,7 +53,12 @@ export function TerminalPanel() {
 
     const unsub = subscribe("terminal", (e) => {
       if (e.session !== sessionRef.current) return;
-      if (e.kind === "output") term.write(e.data);
+      if (e.kind === "output") {
+        term.write(e.data);
+        recent.current = (recent.current + stripAnsi(String(e.data))).slice(-8000);
+        const hit = spotError(recent.current);
+        if (hit) setProblem(hit);
+      }
       if (e.kind === "exit") {
         busy = false;
         setRunning(false);
@@ -126,11 +134,25 @@ export function TerminalPanel() {
     };
   }, [project?.id]);
 
+  const fixThis = async (spotted?: string) => {
+    if (!project) return;
+    const selected = termRef.current?.getSelection()?.trim();
+    const error = selected || (spotted ? recent.current.slice(-3000) : recent.current.slice(-3000));
+    if (!error.trim()) { setFixNote("Run something first, or select the error text."); return; }
+    try {
+      const t = await post<{ id: string }>("/api/fix", { project_id: project.id, error });
+      setProblem(null); setFixNote("MOTH is working on it — see the Agent panel."); recent.current = "";
+      window.dispatchEvent(new CustomEvent("moth:open-agent", { detail: t.id }));
+    } catch (e) { setFixNote(String((e as Error).message ?? e)); }
+  };
+
   return (
     <div className="flex h-full flex-col bg-[#0b0b0b]">
       <div className="flex h-8 shrink-0 items-center justify-between border-b border-border px-3">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Terminal</span>
         <div className="flex items-center gap-1">
+          {project && <Button variant="ghost" size="sm" title="Select an error (or use the last output) and let MOTH explain and fix it"
+            onClick={() => void fixThis()}><Wrench /> Fix this</Button>}
           {running && (
             <Button variant="ghost" size="sm" onClick={() => sessionRef.current && post(`/api/terminals/${sessionRef.current}/cancel`)}>
               <Square className="text-accent" /> Stop
@@ -141,7 +163,28 @@ export function TerminalPanel() {
           </Button>
         </div>
       </div>
+      {(problem || fixNote) && <div role="status" className="animate-pop flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-3 py-1.5 text-[11px]">
+        <Sparkles className="size-3.5 shrink-0 text-warning" />
+        <span className="min-w-0 flex-1 truncate">{fixNote ?? `MOTH spotted an error: ${problem}`}</span>
+        {problem && !fixNote && <Button size="sm" variant="secondary" onClick={() => void fixThis(problem)}>Fix it</Button>}
+        <button aria-label="Dismiss" className="text-faint hover:text-fg" onClick={() => { setProblem(null); setFixNote(null); recent.current = ""; }}><X className="size-3.5" /></button>
+      </div>}
       <div ref={host} className="min-h-0 flex-1" onClick={() => termRef.current?.focus()} />
     </div>
   );
+}
+
+
+// eslint-disable-next-line no-control-regex
+const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
+export const stripAnsi = (t: string) => t.replace(ANSI, "");
+
+/** 1.0 error watcher: the first line of a recognisable error in recent terminal output (null when none). */
+export function spotError(text: string): string | null {
+  const tail = text.slice(-4000);
+  const patterns = [/Traceback \(most recent call last\)[\s\S]*?\n(\w+(?:Error|Exception)[^\n]*)/,
+    /\n((?:[\w.]+)?(?:Error|Exception): [^\n]{3,200})/, /\n(error(?:\[\w+\])?: [^\n]{3,200})/i, /(npm ERR! [^\n]{3,200})/,
+    /\n(FAILED [^\n]{3,200})/, /(SyntaxError: [^\n]{3,200})/];
+  for (const p of patterns) { const m = tail.match(p); if (m) return m[1].trim().slice(0, 200); }
+  return null;
 }

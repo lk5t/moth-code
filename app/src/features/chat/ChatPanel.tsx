@@ -24,7 +24,7 @@ interface ChatMessage {
   id: number | string;
   role: "user" | "assistant" | "error";
   content: string;
-  meta?: ({ model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string } & AnswerMeta) | null;
+  meta?: ({ model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string; compacted?: boolean } & AnswerMeta) | null;
   streaming?: boolean;
 }
 
@@ -39,6 +39,13 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
   const workspaceProject = useApp((s) => s.project);
   const project = general ? null : workspaceProject;
   const [mode, setMode] = useState<"chat" | "agent">("chat");
+  const [remembered, setRemembered] = useState<string | null>(null);
+  useEffect(() => { if (!remembered) return; const t = setTimeout(() => setRemembered(null), 6000); return () => clearTimeout(t); }, [remembered]);
+  useEffect(() => {  // 1.0: "Fix this" and the error watcher open the agent with the new task
+    const open = () => setMode("agent");
+    window.addEventListener("moth:open-agent", open);
+    return () => window.removeEventListener("moth:open-agent", open);
+  }, []);
   const { status: cloud, reload: reloadCloud } = useCloudStatus();
   const {data: liveModel} = useCloudProgress();
   const [search, setSearch] = useState("");
@@ -179,12 +186,13 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
       early.current = [];
     }
     try {
-      const r = await post<{ conversation_id: number }>("/api/chat", {
+      const r = await post<{ conversation_id: number; remembered?: string | null }>("/api/chat", {
         message: text, regenerate,
         conversation_id: cid,
         project_id: project?.id ?? null,
         context_project_id: contextProjectId,
       });
+      if (r.remembered) setRemembered(r.remembered);  // 1.0: shown under the input for a few seconds
       if (isNew) {
         skipFetch.current = r.conversation_id;
         cidRef.current = r.conversation_id;
@@ -314,6 +322,13 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                         <div className="min-w-0 text-[13px] leading-relaxed">
                           {m.content ? <Markdown text={m.content} /> : <span className="text-muted">…</span>}
                           {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-accent" />}
+                          {!m.streaming && looksBroken(m.content, m.meta?.stop_reason) && (
+                            <div role="note" className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-[11px] text-warning">
+                              This reply looks garbled — MOTH is still learning to write.
+                              {index === lastAssistant && cid !== null && <button className="cursor-pointer underline" disabled={busy} onClick={() => send(true)}>Try again</button>}
+                            </div>
+                          )}
+                          {m.meta?.compacted && <div className="mt-1 text-[10.5px] text-faint">Earlier messages were summarised so this long chat fits.</div>}
                           {m.meta && (
                             <div className="mt-1 text-[10.5px] text-faint">
                               {modelLabel(m.meta.model)} · {m.meta.tokens} tokens · {m.meta.tokens_per_sec} tok/s
@@ -336,6 +351,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
             )}
           </div>
           <div className="mx-auto w-full max-w-4xl shrink-0 px-3 pb-3 pt-1 sm:px-4">
+            {remembered && <p role="status" className="animate-pop mb-1 text-[11px] text-success">MOTH will remember: “{remembered}” (Settings → Memory)</p>}
             <div className="flex w-full items-end gap-2 rounded-lg border border-border bg-surface p-1.5 transition-shadow focus-within:border-accent/50 focus-within:shadow-glow">
               <Textarea
                 ref={composer}
@@ -369,4 +385,20 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
       )}
     </div>
   );
+}
+
+
+/** 1.0 honest answers: a finished reply that is clearly not language (looping, symbol soup, letter salad). */
+export function looksBroken(text: string, stop?: string | null): boolean {
+  const t = (text || "").trim();
+  if (!t) return stop !== "cancelled";
+  if (stop === "repetition") return true;
+  if (t.length < 12) return false;
+  const letters = (t.match(/[A-Za-z]/g) || []).length / t.length;
+  const words = t.split(/\s+/).filter(Boolean);
+  const real = words.filter((w) => /^[A-Za-z][a-z']{0,14}[.,!?;:]?$/.test(w)).length / Math.max(1, words.length);
+  const longest = Math.max(...words.map((w) => w.length));
+  const pairs = new Set(words.slice(1).map((w, i) => words[i] + " " + w)).size / Math.max(1, words.length - 1);
+  if (/```/.test(t)) return false;  // code is judged by running it, not by this
+  return letters < 0.45 || real < 0.45 || longest > 30 || (words.length > 12 && pairs < 0.4);
 }

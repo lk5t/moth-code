@@ -34,3 +34,25 @@ describe("0.10.0 live training", () => {
     expect(alertPrefs().notifications).toBe(true);
   });
 });
+
+describe("1.0 error watcher", () => {
+  it("spots errors in terminal output", async () => {
+    const { spotError, stripAnsi } = await import("@/features/workspace/TerminalPanel");
+    expect(spotError("$ python a.py\nTraceback (most recent call last):\n  File \"a.py\", line 1\nNameError: name 'x' is not defined\n"))
+      .toBe("NameError: name 'x' is not defined");
+    expect(spotError("\nnpm ERR! missing script: start\n")).toBe("npm ERR! missing script: start");
+    expect(spotError("all good\n3 passed\n")).toBeNull();
+    expect(stripAnsi("\x1b[31mred\x1b[0m")).toBe("red");
+  });
+});
+
+describe("1.0 honest answers", () => {
+  it("flags garbled replies but not normal ones", async () => {
+    const { looksBroken } = await import("@/features/chat/ChatPanel");
+    expect(looksBroken("Hel the the ar yoou xqzt vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv")).toBe(true);
+    expect(looksBroken("#$%^ &*() ### !!! ~~~ ^^^")).toBe(true);
+    expect(looksBroken("Hello! I am doing well today. How can I help you?")).toBe(false);
+    expect(looksBroken("```py\nx = 1\n```")).toBe(false);
+    expect(looksBroken("anything", "repetition")).toBe(true);
+  });
+});

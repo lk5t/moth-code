@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GitBranch, GitCommitHorizontal, RefreshCw } from "lucide-react";
+import { GitBranch, GitCommitHorizontal, History, RefreshCw, Undo2 } from "lucide-react";
 import { get, post } from "@/lib/backend";
 import { useApp } from "@/lib/app-state";
 import { useEvent } from "@/lib/events";
@@ -20,7 +20,7 @@ const tone: Record<string, "success" | "warning" | "danger" | "default"> = {
   added: "success", untracked: "success", modified: "warning", deleted: "danger", conflict: "danger",
 };
 
-export function ChangesPanel() {
+function GitChanges() {
   const project = useApp((s) => s.project);
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [log, setLog] = useState<{ hash: string; subject: string; time: number }[]>([]);
@@ -120,4 +120,39 @@ export function ChangesPanel() {
       </pre>
     </div>
   );
+}
+
+
+interface Checkpoint { task_id: string; goal: string; status: string; at: number; files: string[] }
+
+/** 1.0 undo anything: every MOTH task that changed files is a point you can go back to (with or without Git). */
+function Checkpoints() {
+  const project = useApp((s) => s.project);
+  const [points, setPoints] = useState<Checkpoint[]>([]);
+  const [note, setNote] = useState<string | null>(null);
+  const load = () => { if (project) get<Checkpoint[]>(`/api/checkpoints?project_id=${project.id}`).then(setPoints).catch(() => setPoints([])); };
+  useEffect(load, [project?.id]);
+  useEvent("task", (e) => { if (e.kind === "status") load(); });
+  if (!project || !points.length) return null;
+  const restore = async (p: Checkpoint) => {
+    if (!confirm(`Go back to before “${p.goal.slice(0, 80)}”? This undoes that task and every later MOTH change.`)) return;
+    try {
+      const r = await post<{ restored: string[] }>("/api/checkpoints/restore", { project_id: project.id, task_id: p.task_id });
+      setNote(`Restored ${r.restored.length} file(s).`); load();
+    } catch (e) { setNote(String((e as Error).message ?? e)); }
+  };
+  return <section aria-label="MOTH checkpoints" className="border-b border-border px-3 py-2 text-xs">
+    <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted"><History className="size-3.5" /> MOTH's changes</div>
+    {note && <p role="status" className="mb-1 text-muted">{note}</p>}
+    <ul className="stagger max-h-40 space-y-1 overflow-auto">{points.slice(0, 20).map((p) => <li key={p.task_id}
+      className="lift flex items-center gap-2 rounded border border-border px-2 py-1">
+      <span className="min-w-0 flex-1 truncate" title={p.files.join(", ")}>{p.goal}</span>
+      <span className="shrink-0 text-faint">{timeAgo(p.at)} · {p.files.length} file(s)</span>
+      <button className="shrink-0 cursor-pointer text-muted hover:text-fg" title="Go back to before this change" onClick={() => void restore(p)}><Undo2 className="size-3.5" /></button>
+    </li>)}</ul>
+  </section>;
+}
+
+export function ChangesPanel() {
+  return <div className="flex min-h-0 flex-1 flex-col"><Checkpoints /><GitChanges /></div>;
 }

@@ -15,6 +15,22 @@ class TaskIn(BaseModel):
     goal: str
     max_steps: int = 25
     verify: bool = True
+    approve_plan: bool = False  # 1.0 plan first
+
+
+class PlanIn(BaseModel):
+    plan: list[str]
+
+
+class FixIn(BaseModel):
+    project_id: int
+    error: str
+    path: str | None = None
+
+
+class RestoreIn(BaseModel):
+    project_id: int
+    task_id: str
 
 
 class MemoryIn(BaseModel):
@@ -74,7 +90,46 @@ def register(app: FastAPI, svc: Services, deps) -> None:
     @app.post("/api/tasks", dependencies=deps)
     def start(body: TaskIn):
         svc.project(body.project_id)
-        return _start(body.project_id, body.goal, EngineConfig(max_steps=body.max_steps, verify=body.verify))
+        return _start(body.project_id, body.goal, EngineConfig(max_steps=body.max_steps, verify=body.verify,
+                                                                approve_plan=body.approve_plan))
+
+    @app.post("/api/tasks/{task_id}/plan", dependencies=deps)
+    def approve_plan(task_id: str, body: PlanIn):
+        """1.0 plan first: approve (optionally edited) plan; the task then runs it."""
+        t = task(task_id)
+        try:
+            manager.set_plan(task_id, body.plan)
+        except RuntimeError as e:
+            raise HTTPException(409, str(e)) from None
+        return _start(t["project_id"], t["goal"], EngineConfig(), task_id=task_id)
+
+    @app.post("/api/fix", dependencies=deps)
+    def fix(body: FixIn):
+        """1.0 "Fix this": MOTH explains and fixes an error from the terminal or editor."""
+        svc.project(body.project_id)
+        err = body.error.strip()[-4000:]
+        if not err:
+            raise HTTPException(422, "select the error to fix")
+        where = f" in {body.path}" if body.path else ""
+        goal = (f"Fix this error{where}. First find its cause, then make the smallest change that fixes it, and "
+                f"explain the cause in your summary.\n\nError:\n{err}")
+        return _start(body.project_id, goal, EngineConfig(max_steps=20))
+
+    @app.get("/api/checkpoints", dependencies=deps)
+    def checkpoints(project_id: int):
+        return manager.checkpoints(project_id)
+
+    @app.post("/api/checkpoints/restore", dependencies=deps)
+    def restore(body: RestoreIn):
+        """1.0 undo anything: go back to just before a task's changes (later tasks are undone too)."""
+        try:
+            files = manager.restore(body.project_id, body.task_id, svc.workspace(body.project_id),
+                                    svc.extras["project_intelligence"].memory())
+        except RuntimeError as e:
+            raise HTTPException(409, str(e)) from None
+        for f in files:
+            svc.bus.publish("files", {"project_id": body.project_id, "path": f, "change": "revert"})
+        return {"restored": files}
 
     @app.post("/api/tasks/{task_id}/resume", dependencies=deps)
     def resume(task_id: str):
@@ -89,7 +144,7 @@ def register(app: FastAPI, svc: Services, deps) -> None:
     def revert(task_id: str):
         t = task(task_id)
         try:
-            files = manager.revert(task_id, svc.workspace(t["project_id"]))
+            files = manager.revert(task_id, svc.workspace(t["project_id"]), svc.extras["project_intelligence"].memory())
         except RuntimeError as e:
             raise HTTPException(409, str(e)) from None
         for f in files:

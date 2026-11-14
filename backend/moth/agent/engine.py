@@ -35,6 +35,8 @@ class EngineConfig:
     temperature: float = 0.3
     verify: bool = True
     plan: bool = True
+    approve_plan: bool = False   # 1.0 plan first: stop after planning until the user approves the plan
+    self_checks: int = 2         # 1.0: times MOTH is sent back to fix its own broken files before finishing
 
 
 @dataclass
@@ -48,6 +50,7 @@ class TaskState:
     report: dict[str, Any] | None = None
     error: str | None = None
     notes: list[str] = field(default_factory=list)
+    plan_approved: bool = False
 
 
 class AgentEngine:
@@ -102,8 +105,12 @@ class AgentEngine:
                 state.notes.append("MOTH did not produce a usable plan; continuing step by step.")
             self._emit(state, "plan", plan=state.plan, raw=raw[:2000])
             self.on_update(state)
+        if self.cfg.approve_plan and state.plan and not state.plan_approved and not state.steps:
+            self._emit(state, "plan_ready", plan=state.plan)
+            return self._set(state, "plan_ready")  # resumes after POST /api/tasks/{id}/plan
 
         invalid = 0
+        checks = 0
         finished_summary: str | None = None
         while len(state.steps) < self.cfg.max_steps:
             if ctx.cancel.is_set():
@@ -127,6 +134,17 @@ class AgentEngine:
                 continue
             invalid = 0
             if action.tool == "finish":
+                problems = self._self_check(state)
+                if problems and checks < self.cfg.self_checks:
+                    checks += 1
+                    step = {"i": len(state.steps) + 1, "thought": "Self-check before finishing", "tool": "self_check",
+                            "args": {}, "ok": False, "ts": time.time(),
+                            "result": "Self-check found problems in files you changed; fix them, then finish:\n"
+                                      + "\n".join(problems)}
+                    state.steps.append(step)
+                    self._emit(state, "self_check", step=step)
+                    self.on_update(state)
+                    continue
                 finished_summary = str(action.args.get("summary", "")).strip() or "(no summary given)"
                 break
             if action.tool == "give_up":
@@ -148,6 +166,31 @@ class AgentEngine:
             state.error = f"Stopped after the step limit ({self.cfg.max_steps}) without MOTH finishing the task."
             return self._finish(state, "incomplete", None)
         self._finish(state, "completed", finished_summary)
+
+    def _self_check(self, state: TaskState) -> list[str]:
+        """1.0: files MOTH changed must at least parse (Python compiles, JSON loads); never runs project code."""
+        import ast
+
+        problems = []
+        root = self.ctx.workspace.root
+        for path in sorted({c.get("path") for c in state.changes if c.get("type") in ("create", "modify") and c.get("path")}):
+            p = root / path
+            if not p.is_file():
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            try:
+                if path.endswith(".py"):
+                    ast.parse(text, filename=path)
+                elif path.endswith(".json"):
+                    json.loads(text)
+            except SyntaxError as e:
+                problems.append(f"{path}:{e.lineno}: {e.msg}")
+            except ValueError as e:
+                problems.append(f"{path}: invalid JSON ({e})")
+        return problems
 
     def _investigate_failure(self, result: ToolResult) -> ToolResult:
         """Attach related past errors/solutions from memory, and remember this failure."""

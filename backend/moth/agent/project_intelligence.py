@@ -168,8 +168,11 @@ class ProjectIntelligence:
             raise ValueError("Project intelligence is disabled. Refresh it in Code → Project to index again.")
         matches=self.index().search(project_id,query,limit)
         state=self.status(project_id,workspace)
-        impacted={edge['source'] for edge in state['imports'] if edge['local'] and edge['target'] in {match['path'] for match in matches}}
-        return {'matches':matches,'affected_components':sorted(impacted),'reference_only':True}
+        found={match['path'] for match in matches}
+        impacted={edge['source'] for edge in state['imports'] if edge['local'] and edge['target'] in found}
+        # 1.0 project brain: also what the matched files depend on, so answers see both directions
+        uses={edge['target'] for edge in state['imports'] if edge['local'] and edge['source'] in found} - found
+        return {'matches':matches,'affected_components':sorted(impacted),'uses':sorted(uses),'reference_only':True}
 
     def inspected(self, project_id, workspace, path):
         resolved=workspace.resolve(path)

@@ -19,7 +19,7 @@ from moth.security.permissions import ApprovalBroker, PermissionEngine, Workspac
 from moth.workspace.files import FileOps
 
 ACTIVE = {"queued", "running"}
-RESUMABLE = {"interrupted", "cancelled", "incomplete", "model_incapable", "failed", "needs_review"}
+RESUMABLE = {"interrupted", "cancelled", "incomplete", "model_incapable", "failed", "needs_review", "plan_ready"}
 
 
 class TaskManager:
@@ -38,7 +38,8 @@ class TaskManager:
     # ---- persistence --------------------------------------------------------------
     def _save(self, project_id: int, s: TaskState) -> None:
         now = time.time()
-        payload = (json.dumps(s.plan), json.dumps({"steps": s.steps, "changes": s.changes, "notes": s.notes}),
+        payload = (json.dumps(s.plan), json.dumps({"steps": s.steps, "changes": s.changes, "notes": s.notes,
+                                                    "plan_approved": s.plan_approved}),
                    json.dumps(s.report) if s.report else None, s.error, s.status, now, s.id)
         cur = self.db.execute("UPDATE tasks SET plan=?, steps=?, result=?, error=?, status=?, updated_at=? WHERE id=?",
                               payload)
@@ -54,14 +55,14 @@ class TaskManager:
         extra = json.loads(row["steps"] or "{}")
         s = TaskState(row["id"], row["goal"], row["status"], json.loads(row["plan"] or "[]"),
                       extra.get("steps", []), extra.get("changes", []), json.loads(row["result"]) if row["result"] else None,
-                      row["error"], extra.get("notes", []))
+                      row["error"], extra.get("notes", []), bool(extra.get("plan_approved")))
         return row["project_id"], s
 
     def get(self, task_id: str) -> dict[str, Any]:
         pid, s = self._load(task_id)
         return {"id": s.id, "project_id": pid, "goal": s.goal, "status": s.status, "plan": s.plan, "steps": s.steps,
                 "changes": [{k: v for k, v in c.items() if k not in ("before", "after")} for c in s.changes],
-                "report": s.report, "error": s.error, "notes": s.notes}
+                "report": s.report, "error": s.error, "notes": s.notes, "plan_approved": s.plan_approved}
 
     def list(self, project_id: int | None) -> list[dict[str, Any]]:
         rows = self.db.query("SELECT id, project_id, goal, status, error, created_at, updated_at FROM tasks "
@@ -118,7 +119,38 @@ class TaskManager:
         if t:
             t.join(timeout)
 
-    def revert(self, task_id: str, workspace: Workspace) -> list[str]:
+    def set_plan(self, task_id: str, plan: list[str]) -> None:
+        """1.0 plan first: the user approves (and may edit) the plan before MOTH changes anything."""
+        pid, state = self._load(task_id)
+        if state.status != "plan_ready":
+            raise RuntimeError(f"task is {state.status}; only a plan waiting for approval can be changed")
+        state.plan = [p.strip() for p in plan if p.strip()][:30]
+        state.plan_approved = True
+        self._save(pid, state)
+
+    def checkpoints(self, project_id: int) -> list[dict[str, Any]]:
+        """1.0 undo anything: every finished task that changed files is a point the project can go back to."""
+        out = []
+        for row in self.db.query("SELECT id, goal, status, steps, updated_at FROM tasks WHERE project_id IS ? "
+                                 "ORDER BY created_at DESC LIMIT 200", (project_id,)):
+            changes = json.loads(row["steps"] or "{}").get("changes") or []
+            if changes and row["status"] != "reverted":
+                out.append({"task_id": row["id"], "goal": row["goal"], "status": row["status"], "at": row["updated_at"],
+                            "files": sorted({c.get("path", "") for c in changes if c.get("path")})})
+        return out
+
+    def restore(self, project_id: int, task_id: str, workspace: Workspace, memory: MemoryStore | None = None) -> list[str]:
+        """Go back to just before ``task_id``: undo it and every later task, newest first."""
+        points = self.checkpoints(project_id)
+        ids = [p["task_id"] for p in points]
+        if task_id not in ids:
+            raise RuntimeError("that change can no longer be undone")
+        files: list[str] = []
+        for tid in ids[: ids.index(task_id) + 1]:
+            files += self.revert(tid, workspace, memory)
+        return sorted(set(files))
+
+    def revert(self, task_id: str, workspace: Workspace, memory: MemoryStore | None = None) -> list[str]:
         """Undo the file changes a task made (in reverse order)."""
         if task_id in self._cancel:
             raise RuntimeError("cannot revert a running task")
@@ -137,6 +169,13 @@ class TaskManager:
                 continue
             reverted.append(c["path"])
         state.notes.append(f"Reverted changes to: {', '.join(reverted) or 'nothing'}")
+        if reverted:  # 1.0 learns from your fixes: an undone change is remembered for later tasks
+            try:
+                (memory or self.memory).add(pid, "error", f"The user undid MOTH's change: {state.goal[:150]}",
+                                            "The user reverted these changes, so this approach was not wanted: "
+                                            + ", ".join(reverted))
+            except Exception:  # noqa: BLE001 — remembering is best effort
+                pass
         state.changes = []
         state.status = "reverted"
         self._save(pid, state)
