@@ -47,14 +47,12 @@ Agreed with the Owner. Nothing here is started until the Owner says go.
   "forget" or break.
 - **Never forget** — replay a slice of older data in every run so new skills don't erase old ones.
 
-## AI (recommended earlier; confirm)
-- 2–3× faster training (sequence packing, faster CPU maths, fused optimizer).
-- GPU support for workers.
-- Size ladder: 5M → 20M → 50M automatically as compute allows.
-- Memory lookup: search the knowledge library before answering.
-- Tools: calculator and a safe code runner MOTH can call.
-- 👍/👎 on replies; good answers become training data.
-- Version timeline; old vs new side by side.
+## AI (agreed)
+- **GPU support for workers** — any worker with a graphics card is detected and trains 10–50× faster.
+- 2–3× faster training (sequence packing, faster CPU maths, fused optimizer) — part of "Training" above.
+
+## Not confirmed (ask before building)
+Size ladder, memory lookup, tools (calculator/code runner), 👍/👎 on replies, version timeline, old vs new.
 
 ## Not included
 Daily streak, personalities, chat export, prompt library, voice, day/night theme, milestone celebrations
