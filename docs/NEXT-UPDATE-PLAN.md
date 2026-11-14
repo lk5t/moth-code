@@ -51,6 +51,24 @@ Agreed with the Owner. Nothing here is started until the Owner says go.
 - **GPU support for workers** — any worker with a graphics card is detected and trains 10–50× faster.
 - 2–3× faster training (sequence packing, faster CPU maths, fused optimizer) — part of "Training" above.
 
+## Rule: improve what exists, never duplicate
+Before building each item, check what is already there and replace or extend it instead of adding a second
+version. Already present today (to be upgraded, not rebuilt):
+- **Agent mode / Plan first** → `backend/moth/agent/engine.py` already plans, uses tools and asks for approval;
+  upgrade it (editable plans, background runs, self-check, better UI) instead of a new agent.
+- **MOTH remembers you** → `agent/memory.py` (per-project memory, FTS) + `MemoryPanel.tsx`; extend to
+  per-user memory and show it everywhere.
+- **Project brain** → `agent/project_intelligence.py` + `agent/retrieval.py` + `ProjectIntelligencePanel.tsx`;
+  deepen (dependency map, file relationships) instead of a new indexer.
+- **Undo anything** → `ChangesPanel.tsx` (agent changes) ; turn into full checkpoints with one-click restore.
+- **Learns from your fixes / 👍👎** → the 0.5.1 feedback engine (`intelligence/feedback.py`); extend it.
+- **GPU workers** → workers already train on NVIDIA CUDA; add automatic GPU setup, AMD/Intel, routing.
+- **Never forget** → replay already exists (`v2._replay_source`); make it stronger and measured.
+- **Smart data cleaning** → `datafactory/clean.py` quality filters; add learned quality scoring.
+- **Usage page** → `UsageSection.tsx`; upgrade with charts.
+- **Compute marketplace** → referral/worker rewards; extend to self-contributors.
+- **Home screen / activity feed / living moth** → `ActivityPanel`, `CloudActivity`, `MothEmblem` motion states.
+
 ## Not confirmed (ask before building)
 Size ladder, memory lookup, tools (calculator/code runner), 👍/👎 on replies, version timeline, old vs new.
 
