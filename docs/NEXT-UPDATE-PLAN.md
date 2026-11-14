@@ -15,6 +15,18 @@ Agreed with the Owner. Nothing here is started until the Owner says go.
 - **Shared projects** — invite someone to the same project; both work with MOTH together.
 - **Usage page** — tokens used and left on the plan, with a chart.
 
+## MOTH as a smarter assistant (agreed)
+- **MOTH remembers you** — notes on your projects, preferences and past fixes, used in every chat; viewable and deletable.
+- **Project brain** — reads the whole project once and understands how files connect.
+- **Undo anything** — every change MOTH makes is a checkpoint; one click rolls it back.
+- **Plan first** — big tasks start with a step-by-step plan the user approves or edits.
+- **Background tasks** — long jobs run while the user keeps chatting; notification when done.
+- **Self-check** — MOTH runs the code it wrote and fixes its own mistakes before answering.
+- **Error watcher** — notices crashes in the running app and offers a fix.
+- **Learns from your fixes** — user corrections to MOTH's code become (consented) training data.
+- **Compute marketplace** — people rent out their computer's time to train MOTH and earn credits automatically
+  (builds on referrals and worker rewards; credits only, never cash).
+
 ## The app feels alive
 - **Living moth** — reacts: flutters while thinking, sleeps when idle, cheers on improvements, worried on errors.
 - **Ambient background** — a soft glow that follows what MOTH is doing (calm when idle, pulses while training).
