@@ -9,6 +9,7 @@ import { ChatPanel } from "@/features/chat/ChatPanel";
 import { Explorer } from "./Explorer";
 // 0.9.1: the code editor (Monaco) and terminal (xterm) are several MB; load them only when shown
 const EditorPanel = lazy(() => import("./EditorPanel").then((m) => ({ default: m.EditorPanel })));
+import { PreviewPane } from "./PreviewPane";
 const TerminalPanel = lazy(() => import("./TerminalPanel").then((m) => ({ default: m.TerminalPanel })));
 const PanelLoading = ({ what }: { what: string }) => (
   <div role="status" className="flex h-full items-center justify-center gap-2 text-xs text-faint">
@@ -151,6 +152,7 @@ export function WorkspaceView() {
           </Group>
         </Panel>
       </Group>
+      <PreviewPane />
     </div>
   );
 }

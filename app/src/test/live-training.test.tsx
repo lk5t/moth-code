@@ -56,3 +56,12 @@ describe("1.0 honest answers", () => {
     expect(looksBroken("anything", "repetition")).toBe(true);
   });
 });
+
+describe("1.0 live preview", () => {
+  it("finds the local address a dev server prints", async () => {
+    const { spotPreviewUrl } = await import("@/features/workspace/PreviewPane");
+    expect(spotPreviewUrl("  ➜  Local:   http://localhost:5173/\n")).toBe("http://localhost:5173/");
+    expect(spotPreviewUrl("Running on http://0.0.0.0:8000.")).toBe("http://localhost:8000");
+    expect(spotPreviewUrl("see https://example.com")).toBeNull();
+  });
+});

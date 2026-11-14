@@ -7,6 +7,7 @@ import { del, post } from "@/lib/backend";
 import { subscribe } from "@/lib/events";
 import { appStore, useApp } from "@/lib/app-state";
 import { Button } from "@/components/ui/button";
+import { previewStore, spotPreviewUrl } from "./PreviewPane";
 
 /**
  * Line-oriented terminal: commands run in the backend (streamed output,
@@ -58,6 +59,8 @@ export function TerminalPanel() {
         recent.current = (recent.current + stripAnsi(String(e.data))).slice(-8000);
         const hit = spotError(recent.current);
         if (hit) setProblem(hit);
+        const url = spotPreviewUrl(stripAnsi(String(e.data)));  // 1.0 live preview
+        if (url && previewStore.getState().url !== url) previewStore.setState({ url, open: true });
       }
       if (e.kind === "exit") {
         busy = false;

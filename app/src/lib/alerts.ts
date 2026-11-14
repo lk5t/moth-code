@@ -67,7 +67,28 @@ export async function pollAlerts(): Promise<void> {
   } catch { /* offline or signed out: try again next minute */ }
 }
 
+const TASK_DONE: Record<string, [Alert["tone"], string]> = {
+  completed: ["success", "MOTH finished a task"], needs_review: ["problem", "MOTH finished — please review"],
+  plan_ready: ["info", "MOTH's plan is ready for you"], model_incapable: ["problem", "MOTH couldn't do a task"],
+  failed: ["problem", "A MOTH task failed"],
+};
+let taskAlerts = false;
+
+/** 1.0 background tasks: a toast (and a system notification when the window is hidden) when a task ends. */
+function startTaskAlerts() {
+  if (taskAlerts) return;
+  taskAlerts = true;
+  void import("./events").then(({ subscribe }) => subscribe("task", (e: Record<string, any>) => {
+    if (e.kind !== "status" || !TASK_DONE[e.status]) return;
+    const [tone, title] = TASK_DONE[e.status];
+    const a: Alert = { id: Date.now(), ts: Date.now() / 1000, kind: `task.${e.status}`, tone, message: title };
+    alertsStore.setState((st) => ({ toasts: [...st.toasts, a].slice(-4) }));
+    if (typeof document !== "undefined" && document.hidden) void notify(a);
+  }));
+}
+
 export function startAlerts() {
+  startTaskAlerts();
   if (started) return;
   started = true;
   void applyTray(alertPrefs());
