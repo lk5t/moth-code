@@ -1,4 +1,4 @@
-# MOTH Worker installer for Windows 10/11 — run from an extracted, checksum-verified release directory.
+# MOTH Worker installer for Windows 10/11 - run from an extracted, checksum-verified release directory.
 #   .\install.ps1 -Server https://moth.example -Token me_...  [-Name my-pc] [-NoService]
 # No administrator rights needed. Installs into %LOCALAPPDATA%\MOTH\worker (a Python virtual
 # environment; nothing system-wide is changed), installs PyTorch for the hardware (CUDA build for
@@ -13,9 +13,12 @@ param(
   [switch]$UseSystemTorch,
   [string]$TorchIndex = ""
 )
-$ErrorActionPreference = "Stop"
+# Not "Stop": in Windows PowerShell 5.1 a native program that writes anything to stderr (a Python
+# traceback from the torch probe, a pip warning) becomes a terminating error under "Stop", even with
+# 2>$null. Every native step below checks $LASTEXITCODE instead, and cmdlets use -ErrorAction Stop.
+$ErrorActionPreference = "Continue"
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
-function Say($m) { Write-Host "▲ MOTH " -ForegroundColor Red -NoNewline; Write-Host $m }
+function Say($m) { Write-Host "$([char]0x25B2) MOTH " -ForegroundColor Red -NoNewline; Write-Host $m }
 function Fail($m) { Say $m; exit 1 }
 
 function Find-Python {
@@ -42,7 +45,7 @@ if (-not $Py) {
 
 $HomeDir = Join-Path $env:LOCALAPPDATA "MOTH\worker"
 $Venv = Join-Path $HomeDir "venv"
-New-Item -ItemType Directory -Force $HomeDir | Out-Null
+New-Item -ItemType Directory -Force $HomeDir -ErrorAction Stop | Out-Null
 Say "installing into $Venv"
 if (-not (Test-Path (Join-Path $Venv "Scripts\python.exe"))) {
   if ($UseSystemTorch) { & $Py -m venv --system-site-packages $Venv } else { & $Py -m venv $Venv }
@@ -52,7 +55,7 @@ $VPy = Join-Path $Venv "Scripts\python.exe"
 & $VPy -m pip install --quiet --disable-pip-version-check --upgrade pip
 if ($LASTEXITCODE -ne 0) { Fail "Could not update pip (check the internet connection)." }
 
-& $VPy -c "import torch" 2>$null
+& $VPy -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('torch') else 1)"
 if ($LASTEXITCODE -ne 0 -and -not $UseSystemTorch) {
   if (-not $TorchIndex) {
     $cuda = $null
@@ -84,4 +87,4 @@ if (-not $NoService) {
 } else {
   Say "start the worker with: & `"$Mw`" --home `"$HomeDir`" run"
 }
-Say "done. Manage this worker in MOTH Code → Workers. Remove it any time with: & `"$Mw`" --home `"$HomeDir`" uninstall"
+Say "done. Manage this worker in MOTH Code > Network > Workers. Remove it any time with: & `"$Mw`" --home `"$HomeDir`" uninstall"

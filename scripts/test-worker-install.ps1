@@ -34,7 +34,10 @@ try {
 
   Write-Host "== run the command exactly as a user would (PowerShell, no administrator steps, CPU-only)"
   $userCwd = Get-Location
-  Invoke-Expression $e.windows_command
+  # Windows PowerShell 5.1 (powershell.exe), the shell most users have, with the caller's "Stop" preference
+  # exactly as the command sets it: 1.0.1 failed there on the torch probe while pwsh 7 passed.
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $e.windows_command
+  if ($LASTEXITCODE -ne 0) { throw "the Windows command failed in Windows PowerShell 5.1 (exit $LASTEXITCODE)" }
   Set-Location $userCwd
   $wHome = Join-Path $env:LOCALAPPDATA "MOTH\worker"
   $mw = Join-Path $wHome "venv\Scripts\moth-worker.exe"
