@@ -61,6 +61,9 @@ def test_server_signed_manifest_and_key_pinning(client, settings, owner, tmp_pat
     key = client.get("/v1/models/signing-key").json()["key"]
     assert key == serving.public_key_b64(ctx)
     t = register_verified(client, settings, "laptop")["token"]
+    from test_foundation_v052 import _paid
+
+    _paid(client.app.state.ctx, "laptop")  # 1.0: offline mode is a paid-plan feature
 
     class Http:
         def __enter__(self):
