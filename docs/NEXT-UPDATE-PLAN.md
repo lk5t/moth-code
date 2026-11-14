@@ -15,6 +15,19 @@ Agreed with the Owner. Nothing here is started until the Owner says go.
 - **Shared projects** — invite someone to the same project; both work with MOTH together.
 - **Usage page** — tokens used and left on the plan, with a chart.
 
+## The app feels alive
+- **Living moth** — reacts: flutters while thinking, sleeps when idle, cheers on improvements, worried on errors.
+- **Ambient background** — a soft glow that follows what MOTH is doing (calm when idle, pulses while training).
+- **Typing feel** — smooth streaming cursor, code blocks unfold, links glow.
+- **Micro-sounds (optional, off by default)** — soft clicks, a chime when a task finishes, a flourish on promotions.
+- **Live counters** — tokens learned today, workers online, ticking in place.
+- **Activity feed** — a live strip: "your worker trained 2M tokens", "MOTH fixed a bug".
+- **Greetings** — "Good evening — MOTH learned 40M tokens while you were away."
+- **Hover life** — cards tilt slightly, buttons glow, icons animate.
+- **Smooth page changes** — pages slide and fade.
+- **Empty screens with personality** — a moth animation and a friendly tip instead of "nothing here".
+- All motion respects "reduce motion".
+
 ## AI (recommended earlier; confirm)
 - 2–3× faster training (sequence packing, faster CPU maths, fused optimizer).
 - GPU support for workers.
@@ -25,4 +38,5 @@ Agreed with the Owner. Nothing here is started until the Owner says go.
 - Version timeline; old vs new side by side.
 
 ## Not included
-Daily streak, personalities, chat export, prompt library, voice (unless asked).
+Daily streak, personalities, chat export, prompt library, voice, day/night theme, milestone celebrations
+(unless asked).
