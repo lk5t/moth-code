@@ -130,16 +130,17 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     if successor:
         rounds = max(rounds, min(500, math.ceil(int(cfg["steps"]) / SUCCESSOR_ROUND_STEPS)))
     local_steps = max(1, math.ceil(int(cfg["steps"]) / rounds))
-    if not worker_training_supported(ctx, exp, masks=True):
-        raise ValueError("private training data never leaves MOTH Cloud")
     dev = {} if successor else (base["info"].get("dev_checkpoint") or {})
-    if successor:  # trained from scratch: every participant starts from the same seeded weights
-        torch.save(_successor_init(exp, base), _round_weights(rd, 0))
-    else:
+    if not successor:
         src = Path(dev["path"]) if dev.get("path") else Path(base["path"]) / "model.pt"
         expected_sha = dev.get("sha256") if dev.get("path") else base["sha256"]
         if not src.is_file() or not expected_sha or _sha(src) != expected_sha:
             raise ValueError("distributed training requires an intact, checksum-verified base checkpoint")
+    if not worker_training_supported(ctx, exp, masks=True):
+        raise ValueError("private training data never leaves MOTH Cloud")
+    if successor:  # trained from scratch: every participant starts from the same seeded weights
+        torch.save(_successor_init(exp, base), _round_weights(rd, 0))
+    else:
         raw = torch.load(src, map_location="cpu", weights_only=False)
         state = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
         torch.save({k: v.float() if v.is_floating_point() else v for k, v in state.items()}, _round_weights(rd, 0))
