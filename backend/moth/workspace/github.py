@@ -121,3 +121,21 @@ def pull_request(token: str, root: Path, title: str, body: str, base: str | None
     pr = _call("POST", f"/repos/{full}/pulls", token, json={"title": title[:200], "body": body[:20000], "head": head,
                                                             "base": base})
     return {"number": pr.get("number"), "url": pr.get("html_url")}
+
+
+USER = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
+
+
+def invite(token: str, root: Path, username: str) -> dict[str, Any]:
+    """1.0 shared projects: invite a friend to this project's GitHub repository (they can push)."""
+    if not USER.match(username or ""):
+        raise GitHubError("Not a GitHub username.")
+    full = repo_of(root)
+    _call("PUT", f"/repos/{full}/collaborators/{username}", token, json={"permission": "push"})
+    return {"repo": full, "invited": username}
+
+
+def pull(token: str, root: Path) -> dict[str, Any]:
+    """Get your collaborators' latest changes (fast-forward only: never overwrites your own work)."""
+    out = _git(root, token, "pull", "--ff-only")
+    return {"repo": repo_of(root), "output": out.strip()[-500:]}

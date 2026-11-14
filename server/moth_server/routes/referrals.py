@@ -56,6 +56,8 @@ class RulesIn(BaseModel):
     hold_duplicate_machines: bool | None = None
     user_payment_rewards: bool | None = None
     referee_welcome_tokens: int | None = Field(default=None, ge=0, le=10**10)
+    contributor_rewards: bool | None = None
+    contributor_reward_per_1k_tokens: float | None = Field(default=None, ge=0, le=10**6)
 
 
 class ReasonIn(BaseModel):

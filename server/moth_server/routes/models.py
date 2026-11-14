@@ -203,11 +203,24 @@ def delete_eval_dataset(did: str, auth: Auth = Depends(owner_reauthed), ctx: Ctx
     return {"ok": True}
 
 
+OFFLINE_PLANS = {"pro", "max"}
+
+
+def _offline_allowed(auth: Auth) -> None:
+    """1.0: offline mode (MOTH on your own computer) is a paid-plan feature; the Owner always has it."""
+    if auth.is_owner or str(auth.user.get("plan_code") or "free") in OFFLINE_PLANS:
+        return
+    raise HTTPException(402, "Offline mode is part of the Pro and Max plans. Upgrade in Settings → Plan & referrals.",
+                        headers={"X-Moth-Reason": "plan_required"})
+
+
 @router.get("/v1/models/deployed/package-info")
 def deployed_package_info(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     """What MOTH Code needs to download the deployed model for on-computer inference (0.5.2): the release,
     the package's SHA-256 and, for official releases, the signed release manifest."""
     import base64
+
+    _offline_allowed(auth)
 
     d = M.deployed(ctx)
     if not d:
@@ -265,6 +278,8 @@ def pin_model(body: ModelPinIn, auth: Auth = Depends(current_auth), ctx: Ctx = D
 @router.get("/v1/models/deployed/package")
 def deployed_package(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     from fastapi.responses import FileResponse
+
+    _offline_allowed(auth)
 
     d = M.deployed(ctx)
     if not d:

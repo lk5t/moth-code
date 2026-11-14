@@ -108,6 +108,9 @@ def test_signed_model_import_evaluate_deploy_and_download(client, settings, sign
     assert MEM.lineage(ctx)[-1]["method"] == "foundation"
     # MOTH Code downloads the deployed model to run it on the computer, verifiably
     t = register_verified(client, settings, "localuser")["token"]
+    # 1.0: offline mode is a paid-plan feature
+    assert client.get("/v1/models/deployed/package-info", headers=H(t)).status_code == 402
+    _paid(ctx, "localuser")
     info = client.get("/v1/models/deployed/package-info", headers=H(t)).json()
     assert info["model_version"] == "0.1" and info["release_manifest"] and info["release_signature"]
     from moth_server.ed25519_verify import verify_b64
@@ -129,6 +132,7 @@ def test_moth_code_downloads_and_runs_the_deployed_model(client, settings, signe
     r, out = build_release(tmp_path, s["key"], official_package(tmp_path))
     assert r.returncode == 0 and agent_import(client, s, out).status_code == 200
     t = register_verified(client, settings, "offline")["token"]
+    _paid(client.app.state.ctx, "offline")
 
     class Http:  # the TestClient, kept open across downloads
         def __enter__(self):
@@ -153,3 +157,10 @@ def test_moth_code_downloads_and_runs_the_deployed_model(client, settings, signe
     assert od.download()["installed_at"] == inst["installed_at"]  # already installed: not downloaded again
     od.remove()
     assert od.installed() is None
+
+
+def _paid(ctx, username):
+    from moth_server.db import users
+
+    with ctx.db.tx() as c:
+        c.execute(users.update().where(users.c.username_lc == username.lower()).values(plan_code="pro"))

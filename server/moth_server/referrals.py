@@ -39,6 +39,9 @@ DEFAULT_RULES: dict[str, Any] = {
     "contribution_reward_per_1k_tokens": 5,
     "max_reward_per_job": 50_000,
     "referee_welcome_tokens": 100_000,
+    # 1.0 compute marketplace: a contributor's own computer earns this too (credits only, same caps)
+    "contributor_rewards": True,
+    "contributor_reward_per_1k_tokens": 5,
     "contributor_min_verified_jobs": 3,
     "min_reputation": 0.6,            # verified / (verified + failed), after reputation_min_jobs
     "reputation_min_jobs": 5,
@@ -145,9 +148,34 @@ def _review_reasons(conn: Connection, r: dict, worker: dict) -> list[str]:
     return reasons
 
 
+def _contributor_reward(conn: Connection, r: dict, worker: dict, job_id: int, tokens: int) -> None:
+    """1.0 compute marketplace: the computer's own owner earns credits for its verified training work (credits
+    for MOTH usage only, never cash), with the same reliability and duplicate-computer checks as referrals."""
+    if not r.get("contributor_rewards", True) or not worker.get("user_id"):
+        return
+    verified = conn.execute(select(workers.c.verified_jobs).where(workers.c.id == worker["id"])).scalar_one()
+    if verified < r.get("contributor_min_verified_jobs", 3):
+        return
+    amount = min(int(r["max_reward_per_job"]), int(round(max(0, tokens) / 1000 * float(r.get("contributor_reward_per_1k_tokens", 5)))))
+    key = f"compute:{worker['id']}:{job_id}"
+    if amount <= 0 or conn.execute(select(referral_rewards.c.id).where(referral_rewards.c.qualifying_ref == key)).first():
+        return
+    held = _review_reasons(conn, r, worker)
+    t = now()
+    conn.execute(referral_rewards.insert().values(
+        referrer_id=worker["user_id"], kind="compute", worker_id=worker["id"], qualifying_ref=key,
+        source_ref=f"job:{job_id}", amount=amount, status="review" if held else "pending",
+        available_at=t + r["pending_days"] * 86400,
+        reason=("held for review: " + "; ".join(held)) if held else f"your computer trained MOTH ({tokens:,} tokens)",
+        created_at=t, updated_at=t))
+
+
 def on_contribution_verified(ctx: Ctx, conn: Connection, worker: dict, job_id: int, tokens: int = 0) -> None:
     r = rules(ctx.db)
-    if not r["enabled"] or not worker.get("referrer_id") or worker["referrer_id"] == worker["user_id"]:
+    if not r["enabled"]:
+        return
+    _contributor_reward(conn, r, worker, job_id, tokens)
+    if not worker.get("referrer_id") or worker["referrer_id"] == worker["user_id"]:
         return
     verified = conn.execute(select(workers.c.verified_jobs).where(workers.c.id == worker["id"])).scalar_one()
     if verified < r.get("contributor_min_verified_jobs", r.get("gpu_min_verified_jobs", 3)):
@@ -211,21 +239,21 @@ def process_pending(db: Database, t: float | None = None) -> dict[str, int]:
             month_count = c.execute(select(func.count()).where(credited, referral_rewards.c.kind == "user",
                                                                referral_rewards.c.updated_at >= ms)).scalar()
             month_gpu = c.execute(select(func.coalesce(func.sum(referral_rewards.c.amount), 0))
-                                  .where(credited, referral_rewards.c.kind == "gpu",
+                                  .where(credited, referral_rewards.c.kind.in_(("gpu", "compute")),
                                          referral_rewards.c.updated_at >= ms)).scalar()
             reason = None
             if lifetime + rw["amount"] > r["lifetime_cap_tokens"]:
                 reason = "lifetime cap reached"
             elif rw["kind"] == "user" and month_count >= r["max_user_rewards_per_month"]:
                 reason = "monthly referral cap reached"
-            elif rw["kind"] == "gpu" and month_gpu + rw["amount"] > r["max_gpu_reward_tokens_per_month"]:
+            elif rw["kind"] in ("gpu", "compute") and month_gpu + rw["amount"] > r["max_gpu_reward_tokens_per_month"]:
                 reason = "monthly GPU reward cap reached"
             if reason:
                 c.execute(referral_rewards.update().where(referral_rewards.c.id == rw["id"])
                           .values(status="capped", reason=reason, updated_at=t))
                 counts["capped"] += 1
                 continue
-            kind = {"user": "referral_reward", "welcome": "referral_welcome"}.get(rw["kind"], "gpu_referral_reward")
+            kind = {"user": "referral_reward", "welcome": "referral_welcome", "compute": "compute_reward"}.get(rw["kind"], "gpu_referral_reward")
             entry = ledger_entry(c, rw["referrer_id"], rw["amount"], kind, f"reward:{rw['id']}",
                                  reference=rw["qualifying_ref"], note=rw["reason"])
             c.execute(referral_rewards.update().where(referral_rewards.c.id == rw["id"])
@@ -282,7 +310,8 @@ def dashboard(db: Database, user_id: int, public_url: str, code: str) -> dict[st
         "rules": {k: r[k] for k in ("enabled", "user_reward_tokens", "gpu_reward_tokens_per_job", "gpu_min_verified_jobs",
                                     "pending_days", "contribution_reward_per_1k_tokens", "max_reward_per_job",
                                     "contributor_min_verified_jobs", "min_reputation", "user_payment_rewards",
-                                    "max_gpu_reward_tokens_per_month", "lifetime_cap_tokens", "referee_welcome_tokens")},
+                                    "max_gpu_reward_tokens_per_month", "lifetime_cap_tokens", "referee_welcome_tokens",
+                                    "contributor_rewards", "contributor_reward_per_1k_tokens")},
         "rules_text": rules_text(r),
         "stats": {
             "referred": len(refs),
@@ -315,6 +344,9 @@ def rules_text(r: dict[str, Any]) -> list[str]:
            "under another account.",
            f"Limits: {r['max_gpu_reward_tokens_per_month']:,} credits per month from workers and "
            f"{r['lifetime_cap_tokens']:,} in total. Credits are for MOTH usage only, never cash."]
+    if r.get("contributor_rewards", True):
+        out.insert(1, f"Your own computers earn too: {r.get('contributor_reward_per_1k_tokens', 5)} credits per 1,000 tokens "
+                      "they train for MOTH (after their first verified jobs, within the same monthly limit).")
     if int(r.get("referee_welcome_tokens") or 0) > 0:
         out.insert(1, f"The person you invite gets a {int(r['referee_welcome_tokens']):,}-credit welcome bonus once "
                       "their computer has done its first verified work.")

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GitBranch, GitCommitHorizontal, GitPullRequest, History, RefreshCw, Undo2, UploadCloud } from "lucide-react";
+import { DownloadCloud, GitBranch, GitCommitHorizontal, GitPullRequest, History, RefreshCw, Undo2, UploadCloud, UserPlus } from "lucide-react";
 import { gh } from "@/lib/github";
 import { openExternal } from "@/lib/external";
 import { get, post } from "@/lib/backend";
@@ -32,9 +32,19 @@ function GitChanges() {
   const [error, setError] = useState<string | null>(null);
 
   const [ghNote, setGhNote] = useState<string | null>(null);
-  const github = async (what: "push" | "pr") => {  // 1.0 GitHub connection: always on the user's click
+  const github = async (what: "push" | "pr" | "pull" | "invite") => {  // 1.0 GitHub connection: always on the user's click
     if (!project) return;
     try {
+      if (what === "pull") {
+        await gh(`/api/projects/${project.id}/github/pull`, {});
+        setGhNote("Up to date with GitHub."); void load(); return;
+      }
+      if (what === "invite") {
+        const user = prompt("Your friend's GitHub username — they can then clone this project and work on it with their own MOTH");
+        if (!user) return;
+        const r = await gh<{ invited: string; repo: string }>(`/api/projects/${project.id}/github/invite`, { username: user });
+        setGhNote(`Invited ${r.invited} to ${r.repo}. They accept the invite on GitHub, then use “Clone from GitHub” on MOTH's home screen.`); return;
+      }
       if (what === "push") {
         const r = await gh<{ repo: string; branch: string }>(`/api/projects/${project.id}/github/push`, {});
         setGhNote(`Pushed ${r.branch} to ${r.repo}.`);
@@ -97,7 +107,9 @@ function GitChanges() {
       <div className="flex h-9 items-center justify-between border-b border-border px-3">
         <span className="flex items-center gap-1.5 text-xs text-muted"><GitBranch className="size-3.5" />{status?.branch ?? "…"}</span>
         <span className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" title="Get your collaborators' latest changes" onClick={() => void github("pull")}><DownloadCloud /> Pull</Button>
           <Button variant="ghost" size="sm" title="Push this branch to GitHub" onClick={() => void github("push")}><UploadCloud /> Push</Button>
+          <Button variant="ghost" size="sm" title="Invite a friend to work on this project with you" onClick={() => void github("invite")}><UserPlus /> Share</Button>
           <Button variant="ghost" size="sm" title="Open a pull request on GitHub" onClick={() => void github("pr")}><GitPullRequest /> PR</Button>
           <Button variant="ghost" size="icon-sm" onClick={load}><RefreshCw /></Button>
         </span>

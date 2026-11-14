@@ -40,7 +40,7 @@ log = logging.getLogger("moth_server.releases")
 
 COMPONENTS = ("server", "desktop", "worker")
 ACTIVE = ("rolling_out", "complete")
-DEFAULT_ROLLOUT = {"stages": [10, 50, 100], "interval_hours": 6, "max_failure_rate": 0.2, "min_reports": 5}
+DEFAULT_ROLLOUT = {"stages": [10, 50, 100], "interval_hours": 0.5, "max_failure_rate": 0.2, "min_reports": 3}  # 1.0: 30 min stages
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9._+-]{1,200}$")
 
 

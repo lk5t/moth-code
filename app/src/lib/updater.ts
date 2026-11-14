@@ -36,7 +36,7 @@ export const updaterStore = createStore<UpdaterState>({
 });
 export const useUpdater = updaterStore.useStore;
 
-const CHECK_EVERY_MS = 3600 * 1000;
+const CHECK_EVERY_MS = 10 * 60 * 1000;  // 1.0: every 10 minutes (conditional requests are cheap)
 const PENDING_KEY = "moth.update.pending";
 let busy = false;
 

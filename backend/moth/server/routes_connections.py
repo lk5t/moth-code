@@ -20,6 +20,10 @@ class PushIn(BaseModel):
     branch: str | None = None
 
 
+class InviteIn(BaseModel):
+    username: str
+
+
 class PrIn(BaseModel):
     title: str
     body: str = ""
@@ -61,4 +65,18 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         root = svc.workspace(project_id).root
         out = run(lambda: GH.pull_request(x_github_token, root, body.title, body.body, body.base))
         svc.db.log_activity("git", f"Opened pull request #{out['number']} on GitHub", project_id)
+        return out
+
+    @app.post("/api/projects/{project_id}/github/invite", dependencies=deps)
+    def gh_invite(project_id: int, body: InviteIn, x_github_token: str = Header(default="")):
+        """1.0 shared projects: a friend works on the same repository with their own MOTH."""
+        out = run(lambda: GH.invite(x_github_token, svc.workspace(project_id).root, body.username.strip()))
+        svc.db.log_activity("git", f"Invited {out['invited']} to {out['repo']}", project_id)
+        return out
+
+    @app.post("/api/projects/{project_id}/github/pull", dependencies=deps)
+    def gh_pull(project_id: int, x_github_token: str = Header(default="")):
+        out = run(lambda: GH.pull(x_github_token, svc.workspace(project_id).root))
+        svc.bus.publish("files", {"project_id": project_id, "path": "", "change": "pull"})
+        svc.db.log_activity("git", f"Pulled the latest changes from {out['repo']}", project_id)
         return out

@@ -103,6 +103,8 @@ class OnDevice:
             r = http.get(base + "/v1/models/deployed/package-info", headers=h)
             if r.status_code == 404:
                 raise OnDeviceError("MOTH Cloud has no model deployed yet.")
+            if r.status_code == 402:  # 1.0: offline mode is part of the paid plans
+                raise OnDeviceError("Offline mode is part of the Pro and Max plans. Upgrade in Settings → Plan & referrals.")
             r.raise_for_status()
             info = r.json()
             official = False

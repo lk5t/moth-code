@@ -53,7 +53,7 @@ sys.path.insert(0, str(HERE))
 import ed25519_verify  # noqa: E402  (stdlib-only verifier shipped next to this file)
 
 DEFAULTS = {
-    "channel": "stable", "check_interval_s": 900, "server_url": "http://127.0.0.1:8900", "supervisor": "cron",
+    "channel": "stable", "check_interval_s": 300, "server_url": "http://127.0.0.1:8900", "supervisor": "cron",
     "python": sys.executable, "torch_index": "https://download.pytorch.org/whl/cpu", "keep_releases": 3,
     "keep_backups": 5, "health_timeout_s": 240, "min_free_bytes": 2 * 1024 ** 3, "source": "",
     # use packages already installed for the system Python (e.g. an administrator-installed PyTorch)
@@ -195,7 +195,8 @@ class Agent:
 
     def heartbeat(self, state: str, message: str = "", **extra) -> None:
         free = shutil.disk_usage(self.i.home).free
-        backups = sorted(p.name for p in (self.i.home / "backups").glob("*") if p.is_dir())[-3:]
+        backups = [{"name": p.name, "bytes": sum(f.stat().st_size for f in p.rglob("*") if f.is_file())}
+                   for p in sorted(q for q in (self.i.home / "backups").glob("*") if q.is_dir())][-10:]
         self.api("POST", "/v1/agent/heartbeat", {
             "agent_version": AGENT_VERSION, "state": state, "message": message, "current": self.i.current_version,
             "previous": self.i.version_of(self.i.link("previous")), "last_check": time.time(),
@@ -922,6 +923,12 @@ class Agent:
                 self.log(f"rollback not possible: {e}")
         if control.get("check_now_at"):
             acks["ack_check_now"] = True
+        if control.get("backup_requested_at"):  # 1.0: "Back up now" from the Owner Dashboard
+            acks["ack_backup"] = True
+            try:
+                self.backup("owner")
+            except AgentError as e:
+                self.log(f"backup failed: {e}")
         st = self.i.state()
         for v in control.get("retry", []):
             st.get("failed", {}).pop(v, None)

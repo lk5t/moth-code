@@ -178,6 +178,17 @@ export function UpdatesPanel() {
               Roll back to {agent?.previous ?? "previous"}
             </Button>
           </div>
+          <div className="rounded-lg border border-border bg-bg p-2">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="font-medium">Backups</span>
+              <Button size="sm" variant="secondary" onClick={() => run(() => post("/v1/admin/updates/server/backup-now"), "A verified backup will be taken within a few minutes.")}>Back up now</Button>
+            </div>
+            {(agent?.backups ?? []).length ? <ul className="space-y-0.5 font-mono text-[11px] text-muted">{[...(agent?.backups ?? [])].reverse().map((b: Any) => {
+              const name = typeof b === "string" ? b : b.name;
+              return <li key={name}>{name}{typeof b === "object" && b.bytes ? ` · ${(b.bytes / 2 ** 20).toFixed(1)} MB` : ""}</li>;
+            })}</ul> : <p className="text-faint">No backups reported yet. A verified backup is taken before every update.</p>}
+            <p className="mt-1 text-[11px] text-faint">Each backup holds the database and settings, checked before it is kept (the newest are kept). Restoring is done with the server's “moth” command, so newer data is never overwritten by accident.</p>
+          </div>
           {u.pending_migrations.some((m: Any) => m.destructive) && (
             <div className="rounded border border-warning/40 bg-warning/10 p-2">
               {u.pending_migrations.filter((m: Any) => m.destructive).map((m: Any) => (

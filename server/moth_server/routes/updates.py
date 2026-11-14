@@ -160,6 +160,7 @@ def agent_control(ctx: Ctx = Depends(get_ctx)):
     c = control(ctx)
     return {"paused": bool(c.get("paused")), "check_now_at": c.get("check_now_at"),
             "rollback_requested_at": c.get("rollback_requested_at"), "retry": c.get("retry", []),
+            "backup_requested_at": c.get("backup_requested_at"),
             "approved_migrations": sorted(ctx.db.approved_migrations()), "channel": c.get("channel", "stable"),
             "server_releases": [r for r in R.list_releases(ctx, "server")]}
 
@@ -248,6 +249,8 @@ def agent_heartbeat(body: dict[str, Any], ctx: Ctx = Depends(get_ctx)):
         c.pop("check_now_at", None)
     if body.get("ack_rollback") and c.get("rollback_requested_at"):
         c.pop("rollback_requested_at", None)
+    if body.get("ack_backup") and c.get("backup_requested_at"):
+        c.pop("backup_requested_at", None)
     if body.get("ack_retry"):
         c["retry"] = [v for v in c.get("retry", []) if v not in body["ack_retry"]]
     ctx.db.set_config("agent_control", c)
@@ -304,6 +307,9 @@ def server_action(action: str, auth: Auth = Depends(require_owner), ctx: Ctx = D
     elif action == "resume":
         c["paused"] = False
     elif action == "check-now":
+        c["check_now_at"] = now()
+    elif action == "backup-now":  # 1.0: a verified backup on the agent's next check (within minutes)
+        c["backup_requested_at"] = now()
         c["check_now_at"] = now()
     else:
         raise HTTPException(404, "Unknown action.")
