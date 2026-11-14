@@ -28,7 +28,7 @@ import numpy as np
 
 from moth.datafactory import catalog, clean, fetch, parse
 
-FACTORY_VERSION = 1
+FACTORY_VERSION = 2  # 1.0.3: conversations carry the system prompt (with_system)
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "holdout_fraction": 0.02,
@@ -152,7 +152,7 @@ def build(cache: Path, out: Path, config: dict[str, Any] | None = None,
             d = rec["domain"]
             if d not in holdout_out:
                 holdout_out[d] = open(tmp / "eval" / f"holdout_{d}.jsonl", "w", encoding="utf-8")
-            holdout_out[d].write(json.dumps(rec) + "\n")
+            holdout_out[d].write(json.dumps(with_system(rec)) + "\n")
             holdout_counts[d] = holdout_counts.get(d, 0) + 1  # kept out of training by the deduplicator
     for fh in list(eval_out.values()) + list(holdout_out.values()):
         fh.close()
@@ -199,6 +199,7 @@ def build(cache: Path, out: Path, config: dict[str, Any] | None = None,
                 st[why] = st.get(why, 0) + 1
                 continue
             rec["quality"] = score
+            rec = with_system(rec)
             line = json.dumps(rec, ensure_ascii=False) + "\n"
             if d not in domain_out:
                 domain_out[d] = open(tmp / "domains" / f"{d}.jsonl", "w", encoding="utf-8")
@@ -258,6 +259,26 @@ def iter_texts(build_dir: Path, per_domain_chars: int = 8_000_000):
             n += len(t)
             if n >= per_domain_chars:
                 break
+
+
+SYSTEM_SHARE = 0.5
+
+
+def with_system(rec: dict[str, Any]) -> dict[str, Any]:
+    """1.0.3: every real chat starts with MOTH's system prompt, so half of the training conversations do too.
+
+    Before this, no training conversation had a system message, so the model met ``<|system|>`` for the
+    first time in every real chat. The choice is fixed by the record's id (the same on every build and
+    every machine); the other half stays without one, so both layouts are learned."""
+    msgs = rec.get("messages")
+    if not msgs or any(m.get("role") == "system" for m in msgs):
+        return rec
+    key = str(rec.get("uid") or json.dumps(msgs, sort_keys=True)).encode("utf-8")
+    if int.from_bytes(hashlib.sha256(key).digest()[:4], "big") / 2 ** 32 >= SYSTEM_SHARE:
+        return rec
+    from moth.policy.engine import DEFAULT_POLICY
+
+    return {**rec, "messages": [{"role": "system", "content": DEFAULT_POLICY["system_prompt"]}, *msgs]}
 
 
 def _encode(tok, rec: dict[str, Any]) -> tuple[list[int], list[int]]:
