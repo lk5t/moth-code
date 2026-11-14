@@ -51,6 +51,14 @@ Agreed with the Owner. Nothing here is started until the Owner says go.
 - **GPU support for workers** — any worker with a graphics card is detected and trains 10–50× faster.
 - 2–3× faster training (sequence packing, faster CPU maths, fused optimizer) — part of "Training" above.
 
+## Much faster updates (agreed)
+Today: desktop checks hourly, staged rollout 10 % → 50 % → 100 % with 6 h between stages, server agent
+checks every 15 min. Make it much quicker, keeping signatures, health checks and automatic rollback:
+- MOTH Cloud tells signed-in apps about a new version right away (through the alerts feed); no waiting for the hourly check.
+- Shorter rollout stages (e.g. minutes, not 6 hours) that advance as soon as early installs report healthy.
+- Server agent checks far more often; workers update immediately (already) .
+- Quiet install: download in the background and swap in when the app is idle, no restart prompt.
+
 ## Rule: improve what exists, never duplicate
 Before building each item, check what is already there and replace or extend it instead of adding a second
 version. Already present today (to be upgraded, not rebuilt):
