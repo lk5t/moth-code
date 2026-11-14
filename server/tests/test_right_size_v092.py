@@ -21,7 +21,12 @@ def test_right_size_from_measured_compute(client, owner, tmp_path, monkeypatch):
 
 def test_successor_trains_from_scratch_and_must_pass_the_gates(client, owner, tmp_path, monkeypatch):
     ctx, base_v = _world(client, owner, tmp_path, monkeypatch)
-    S.update(ctx, {"training": {"steps": 30}, "budget": {"max_cycle_hours": 0.02}})
+    from moth_server.evolution import v2 as V2
+
+    # a short successor run whatever the machine's speed: a fixed small number of steps, a normal budget
+    monkeypatch.setattr(V2, "REBIRTH_MAX_HOURS", 1e-6)
+    monkeypatch.setattr(V2, "REBIRTH_MIN_STEPS", 40)
+    S.update(ctx, {"training": {"steps": 30}, "budget": {"max_cycle_hours": 2.0}})
     C.record_throughput(ctx, "local:cpu", 50_000, 1)
     cyc = drive(ctx, lambda c: any((e["config"] or {}).get("rebirth") for e in MEM.experiments(ctx, c["id"]))
                 or c["status"] in MEM.TERMINAL_CYCLE, timeout=300)

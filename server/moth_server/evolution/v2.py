@@ -299,6 +299,7 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
 
 REBIRTH_LR = 1e-3          # a fresh model learns fastest with a larger rate than continued training
 REBIRTH_MAX_HOURS = 10.0   # one successor run at most (it is checkpointed and resumable like any run)
+REBIRTH_MIN_STEPS = 500
 
 
 def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: dict, settings: dict, seed: int,
@@ -315,7 +316,7 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
                 and e["status"] in ("rejected", "failed"))
     hours = min(REBIRTH_MAX_HOURS * (2 ** retry), float(settings["budget"]["max_cycle_hours"]) * 0.9)
     tokens = min(int(rs["tokens_target"]) * (2 ** retry), int(speed * hours * 3600))
-    steps = max(500, tokens // max(1, tokens_per_step))
+    steps = max(REBIRTH_MIN_STEPS, tokens // max(1, tokens_per_step))
     cfg = _config(base, arch, src, mix, REBIRTH_LR, steps, settings, seed)
     cfg.update(method="from_scratch", strategy="rebirth", local_only=True,
                rebirth={"architecture": rs["architecture"], "params_before": rs["params_before"], "attempt": retry + 1,
