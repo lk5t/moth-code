@@ -436,6 +436,11 @@ def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
         return
     for e in running:  # every running experiment advances each tick (local, worker or distributed)
         _advance_running(ctx, cyc, e, settings)
+    if any(MEM.experiment(ctx, e["id"])["status"] == "waiting" for e in running):
+        # 1.0.2: a run just handed over to shared rounds starts again this tick, ahead of the others
+        startable = [e for e in sorted(MEM.experiments(ctx, cyc["id"]), key=lambda e: e["id"])
+                     if e["status"] in ("planned", "waiting", "paused")
+                     and not ((e["config"] or {}).get("requires_approval") and not (e["config"] or {}).get("approved_by"))]
     if not settings.get("parallel_experiments", True):
         if not running and startable:
             _try_start(ctx, cyc, startable[0], settings)
@@ -625,7 +630,7 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict, parallel: bool = 
         MEM.update_cycle(ctx, cyc["id"], status="training", result={**(cyc["result"] or {}), "waiting_reason": None})
         MEM.event(ctx, "experiment.distributed", f"Experiment #{exp['id']} is training on {st['shards']} participants "
                   f"({st['rounds']} rounds of {st['local_steps']} steps, from the "
-                  f"{'development checkpoint' if st['started_from'] == 'dev_checkpoint' else 'model weights'})",
+                  f"{ {'dev_checkpoint': 'development checkpoint', 'checkpoint': 'its latest checkpoint', 'successor_init': 'fresh successor weights'}.get(st['started_from'], 'model weights')})",
                   cycle_id=cyc["id"], experiment_id=exp["id"], participants=n)
         return
     if choice is None:  # a paused experiment keeps its checkpoint and stays "paused"
@@ -674,7 +679,7 @@ def _finish_training(ctx: Ctx, cyc: dict, exp: dict, result: dict, seconds: floa
         return
     from pathlib import Path
 
-    if exp.get("backend") == "local" and (exp.get("config") or {}).get("resume"):  # 0.9.0: count resumed work too
+    if exp.get("backend") in ("local", "distributed") and (exp.get("config") or {}).get("resume"):  # 0.9.0: count resumed work too
         result = {**result, "step": B._with_resume(exp, "step", result.get("step")),
                   "tokens": B._with_resume(exp, "tokens", result.get("tokens"))}
     try:
@@ -762,6 +767,8 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
             MEM.update_cycle(ctx, cyc["id"], status="waiting_for_compute",
                              result={**(cyc["result"] or {}), "waiting_reason": "; ".join(blockers)})
             return
+        if _handoff_to_shared(ctx, cyc, exp, settings, elapsed):
+            return
         prog = B.progress(ctx, exp)
         from moth_server.evolution import v2 as V2
 
@@ -817,6 +824,68 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
                               compute_seconds=float(exp["compute_seconds"] or 0) + elapsed)
         MEM.event(ctx, "experiment.interrupted", f"Experiment #{exp['id']}'s training process stopped unexpectedly; "
                   "it will resume from its last checkpoint", level="warning", cycle_id=cyc["id"], experiment_id=exp["id"])
+
+
+HANDOFF_MIN_REMAINING = 0.2     # 1.0.2: a run with less than this share left just finishes where it is
+HANDOFF_CHECK_SECONDS = 120.0
+
+
+def _handoff_to_shared(ctx: Ctx, cyc: dict, exp: dict, settings: dict, elapsed: float) -> bool:
+    """1.0.2: a run that started on MOTH Cloud alone (nobody else was online) moves to shared rounds with
+    MOTH Cloud *and* the workers as soon as other computers are online, continuing from its latest verified
+    checkpoint, so everyone trains it together instead of the server training it alone for hours."""
+    from moth_server.evolution import distributed as D
+    from moth.training.checkpoint import atomic_torch_save, file_sha256, load_latest_verified
+
+    cfg = exp.get("config") or {}
+    res = exp.get("resources") or {}
+    if not (settings.get("distributed") or {}).get("handoff", True) or cfg.get("grow") or cfg.get("local_only"):
+        return False
+    if str(res.get("device", "cpu")).startswith("cuda"):
+        return False  # a GPU on this server is faster than sharing it with CPUs
+    if now() - float(res.get("handoff_checked_at") or 0) < HANDOFF_CHECK_SECONDS:
+        return False
+    MEM.update_experiment(ctx, exp["id"], resources={**res, "handoff_checked_at": now()})
+    if not B.worker_training_supported(ctx, exp, masks=True):
+        return False  # private data never leaves MOTH Cloud
+    others = [e for e in MEM.experiments(ctx, cyc["id"]) if e["id"] != exp["id"]
+              and e["status"] in ("running", "waiting", "queued", "paused")]
+    if others and not cfg.get("rebirth"):
+        return False  # the other experiments use the workers in parallel already
+    need = _need_bytes(ctx, exp)
+    ok, n = D.available(ctx, settings, need)
+    people = D.participants(ctx, need, settings.get("worker_ids")) if ok else []
+    if not ok or not any((w.get("hw") or {}).get("worker_kind") != "cloud" for w in people):
+        return False  # nobody besides MOTH Cloud itself: sharing gains nothing
+    planned = int(cfg["steps"])
+    step = int((B.progress(ctx, exp) or {}).get("step") or 0)
+    if planned - step < max(HANDOFF_MIN_REMAINING * planned, 2 * D.SUCCESSOR_ROUND_STEPS if cfg.get("rebirth") else 100):
+        return False
+    if not B.pause_local(ctx, exp, wait_s=120):
+        return False  # still busy saving: try again later
+    rd = B.run_dir(ctx, exp)
+    _, ck = load_latest_verified(rd)
+    update: dict = {}
+    done = int(ck.get("step") or 0) if ck else 0
+    if ck and done > 0:
+        state = {k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()}
+        dest = rd / "resume-base.pt"
+        atomic_torch_save(state, dest)
+        prev = cfg.get("resume") or {}
+        resume = {"step": int(prev.get("step", 0)) + done, "tokens": int(prev.get("tokens", 0)) + int(ck.get("tokens_seen") or 0),
+                  "sha256": file_sha256(dest), "planned_steps": int(prev.get("planned_steps") or planned)}
+        update["config"] = {**cfg, "steps": max(1, planned - done), "resume": resume}
+    import shutil
+    shutil.rmtree(rd / "checkpoints", ignore_errors=True)  # the local run is over: its steps are in resume-base.pt
+    for name in ("result.json", "STOP"):
+        (rd / name).unlink(missing_ok=True)
+    (ctx.extras.get("evolution_procs") or {}).pop(exp["id"], None)
+    MEM.update_experiment(ctx, exp["id"], status="waiting", backend=None, error=None,
+                          compute_seconds=float(exp["compute_seconds"] or 0) + elapsed, **update)
+    MEM.event(ctx, "experiment.shared", f"Experiment #{exp['id']} now trains on MOTH Cloud and {n - 1} other "
+              f"computer(s) together, continuing from step {done:,}.", cycle_id=cyc["id"], experiment_id=exp["id"],
+              participants=n, step=done)
+    return True
 
 
 def _stop_experiment(ctx: Ctx, exp: dict, reason: str) -> None:

@@ -56,9 +56,19 @@ def participants(ctx: Ctx, need_bytes: int, worker_ids: list[int] | None = None)
             out.append({**w, "hw": hw})
     # Prefer workers with a history of verified useful work; new and slower devices remain eligible.
     out.sort(key=lambda w: (w['verified_jobs'] + 1) / (w['verified_jobs'] + w['failed_jobs'] + 2), reverse=True)
-    # Keep work on compatible GPUs when they exist; CPU participants remain the fallback.
+    # Keep work on compatible GPUs when they exist. 1.0.2: CPUs (MOTH Cloud included) still join when they
+    # are at least a quarter as fast as the typical GPU: steps_for() gives each its share, so they add work
+    # without holding a round up.
     gpu = [w for w in out if w["hw"].get("compute") == "gpu"]
-    return gpu or out
+    if not gpu:
+        return out
+    speeds = sorted(float((w["hw"].get("benchmark") or {}).get("gflops") or 0) for w in gpu)
+    typical = speeds[len(speeds) // 2]
+    if typical <= 0:
+        return gpu
+    cpus = [w for w in out if w["hw"].get("compute") != "gpu"
+            and float((w["hw"].get("benchmark") or {}).get("gflops") or 0) >= 0.25 * typical]
+    return gpu + cpus
 
 
 def available(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[bool, int]:
@@ -130,15 +140,22 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     if successor:
         rounds = max(rounds, min(500, math.ceil(int(cfg["steps"]) / SUCCESSOR_ROUND_STEPS)))
     local_steps = max(1, math.ceil(int(cfg["steps"]) / rounds))
-    dev = {} if successor else (base["info"].get("dev_checkpoint") or {})
-    if not successor:
+    # 1.0.2: a run handed over from MOTH Cloud alone continues from its verified checkpoint
+    resume = cfg.get("resume") or {}
+    handed = rd / "resume-base.pt"
+    resumed = bool(resume.get("sha256") and handed.is_file() and _sha(handed) == resume["sha256"])
+    dev = {} if successor or resumed else (base["info"].get("dev_checkpoint") or {})
+    if not successor and not resumed:
         src = Path(dev["path"]) if dev.get("path") else Path(base["path"]) / "model.pt"
         expected_sha = dev.get("sha256") if dev.get("path") else base["sha256"]
         if not src.is_file() or not expected_sha or _sha(src) != expected_sha:
             raise ValueError("distributed training requires an intact, checksum-verified base checkpoint")
     if not worker_training_supported(ctx, exp, masks=True):
         raise ValueError("private training data never leaves MOTH Cloud")
-    if successor:  # trained from scratch: every participant starts from the same seeded weights
+    if resumed:
+        state = torch.load(handed, map_location="cpu", weights_only=True)
+        torch.save({k: v.float() if v.is_floating_point() else v for k, v in state.items()}, _round_weights(rd, 0))
+    elif successor:  # trained from scratch: every participant starts from the same seeded weights
         torch.save(_successor_init(exp, base), _round_weights(rd, 0))
     else:
         raw = torch.load(src, map_location="cpu", weights_only=False)
@@ -168,7 +185,7 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     state_info = {"round": 0, "rounds": rounds, "shards": n, "local_steps": local_steps, "history": [],
                   "worker_ids": settings.get("worker_ids"),
                   "weights_sha256": _sha(_round_weights(rd, 0)),
-                  "started_from": "successor_init" if successor else "dev_checkpoint" if dev else "weights",
+                  "started_from": "checkpoint" if resumed else "successor_init" if successor else "dev_checkpoint" if dev else "weights",
                   "jobs": {}}
     _create_round_jobs(ctx, exp, base, state_info, need_bytes)
     return state_info
