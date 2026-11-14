@@ -34,6 +34,7 @@ DEFAULTS: dict[str, Any] = {
         "task_tolerance": 0.02,        # task-suite accuracy may drop by at most 2 points
         "max_speed_regression": 0.25,  # generation speed may drop by at most 25 %
         "max_memory_growth": 0.25,     # peak memory may grow by at most 25 %
+        "min_tokens_per_second": 15.0,  # 0.10.0: a bigger model (growth, successor) must still chat this fast
     },
     # min_requests 0 (0.7.1): user traffic is never required. Without requests, repeated passing health
     # checks on the deployed candidate are the evidence; with requests, error rate and latency are checked.
@@ -81,7 +82,7 @@ _BOUNDS = {
     "training.seq_len": (8, 32768), "training.weight_decay": (0.0, 1.0), "training.eval_interval": (1, 100_000),
     "training.checkpoint_interval": (1, 100_000),
     "gates.min_improvement": (0.0, 0.5), "gates.retention_tolerance": (0.0, 0.5), "gates.code_tolerance": (0.0, 1.0),
-    "gates.task_tolerance": (0.0, 1.0), "gates.max_speed_regression": (0.0, 0.9), "gates.max_memory_growth": (0.0, 5.0),
+    "gates.task_tolerance": (0.0, 1.0), "gates.max_speed_regression": (0.0, 0.9), "gates.max_memory_growth": (0.0, 5.0), "gates.min_tokens_per_second": (1.0, 1000.0),
     "monitoring.minutes": (0.0, 24 * 60), "monitoring.max_error_rate": (0.0, 1.0),
     "monitoring.max_latency_factor": (1.0, 100.0), "monitoring.min_requests": (0, 10_000),
     "limits.cpu_threads": (1, 1024), "limits.min_free_memory_gb": (0.0, 4096.0), "limits.min_free_disk_gb": (0.0, 1e6),

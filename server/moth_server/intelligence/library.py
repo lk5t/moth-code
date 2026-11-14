@@ -110,11 +110,84 @@ def _lineage_tokenizer(ctx: Ctx) -> Path | None:
     return None
 
 
+SUCCESSOR_VOCAB = 8192
+SUCCESSOR_KEY = "successor_tokenizer_build"
+
+
+def byte_level(release: dict) -> bool:
+    """True when a model uses the byte-level tokenizer (no merges): one token per byte."""
+    from moth.model.tokenizer import Tokenizer
+
+    p = Path(release.get("path") or "") / "tokenizer.json"
+    try:
+        return not Tokenizer.load(p).merges
+    except (OSError, ValueError, KeyError):
+        return False
+
+
+def successor_tokenizer(ctx: Ctx) -> dict[str, Any] | None:
+    """0.10.0: the newest ready build prepared with a new BPE tokenizer for a successor model."""
+    from moth.model.tokenizer import Tokenizer
+
+    for b in ctx.db.all(select(library_builds).where(library_builds.c.status == "ready").order_by(library_builds.c.id.desc())):
+        try:
+            m = json.loads(b["manifest"] or "{}")
+        except ValueError:
+            continue
+        if not m.get("successor_tokenizer") or not b["path"]:
+            continue
+        p = Path(b["path"]) / "tokenizer.json"
+        if not p.exists():
+            continue
+        tok = Tokenizer.load(p)
+        if tok.fingerprint() != b["tokenizer_fingerprint"]:
+            continue
+        return {"build_id": b["id"], "fingerprint": b["tokenizer_fingerprint"], "path": str(p),
+                "vocab_size": tok.vocab_size}
+    return None
+
+
+def ensure_successor_tokenizer(ctx: Ctx) -> str | None:
+    """Start (once) a data preparation with a new BPE tokenizer for a byte-level lineage's successor.
+
+    Returns why the successor waits, or None when it should not wait (ready, or the preparation failed:
+    the successor then keeps the byte-level tokenizer)."""
+    st = ctx.db.get_config(SUCCESSOR_KEY, None) or {}
+    if st.get("build"):
+        b = ctx.db.one(select(library_builds).where(library_builds.c.id == int(st["build"])))
+        if b and b["status"] in ("queued", "running"):
+            return ("preparing the training data with a new BPE tokenizer "
+                    f"({SUCCESSOR_VOCAB:,} tokens) for the successor (build {b['id']})")
+        if b and b["status"] == "failed":
+            return None
+        if b and b["status"] == "ready":
+            return None
+    running = ctx.db.one(select(library_builds).where(library_builds.c.status.in_(("queued", "running"))))
+    if running:
+        return "waiting for the current data preparation to finish before preparing the successor's tokenizer"
+    from moth_server.intelligence import discovery
+
+    base_cfg = ctx.db.get_config("library_last_config", None) or discovery.automatic_config(ctx)
+    if not base_cfg:
+        return None  # nothing can be prepared: the successor keeps the byte-level tokenizer
+    cfg = {**base_cfg, "new_tokenizer": True, "vocab_size": SUCCESSOR_VOCAB}
+    bid = start_build(ctx, None, cfg)
+    ctx.db.set_config(SUCCESSOR_KEY, {"build": bid, "at": time.time()})
+    from moth_server.evolution import memory as MEM
+
+    MEM.event(ctx, "data.successor_tokenizer", f"Preparing the training data again with a new BPE tokenizer "
+              f"({SUCCESSOR_VOCAB:,} tokens) for MOTH's successor (build {bid}): about four times fewer tokens per "
+              "text, so the bigger model learns words instead of single letters.", build=bid)
+    return f"preparing the training data with a new BPE tokenizer for the successor (build {bid})"
+
+
 def start_build(ctx: Ctx, actor_id: int | None, config: dict[str, Any] | None = None,
                 wait: bool = False) -> int:
     running = ctx.db.one(select(library_builds).where(library_builds.c.status.in_(("queued", "running"))))
     if running:
         return running["id"]
+    if (config or {}).get("automatic") and not (config or {}).get("new_tokenizer"):
+        ctx.db.set_config("library_last_config", config)
     with ctx.db.tx() as c:
         bid = c.execute(library_builds.insert().values(status="queued", created_at=now())).inserted_primary_key[0]
     from moth_server.evolution.native_reset import spawn
@@ -158,8 +231,10 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
                           "domain": "conversation", "records": own})
         cfg = {**config, "pins": pins(ctx)}
         manifest = factory.build(root(ctx) / "cache", out, cfg, log=progress, extra_sources=extra)
-        tok_path = _lineage_tokenizer(ctx)
-        if tok_path is None:  # a new lineage: train its tokenizer once from the corpus
+        tok_path = None if config.get("new_tokenizer") else _lineage_tokenizer(ctx)
+        if config.get("new_tokenizer"):
+            manifest["successor_tokenizer"] = True
+        if tok_path is None:  # a new lineage (or a successor): train its tokenizer once from the corpus
             tok_path = out / "tokenizer.json"
             vocab = int(config.get("vocab_size", 16384))
             train_bpe(factory.iter_texts(out, per_domain_chars=int(config.get("tokenizer_chars", 4_000_000))),

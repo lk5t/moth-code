@@ -91,8 +91,9 @@ def _run(spec: dict[str, Any]) -> dict[str, Any]:
         base_cfg = MothConfig.from_dict(grown["model_config"])
     if spec.get("architecture") and spec.get("from_scratch"):
         # 0.9.2: a right-sized successor keeps the vocabulary and context, with a new width and depth
+        # 0.10.0: and may set a longer context and a new tokenizer's vocabulary
         keep = {k: v for k, v in spec["architecture"].items()
-                if k in ("d_model", "n_layers", "n_heads", "n_kv_heads", "ffn_hidden")}
+                if k in ("d_model", "n_layers", "n_heads", "n_kv_heads", "ffn_hidden", "vocab_size", "max_seq_len")}
         base_cfg = MothConfig.from_dict({**base_cfg.to_dict(), **keep})
     seq_len = min(int(spec.get("seq_len", 256)), base_cfg.max_seq_len)
     cfg = TrainConfig(
@@ -112,6 +113,9 @@ def _run(spec: dict[str, Any]) -> dict[str, Any]:
         lineage=dict(spec.get("lineage") or {}),
     )
     trainer = Trainer(cfg)
+    if spec.get("from_scratch") and trainer.tokenizer.vocab_size > base_cfg.vocab_size:
+        # a successor with its own (larger) tokenizer: the vocabulary follows the data, padded as usual
+        base_cfg = MothConfig.from_dict({**base_cfg.to_dict(), "vocab_size": ((trainer.tokenizer.vocab_size + 63) // 64) * 64})
     # continued training keeps the base architecture exactly (vocabulary padding included)
     if trainer.tokenizer.vocab_size > base_cfg.vocab_size:
         raise ValueError("the dataset tokenizer has more tokens than the base model's vocabulary")

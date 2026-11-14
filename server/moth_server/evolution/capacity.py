@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -233,22 +235,35 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
         return out
 
     # 0.9.2: a model far too small for the available compute is replaced, not grown step by step
+    # (0.10.0: not measured again while a successor trains: the measurement would compete with it)
     try:
-        rs = right_size(ctx, base, settings)
-    except Exception:  # noqa: BLE001 — sizing only refines the plan
+        rs = None if successor_running(ctx) else right_size(ctx, base, settings)
+    except Exception as exc:  # noqa: BLE001 — sizing only refines the plan (the reason is kept)
         rs = None
+        cause("sizing_unavailable", None, f"{type(exc).__name__}: {exc}"[:300])
     if rs:
         blocked = rebirth_blocked(ctx, rs["params_after"])
         cause("too_small", True, f"{params:,} parameters, while the measured compute can train about "
               f"{rs['optimal_params']:,} properly in a day")
-        if not blocked:
+        from moth_server.intelligence import library
+
+        waiting = None
+        if not blocked and not rs.get("tokenizer") and library.byte_level(base):
+            waiting = library.ensure_successor_tokenizer(ctx)  # 0.10.0: a BPE successor needs its own data
+        if waiting:
+            cause("successor_tokenizer", True, waiting)
+            out["successor_waiting"] = waiting
+        elif not blocked:
             out.update(rebirth=rs, params_after=rs["params_after"])
             return decide("rebirth", f"MOTH is far too small to write sentences. Training a right-sized successor "
                           f"({rs['params_after']:,} parameters).",
                           f"{rs['params_before']:,} parameters is {rs['params_after'] / max(1, rs['params_before']):.0f}× "
                           f"smaller than what the measured compute can train in about a day; growth adds at most 50% "
                           f"per step and cannot widen the model, so a successor is trained from scratch on the same "
-                          f"data and tokenizer and replaces the current model only if it is measurably better")
+                          f"curriculum{' with a new BPE tokenizer' if rs.get('tokenizer') else ''} "
+                          f"({rs['architecture']['max_seq_len']}-token context; speed {rs['speed_basis']}: "
+                          f"{rs['successor_tokens_per_second']:,.0f} tokens/s) and replaces the current model only "
+                          f"if it is measurably better")
     if not caps and not imps:
         return decide("continue_training", "Measuring MOTH's capabilities before deciding anything else.",
                       "no capability benchmark or held-out result has been recorded for this model yet")
@@ -362,12 +377,40 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
                   out["causes"][-1]["detail"] + f": grow {best['ratio'] - 1:.0%} ({params:,} → {best['params']:,} parameters)")
 
 
-def right_size(ctx: Ctx, base: dict, settings: dict) -> dict | None:
-    """The architecture MOTH's measured compute can train properly in about a day (≈ 20 tokens per parameter),
-    or None when the current model is already close to it or nothing has been measured yet."""
+SUCCESSOR_CONTEXT = 1024      # 0.10.0: successors read 4× more text at once (RoPE positions, no learned table)
+PROBE_TTL = DAY_SECONDS       # measured shape speeds are reused for a day
+
+
+def _probe(ctx: Ctx, model_config: dict, seq_len: int) -> float | None:
+    """Measured training speed (tokens/s) of a shape on this server, cached (moth.training.speed_probe)."""
+    key = "speed_probe:" + MEM.config_hash({**model_config, "seq": seq_len, "cpus": os.cpu_count(),
+                                            "day": int(time.time() // DAY_SECONDS)})[:40]  # one day's probes together
+    hit = ctx.db.get_config(key, None)
+    if hit and time.time() - float(hit.get("at", 0)) < PROBE_TTL:
+        return float(hit["tokens_per_second"])
+    try:
+        from moth.training.speed_probe import measure
+
+        tps = measure(model_config, seq_len)
+    except Exception:  # noqa: BLE001 — without a measurement the compute rule is used instead
+        return None
+    ctx.db.set_config(key, {"tokens_per_second": tps, "at": time.time()})
+    return tps
+
+
+def right_size(ctx: Ctx, base: dict, settings: dict, probe: bool = True) -> dict | None:
+    """The architecture MOTH's compute can train properly in about a day (≈ 20 tokens per parameter),
+    or None when the current model is already close to it or nothing has been measured yet.
+
+    0.10.0: each candidate shape's real training speed is measured on this server (a few steps on random
+    tokens) instead of being derived from the "6 × parameters" rule, which underestimated small models
+    3.5×; worker speed is added in proportion. Successors get a 1024-token context, and a byte-level
+    lineage's successor uses the new BPE tokenizer once its data is prepared (about 4× fewer tokens per
+    text, so each token carries more meaning)."""
     from moth.model.config import MothConfig
 
     from moth_server.evolution import compute as C
+    from moth_server.intelligence import library
 
     g = settings.get("growth") or {}
     if not g.get("enabled", True) or g.get("rebirth", True) is False:
@@ -379,26 +422,55 @@ def right_size(ctx: Ctx, base: dict, settings: dict) -> dict | None:
     if local <= 0:
         return None  # nothing measured yet: the first runs measure it
     workers = sum(float(v) for k, v in tp.items() if k.startswith("worker:") and v)
-    flops_per_s = 6.0 * params * (local + workers)  # compute is roughly 6 × parameters × tokens
-    optimal = math.sqrt(flops_per_s * DAY_SECONDS / (6.0 * TOKENS_PER_PARAM_TARGET))
+    share = (local + workers) / local      # the workers add speed in proportion to the server's
     max_params = int(g.get("max_params", 0)) or None
-    if max_params:
-        optimal = min(optimal, float(max_params))
-    shapes = []
+    tok = library.successor_tokenizer(ctx) if library.byte_level(base) else None
+    vocab = ((int(tok["vocab_size"]) + 63) // 64) * 64 if tok else cfg_model.vocab_size
+    context = max(cfg_model.max_seq_len, SUCCESSOR_CONTEXT)
+    seq = min(context, int(((settings.get("training") or {}).get("seq_len")) or 256) * 4)
+    flops_rate = 6.0 * params * (local + workers)  # the old compute rule, only to skip hopeless shapes
+    best = None
+    basis = "measured"
+    # Calibration: the current shape is timed the same way, at the same moment. Its real training speed is
+    # known (``local``), so the ratio corrects the probes for whatever else this server is doing right now
+    # and for the difference between a short probe and a real run.
+    here = _probe(ctx, {**cfg_model.to_dict()}, seq) if probe else None
+    factor = min(100.0, max(0.1, local / here)) if here else 1.0
     for d, layers, heads, ffn in SHAPES:
         c = MothConfig.from_dict({**cfg_model.to_dict(), "d_model": d, "n_layers": layers, "n_heads": heads,
-                                  "n_kv_heads": heads, "ffn_hidden": ffn})
-        shapes.append((c.num_params(), c))
-    fitting = [x for x in shapes if x[0] <= optimal]
-    if not fitting:
+                                  "n_kv_heads": heads, "ffn_hidden": ffn, "vocab_size": vocab, "max_seq_len": context})
+        n = c.num_params()
+        if max_params and n > max_params:
+            break
+        need = TOKENS_PER_PARAM_TARGET * n / DAY_SECONDS   # tokens/s that trains it properly in a day
+        estimate = flops_rate / (6.0 * n)
+        if estimate * 8 < need:
+            break                                            # even 8× faster than the rule would not do
+        tps = _probe(ctx, c.to_dict(), seq) if probe and here else None
+        if tps is None:
+            tps, basis = estimate * share, "estimated"
+        else:
+            tps *= factor * share
+        if tps < need:
+            break
+        best = (n, c, tps)
+    if best is None:
         return None
-    n, cfg_new = max(fitting, key=lambda x: x[0])
+    n, cfg_new, tps = best
     if n < params * REBIRTH_FACTOR:
         return None
-    return {"params_before": params, "params_after": n, "optimal_params": int(optimal),
-            "architecture": {k: getattr(cfg_new, k) for k in ("d_model", "n_layers", "n_heads", "n_kv_heads", "ffn_hidden")},
-            "tokens_per_second_now": local + workers,
-            "tokens_target": int(TOKENS_PER_PARAM_TARGET * n)}
+    arch = {k: getattr(cfg_new, k) for k in ("d_model", "n_layers", "n_heads", "n_kv_heads", "ffn_hidden",
+                                               "vocab_size", "max_seq_len")}
+    return {"params_before": params, "params_after": n, "optimal_params": int(tps * DAY_SECONDS / TOKENS_PER_PARAM_TARGET),
+            "architecture": arch, "tokens_per_second_now": local + workers,
+            "successor_tokens_per_second": round(tps, 1), "speed_basis": basis, "seq_len": seq,
+            "tokenizer": tok, "tokens_target": int(TOKENS_PER_PARAM_TARGET * n)}
+
+
+def successor_running(ctx: Ctx) -> bool:
+    return any((e.get("config") or {}).get("rebirth") and e["status"] in ("planned", "waiting", "running", "paused",
+                                                                           "trained", "evaluating")
+               for e in MEM.experiments(ctx, limit=200))
 
 
 def rebirth_blocked(ctx: Ctx, params_after: int) -> str | None:

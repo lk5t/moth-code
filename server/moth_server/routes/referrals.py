@@ -55,6 +55,7 @@ class RulesIn(BaseModel):
     reputation_min_jobs: int | None = Field(default=None, ge=0, le=10_000)
     hold_duplicate_machines: bool | None = None
     user_payment_rewards: bool | None = None
+    referee_welcome_tokens: int | None = Field(default=None, ge=0, le=10**10)
 
 
 class ReasonIn(BaseModel):

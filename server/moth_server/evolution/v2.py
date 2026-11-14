@@ -31,13 +31,14 @@ from moth_server.evolution import memory as MEM
 
 
 # ---- data: the dataset library's mixture ---------------------------------------------------------------
-def mixture_source(ctx: Ctx, base: dict) -> dict[str, Any] | None:
+def mixture_source(ctx: Ctx, base: dict, fingerprint: str | None = None) -> dict[str, Any] | None:
+    """The curriculum data for ``base``'s tokenizer (or, for a successor, for ``fingerprint``'s)."""
     from sqlalchemy import select
 
     from moth_server.db import library_builds
     from moth_server.evolution import datasets as DS
 
-    fp = base["info"].get("tokenizer_fingerprint")
+    fp = fingerprint or base["info"].get("tokenizer_fingerprint")
     rows = ctx.db.all(select(library_builds).where(library_builds.c.status == "ready")
                       .order_by(library_builds.c.id.desc()))
     for b in rows:
@@ -53,6 +54,8 @@ def mixture_source(ctx: Ctx, base: dict) -> dict[str, Any] | None:
         source = {"build_id": b["id"], "path": str(mix_file.parent), "build_sha256": b["content_sha256"],
                 "dataset_id": anchor["id"],
                 "domain_tokens": {d: v["tokens"]["train"] for d, v in mix["domains"].items()}}
+        if fingerprint:  # a successor's own build: nothing earlier was trained with its tokenizer
+            return source
         return _replay_source(ctx, base, source, rows, DS.approved(ctx, fp))
     return None
 
@@ -304,12 +307,30 @@ REBIRTH_MIN_STEPS = 500
 
 def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: dict, settings: dict, seed: int,
                   decision: dict) -> None:
-    """0.9.2: a right-sized successor, trained from scratch on MOTH Cloud (see capacity.right_size)."""
+    """0.9.2: a right-sized successor, trained from scratch (see capacity.right_size).
+
+    0.10.0: its speed is the measured speed of its own shape; it reads a 1024-token context; a byte-level
+    lineage's successor trains on data prepared with its new BPE tokenizer; and it can be split across
+    MOTH Cloud and the workers (shared rounds) instead of training on MOTH Cloud alone."""
     rs = decision["rebirth"]
     tr = settings["training"]
-    tokens_per_step = int(tr["batch_size"]) * int(tr["seq_len"])
-    # the successor trains about params_before/params_after as fast as the current model (compute-bound)
-    speed = float(rs["tokens_per_second_now"]) * rs["params_before"] / max(1, rs["params_after"])
+    tok = rs.get("tokenizer")
+    if tok:
+        own = mixture_source(ctx, base, tok["fingerprint"])
+        if own is None:
+            out["notes"].append("the successor's tokenizer data is not usable yet; the successor waits for it")
+            return
+        src = own
+        from moth_server.intelligence import curriculum
+
+        mix = {**mix, "weights": {d: w for d, w in mix["weights"].items() if d in own["domain_tokens"]}
+               or curriculum.plan(ctx, 1, None, tokens=own["domain_tokens"])["weights"]}
+    seq = int(rs.get("seq_len") or tr["seq_len"])
+    # the same tokens per step as other runs: a longer context uses a smaller batch
+    batch = max(1, int(tr["batch_size"]) * int(tr["seq_len"]) // seq)
+    tokens_per_step = batch * seq
+    speed = float(rs.get("successor_tokens_per_second")
+                  or float(rs["tokens_per_second_now"]) * rs["params_before"] / max(1, rs["params_after"]))
     # a successor that did not beat the current model is retried once with twice the training
     retry = sum(1 for e in MEM.experiments(ctx, limit=200) if (e.get("config") or {}).get("rebirth")
                 and int(e["config"]["rebirth"].get("params_after") or 0) == rs["params_after"]
@@ -318,16 +339,20 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
     tokens = min(int(rs["tokens_target"]) * (2 ** retry), int(speed * hours * 3600))
     steps = max(REBIRTH_MIN_STEPS, tokens // max(1, tokens_per_step))
     cfg = _config(base, arch, src, mix, REBIRTH_LR, steps, settings, seed)
-    cfg.update(method="from_scratch", strategy="rebirth", local_only=True,
+    cfg.update(method="from_scratch", strategy="rebirth", batch_size=batch, seq_len=seq, no_single_worker=True,
                rebirth={"architecture": rs["architecture"], "params_before": rs["params_before"], "attempt": retry + 1,
                         "params_after": rs["params_after"], "optimal_params": rs["optimal_params"],
+                        "speed_basis": rs.get("speed_basis", "estimated"),
+                        **({"tokenizer": tok} if tok else {}),
                         "planned_tokens": steps * tokens_per_step,
                         "planned_hours": round(steps * tokens_per_step / max(1.0, speed) / 3600, 1)})
     cfg["eval_interval"] = max(int(cfg["eval_interval"]), steps // 40)
     cfg["checkpoint_interval"] = max(int(cfg["checkpoint_interval"]), steps // 40)
+    a = rs["architecture"]
     _add(ctx, out, cfg, src, f"Right-sized successor: {rs['params_before']:,} → {rs['params_after']:,} parameters, "
-         f"trained from scratch for {steps:,} steps (about {cfg['rebirth']['planned_hours']} h on MOTH Cloud) on the same "
-         "curriculum and tokenizer. It replaces the current model only if it passes every gate.", 99)
+         f"{a.get('max_seq_len', 0):,}-token context{', new BPE tokenizer' if tok else ''}, trained from scratch for "
+         f"{steps:,} steps (about {cfg['rebirth']['planned_hours']} h at the measured speed; shared with the workers "
+         "when they are online). It replaces the current model only if it passes every gate.", 99)
 
 
 # 0.8.1: Evolution never runs out of work. Identical configurations are never repeated, so once every

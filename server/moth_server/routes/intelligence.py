@@ -579,14 +579,23 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     # Prefer the currently executing experiment over a later, merely planned variant.
     experiments = MEM.experiments(ctx, cyc["id"]) if cyc else []
     exp = next((e for e in experiments if e["status"] == "running"), exp)
+    from moth_server.evolution import distributed as D
     experiment_history = [{"id": e["id"], "status": e["status"], "backend": e["backend"],
                           "device": (e.get("resources") or {}).get("device"),
                           "method": e["config"].get("method"), "growth": e["config"].get("grow"),
+                          "successor": {k: (e["config"].get("rebirth") or {}).get(k) for k in
+                                        ("params_before", "params_after", "architecture", "planned_hours")}
+                          if e["config"].get("rebirth") else None,
+                          # 0.10.0: what one loss unit covers, so the live view can say how well it writes
+                          "loss_per": "token" if ((e["config"].get("rebirth") or {}).get("tokenizer")
+                                                  or int((((e["config"].get("rebirth") or {}).get("architecture") or {})
+                                                          .get("vocab_size")) or _base_vocab(ctx, e)) > 512) else "byte",
                           "requires_approval": bool(e["config"].get("requires_approval") and not e["config"].get("approved_by")),
                           "progress": e.get("progress"), "metrics": e.get("metrics"),
                           "measurement": B.progress(ctx, e)
                           if e.get('backend') == 'local' and e['status'] in ('running', 'paused')
-                          else (B.worker_report(ctx, e) if e.get('backend') == 'worker' and e['status'] == 'running' else {})
+                          else (B.worker_report(ctx, e) if e.get('backend') == 'worker' and e['status'] == 'running'
+                                else D.report(e) if e.get('backend') == 'distributed' and e['status'] == 'running' else {})
                           or (e.get('metrics') or {}).get('progress') or (e.get('metrics') or {}).get('training') or {},
                           "candidate_version": e.get("candidate_version"), "error": e.get("error"),
                           # 0.6.2 telemetry: when it ran, on what data and at what settings (owner only below)
@@ -697,3 +706,12 @@ def activity_feed(category:str='all',cursor:str|None=None,limit:int=50,auth:Auth
     from moth_server.intelligence.activity import feed
     try:return feed(ctx,auth.uid,auth.user['role']=='owner',category,cursor,limit)
     except ValueError as error:raise HTTPException(422,str(error)) from None
+
+
+def _base_vocab(ctx: Ctx, e: dict) -> int:
+    from moth_server import models as M
+
+    try:
+        return int((M.release(ctx, e["base_version"])["info"].get("config") or {}).get("vocab_size") or 0)
+    except Exception:  # noqa: BLE001 — a missing release only loses the label
+        return 0

@@ -28,6 +28,7 @@ import { IntelligencePanel } from "@/features/owner/intelligence";
 import { WorkersPanel } from "@/features/owner/ops";
 import { ModelOverview } from "@/features/owner/ModelOverview";
 import { TrainingProgress } from "./TrainingProgress";
+import { MorningReport } from "./MorningReport";
 import { ModelTab } from "./ModelTab";
 
 type Any = Record<string, any>;
@@ -85,6 +86,7 @@ export function IntelligenceHub() {
           {TABS.map(([value, label, icon]) => <TabsTrigger key={value} value={value} className="[&_svg]:size-3.5">{icon}{label}</TabsTrigger>)}
         </TabsList>
         {tab === "evolution" && <TabsContent value="evolution" className="flex flex-col gap-4">
+          {owner && <MorningReport />}
           <EvolutionControl progress={p} />
           {p?.current && <TrainingProgress progress={p} resources={resources} />}
           {p && <EvolutionActivity />}

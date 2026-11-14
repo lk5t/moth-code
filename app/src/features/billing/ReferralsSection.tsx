@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { formatNumber, timeAgo } from "@/lib/utils";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 
 interface Dashboard {
   code: string;
@@ -55,15 +56,15 @@ export function ReferralsSection() {
           <Button variant="secondary" onClick={() => copy(d.link, "link")}><Copy /> {copied === "link" ? "Copied" : "Copy link"}</Button>
         </div>
         <div className="grid grid-cols-4 gap-2">
-          {[
+          {([
             ["Invited", d.stats.referred],
             ["Workers", d.referred_workers?.length ?? 0],
-            ["Pending", `${formatNumber(d.stats.pending_tokens, 1)}`],
-            ["Earned", `${formatNumber(d.stats.earned_tokens, 1)}`],
-          ].map(([k, v]) => (
-            <div key={k as string} className="rounded-md border border-border bg-bg px-3 py-2">
+            ["Pending", d.stats.pending_tokens],
+            ["Earned", d.stats.earned_tokens],
+          ] as [string, number][]).map(([k, v]) => (
+            <div key={k} className={`lift rounded-md border bg-bg px-3 py-2 ${k === "Earned" && v > 0 ? "border-success/40" : "border-border"}`}>
               <div className="text-[10.5px] uppercase tracking-wider text-faint">{k}</div>
-              <div className="mt-0.5 font-mono text-sm">{v}</div>
+              <div className="mt-0.5 font-mono text-sm">{v >= 100_000 ? formatNumber(v, 1) : <AnimatedNumber value={v} />}</div>
             </div>
           ))}
         </div>

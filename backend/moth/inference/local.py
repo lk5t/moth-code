@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from moth.model.chat_format import Message, encode_chat
-from moth.model.generation import GenerationParams, GenerationStats, generate_stream
+from moth.model.generation import GenerationParams, GenerationStats, chat_quality, generate_stream
 
 
 class NoModelLoaded(RuntimeError):
@@ -65,6 +65,7 @@ class LocalInference:
                 raise NoModelLoaded("No MOTH model is loaded. Train and export a model, then load it in Models.")
             ids, _ = encode_chat(self.tokenizer, messages, add_generation_prompt=True)
             stats = GenerationStats()
+            params = chat_quality(params, byte_level=not self.tokenizer.merges)  # 0.10.0: cleaner replies
             for piece in generate_stream(self.model, self.tokenizer, ids, params, cancel_event=cancel_event,
                                          stats=stats):
                 on_text(piece)

@@ -33,8 +33,12 @@ from moth_server.hooks import register_hook
 DEFAULT_RULES: dict[str, Any] = {
     "enabled": True,
     # 0.5 compute rewards: credits per 1,000 verified trained tokens, capped per job
-    "contribution_reward_per_1k_tokens": 400,
-    "max_reward_per_job": 100_000,
+    # 0.10.0 defaults, sized against the plans (Pro = 5M tokens a month): a CPU worker training ~5k
+    # tokens/s earns ~90k credits per busy hour, a GPU ~10× more; one dedicated computer can earn up to
+    # 3M credits a month (60% of Pro). The referred contributor gets a one-time welcome bonus too.
+    "contribution_reward_per_1k_tokens": 5,
+    "max_reward_per_job": 50_000,
+    "referee_welcome_tokens": 100_000,
     "contributor_min_verified_jobs": 3,
     "min_reputation": 0.6,            # verified / (verified + failed), after reputation_min_jobs
     "reputation_min_jobs": 5,
@@ -44,10 +48,10 @@ DEFAULT_RULES: dict[str, Any] = {
     "qualifying_min_amount_cents": 100,
     "gpu_reward_tokens_per_job": 50_000,
     "gpu_min_verified_jobs": 3,
-    "pending_days": 14,
+    "pending_days": 7,
     "max_user_rewards_per_month": 10,
-    "max_gpu_reward_tokens_per_month": 2_000_000,
-    "lifetime_cap_tokens": 20_000_000,
+    "max_gpu_reward_tokens_per_month": 3_000_000,
+    "lifetime_cap_tokens": 30_000_000,
     "hold_same_ip_for_review": True,
 }
 
@@ -151,6 +155,7 @@ def on_contribution_verified(ctx: Ctx, conn: Connection, worker: dict, job_id: i
     amount = min(int(r["max_reward_per_job"]), int(round(max(0, tokens) / 1000 * float(r["contribution_reward_per_1k_tokens"]))))
     if amount <= 0:
         return  # no measured useful work, no reward
+    _welcome(conn, r, worker)
     key = f"gpu:{worker['id']}:{job_id}"  # one reward per verified job, ever
     if conn.execute(select(referral_rewards.c.id).where(referral_rewards.c.qualifying_ref == key)).first():
         return
@@ -161,6 +166,22 @@ def on_contribution_verified(ctx: Ctx, conn: Connection, worker: dict, job_id: i
         source_ref=f"job:{job_id}", amount=amount, status="review" if held else "pending",
         available_at=t + r["pending_days"] * 86400,
         reason=("held for review: " + "; ".join(held)) if held else f"verified contribution ({tokens:,} tokens trained)",
+        created_at=t, updated_at=t))
+
+
+def _welcome(conn: Connection, r: dict, worker: dict) -> None:
+    """0.10.0: once per person, the referred contributor's own bonus when their first worker qualifies."""
+    bonus = int(r.get("referee_welcome_tokens") or 0)
+    key = f"welcome:{worker['user_id']}"
+    if bonus <= 0 or conn.execute(select(referral_rewards.c.id).where(referral_rewards.c.qualifying_ref == key)).first():
+        return
+    held = _review_reasons(conn, r, worker)
+    t = now()
+    conn.execute(referral_rewards.insert().values(
+        referrer_id=worker["user_id"], kind="welcome", worker_id=worker["id"], qualifying_ref=key,
+        source_ref=f"worker:{worker['id']}", amount=bonus, status="review" if held else "pending",
+        available_at=t + r["pending_days"] * 86400,
+        reason=("held for review: " + "; ".join(held)) if held else "welcome bonus: your computer joined with a referral code",
         created_at=t, updated_at=t))
 
 
@@ -204,7 +225,7 @@ def process_pending(db: Database, t: float | None = None) -> dict[str, int]:
                           .values(status="capped", reason=reason, updated_at=t))
                 counts["capped"] += 1
                 continue
-            kind = "referral_reward" if rw["kind"] == "user" else "gpu_referral_reward"
+            kind = {"user": "referral_reward", "welcome": "referral_welcome"}.get(rw["kind"], "gpu_referral_reward")
             entry = ledger_entry(c, rw["referrer_id"], rw["amount"], kind, f"reward:{rw['id']}",
                                  reference=rw["qualifying_ref"], note=rw["reason"])
             c.execute(referral_rewards.update().where(referral_rewards.c.id == rw["id"])
@@ -261,7 +282,7 @@ def dashboard(db: Database, user_id: int, public_url: str, code: str) -> dict[st
         "rules": {k: r[k] for k in ("enabled", "user_reward_tokens", "gpu_reward_tokens_per_job", "gpu_min_verified_jobs",
                                     "pending_days", "contribution_reward_per_1k_tokens", "max_reward_per_job",
                                     "contributor_min_verified_jobs", "min_reputation", "user_payment_rewards",
-                                    "max_gpu_reward_tokens_per_month", "lifetime_cap_tokens")},
+                                    "max_gpu_reward_tokens_per_month", "lifetime_cap_tokens", "referee_welcome_tokens")},
         "rules_text": rules_text(r),
         "stats": {
             "referred": len(refs),
@@ -294,6 +315,9 @@ def rules_text(r: dict[str, Any]) -> list[str]:
            "under another account.",
            f"Limits: {r['max_gpu_reward_tokens_per_month']:,} credits per month from workers and "
            f"{r['lifetime_cap_tokens']:,} in total. Credits are for MOTH usage only, never cash."]
+    if int(r.get("referee_welcome_tokens") or 0) > 0:
+        out.insert(1, f"The person you invite gets a {int(r['referee_welcome_tokens']):,}-credit welcome bonus once "
+                      "their computer has done its first verified work.")
     if r.get("user_payment_rewards"):
         out.append(f"You also earn {r['user_reward_tokens']:,} credits when someone you referred makes their first payment.")
     return out

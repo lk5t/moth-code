@@ -65,7 +65,9 @@ def diagnose(model, tok, serving: GenerationParams | None = None, max_new: int =
     chars = sum(len(t) for t in ROUND_TRIP)
     tokens_per_char = round(sum(len(tok.encode(t)) for t in ROUND_TRIP) / chars, 3)
     greedy = _replies(model, tok, GenerationParams(temperature=0.0, top_k=0, top_p=1.0, repetition_penalty=1.0), max_new)
-    served = _replies(model, tok, serving or GenerationParams(), max_new)
+    from moth.model.generation import chat_quality
+
+    served = _replies(model, tok, chat_quality(serving or GenerationParams(), byte_level=not tok.merges), max_new)
     tokenizer_broken = not all(t["ok"] for t in trips)
     decoding_helps = greedy["repetition"] - served["repetition"] >= 0.2
     incoherent = served["garbage"] > 0.05 or served["repetition"] > 0.5 or served["empty"] > 0.5

@@ -192,6 +192,7 @@ def progress(ctx: Ctx, exp: dict) -> dict[str, Any]:
     starts: list[tuple[float, int]] = []
     last_train = last_val = None
     history = []
+    samples: list[dict] = []
     with open(p, encoding="utf-8") as f:
         for line in f:
             try:
@@ -209,6 +210,8 @@ def progress(ctx: Ctx, exp: dict) -> dict[str, Any]:
                 out["checkpoint"] = {"name": Path(e["path"]).name, "step": e.get("step")}
             elif e.get("kind") == "error":
                 out["error"] = e.get("message")
+            elif e.get("kind") == "sample" and e.get("text") is not None:  # 0.10.0: what it writes now
+                samples.append({"step": e.get("step"), "text": e["text"]})
     if last_train:
         out.update(step=last_train["step"], train_loss=last_train.get("loss"),
                    tokens_per_sec=last_train.get("tokens_per_sec"))
@@ -219,6 +222,9 @@ def progress(ctx: Ctx, exp: dict) -> dict[str, Any]:
         if last_val.get("tokens_seen") is not None and "tokens_seen" not in out:
             out["tokens_seen"] = last_val["tokens_seen"]
     out["history"] = history[-120:]
+    if samples:
+        out["samples"] = samples[-6:]
+        out["sample_prompt"] = "Hello! How are you today?"
     steps = out.get("max_steps") or 0
     if steps:
         out["fraction"] = min(1.0, out["step"] / steps)

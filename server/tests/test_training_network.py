@@ -180,10 +180,14 @@ def test_gpu_server_referral_rewards_after_verified_jobs(client, settings, train
     r.beat()
     res = r.run_job(client.post("/v1/worker/jobs/claim", headers=H(w["worker_token"])).json())
     assert res["accepted"]
-    rewards = db.all(select(referral_rewards))
+    all_rewards = db.all(select(referral_rewards))
+    # 0.10.0: the contributor's own one-time welcome bonus, next to the referrer's reward for the work
+    welcome = [x for x in all_rewards if x["kind"] == "welcome"]
+    assert len(welcome) == 1 and welcome[0]["amount"] == 100_000 and welcome[0]["referrer_id"] != welcome[0]["worker_id"]
+    rewards = [x for x in all_rewards if x["kind"] != "welcome"]
     assert len(rewards) == 1 and rewards[0]["kind"] == "gpu" and rewards[0]["status"] == "pending"
     tokens = db.one(select(workers.c.trained_tokens).where(workers.c.id == w["worker_id"]))["trained_tokens"]
-    assert tokens > 0 and rewards[0]["amount"] == min(100_000, round(tokens / 1000 * 400))  # proportional to work
+    assert tokens > 0 and rewards[0]["amount"] == min(50_000, round(tokens / 1000 * 5))  # proportional to work
     # idle enrolled servers earn nothing
     assert all(rw["worker_id"] == w["worker_id"] for rw in rewards)
 

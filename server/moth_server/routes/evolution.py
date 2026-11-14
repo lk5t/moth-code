@@ -718,3 +718,55 @@ def native_reset_execute(body:NativeResetExecuteIn,auth:Auth=Depends(owner_reaut
     from moth_server.evolution.native_reset import execute
     try:return execute(ctx,body.reset_id,body.confirmation,auth.uid,body.backup_confirmation)
     except ValueError as error:raise _bad(error) from None
+
+
+@router.get("/morning-report")
+def morning_report(since: float | None = None, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """0.10.0: what MOTH did since ``since`` (default: the last 12 hours), in plain lines."""
+    from moth_server.intelligence import morning_report as MR
+
+    return MR.build(ctx, since)
+
+
+ALERT_KINDS = {"deploy.done": "promoted", "deploy.rollback": "problem", "deploy.failed": "problem",
+               "supervisor.attention": "problem", "engine.error": "problem", "cycle.completed": "info",
+               "experiment.passed": "success", "data.prepared": "info", "data.successor_tokenizer": "info",
+               "worker.disconnected": "problem", "worker.connected": "info"}
+
+
+@router.get("/alerts")
+def alerts(after: int = 0, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """0.10.0: notable events after event ``after`` for desktop notifications (promotions, problems).
+    ``after=0`` returns only the newest id, so a fresh app does not replay old news."""
+    from sqlalchemy import desc, select
+
+    from moth_server.db import evolution_events
+
+    latest = ctx.db.one(select(evolution_events.c.id).order_by(desc(evolution_events.c.id)).limit(1))
+    last = int(latest["id"]) if latest else 0
+    status = _status_line(ctx)
+    if after <= 0:
+        return {"latest": last, "alerts": [], "status": status}
+    rows = ctx.db.all(select(evolution_events).where(evolution_events.c.id > after,
+                                                     evolution_events.c.kind.in_(list(ALERT_KINDS)))
+                      .order_by(evolution_events.c.id).limit(20))
+    return {"latest": last, "alerts": [{"id": r["id"], "ts": r["ts"], "kind": r["kind"], "tone": ALERT_KINDS[r["kind"]],
+                                        "message": r["message"]} for r in rows], "status": status}
+
+
+def _status_line(ctx: Ctx) -> str:
+    """One short line for the tray icon: what MOTH is doing right now."""
+    from moth_server.evolution import backends as B, distributed as D, memory as MEM
+
+    try:
+        cyc = (MEM.cycles(ctx, 1) or [None])[0]
+        running = [e for e in MEM.experiments(ctx, cyc["id"]) if e["status"] == "running"] if cyc else []
+        if not running:
+            return "MOTH is resting" if not cyc else f"MOTH: {str(cyc['status']).replace('_', ' ')}"
+        e = running[0]
+        rep = D.report(e) if e.get("backend") == "distributed" else B.progress(ctx, e) if e.get("backend") == "local" else {}
+        frac = rep.get("fraction") if rep.get("fraction") is not None else e.get("progress")
+        what = "the successor" if (e.get("config") or {}).get("rebirth") else f"experiment #{e['id']}"
+        return f"MOTH is training {what}" + (f" · {float(frac):.0%}" if frac is not None else "")
+    except Exception:  # noqa: BLE001 — the tray line is cosmetic
+        return "MOTH Code"

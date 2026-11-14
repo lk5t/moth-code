@@ -81,6 +81,35 @@ def _round_weights(rd: Path, r: int) -> Path:
     return rd / f"round-{r:03d}.pt"
 
 
+SUCCESSOR_ROUND_STEPS = 1000   # 0.10.0: a successor is averaged often, so the participants stay in step
+
+
+def model_config(exp: dict, base: dict) -> dict:
+    """The architecture the participants train: the base's, or a successor's new shape and vocabulary."""
+    cfg = json.loads((Path(base["path"]) / "config.json").read_text())
+    arch = ((exp.get("config") or {}).get("rebirth") or {}).get("architecture")
+    return {**cfg, **arch} if arch else cfg
+
+
+def tokenizer_info(exp: dict, base: dict) -> tuple[Path, str | None]:
+    tok = ((exp.get("config") or {}).get("rebirth") or {}).get("tokenizer")
+    if tok:
+        return Path(tok["path"]), tok["fingerprint"]
+    return Path(base["path"]) / "tokenizer.json", base["info"].get("tokenizer_fingerprint")
+
+
+def _successor_init(exp: dict, base: dict) -> dict:
+    """Fresh, seeded initial weights of a successor (round 0 of a shared from-scratch run)."""
+    import torch
+
+    from moth.model.config import MothConfig
+    from moth.model.transformer import MothModel
+
+    torch.manual_seed(int((exp.get("config") or {}).get("seed") or 0))
+    m = MothModel(MothConfig.from_dict(model_config(exp, base)))
+    return {k: v.detach().float() if v.is_floating_point() else v for k, v in m.state_dict().items()}
+
+
 def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     """Create round 0 (from the development checkpoint or the base weights) and its shard jobs."""
     import torch
@@ -97,17 +126,23 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     people = participants(ctx, need_bytes, settings.get("worker_ids"))
     n = max(int(d.get("min_participants", 2)), min(int(d.get("max_participants", 8)), len(people)))
     rounds = max(1, int(d.get("rounds", 3)))
+    successor = bool(cfg.get("rebirth"))
+    if successor:
+        rounds = max(rounds, min(500, math.ceil(int(cfg["steps"]) / SUCCESSOR_ROUND_STEPS)))
     local_steps = max(1, math.ceil(int(cfg["steps"]) / rounds))
-    dev = (base["info"].get("dev_checkpoint") or {})
-    src = Path(dev["path"]) if dev.get("path") else Path(base["path"]) / "model.pt"
-    expected_sha = dev.get("sha256") if dev.get("path") else base["sha256"]
-    if not src.is_file() or not expected_sha or _sha(src) != expected_sha:
-        raise ValueError("distributed training requires an intact, checksum-verified base checkpoint")
     if not worker_training_supported(ctx, exp, masks=True):
         raise ValueError("private training data never leaves MOTH Cloud")
-    raw = torch.load(src, map_location="cpu", weights_only=False)
-    state = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
-    torch.save({k: v.float() if v.is_floating_point() else v for k, v in state.items()}, _round_weights(rd, 0))
+    dev = {} if successor else (base["info"].get("dev_checkpoint") or {})
+    if successor:  # trained from scratch: every participant starts from the same seeded weights
+        torch.save(_successor_init(exp, base), _round_weights(rd, 0))
+    else:
+        src = Path(dev["path"]) if dev.get("path") else Path(base["path"]) / "model.pt"
+        expected_sha = dev.get("sha256") if dev.get("path") else base["sha256"]
+        if not src.is_file() or not expected_sha or _sha(src) != expected_sha:
+            raise ValueError("distributed training requires an intact, checksum-verified base checkpoint")
+        raw = torch.load(src, map_location="cpu", weights_only=False)
+        state = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
+        torch.save({k: v.float() if v.is_floating_point() else v for k, v in state.items()}, _round_weights(rd, 0))
     # probe: held-out tokens the server uses to accept or discard each round's update
     if cfg.get("mixture"):
         from moth_server.evolution.v2 import write_mixture_shard
@@ -129,7 +164,8 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
         val[:64 * 1024].astype(np.uint32).tofile(rd / "probe.bin")
     state_info = {"round": 0, "rounds": rounds, "shards": n, "local_steps": local_steps, "history": [],
                   "worker_ids": settings.get("worker_ids"),
-                  "weights_sha256": _sha(_round_weights(rd, 0)), "started_from": "dev_checkpoint" if dev else "weights",
+                  "weights_sha256": _sha(_round_weights(rd, 0)),
+                  "started_from": "successor_init" if successor else "dev_checkpoint" if dev else "weights",
                   "jobs": {}}
     _create_round_jobs(ctx, exp, base, state_info, need_bytes)
     return state_info
@@ -165,8 +201,8 @@ def _create_round_jobs(ctx: Ctx, exp: dict, base: dict, st: dict, need_bytes: in
             spec = {"evolution_experiment": exp["id"], "round": r, "dist": {"round": r, "shard": i},
                     "worker_ids": st.get("worker_ids"),
                     "model_version": base["version"], "base_sha256": st["weights_sha256"],
-                    "model_config": json.loads((Path(base["path"]) / "config.json").read_text()),
-                    "tokenizer_fingerprint": base["info"].get("tokenizer_fingerprint"),
+                    "model_config": model_config(exp, base),
+                    "tokenizer_fingerprint": tokenizer_info(exp, base)[1],
                     "shard_id": f"evolution-{exp['id']}-shard-{i}", "shard_sha256": _sha(rd / f"shard-{i}.bin"),
                     "shard_license": "approved library data", "job_id": f"evolution-{exp['id']}-r{r}-s{i}",
                     **({"mask_sha256": _sha(rd / f"shard-{i}.mask"), "min_worker_version": MASK_WORKER_VERSION}
@@ -307,7 +343,7 @@ def advance(ctx: Ctx, exp: dict, settings: dict) -> dict[str, Any]:
     avg = {k: sum(it["delta"][k].float() * (max(1, it["tokens"]) / total) for it in items) for k in base_w}
     new_w = {k: (v.float() + avg[k]).to(v.dtype) if v.is_floating_point() else v for k, v in base_w.items()}
     base = M.release(ctx, exp["base_version"])
-    model_cfg = json.loads((Path(base["path"]) / "config.json").read_text())
+    model_cfg = model_config(exp, base)
     before = _probe_loss(base_w, model_cfg, rd / "probe.bin")
     after = _probe_loss(new_w, model_cfg, rd / "probe.bin")
     accepted = math.isfinite(after) and after <= before * (1 + PROBE_TOLERANCE)
@@ -348,6 +384,9 @@ def _package(ctx: Ctx, exp: dict, base: dict, st: dict, rd: Path) -> dict[str, A
 
     from moth.model.registry import sha256_file
 
+    from moth.model.config import MothConfig
+    from moth.model.tokenizer import Tokenizer
+
     final = torch.load(_round_weights(rd, st["round"]), map_location="cpu", weights_only=True)
     bdir = Path(base["path"])
     ref = torch.load(bdir / "model.pt", map_location="cpu", weights_only=True)
@@ -356,19 +395,26 @@ def _package(ctx: Ctx, exp: dict, base: dict, st: dict, rd: Path) -> dict[str, A
     shutil.rmtree(pkg, ignore_errors=True)
     pkg.mkdir(parents=True)
     torch.save({k: v.to(dtype) if v.is_floating_point() else v for k, v in final.items()}, pkg / "model.pt")
-    for f in ("config.json", "tokenizer.json"):
-        shutil.copy2(bdir / f, pkg / f)
+    mc = model_config(exp, base)
+    (pkg / "config.json").write_text(MothConfig.from_dict(mc).to_json())
+    tok_path, tok_fp = tokenizer_info(exp, base)
+    if tok_fp and Tokenizer.load(tok_path).fingerprint() != tok_fp:
+        raise ValueError("the successor's tokenizer does not match its data")
+    shutil.copy2(tok_path, pkg / "tokenizer.json")
     manifest = json.loads((bdir / "manifest.json").read_text())
     for key in ("model_version", "display_name", "initialization"):
         manifest.pop(key, None)
+    method = "from_scratch" if exp["config"].get("rebirth") else "continued"
+    manifest.update(tokenizer_fingerprint=tok_fp, context_length=mc.get("max_seq_len"),
+                    params=MothConfig.from_dict(mc).num_params())
     tokens = sum(h["tokens"] for h in st["history"])
     steps = sum(h['steps'] for h in st['history']) if all(h.get('steps') is not None for h in st['history']) else None
     manifest.update(name=f"moth-evolution-e{exp['id']}", created=now(), sha256=sha256_file(pkg / "model.pt"),
-                    training={"method": "continued", "backend": "distributed", "rounds": st["rounds"],
+                    training={"method": method, "backend": "distributed", "rounds": st["rounds"],
                               "steps": steps, "train_loss": st['history'][-1].get('train_loss') if st['history'] else None,
                               "participants": max((h["participants"] for h in st["history"]), default=0),
                               "tokens": tokens, "history": st["history"]},
-                    lineage={"base_sha256": base["sha256"], "base_name": base["name"], "method": "continued"})
+                    lineage={"base_sha256": base["sha256"], "base_name": base["name"], "method": method})
     (pkg / "manifest.json").write_text(json.dumps(manifest, indent=2))
     result = {"ok": True, "reason": "completed", "package": str(pkg), "sha256": manifest["sha256"],
               "backend": "distributed", "tokens": tokens, "step": steps,
@@ -376,3 +422,24 @@ def _package(ctx: Ctx, exp: dict, base: dict, st: dict, rd: Path) -> dict[str, A
               "seconds": round(time.time() - float((exp["resources"] or {}).get("started") or time.time()), 1)}
     (rd / "result.json").write_text(json.dumps(result))
     return result
+
+
+def report(exp: dict) -> dict[str, Any]:
+    """0.10.0: live progress of a shared run for the live view (rounds as steps, probe loss as validation)."""
+    st = (exp.get("resources") or {}).get("distributed") or {}
+    if not st:
+        return {}
+    per = int(st.get("local_steps") or 0)
+    hist = st.get("history") or []
+    points = []
+    for h in hist:
+        step = (int(h["round"]) + 1) * per
+        points.append({"step": step, "loss": h.get("probe_after"), "split": "val"})
+        if h.get("train_loss") is not None:
+            points.append({"step": step, "loss": h["train_loss"], "split": "train"})
+    last = hist[-1] if hist else {}
+    return {"step": int(st.get("round") or 0) * per, "max_steps": int(st.get("rounds") or 0) * per,
+            "fraction": min(1.0, int(st.get("round") or 0) / max(1, int(st.get("rounds") or 1))),
+            "train_loss": last.get("train_loss"), "val_loss": last.get("probe_after"),
+            "tokens_seen": sum(int(h.get("tokens") or 0) for h in hist), "history": points[-120:],
+            "participants": st.get("shards"), "round": st.get("round"), "rounds": st.get("rounds")}

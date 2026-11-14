@@ -162,8 +162,11 @@ def code_suite(model, tok, path: str, limit: int = 100, max_new: int = 200) -> d
 
 
 @torch.no_grad()
-def holdout_suite(model, tok, path: str, limit: int = 300, max_tokens: int = 80_000) -> dict[str, Any]:
-    total, count = 0.0, 0
+def holdout_suite(model, tok, path: str, limit: int = 300, max_bytes: int = 80_000) -> dict[str, Any]:
+    """Held-out loss of one domain. 0.10.0: also bits per byte, so models with different tokenizers
+    (a byte-level model and its BPE successor) are compared on the same text; the records scored are
+    chosen by a byte budget, not a token budget, for the same reason."""
+    total, count, nbytes = 0.0, 0, 0
     for rec in _items(path, limit):
         if "messages" in rec:
             ids, mask = encode_chat(tok, [Message(m["role"], m["content"]) for m in rec["messages"]],
@@ -181,13 +184,15 @@ def holdout_suite(model, tok, path: str, limit: int = 300, max_tokens: int = 80_
         nll = -lp[torch.arange(len(tgt)), tgt][m]
         total += float(nll.sum())
         count += int(m.sum())
-        if count >= max_tokens:
+        nbytes += sum(len(tok.decode_bytes([int(t)], skip_special=False))
+                      for t, keep in zip(ids[1:], mask[1:]) if keep)
+        if nbytes >= max_bytes:
             break
     if count == 0:
         return {"metric": "loss", "value": float("nan"), "n": 0, "higher_is_better": False}
     loss = total / count
     return {"metric": "loss", "value": loss, "perplexity": math.exp(min(loss, 20)), "tokens": count,
-            "higher_is_better": False}
+            "bytes": nbytes, "bits_per_byte": total / max(1, nbytes) / math.log(2), "higher_is_better": False}
 
 
 def instruction_suite(model, tok, path: str, limit: int = 40, max_new: int = 160) -> dict[str, Any]:

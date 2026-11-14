@@ -149,6 +149,25 @@ class Trainer:
         self.tokens_seen = 0  # this run
 
     # ---- helpers -----------------------------------------------------------
+    SAMPLE_PROMPT = "Hello! How are you today?"
+
+    def _emit_sample(self, model) -> None:
+        """0.10.0: the model's own answer to a fixed question at each evaluation, so the live view shows
+        its writing improve. Greedy decoding (no random numbers are drawn, so training stays reproducible)."""
+        try:
+            from moth.model.chat_format import Message, encode_chat
+            from moth.model.generation import GenerationParams, chat_quality, generate_stream
+
+            ids, _ = encode_chat(self.tokenizer, [Message("user", self.SAMPLE_PROMPT)], add_generation_prompt=True)
+            params = chat_quality(GenerationParams(max_new_tokens=48, temperature=0.0),
+                                  byte_level=not self.tokenizer.merges)
+            was = model.training
+            text = "".join(generate_stream(model, self.tokenizer, ids, params))
+            model.train(was)
+            self.emit("sample", step=self.step, prompt=self.SAMPLE_PROMPT, text=text.strip()[:240])
+        except Exception:  # noqa: BLE001 — a sample is only for watching; it never stops training
+            model.train()
+
     def emit(self, kind: str, **data: Any) -> None:
         event = {"kind": kind, "run": self.cfg.run_name, "step": self.step, "tokens_seen": self.tokens_seen, **data}
         with open(self.run_dir / "events.jsonl", "a", encoding="utf-8") as f:
@@ -355,6 +374,7 @@ class Trainer:
                     self.best_val = min(self.best_val, vl)
                     self.emit("metrics", split="val", loss=vl, perplexity=math.exp(min(vl, 20)), best=improved,
                               domains=per_domain, tokens_seen=self.tokens_seen)
+                    self._emit_sample(model)
                     if improved:
                         checkpoint()  # the selected weights must keep their own optimizer/RNG state
                         shutil.copyfile(latest_checkpoint(self.run_dir), self.run_dir / "checkpoints" / "best.pt.tmp")

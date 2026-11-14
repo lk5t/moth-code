@@ -183,3 +183,27 @@ button:not(:disabled):active { transform: scale(0.97); }
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
 }
 
+
+/* ---- 0.10.0 live training ----------------------------------------------------------------------- */
+.loss-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: loss-draw 1.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+@keyframes loss-draw { to { stroke-dashoffset: 0 } }
+.chart-ping { transform-box: fill-box; transform-origin: center; animation: chart-ping 1.6s ease-out infinite; }
+@keyframes chart-ping { from { transform: scale(0.4); opacity: 0.7 } to { transform: scale(1.9); opacity: 0 } }
+.ring-progress { transition: stroke-dashoffset 900ms cubic-bezier(0.16, 1, 0.3, 1); }
+/* celebrations (a promotion, a new record): a short burst of falling confetti */
+.confetti { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 60; }
+.confetti i { position: absolute; top: -12px; width: 7px; height: 12px; border-radius: 2px; opacity: 0;
+  animation: confetti-fall var(--d, 2.4s) cubic-bezier(0.25, 0.6, 0.4, 1) var(--delay, 0s) forwards; }
+@keyframes confetti-fall {
+  0% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0) }
+  100% { opacity: 0; transform: translate3d(var(--x, 0), 105vh, 0) rotate(var(--r, 540deg)) }
+}
+.toast-in { animation: toast-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(16px) scale(0.96) } to { opacity: 1; transform: none } }
+.glow-border { position: relative; }
+.glow-border::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: conic-gradient(from var(--a, 0deg), transparent 0 70%, rgb(255 90 100 / 0.9), transparent);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: glow-spin 4s linear infinite; }
+@property --a { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
+@keyframes glow-spin { to { --a: 360deg } }

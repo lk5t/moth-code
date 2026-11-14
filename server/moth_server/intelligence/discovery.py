@@ -86,6 +86,36 @@ def build_bytes(approved: list[dict], max_chars: int) -> int:
     return total * 3
 
 
+def automatic_config(ctx: Ctx) -> dict | None:
+    """0.10.0: the configuration the automatic data preparation would use now (approved sources and a
+    character budget that fits the disk), or None when it could not prepare anything."""
+    from moth.datafactory import catalog
+    from moth_server.evolution import datasets as DS, settings as S
+    from moth_server.evalsets import BUILTIN_FILES
+    from moth_server.intelligence import library
+
+    p = policy(ctx)
+    if not p['enabled']:
+        return None
+    revoked = {s.get('spec') for d in DS.all_(ctx) if d['status'] == 'revoked' for s in json.loads(d.get('sources') or '[]')}
+    approved = [s for s in catalog.SOURCES if s['id'] in p['approved_sources'] and s['license'] in LICENSES
+                and s.get('attribution') and f"factory:{s['id']}" not in revoked]
+    if not approved:
+        return None
+    reserve = S.get(ctx)['limits']['min_free_disk_gb'] * 1024**3
+    free = shutil.disk_usage(library.root(ctx)).free
+    max_chars = int(p['max_source_chars'])
+    while True:
+        required = download_bytes(ctx, approved, max_chars)
+        if required <= p['max_download_bytes'] and free >= reserve + required + build_bytes(approved, max_chars):
+            break
+        if max_chars <= DEFAULTS['max_source_chars']:
+            return None
+        max_chars //= 2
+    return {"automatic": True, "excluded_stdlib_files": list(BUILTIN_FILES), "sources": [s['id'] for s in approved],
+            "max_chars": {s['id']: max_chars for s in approved}}
+
+
 def ensure_data(ctx: Ctx, wait: bool = False) -> dict:
     from moth.datafactory import catalog
     from moth.training.checkpoint import RunLock

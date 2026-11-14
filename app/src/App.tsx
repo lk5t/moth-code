@@ -18,6 +18,8 @@ import { AccountDialog } from "@/features/account/AccountDialog";
 import { ReauthDialog } from "@/features/account/reauth";
 import { startConnectionMonitor } from "@/lib/connection";
 import { startUpdater } from "@/lib/updater";
+import { startAlerts } from "@/lib/alerts";
+import { Celebrations } from "@/components/Celebrations";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { Welcome, useWelcomeVisible } from "@/features/onboarding/Welcome";
 
@@ -48,7 +50,7 @@ export default function App() {
         if (i.status === "ready") {
           startLivingActivity();
           startEvents();
-          initAccounts().catch(() => {}).finally(() => startConnectionMonitor());
+          initAccounts().catch(() => {}).finally(() => { startConnectionMonitor(); startAlerts(); });
           const projects = await loadProjects().catch(() => [] as Project[]);
           let last: string | null = null;
           try {
@@ -107,6 +109,7 @@ export default function App() {
         <ApprovalDialog />
         <AccountDialog />
         <ReauthDialog />
+        <Celebrations />
       </div>
     </TooltipProvider>
   );

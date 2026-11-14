@@ -76,7 +76,9 @@ def _contribute(client, worker_id, job_id, tokens):
 
 def test_rewards_2_proportional_held_for_duplicates_and_unreliable_workers(client, settings, owner):
     ctx = client.app.state.ctx
-    client.put("/v1/admin/referral-rules", json={"contributor_min_verified_jobs": 2}, headers=H(owner["token"]))
+    client.put("/v1/admin/referral-rules", json={"contributor_min_verified_jobs": 2, "referee_welcome_tokens": 0,  # the mechanics at the 0.5 rates
+                                                    "contribution_reward_per_1k_tokens": 400, "max_reward_per_job": 100_000},
+               headers=H(owner["token"]))
     ref = register_verified(client, settings, "referrer")
     code = ref["user"]["referral_code"]
     contributor = register_verified(client, settings, "contrib")["token"]

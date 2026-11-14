@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { Activity, Crown, RefreshCw } from "lucide-react";
+import { Activity, Bot, Coins, Cpu, Crown, Gift, KeyRound, RefreshCw, Users as UsersIcon, Wallet, Workflow } from "lucide-react";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
+import { MothEmblem } from "@/components/MothEmblem";
+import { useCloudProgress } from "@/lib/cloud-progress";
+import { modelLabel } from "@/lib/model-label";
 import { serverApi, withReauth, useAccount } from "@/lib/account";
 import { askPassword } from "@/features/account/reauth";
 import { openIntelligence } from "@/lib/app-state";
@@ -45,13 +49,54 @@ function useAction() {
   return { msg, run };
 }
 
-const Stat = ({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) => (
-  <div className="rounded-lg border border-border bg-bg px-3 py-2.5">
-    <div className="text-[10.5px] uppercase tracking-wider text-faint">{label}</div>
-    <div className="mt-0.5 font-mono text-base">{value}</div>
+const Stat = ({ label, value, sub, icon, live }: { label: string; value: React.ReactNode; sub?: string; icon?: React.ReactNode; live?: boolean }) => (
+  <div className={`lift relative overflow-hidden rounded-lg border bg-bg px-3 py-2.5 ${live ? "border-accent/40" : "border-border"}`}>
+    {live && <span className="pointer-events-none absolute -right-6 -top-6 size-16 rounded-full bg-accent/20 blur-xl" />}
+    <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider text-faint [&_svg]:size-3.5 [&_svg]:text-accent">{icon}{label}{live && <span className="live-dot ml-auto" />}</div>
+    <div className="mt-0.5 font-mono text-base">{typeof value === "number" ? <AnimatedNumber value={value} /> : value}</div>
     {sub && <div className="text-[11px] text-muted">{sub}</div>}
   </div>
 );
+
+function Bar({ used, total, label }: { used: number | null; total: number | null; label: string }) {
+  if (used == null || !total) return null;
+  const pct = Math.max(0, Math.min(100, used / total * 100));
+  return <div aria-label={`${label}: ${pct.toFixed(0)}% used`} className="h-1.5 overflow-hidden rounded-full bg-surface-3">
+    <div className={`h-full rounded-full transition-[width] duration-1000 ease-out ${pct > 90 ? "bg-danger" : pct > 75 ? "bg-warning" : "bg-accent"}`} style={{ width: `${pct}%` }} /></div>;
+}
+
+/** 0.10.0: what MOTH is doing right now, at the top of the Owner Dashboard. */
+function MothNow() {
+  const { data: p } = useCloudProgress();
+  const [status, setStatus] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => serverApi<Any>("/v1/admin/evolution/alerts?after=0").then((r) => alive && setStatus(r.status ?? null)).catch(() => {});
+    load(); const t = setInterval(load, 15_000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const cur = p?.current;
+  const training = /training/i.test(status ?? "");
+  const pct = Number((status ?? "").match(/(\d+)%/)?.[1] ?? NaN);
+  return <section aria-label="MOTH right now" className="glow-border relative overflow-hidden rounded-xl border border-accent/30 bg-[radial-gradient(ellipse_at_top_left,rgb(193_18_31/0.22),transparent_60%)] p-4">
+    <div className="flex flex-wrap items-center gap-4">
+      <MothEmblem motion={training ? "training" : "idle"} glow className="size-14 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] uppercase tracking-wider text-faint">MOTH right now</p>
+        <h2 className="truncate text-lg font-semibold">{cur ? modelLabel(cur) : "No model yet"}</h2>
+        <p className="mt-0.5 flex items-center gap-2 text-xs text-muted">{training && <span className="live-dot" />}{status ?? "Checking…"}</p>
+      </div>
+      {cur?.params != null && <div className="text-right"><p className="text-[11px] text-faint">Parameters</p>
+        <p className="font-mono text-xl text-fg"><AnimatedNumber value={Number(cur.params)} /></p></div>}
+      {Number.isFinite(pct) && <svg viewBox="0 0 44 44" className="size-14 -rotate-90" role="img" aria-label={`${pct}% done`}>
+        <circle cx="22" cy="22" r="18" fill="none" stroke="currentColor" strokeOpacity="0.12" strokeWidth="4" />
+        <circle cx="22" cy="22" r="18" fill="none" stroke="#e0313d" strokeWidth="4" strokeLinecap="round" className="ring-progress"
+          strokeDasharray={2 * Math.PI * 18} strokeDashoffset={2 * Math.PI * 18 * (1 - pct / 100)} />
+        <text x="22" y="26" textAnchor="middle" fontSize="11" fill="currentColor" transform="rotate(90 22 22)">{pct}%</text></svg>}
+      <Button size="sm" onClick={() => openIntelligence()}>Watch it learn</Button>
+    </div>
+  </section>;
+}
 
 function Overview() {
   const { data: o, load } = useAdmin<Any>("/v1/admin/overview");
@@ -66,16 +111,17 @@ function Overview() {
   };
   return (
     <div className="flex flex-col gap-4">
+      <MothNow />
       <div className="flex justify-end"><Button size="sm" variant="ghost" onClick={load}><RefreshCw /> Refresh</Button></div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Users" value={o.users.total} sub={`${o.users.verified} verified · ${o.users.new_30d} new (30d)`} />
-        <Stat label="Subscriptions" value={o.billing.active_subscriptions} sub={o.billing.payments_configured ? "payments live" : "payments not configured"} />
-        <Stat label="Cloud tokens (month)" value={formatNumber(o.billing.tokens_used_this_month, 1)} sub={`${formatNumber(o.billing.credits_outstanding, 1)} credits outstanding`} />
-        <Stat label="Pending rewards" value={o.billing.pending_rewards} />
-        <Stat label="Workers online" value={`${o.training.workers_online}/${o.training.workers_total}`} sub={o.training.configured ? `round ${o.training.round} · ckpt v${o.training.checkpoint_version}` : "training not started"} />
-        <Stat label="Jobs" value={Object.entries(o.training.jobs).map(([k, v]) => `${k} ${v}`).join(" · ") || "none"} />
-        <Stat label="Deployed model" value={o.models.deployed ? `v${o.models.deployed.version}` : "none"} sub={o.models.deployed ? `${o.models.deployed.name}${o.models.cloud_inference_enabled ? "" : " · inference disabled"}` : "MOTH Cloud has nothing to serve"} />
-        <Stat label="Sessions" value={o.users.active_sessions} sub={`plans: ${Object.entries(o.users.by_plan).map(([k, v]) => `${k} ${v}`).join(", ")}`} />
+      <div className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat icon={<UsersIcon />} label="Users" value={o.users.total} sub={`${o.users.verified} verified · ${o.users.new_30d} new (30d)`} />
+        <Stat icon={<Wallet />} label="Subscriptions" value={o.billing.active_subscriptions} sub={o.billing.payments_configured ? "payments live" : "payments not configured"} />
+        <Stat icon={<Coins />} label="Cloud tokens (month)" value={formatNumber(o.billing.tokens_used_this_month, 1)} sub={`${formatNumber(o.billing.credits_outstanding, 1)} credits outstanding`} />
+        <Stat icon={<Gift />} label="Pending rewards" value={o.billing.pending_rewards} />
+        <Stat icon={<Cpu />} live={o.training.workers_online > 0} label="Workers online" value={`${o.training.workers_online}/${o.training.workers_total}`} sub={o.training.configured ? `round ${o.training.round} · ckpt v${o.training.checkpoint_version}` : "training not started"} />
+        <Stat icon={<Workflow />} label="Jobs" value={Object.entries(o.training.jobs).map(([k, v]) => `${k} ${v}`).join(" · ") || "none"} />
+        <Stat icon={<Bot />} live={!!o.models.deployed} label="Deployed model" value={o.models.deployed ? `v${o.models.deployed.version}` : "none"} sub={o.models.deployed ? `${o.models.deployed.name}${o.models.cloud_inference_enabled ? "" : " · inference disabled"}` : "MOTH Cloud has nothing to serve"} />
+        <Stat icon={<KeyRound />} label="Sessions" value={o.users.active_sessions} sub={`plans: ${Object.entries(o.users.by_plan).map(([k, v]) => `${k} ${v}`).join(", ")}`} />
       </div>
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><Activity className="size-4 text-accent" />System health</CardTitle></CardHeader>
@@ -83,7 +129,8 @@ function Overview() {
           <span>Uptime</span><span className="text-fg">{Math.round(o.system.uptime_seconds / 3600)} h</span>
           <span>Database</span><span className="text-fg">{o.system.database} {o.system.database_bytes != null && `· ${bytes(o.system.database_bytes)}`}</span>
           <span>Model & data storage</span><span className="text-fg">{bytes(o.system.storage_bytes)} · coordinator {bytes(o.system.coordinator_bytes)}</span>
-          <span>Disk</span><span className="text-fg">{bytes(o.system.disk_free_bytes)} free of {bytes(o.system.disk_total_bytes)}</span>
+          <span>Disk</span><span className="flex flex-col gap-1 text-fg">{bytes(o.system.disk_free_bytes)} free of {bytes(o.system.disk_total_bytes)}
+            <Bar label="Disk" used={o.system.disk_total_bytes != null && o.system.disk_free_bytes != null ? o.system.disk_total_bytes - o.system.disk_free_bytes : null} total={o.system.disk_total_bytes} /></span>
           <span>Email</span><span className="text-fg">{o.system.email === "smtp" ? "SMTP" : "development outbox (no real emails sent)"}</span>
           <span>Public URL</span><span className="text-fg">{o.system.public_url}</span>
         </CardContent>

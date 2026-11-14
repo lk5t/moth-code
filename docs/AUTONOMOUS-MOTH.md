@@ -146,3 +146,39 @@ from their verified grown base.
 
 The desktop app shows these states. It retries one slow health answer before it reports MOTH Cloud
 as unreachable.
+
+## 0.10.0: successors that can win, cleaner replies, alerts
+
+**Gates for bigger models.** Speed and memory used to be compared with the model being replaced (at most
+25 % slower, 25 % more memory), which no model many times larger can meet. Growth and successor candidates
+are now held to absolute limits: at least 15 tokens/s (`gates.min_tokens_per_second`) and at most half of
+the server's memory. Same-size candidates keep the relative limits.
+
+**Sizing by measurement.** `capacity.right_size` trains each candidate shape for a few steps on random
+tokens (`moth.training.speed_probe`) and keeps the largest shape whose measured speed, plus the workers'
+share, trains about 20 tokens per parameter in a day. The current shape is timed the same way, and since its
+real training speed is known, the ratio calibrates every probe (a busy server measures low for all shapes
+alike). Probes are cached for the day and never run while a successor trains.
+
+**Context and tokenizer.** Successors use `max_seq_len` 1024 and train at up to 4× the usual sequence length
+with a proportionally smaller batch. For a byte-level lineage, MOTH first prepares the library again with a new
+8,192-token BPE tokenizer (`library.ensure_successor_tokenizer`; the successor waits while it runs, and keeps the
+byte tokenizer if it fails). Held-out capability losses now also report bits per byte; when the candidate's
+tokenizer differs from the base's, every held-out comparison uses bits per byte of the same text, and
+token-level datasets of the old tokenizer are left out.
+
+**Shared successors.** A successor is never given to a single worker. When shared rounds are possible it is
+started first, split across MOTH Cloud and every online worker, from seeded initial weights generated on MOTH
+Cloud, with a round every 1,000 steps; each round is still accepted only if the probe loss does not get worse.
+
+**Replies.** `GenerationParams` gained `min_p`, `frequency_penalty`, `no_repeat_ngram`, `stop_loops` and
+`soft_end`. Chat (`LocalInference.chat`) turns them on unless the request set them (`generation.chat_quality`);
+benchmarks and tool calls are unchanged.
+
+**Morning report and alerts.** `GET /v1/admin/evolution/morning-report?since=` summarises recorded events,
+experiments, self-quiz results and the deployed model's answer to a fixed question (kept for "then vs now").
+`GET /v1/admin/evolution/alerts?after=` returns promotions and problems after an event id (with a one-line
+status for the tray); the desktop app polls it every minute and shows system notifications.
+
+**Live writing sample.** At every evaluation the trainer writes the model's greedy answer to a fixed
+question to `events.jsonl` (`kind: sample`); no random numbers are drawn, so training stays reproducible.

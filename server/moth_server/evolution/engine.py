@@ -444,6 +444,12 @@ def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
     # one process on this server and one job per idle MOTH worker that can hold it.
     running = [MEM.experiment(ctx, e["id"]) for e in running]
     running = [e for e in running if e["status"] == "running"]
+    # 0.10.0: a successor goes first and gets the shared rounds (MOTH Cloud and every worker together);
+    # while it is shared, the other experiments of the cycle use only what it leaves free.
+    startable.sort(key=lambda e: not (e["config"] or {}).get("rebirth"))
+    def shared_successor() -> bool:
+        return any((e["config"] or {}).get("rebirth") and e.get("backend") == "distributed" for e in running)
+
     for e in startable:
         slots = _free_slots(ctx, settings, running, e)
         if not slots:
@@ -451,7 +457,11 @@ def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
         if running and e["status"] == "paused":  # resume paused work only on the compute it can use alone
             continue
         before = e["status"]
-        _try_start(ctx, cyc, e, slots["settings"], parallel=bool(running) or len(startable) > 1)
+        first_successor = bool((e["config"] or {}).get("rebirth")) and not running
+        use = slots["settings"]
+        if shared_successor():
+            use = {**use, "backends": {**use["backends"], "workers": False}}
+        _try_start(ctx, cyc, e, use, parallel=not first_successor and (bool(running) or len(startable) > 1))
         now_e = MEM.experiment(ctx, e["id"])
         if now_e["status"] == "running":
             running.append(now_e)
@@ -595,12 +605,16 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict, parallel: bool = 
     need = _need_bytes(ctx, exp)
     private = not B.worker_training_supported(ctx, exp, masks=True)  # never leaves MOTH Cloud
     token_only = private or not B.worker_training_supported(ctx, exp)  # sharded rounds carry no masks
-    if private or (exp.get("config") or {}).get("local_only"):  # 0.9.2: successors train on MOTH Cloud
+    cfg_ = exp.get("config") or {}
+    chosen = settings  # the Owner's choice of what trains MOTH (shared rounds respect it)
+    # 0.10.0: a successor is never handed to one worker alone (it is the lineage's big run), but it is
+    # split across MOTH Cloud and the online workers in shared rounds; 0.9.2 successors stay on MOTH Cloud.
+    if private or cfg_.get("local_only") or cfg_.get("no_single_worker"):
         settings = {**settings, "backends": {**settings["backends"], "workers": False}}
     # conversation data (assistant-only loss mask) can go to workers that apply the mask
     choice, reasons = C.choose_backend(ctx, settings, need, None if not token_only or private else B.MASK_WORKER_VERSION)
-    ok, n = D.available(ctx, settings, need)
-    ok = ok and not private and not (exp.get("config") or {}).get("local_only")  # 0.8.3: shared rounds carry the loss mask, so conversation data can be shared
+    ok, n = D.available(ctx, chosen if cfg_.get("no_single_worker") and not private else settings, need)
+    ok = ok and not private and not cfg_.get("local_only")  # 0.8.3: shared rounds carry the loss mask, so conversation data can be shared
     # Sharding one experiment across all workers only pays when nothing else could use them.
     if ok and not parallel and not (choice and choice.get("device", "").startswith("cuda")) and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":
         st = D.start(ctx, exp, settings, need)
@@ -856,7 +870,8 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
         e = MEM.experiment(ctx, e["id"])  # keep what the remote evaluation recorded
         try:
             verdict = EV.gate(ctx, cand, base, DS.get(ctx, e["dataset_id"]), settings,
-                              mixture=(e["config"] or {}).get("mixture"), growth=(e["config"] or {}).get("grow"))
+                              mixture=(e["config"] or {}).get("mixture"), growth=(e["config"] or {}).get("grow"),
+                              rebirth=(e["config"] or {}).get("rebirth"))
         except Exception as ex:  # noqa: BLE001
             MEM.update_experiment(ctx, e["id"], status="failed", error=f"evaluation failed: {ex}", finished_at=now())
             MEM.event(ctx, "experiment.failed", f"Experiment #{e['id']}: evaluation failed: {ex}", level="error",

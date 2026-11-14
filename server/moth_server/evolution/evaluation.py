@@ -114,7 +114,7 @@ def capability_suites(ctx: Ctx) -> list[dict[str, Any]]:
         dom = p.stem.split("_", 1)[1]
         lim = CAPABILITY_LIMITS["holdout"]
         out.append({"id": f"capability:holdout:{dom}", "kind": "capability", "capability": "holdout", "path": str(p),
-                    "limit": lim, "name": f"Held-out {dom}", "sha": _sha(f"capability/v1:holdout:{lim}:{file_sha(p)}")})
+                    "limit": lim, "name": f"Held-out {dom}", "sha": _sha(f"capability/v2:holdout:{lim}:{file_sha(p)}")})  # v2: with bits per byte
     from moth_server.evolution import settings as _S
 
     if (_S.get(ctx).get("evaluation") or {}).get("builtin_suites", True):
@@ -245,7 +245,7 @@ def _better(c: float, b: float, higher: bool) -> float:
 
 
 def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: dict,
-         mixture: dict | None = None, growth: dict | None = None) -> dict[str, Any]:
+         mixture: dict | None = None, growth: dict | None = None, rebirth: dict | None = None) -> dict[str, Any]:
     from moth_server import models as M
 
     g = settings["gates"]
@@ -261,6 +261,16 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
     suites = build_suites(ctx, candidate)
     base_scores = benchmark(ctx, base["version"], Path(base["path"]), suites)
     cand_scores = benchmark(ctx, candidate["version"], Path(candidate["path"]), suites)
+    # 0.10.0: a successor with its own tokenizer is compared per byte of the same held-out text
+    # (token losses of different tokenizers are not comparable); token-level datasets of the old
+    # tokenizer cannot score it and are left out ("no baseline").
+    cross = (candidate["info"].get("tokenizer_fingerprint") or "") != (base["info"].get("tokenizer_fingerprint") or "")
+    if cross:
+        base_scores = {**base_scores, "suites": per_byte(base_scores["suites"])}
+        cand_scores = {**cand_scores, "suites": per_byte(cand_scores["suites"])}
+        gates.append({"gate": "same_text_comparison", "passed": True,
+                      "detail": "the candidate has a new tokenizer: held-out losses are compared in bits per byte "
+                                "of the same text"})
     target_id = f"retention:{target_dataset['sha256'][:16]}"
     improvement = None
     for s in suites:
@@ -333,18 +343,58 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
                                 + (f" — {', '.join(worse)} got worse beyond {tol:.0%}" if worse else
                                    " — no capability group got worse")})
     bp, cp = base_scores["performance"], cand_scores["performance"]
+    # 0.10.0: a bigger model (growth or a successor) is meant to be slower and larger than its base, so
+    # it is held to absolute limits instead: fast enough to chat with, and fitting comfortably in memory.
+    # Same-size candidates keep the relative limits.
+    resized = bool(growth) or bool(rebirth)
     if bp.get("tokens_per_second") and cp.get("tokens_per_second") is not None:
         ratio = cp["tokens_per_second"] / bp["tokens_per_second"]
-        gates.append({"gate": "speed", "passed": ratio >= 1 - float(g["max_speed_regression"]),
-                      "candidate": cp["tokens_per_second"], "baseline": bp["tokens_per_second"],
-                      "detail": f"generation speed {ratio:.0%} of the base model's"})
+        floor = float(g.get("min_tokens_per_second", MIN_TOKENS_PER_SECOND))
+        if resized:
+            gates.append({"gate": "speed", "passed": float(cp["tokens_per_second"]) >= floor,
+                          "candidate": cp["tokens_per_second"], "baseline": bp["tokens_per_second"],
+                          "detail": f"bigger model: generates {float(cp['tokens_per_second']):.0f} tokens/s "
+                                    f"(needs ≥ {floor:.0f} to chat smoothly; {ratio:.0%} of the smaller model's)"})
+        else:
+            gates.append({"gate": "speed", "passed": ratio >= 1 - float(g["max_speed_regression"]),
+                          "candidate": cp["tokens_per_second"], "baseline": bp["tokens_per_second"],
+                          "detail": f"generation speed {ratio:.0%} of the base model's"})
     if bp.get("peak_memory_bytes") and cp.get("peak_memory_bytes"):
         ratio = cp["peak_memory_bytes"] / bp["peak_memory_bytes"]
-        gates.append({"gate": "memory", "passed": ratio <= 1 + float(g["max_memory_growth"]),
-                      "candidate": cp["peak_memory_bytes"], "baseline": bp["peak_memory_bytes"],
-                      "detail": f"peak memory {ratio:.0%} of the base model's"})
+        if resized:
+            limit = _memory_limit()
+            gates.append({"gate": "memory", "passed": cp["peak_memory_bytes"] <= limit,
+                          "candidate": cp["peak_memory_bytes"], "baseline": bp["peak_memory_bytes"],
+                          "detail": f"bigger model: peak memory {cp['peak_memory_bytes'] / 2**20:,.0f} MB "
+                                    f"(limit {limit / 2**20:,.0f} MB, half of this server's memory)"})
+        else:
+            gates.append({"gate": "memory", "passed": ratio <= 1 + float(g["max_memory_growth"]),
+                          "candidate": cp["peak_memory_bytes"], "baseline": bp["peak_memory_bytes"],
+                          "detail": f"peak memory {ratio:.0%} of the base model's"})
     return {"passed": all(x["passed"] for x in gates), "gates": gates, "primary_improvement": improvement,
             "release_status": rel["status"], "performance": {"candidate": cp, "base": bp}}
+
+
+MIN_TOKENS_PER_SECOND = 15.0
+
+
+def _memory_limit() -> int:
+    try:
+        total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError, AttributeError):
+        total = 8 * 2**30
+    return int(total * 0.5)
+
+
+def per_byte(scores: dict[str, dict]) -> dict[str, dict]:
+    """Held-out capability losses expressed in bits per byte (comparable across tokenizers)."""
+    out = {}
+    for k, v in scores.items():
+        if k.startswith("capability:holdout:") and isinstance(v, dict) and v.get("ok"):
+            v = {**v, "value": v["bits_per_byte"], "metric": "bits_per_byte"} if v.get("bits_per_byte") is not None \
+                else {**v, "ok": False, "error": "scored before bits per byte were measured"}
+        out[k] = v
+    return out
 
 
 def growth_gate(targets: list[str], suites: list[dict], base: dict, cand: dict) -> dict[str, Any]:

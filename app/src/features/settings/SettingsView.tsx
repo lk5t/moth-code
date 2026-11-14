@@ -21,6 +21,7 @@ import { OnDeviceSection } from "@/features/intelligence/OnDeviceSection";
 import { UpdatesSection } from "./UpdatesSection";
 import { ChatRetention } from "./ChatRetention";
 import { ConnectionSection } from "./ConnectionSection";
+import { AlertsSection } from "./AlertsSection";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 /** Settings in a few plain groups instead of one long page (0.5.4). */
@@ -90,7 +91,7 @@ export function SettingsView() {
         </> : <p className="text-xs text-muted">Advanced operations, including Genesis Reset, are available to the MOTH Owner only.</p>)}
         {tab === "Privacy & AI" && <><ChatRetention /><IntelligenceSection /><OnDeviceSection /></>}
         {tab === "Plan & referrals" && <><UsageSection /><ReferralsSection /></>}
-        {tab === "Updates & about" && <UpdatesSection />}
+        {tab === "Updates & about" && <>{owner && <AlertsSection />}<UpdatesSection /></>}
 
         {tab === "Code agent" && <Card>
           <CardHeader>
