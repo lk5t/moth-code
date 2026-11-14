@@ -5,6 +5,7 @@ the unverified completion of Foundation training, is recorded in [docs/CONTINUAT
 
 ## 1.0.2 — Windows worker install fix
 
+- Desktop: Network now says clearly that MOTH Code already includes training for this computer (off until you turn on "Contribute this computer"); the install command is only for extra machines without the app.
 - The one-command Windows worker install stopped at "import torch" on a fresh PC in Windows PowerShell 5.1 (the default shell): 5.1 turns any program's stderr into a fatal error under the command's "Stop" setting. The installer now checks exit codes instead, probes for PyTorch without printing a traceback, and is plain ASCII (the "▲" showed as "â–²"). CI now runs the install in Windows PowerShell 5.1, exactly as users do.
 
 ## 1.0.1 — Server fix: bigger successor could not start training

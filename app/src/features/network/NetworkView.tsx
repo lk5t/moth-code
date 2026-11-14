@@ -93,13 +93,15 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
         {!embedded && <div>
           <h1 className="text-lg font-semibold">Training & Referrals</h1>
           <p className="mt-1 text-xs text-muted">
-            Help train MOTH with any computer you have: a server, a desktop or a laptop, with or without a GPU. MOTH Worker is
-            a small separate program; it trains only on public, licensed data and never sees your projects.
+            MOTH Code already includes everything needed to help train MOTH: turn on "Contribute this computer" below and this PC
+            trains when it is idle enough. It is off until you turn it on. Training uses only public, licensed data and never sees
+            your projects.
           </p>
         </div>}
         {error && <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
 
         <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">This computer</CardTitle></CardHeader>
           <CardContent><ParticipantSwitch /></CardContent>
         </Card>
         <Card>
@@ -121,9 +123,9 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Server className="size-4 text-accent" />Add a computer</CardTitle>
+            <CardTitle className="flex items-center gap-2"><Server className="size-4 text-accent" />Add another computer (without MOTH Code)</CardTitle>
             <CardDescription>
-              One command installs, connects and starts MOTH Worker, and keeps it running after restarts. It works on CPU-only
+              Only for extra machines such as a server or a spare PC: this computer does not need it. One command installs, connects and starts MOTH Worker, and keeps it running after restarts. It works on CPU-only
               computers and uses an NVIDIA GPU when there is one. No administrator rights are needed. The download is checked
               against a pinned SHA-256 before anything runs.
             </CardDescription>
