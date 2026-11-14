@@ -382,7 +382,7 @@ def chat_schedule(weights: dict[str, float]) -> list[dict] | None:
     total = sum(rest.values()) or 1.0
     finish = {"conversation": 0.7, **{d: round(0.3 * w / total, 4) for d, w in rest.items()}}
     return [{"until": CHAT_WARMUP, "weights": {"conversation": 1.0}, "phase": "chat warm-up"},
-            {"until": CHAT_FINISH, "weights": dict(weights), "phase": "curriculum"},
+            {"until": CHAT_FINISH, "weights": dict(weights), "phase": "curriculum"},  # [1:] = regular runs
             {"until": 1.01, "weights": finish, "phase": "chat finish"}]
 
 
@@ -446,6 +446,17 @@ def _explore(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, tilted: dict
 
 
 def _config(base, arch, src, mix, lr, steps, settings, seed) -> dict[str, Any]:
+    tr = settings["training"]
+    cfg = _base_config(base, arch, src, mix, lr, steps, settings, seed)
+    # 1.0: every run ends on mostly conversation (the last 15 %), so replies finish cleanly — the check that
+    # rejected both v124 and v125. Successors also get the chat warm-up (see _plan_rebirth).
+    sched = chat_schedule(cfg["mixture"]["weights"])
+    if sched:
+        cfg["mixture_schedule"] = sched[1:]
+    return cfg
+
+
+def _base_config(base, arch, src, mix, lr, steps, settings, seed) -> dict[str, Any]:
     tr = settings["training"]
     return {"method": "continued", "base_version": base["version"], "base_sha256": base["sha256"],
             "architecture_key": arch, "dataset_id": src["dataset_id"], "dataset_sha256": src["build_sha256"],

@@ -102,6 +102,32 @@ fn accounts_sign_out(app: tauri::AppHandle, key: String) -> Result<AccountsFile,
     accounts_store(&app)?.sign_out(&OsVault, &key)
 }
 
+/// 1.0 connections: tokens for linked services (GitHub) live in the OS credential vault, never in files.
+const CONNECTIONS: &[&str] = &["github"];
+
+fn connection_key(name: &str) -> Result<String, String> {
+    if CONNECTIONS.contains(&name) { Ok(format!("connection:{name}")) } else { Err("unknown connection".into()) }
+}
+
+#[tauri::command]
+fn connection_set(name: String, token: String) -> Result<(), String> {
+    use credentials::SecretStore;
+    if token.trim().is_empty() || token.len() > 400 { return Err("invalid token".into()); }
+    OsVault.set(&connection_key(&name)?, token.trim())
+}
+
+#[tauri::command]
+fn connection_get(name: String) -> Result<Option<String>, String> {
+    use credentials::SecretStore;
+    OsVault.get(&connection_key(&name)?)
+}
+
+#[tauri::command]
+fn connection_delete(name: String) -> Result<(), String> {
+    use credentials::SecretStore;
+    OsVault.delete(&connection_key(&name)?)
+}
+
 #[tauri::command]
 fn accounts_forget(app: tauri::AppHandle, key: String) -> Result<AccountsFile, String> {
     accounts_store(&app)?.forget(&OsVault, &key)
@@ -144,6 +170,9 @@ pub fn run() {
             accounts_activate,
             accounts_sign_out,
             accounts_forget,
+            connection_set,
+            connection_get,
+            connection_delete,
             tray_keep_running,
             tray_set_status,
             updates::update_check,
