@@ -3,6 +3,10 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.4 — Windows installer finds NVIDIA GPUs
+
+- The Windows worker install missed every NVIDIA GPU (e.g. an RTX 3050) and installed CPU-only PyTorch: PowerShell's `-match` on nvidia-smi's list of lines never records the CUDA version. It now joins the lines, also looks in NVIDIA's install folders and Windows' list of graphics cards, and replaces a CPU-only PyTorch from an earlier install with the GPU build.
+
 ## 1.0.3 — Everyone trains together; chat data matches real chats
 
 - A run that started on MOTH Cloud alone (nobody else online) moves to shared rounds with MOTH Cloud and the workers as soon as other computers come online, continuing from its latest checkpoint instead of training alone for hours.

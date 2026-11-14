@@ -55,17 +55,46 @@ $VPy = Join-Path $Venv "Scripts\python.exe"
 & $VPy -m pip install --quiet --disable-pip-version-check --upgrade pip
 if ($LASTEXITCODE -ne 0) { Fail "Could not update pip (check the internet connection)." }
 
+# 1.0.4: GPU detection. nvidia-smi prints many lines and "-match" on a list of lines never sets $Matches,
+# so earlier versions missed every NVIDIA GPU. Join the lines first, look in NVIDIA's folders too, and fall
+# back to Windows' own list of graphics cards.
+function Find-Cuda {
+  $exes = @("nvidia-smi", "$env:SystemRoot\System32\nvidia-smi.exe", "$env:ProgramFiles\NVIDIA Corporation\NVSMI\nvidia-smi.exe")
+  foreach ($e in $exes) {
+    try {
+      $out = (& $e 2>$null) -join "`n"
+      if ($out -match "CUDA Version:\s*(\d+)\.(\d+)") { return [int]$Matches[1] * 10 + [int]$Matches[2] }
+    } catch { }
+  }
+  try {
+    $cards = Get-CimInstance Win32_VideoController -ErrorAction Stop | Where-Object { $_.Name -match "NVIDIA" }
+    if ($cards) { return 126 }  # an NVIDIA card without nvidia-smi on PATH: current drivers support CUDA 12.6
+  } catch { }
+  return $null
+}
+
 & $VPy -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('torch') else 1)"
-if ($LASTEXITCODE -ne 0 -and -not $UseSystemTorch) {
+$hasTorch = ($LASTEXITCODE -eq 0)
+$cuda = $null
+if (-not $UseSystemTorch -and -not $TorchIndex) { $cuda = Find-Cuda }
+if ($hasTorch -and $cuda) {
+  # PyTorch is already here: keep it only if it can use the GPU (an earlier install may have chosen CPU)
+  & $VPy -c "import sys, torch; sys.exit(0 if torch.version.cuda else 1)"
+  if ($LASTEXITCODE -ne 0) {
+    Say "replacing the CPU-only PyTorch with the GPU version"
+    & $VPy -m pip uninstall --quiet -y torch
+    $hasTorch = $false
+  }
+}
+if (-not $hasTorch -and -not $UseSystemTorch) {
   if (-not $TorchIndex) {
-    $cuda = $null
-    try { $smi = & nvidia-smi 2>$null; if ($smi -match "CUDA Version:\s*(\d+)\.(\d+)") { $cuda = [int]($Matches[1] + $Matches[2]) } } catch { }
     if (-not $cuda) { $TorchIndex = "https://download.pytorch.org/whl/cpu"; Say "no NVIDIA GPU found: this will be a CPU worker" }
     elseif ($cuda -ge 128) { $TorchIndex = "https://download.pytorch.org/whl/cu128" }
     elseif ($cuda -ge 126) { $TorchIndex = "https://download.pytorch.org/whl/cu126" }
     else { $TorchIndex = "https://download.pytorch.org/whl/cu118" }
+    if ($cuda) { Say "NVIDIA GPU found (CUDA $([math]::Floor($cuda / 10)).$($cuda % 10)): this will be a GPU worker" }
   }
-  Say "installing PyTorch from $TorchIndex (a few hundred MB, once)"
+  Say "installing PyTorch from $TorchIndex (a few hundred MB to 2.5 GB, once)"
   & $VPy -m pip install --quiet --disable-pip-version-check torch --index-url $TorchIndex
   if ($LASTEXITCODE -ne 0) { Fail "Could not install PyTorch." }
 }
