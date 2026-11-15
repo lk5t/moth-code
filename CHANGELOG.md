@@ -3,6 +3,12 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.6 — All computers train one experiment together
+
+- With two or more computers online, MOTH Cloud, every worker and every contributing PC train the same experiment in shared rounds, one experiment at a time, instead of each computer training a different one.
+- The participants share the steps (each trains about its share, faster computers more) and are averaged at least every 1,000 local steps, so more computers finish a run sooner instead of each repeating the whole run.
+- A run waiting after a handover to shared rounds starts first. `distributed.one_experiment: false` restores the side-by-side mode.
+
 ## 1.0.5 — Faster training
 
 - Short context first: long-context runs (the 1,024-token successor) train their first 70 % on 256-token rows cut from the same batches (same tokens, same schedule), then the rest at full length. Attention over 256 instead of 1,024 tokens makes those steps much cheaper; shared rounds and workers do the same.
