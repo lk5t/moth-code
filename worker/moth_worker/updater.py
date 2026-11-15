@@ -43,9 +43,25 @@ def _vt(v: str) -> tuple[int, ...]:
     return tuple(int(x) for x in v.split("-")[0].split("+")[0].split("."))
 
 
+def _pointer(link: Path) -> Path:
+    return link.with_name(link.name + ".path")
+
+
+def _target(link: Path) -> Path | None:
+    """Where ``current`` / ``previous`` points: a symbolic link, or (1.0.14, Windows) a small text file next to
+    it, because creating symbolic links on Windows needs administrator rights or Developer Mode."""
+    if link.is_symlink():
+        return link.resolve()
+    ptr = _pointer(link)
+    if ptr.is_file():
+        t = Path(ptr.read_text(encoding="utf-8").strip())
+        return t if t.is_dir() else None
+    return None
+
+
 def code_dirs(home: Path) -> Path | None:
-    cur = home / "current"
-    return cur.resolve() if cur.is_symlink() and (cur.resolve() / "worker" / "moth_worker").is_dir() else None
+    t = _target(home / "current")
+    return t if t and (t / "worker" / "moth_worker").is_dir() else None
 
 
 def running_version_dir(home: Path) -> str | None:
@@ -70,7 +86,7 @@ def reexec_into_current(home: Path, argv: list[str]) -> None:
            # remembered so a later restart can choose the newest version again (see restart)
            "MOTH_WORKER_BASE_PYTHONPATH": os.environ.get("MOTH_WORKER_BASE_PYTHONPATH", os.environ.get("PYTHONPATH", "")),
            "PYTHONPATH": os.pathsep.join([str(d / "worker"), str(d / "backend"), os.environ.get("PYTHONPATH", "")])}
-    os.execve(sys.executable, [sys.executable, "-m", "moth_worker.cli", *argv], env)
+    _start(argv, env)
 
 
 def _safe_extract(archive: Path, dest: Path) -> None:
@@ -130,8 +146,9 @@ def apply(info: dict, home: Path, download: Callable[[str, Path], None], log: Ca
         shutil.rmtree(staging, ignore_errors=True)
         bundle.unlink(missing_ok=True)
     cur = home / "current"
-    if cur.is_symlink():
-        _relink(home / "previous", cur.resolve())
+    old = _target(cur)
+    if old:
+        _relink(home / "previous", old)
     _relink(cur, target)
     (home / "update-pending.json").write_text(json.dumps({"version": v, "from": __version__, "attempts": 0}))
     log(f"MOTH Worker {v} installed (from {__version__}); restarting into it")
@@ -139,10 +156,23 @@ def apply(info: dict, home: Path, download: Callable[[str, Path], None], log: Ca
 
 
 def _relink(link: Path, target: Path) -> None:
-    tmp = link.with_name(f".{link.name}.tmp")
-    tmp.unlink(missing_ok=True)
-    os.symlink(target, tmp)
-    os.replace(tmp, link)
+    if os.name != "nt":
+        try:
+            tmp = link.with_name(f".{link.name}.tmp")
+            tmp.unlink(missing_ok=True)
+            os.symlink(target, tmp)
+            os.replace(tmp, link)
+            _pointer(link).unlink(missing_ok=True)
+            return
+        except OSError:
+            pass  # no symbolic links here: use a pointer file
+    # Windows (and anywhere symlinks are refused): an atomically replaced text file holding the path
+    if link.is_symlink():
+        link.unlink()
+    ptr = _pointer(link)
+    tmp = ptr.with_name(f".{ptr.name}.tmp")
+    tmp.write_text(str(target), encoding="utf-8")
+    os.replace(tmp, ptr)
 
 
 def startup_guard(home: Path, log: Callable[[str], None] = print) -> dict | None:
@@ -153,11 +183,12 @@ def startup_guard(home: Path, log: Callable[[str], None] = print) -> dict | None
     pending = json.loads(p.read_text())
     pending["attempts"] = int(pending.get("attempts", 0)) + 1
     if pending["attempts"] > MAX_START_ATTEMPTS:
-        prev = home / "previous"
-        if prev.is_symlink():
-            _relink(home / "current", prev.resolve())
+        prev = _target(home / "previous")
+        if prev:
+            _relink(home / "current", prev)
         else:
             (home / "current").unlink(missing_ok=True)
+            _pointer(home / "current").unlink(missing_ok=True)
         p.unlink()
         log(f"MOTH Worker {pending['version']} failed to start {MAX_START_ATTEMPTS} times; restored the previous version")
         return {**pending, "reverted": True}
@@ -191,5 +222,20 @@ def restart_env() -> dict[str, str]:
     return env
 
 
+def _start(argv: list[str], env: dict[str, str]) -> None:
+    """Replace this process with ``python -m moth_worker.cli argv``. On Windows exec* only *spawns* a child
+    (with unquoted arguments) and the parent's exit can end a scheduled task, so a detached process is
+    started there instead and this one exits (1.0.14)."""
+    cmd = [sys.executable, "-m", "moth_worker.cli", *argv]
+    if os.name == "nt":
+        import subprocess
+
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0) \
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        subprocess.Popen(cmd, env={**env, "MOTH_WORKER_RESTARTED": "1"}, creationflags=flags, close_fds=True)
+        os._exit(0)
+    os.execve(sys.executable, cmd, env)
+
+
 def restart(argv: list[str]) -> None:
-    os.execve(sys.executable, [sys.executable, "-m", "moth_worker.cli", *argv], restart_env())
+    _start(argv, restart_env())

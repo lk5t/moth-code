@@ -118,12 +118,8 @@ def main(installer):
         print('::notice title=GENESIS native stage::Workspace drafts and the AI Evolution page passed', flush=True)
         worker_backend = api('/v1/admin/evolution/status')['settings']['backends']['workers']
         ui.click('Network', control_type='Button')  # computers and consent live in Network
-        for value in (False, True):
-            ui.click('Use cloud workers')
-            wait(lambda: api('/v1/admin/evolution/status')['settings']['cloud_workers'] is value,
-                 'cloud worker toggle persisted')
-            assert api('/v1/admin/evolution/status')['settings']['backends']['workers'] is worker_backend, \
-                'Cloud infrastructure toggle must not change personal-worker backend policy'
+        # 1.0.14: no "Use cloud workers" switch any more: every connected computer takes part
+        assert api('/v1/admin/evolution/status')['settings']['backends']['workers'] is worker_backend
         ui.click('Contribute this computer')
         participant = wait(lambda: (s if (s := participant_setting())['enabled'] and s['worker_id'] else None), 'real desktop worker enrollment')
         assert any(w['id'] == participant['worker_id'] and w['hardware'].get('client') == 'moth-code'

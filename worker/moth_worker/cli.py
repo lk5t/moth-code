@@ -57,7 +57,7 @@ def cmd_run(args) -> int:
     home = Path(args.home or default_dir())
     if args.supervise:  # Windows scheduled task: restart the worker if it ever stops
         return supervise(home, [a for a in sys.argv[1:] if a != "--supervise"])
-    lock = single_instance(home)
+    lock = single_instance(home, wait=60.0 if os.environ.pop("MOTH_WORKER_RESTARTED", None) else 0.0)
     if lock is None:
         return 0  # already running (cron starts it every minute; this keeps exactly one)
     if args.log_file:

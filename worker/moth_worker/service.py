@@ -72,9 +72,21 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess:
 
 
 # ---- single instance, logging, supervision ---------------------------------------------------------
-def single_instance(home: Path):
+def single_instance(home: Path, wait: float = 0.0):
     """An exclusive lock on ``<home>/run.lock`` held for the life of the process, or None if another
-    worker of this installation is already running."""
+    worker of this installation is already running. ``wait``: keep trying this long (1.0.14: a restarted
+    worker on Windows starts while the old process is still exiting)."""
+    import time
+
+    deadline = time.time() + wait
+    while True:
+        f = _try_lock(home)
+        if f is not None or time.time() >= deadline:
+            return f
+        time.sleep(0.5)
+
+
+def _try_lock(home: Path):
     home.mkdir(parents=True, exist_ok=True)
     f = open(home / "run.lock", "a+")
     try:

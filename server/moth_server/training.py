@@ -229,9 +229,10 @@ def version_at_least(version: str | None, minimum: str) -> bool:
 
 
 def worker_allowed(ctx: Ctx, worker: dict) -> bool:
-    hw = json.loads(worker.get('hardware') or '{}')
-    settings = ctx.db.get_config('evolution_settings', {}) or {}
-    return hw.get('worker_kind', 'personal') != 'cloud' or settings.get('cloud_workers', True)
+    """1.0.14: every connected computer takes part. The old "Use cloud workers" switch silently left every
+    cloud-type computer (MOTH Cloud's own worker included) out of training; it no longer exists. Pausing or
+    removing a single worker in Network still works."""
+    return True
 
 
 def job_shareable(ctx: Ctx, job: dict) -> bool:

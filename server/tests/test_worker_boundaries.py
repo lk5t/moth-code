@@ -21,7 +21,7 @@ def test_cloud_enrollment_and_toggle_do_not_authorize_personal_devices(client, s
         assert reply.status_code == 200
         row = ctx.db.one(select(workers).where(workers.c.id == w['worker_id']))
         assert json.loads(row['hardware'])['worker_kind'] == kind
-        assert T.worker_allowed(ctx, row) == (kind == 'personal')
+        assert T.worker_allowed(ctx, row)  # 1.0.14: every connected computer takes part, cloud or personal
     wid = enrolled[1]['worker_id']
     assert client.put(f'/v1/training/workers/{wid}/limits', json={'cpu_threads': 8}, headers=H(owner['token'])).status_code == 403
     assert client.post(f'/v1/training/workers/{wid}/resume', headers=H(owner['token'])).status_code == 403

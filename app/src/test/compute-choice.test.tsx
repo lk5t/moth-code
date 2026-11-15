@@ -20,7 +20,7 @@ describe("What trains MOTH", () => {
     expect(cloud).toHaveAttribute("aria-checked", "true");
     fireEvent.click(screen.getByRole("switch", { name: "Train with Workers" }));
     await waitFor(() => expect(mocks.api).toHaveBeenCalledWith("/v1/admin/evolution/settings", { method: "PUT",
-      json: { changes: { cloud_workers: false, backends: { local_cpu: true, local_gpu: true, workers: false } } } }));
+      json: { changes: { backends: { local_cpu: true, local_gpu: true, workers: false } } } }));
     const pc = await screen.findByRole("switch", { name: "Train with This computer" });
     await waitFor(() => expect(pc).not.toBeDisabled());
     fireEvent.click(pc);

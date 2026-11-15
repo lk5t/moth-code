@@ -66,8 +66,8 @@ export function AiSettings() {
               checked={!!(s.backends?.local_cpu || s.backends?.local_gpu)} disabled={busy}
               onChange={(v) => void change({ backends: { ...s.backends, local_cpu: v, local_gpu: v } })} />
             <ComputeChoice title="Workers" help="Enrolled workers, with their owners' consent. Each keeps its own limits and updates itself automatically."
-              checked={s.backends?.workers !== false && s.cloud_workers !== false} disabled={busy}
-              onChange={(v) => void change({ cloud_workers: v, backends: { ...s.backends, workers: v } })} />
+              checked={s.backends?.workers !== false} disabled={busy}
+              onChange={(v) => void change({ backends: { ...s.backends, workers: v } })} />
             <ThisComputerChoice />
           </div>
           {!(s.backends?.local_cpu || s.backends?.local_gpu || s.backends?.workers) && <p role="alert" className="mt-2 text-xs text-warning">Nothing is selected, so Evolution cannot train. Turn on at least one choice.</p>}

@@ -3,6 +3,11 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.14 — Every computer joins; Windows workers update themselves
+
+- The "Use cloud workers" switch is gone: when it was off it silently left every cloud-type computer out of training, including worker "serv 1" and MOTH Cloud's own worker ("no other computer can hold it"). Every connected computer now always takes part; single workers can still be paused or removed in Network.
+- Windows workers can update themselves: switching to a new version used symbolic links, which Windows only allows with administrator rights or Developer Mode, so updates failed and were retried with growing delays. Windows now uses small pointer files, restarts the worker as a fresh background process, and the restarted worker waits for the old one to exit.
+
 ## 1.0.13 — Workers always join
 
 - A run training on MOTH Cloud alone moves to shared training with the workers at any point while it has at least 100 steps left (no percentage cut-off, no minimum number of rounds).
