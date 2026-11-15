@@ -789,6 +789,7 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
             return
         if _handoff_to_shared(ctx, cyc, exp, settings, elapsed):
             return
+        exp = MEM.experiment(ctx, exp["id"])  # keep what the handoff check recorded
         prog = B.progress(ctx, exp)
         from moth_server.evolution import v2 as V2
 
@@ -846,8 +847,19 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
                   "it will resume from its last checkpoint", level="warning", cycle_id=cyc["id"], experiment_id=exp["id"])
 
 
-HANDOFF_MIN_REMAINING = 0.2     # 1.0.2: a run with less than this share left just finishes where it is
+HANDOFF_MIN_REMAINING = 0.1     # a run with less than this share left just finishes where it is (1.0.10: was 0.2)
 HANDOFF_CHECK_SECONDS = 120.0
+
+
+def _not_shared(ctx: Ctx, cyc: dict, exp: dict, reason: str) -> bool:
+    """1.0.10: say once (per reason) why a run on MOTH Cloud alone was not moved to shared training."""
+    cur = MEM.experiment(ctx, exp["id"])
+    res = cur.get("resources") or {}
+    if res.get("handoff_reason") != reason:
+        MEM.update_experiment(ctx, exp["id"], resources={**res, "handoff_reason": reason})
+        MEM.event(ctx, "experiment.not_shared", f"Experiment #{exp['id']} keeps training on MOTH Cloud alone: {reason}.",
+                  cycle_id=cyc["id"], experiment_id=exp["id"])
+    return False
 
 
 def _handoff_to_shared(ctx: Ctx, cyc: dict, exp: dict, settings: dict, elapsed: float) -> bool:
@@ -867,19 +879,25 @@ def _handoff_to_shared(ctx: Ctx, cyc: dict, exp: dict, settings: dict, elapsed: 
         return False
     MEM.update_experiment(ctx, exp["id"], resources={**res, "handoff_checked_at": now()})
     if not B.worker_training_supported(ctx, exp, masks=True):
-        return False  # private data never leaves MOTH Cloud
+        return _not_shared(ctx, cyc, exp, "its training data includes private data (e.g. chat feedback), which never "
+                                          "leaves MOTH Cloud")
     others = [e for e in MEM.experiments(ctx, cyc["id"]) if e["id"] != exp["id"] and e["status"] == "running"]
     if others and not cfg.get("rebirth"):
-        return False  # another experiment is using the workers right now
+        return _not_shared(ctx, cyc, exp, "another experiment is using the workers right now")
     need = _need_bytes(ctx, exp)
     ok, n = D.available(ctx, settings, need)
     people = D.participants(ctx, need, settings.get("worker_ids")) if ok else []
     if not ok or not any((w.get("hw") or {}).get("worker_kind") != "cloud" for w in people):
-        return False  # nobody besides MOTH Cloud itself: sharing gains nothing
+        online = D.participants(ctx, 0, settings.get("worker_ids"))
+        short = [w["name"] for w in online if w not in people and (w.get("hw") or {}).get("worker_kind") != "cloud"]
+        return _not_shared(ctx, cyc, exp, (
+            f"no other computer can hold it: it needs about {need / 2**30:.1f} GB of free memory"
+            + (f" and {', '.join(short)} {'has' if len(short) == 1 else 'have'} less" if short else "")
+            if online else "no other computer is online"))
     planned = int(cfg["steps"])
     step = int((B.progress(ctx, exp) or {}).get("step") or 0)
     if planned - step < max(HANDOFF_MIN_REMAINING * planned, 2 * D.SUCCESSOR_ROUND_STEPS if cfg.get("rebirth") else 100):
-        return False
+        return _not_shared(ctx, cyc, exp, "it is almost finished: handing it over now would not save time")
     if not B.pause_local(ctx, exp, wait_s=120):
         return False  # still busy saving: try again later
     rd = B.run_dir(ctx, exp)

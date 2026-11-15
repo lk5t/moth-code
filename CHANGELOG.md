@@ -3,6 +3,11 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.10 — Says why a run is not shared
+
+- When a run on MOTH Cloud alone is not moved to shared training, Live activity now says exactly why (no other computer online, not enough free memory on the others — naming them, private data in the mix, or almost finished) instead of staying silent.
+- A run can be handed over to shared training until 90 % done (was 80 %).
+
 ## 1.0.9 — Everyone really trains together; worker actions
 
 - MOTH Cloud always takes part in shared training. An earlier version made a revoke of MOTH Cloud's own worker permanent, which silently left the server out of every shared run ("Shared runs with workers: revoked"); it now enrolls again by itself.
