@@ -4,70 +4,64 @@
 
 <h1 align="center">MOTH Code</h1>
 
-<p align="center">An independent AI coding agent for Windows, powered by MOTH — its own neural network, trained from scratch and served from MOTH Cloud.</p>
+<p align="center"><b>An AI coding app with its own AI.</b> MOTH is a language model trained from scratch, by itself, on a
+network of computers, and it gets a little smarter every day.</p>
+
+<p align="center">
+  <a href="https://github.com/lk5t/moth-code/releases">Download for Windows</a> ·
+  <a href="CHANGELOG.md">What's new</a> ·
+  <a href="docs/ARCHITECTURE.md">How it works</a>
+</p>
 
 ---
 
-MOTH Code is a desktop development environment with chat, an autonomous coding agent, a project explorer, a Monaco
-editor, a terminal and Git. Its intelligence comes **only** from MOTH's own models: original decoder-only Transformers
-initialised from random weights. No pretrained weights and no third-party AI APIs are used anywhere.
+MOTH Code is a desktop app for writing code with an AI: chat, an agent that edits and runs your project, an editor,
+a terminal and Git. The AI behind it is **MOTH**, an original Transformer that started from random weights. **No
+pretrained models and no third-party AI services are used anywhere.** Everything MOTH knows, it learned here.
 
-**v0.3.0 "SIMPLIFY"** makes the whole platform self-managing:
+> **Honest status.** MOTH is young. The live model is still small and its answers are simple; it is growing into a
+> 7M+ parameter successor right now. You can watch it learn, live, inside the app (Owner) and see each new version
+> only replace the old one after it passes every check.
 
-- **Users** install once, sign in and start coding. MOTH Cloud's address is built in, and MOTH Code
-  updates itself in the background.
-- **MOTH Cloud** is installed once on a Linux server, even without sudo, by
-  [`deploy/install-server.sh`](docs/SERVER.md). From then on it keeps running and updates itself from
-  signed releases, with verified backups, health checks and automatic rollback.
-- **Workers** update themselves between training jobs.
-- **Model publishing works end to end** (Validate → Upload → Evaluate → Publish → Deploy), including
-  evaluation data the Owner manages in the dashboard. This fixes *"no evaluation set is configured"*.
-- **The Owner Dashboard** shows the server, updates, AI models and workers in one place.
+## What's inside
 
-| Who | What they do |
+| | |
 | --- | --- |
-| User | Install MOTH Code → sign in → open a folder → code. Updates arrive on their own. |
-| Owner | Approve a release in GitHub Actions. MOTH Cloud, desktops and workers update in stages. Watch it in Owner Dashboard → Updates. |
-| Owner, for models | Owner → Model packages → *Publish*. Evaluation is automatic. Then *Deploy* in Owner Dashboard → AI models. |
+| **Chat** | Conversations with MOTH, with memory of your projects and preferences, long chats compacted automatically, and a usage ring that shows your plan's 5-hour and weekly usage in percent. |
+| **Projects** | Explorer, Monaco editor, terminal and Git. **Agent mode** plans a task, writes and runs the code, checks itself and fixes its own mistakes. Every change is a checkpoint you can undo. **Fix this** on any error, live preview for websites, and tests written and run for you. |
+| **GitHub** | Connect your account (token kept in the Windows credential vault), clone, pull, push and open pull requests, and invite people to shared projects. |
+| **Home** | What MOTH is doing right now, today's progress, recent projects and chats, and a live activity feed. |
+| **Network** | Let your computer help train MOTH when it is idle (built in, off until you turn it on), add other computers with one command, and earn usage credits through referrals. |
+| **Accounts & plans** | MOTH accounts with two-factor sign-in, Free / Pro / Max plans with monthly, weekly and 5-hour allowances, credits, and a usage page. |
+| **Owner only** | The AI section (live training, data, models, evolution), administration, backups, worker actions and every training control. |
 
-**v0.2.0 "CONNECT"** made MOTH a cloud service:
+## How MOTH learns
 
-- Everyone, including the Owner, uses the official MOTH model on **MOTH Cloud** through a MOTH account. Usage is
-  metered on the server.
-- Users never download model weights.
-- Anyone can contribute GPU training compute with **MOTH Worker**.
-- New checkpoints must pass an evaluation gate before they are deployed for all users.
+MOTH trains itself, continuously, with no one pressing buttons:
 
-> **Status.** All of the systems below are implemented and tested. They depend on infrastructure the Owner has to
-> provide: a deployed MOTH Server, SMTP, Stripe credentials, and GPU capacity for MOTH Cloud inference. Until that
-> exists, the app honestly reports what is unavailable. See [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
+1. **Data.** Licensed public datasets (textbooks, Wikipedia, stories, code, maths, conversations) are downloaded,
+   cleaned, de-duplicated, filtered by a learned quality model and mixed by a curriculum. MOTH also quizzes itself
+   on automatically checked problems and learns from its mistakes.
+2. **Training together.** MOTH Cloud and every connected computer (GPUs and CPUs alike) train the same experiment
+   in shared rounds and split its steps by speed, so more computers finish sooner. Runs move to shared training
+   from their checkpoint as soon as other computers come online.
+3. **Growing.** When MOTH outgrows its size, a bigger successor is sized by measured speed and trained, short
+   context first, then full length. A successor that is declined keeps its training for the next attempt.
+4. **Gates.** A new version replaces the old one only if it is better on held-out data, keeps its other skills,
+   stays fast enough and fits in memory. Models with different tokenizers are compared fairly, per byte of text.
+5. **Rollout.** Promoted models roll out in stages with monitoring and automatic rollback.
 
-## What's in v0.2.0
+## Install
 
-| Area | What works today |
-| --- | --- |
-| **Accounts** | Username/password accounts on the owner-operated MOTH Server: Argon2id, email verification, password recovery, rate limits, no account enumeration. Remember Me sessions stored in Windows Credential Manager. Saved accounts and switching, session revocation, profiles and avatars. |
-| **Owner (LK5T)** | One-time `init-owner` setup with a password entered interactively. Permanent Owner role that cannot be assigned through the API. Unlimited, unmetered usage. Re-authentication for sensitive actions. Owner Dashboard. |
-| **Plans & usage** | Configurable Free/Pro/Max allowances. Atomic reserve-then-settle token metering with no negative balances or double charges. Credit ledger and transaction history. Stripe subscriptions with verified webhooks; checkout stays off until configured. |
-| **Referrals** | Codes and share links. Rewards are usage credits only, earned from verified paid invoices or verified GPU training work, with pending periods, caps, reversals, fraud holds and an auditable ledger. |
-| **Training network** | One-command, checksum-pinned Linux GPU worker enrollment, isolated worker credentials, job leases, heartbeats, resume after interruption, pause/revoke and GPU limits. Every contribution is verified before it is accepted. |
-| **Model deployment** | Candidates come from aggregated checkpoints or Owner uploads. An evaluation gate runs before deploy, with smoke-tested hot swap, automatic rollback, and restore after restart. No weights on user PCs. |
-| **Coding agent** | Runs on MOTH Cloud with per-workspace consent before any file content is sent. Includes v0.1's permissions, approvals, verification, memory, cancel, resume and revert. |
-| **Desktop app** | Tauri 2 with the black-and-crimson MOTH UI, workspace, Training & Referrals, Plan & usage, Referrals, Owner Dashboard, signed in-app updates, and a themed installer. |
-| **MOTH Model** | Original Transformer (MOTH-50M = 49.3M parameters), custom BPE, full training pipeline. Model training tools are Owner-only in the desktop app. |
+**Use the app:** download the Windows installer from [Releases](https://github.com/lk5t/moth-code/releases), sign in
+and start. Updates install themselves.
 
-## Components
+**Help train MOTH:** in the app, turn on *Network → Contribute this computer*. For a server or spare PC without the
+app, *Network → Add another computer* gives a one-command, checksum-verified install for Windows (PowerShell) and
+Linux. NVIDIA GPUs are detected and used automatically. See [docs/WORKER.md](docs/WORKER.md).
 
-| Component | Path | Runs on |
-| --- | --- | --- |
-| Desktop client | `app/` (Tauri, React) + `backend/` (local tools, agent runtime) | Users' Windows PCs |
-| MOTH Server | `server/` (auth, billing, referrals, coordinator, model registry, MOTH Cloud) | Owner-controlled server ([docs/SERVER.md](docs/SERVER.md)) |
-| MOTH Worker | `worker/` | Optional Linux GPU servers ([docs/WORKER.md](docs/WORKER.md)) |
-
-## Installer
-
-The Windows installer is themed to match the app. Download it from
-[Releases](https://github.com/lk5t/moth-code/releases).
+**Run MOTH Cloud:** one script installs it on a Linux server, after which it updates itself from signed releases
+with backups, health checks and automatic rollback. See [docs/SERVER.md](docs/SERVER.md).
 
 <p>
   <img src="docs/images/installer-welcome.png" width="32%" alt="Installer welcome page" />
@@ -75,74 +69,46 @@ The Windows installer is themed to match the app. Download it from
   <img src="docs/images/installer-finish.png" width="32%" alt="Installer finish page" />
 </p>
 
-## Quick start (development)
+## Components
 
-Prerequisites: Python 3.10+ (3.12 recommended), Node.js 22+, Rust (stable), Git. On Windows also the
-[Tauri prerequisites](https://tauri.app/start/prerequisites/) (WebView2 and the MSVC build tools).
+| Component | Path | Runs on |
+| --- | --- | --- |
+| Desktop app | `app/` (Tauri 2, React, TypeScript) + `backend/` (local tools, agent, training code) | Windows PCs |
+| MOTH Cloud | `server/` (accounts, billing, referrals, model registry, serving, Evolution engine, training coordinator) | A Linux server |
+| MOTH Worker | `worker/` | Any computer that helps train (Windows or Linux, GPU or CPU) |
+
+```
+app/                 Desktop app (React + TypeScript + Tailwind) and the Tauri shell (app/src-tauri)
+backend/moth/        Python: model, tokenizer, training, data factory, agent, inference, workspace, policy, security
+server/moth_server/  MOTH Cloud: API, billing, evolution (planner, engine, distributed rounds, gates), intelligence
+worker/              MOTH Worker: enrollment, jobs, shared rounds, updates, Windows/Linux installers
+deploy/              Server installer and the self-updating agent
+docs/                Architecture, server, worker, training, security, releasing, limitations
+```
+
+## Development
+
+Prerequisites: Python 3.10+ (3.12 recommended), Node.js 22+, Rust (stable), Git; on Windows the
+[Tauri prerequisites](https://tauri.app/start/prerequisites/).
 
 ```bash
 python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```
 
-For an NVIDIA GPU, install a CUDA build of PyTorch instead (see [docs/SETUP.md](docs/SETUP.md)).
-
 ```bash
-python -m pip install -e "./backend[dev]"
-```
-
-```bash
-cd app && npm install && npm run tauri dev
-```
-
-`tauri dev` starts the frontend dev server and the desktop shell, which launches the Python backend automatically.
-
-Run a development MOTH Server in another terminal (development mode writes emails to `data/outbox/`):
-
-```bash
-python -m pip install -e "./server[dev]"
+python -m pip install -e "./backend[dev]" -e "./server[dev]" -e "./worker"
 ```
 
 ```bash
 cd server && moth-server init-owner && moth-server serve
 ```
 
-Then set the server address in the app (Settings → Account, or `VITE_MOTH_SERVER_URL=http://127.0.0.1:8900`), and
-create an account. To serve chat, deploy a model and enable `cloud_inference_enabled` in the Owner Dashboard
-([docs/SERVER.md](docs/SERVER.md)).
-
-## Repository layout
-
-```
-app/                 Desktop app (React + TypeScript + Tailwind + shadcn-style UI)
-app/src-tauri/       Tauri 2 shell (Rust): launches and supervises the backend, updater
-backend/moth/        Python backend
-  model/             MOTH Transformer, BPE tokenizer, generation, export/registry
-  training/          data sources & licenses, dataset prep, trainer, checkpoints, evaluation
-  agent/             autonomous coding engine, tools, memory, retrieval
-  inference/         local inference, MOTH Cloud client/server, hybrid router
-  community/         opt-in learning network: protocol, client, coordinator, validation
-  policy/            owner-defined content policy
-  security/          permissions, approvals, credential detection/redaction
-  workspace/         files, project scanner, terminal, git
-  server/            FastAPI HTTP/WebSocket API
-backend/tests/       pytest suite
-branding/            MOTH emblem (SVG) and icon source
-docs/                Architecture, setup, training, security, protocols, releasing, limitations, test results
+```bash
+cd app && npm install && npm run tauri dev
 ```
 
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [MOTH Server deployment & operations](docs/SERVER.md)
-- [MOTH Worker (GPU training)](docs/WORKER.md)
-- [Plans, metering & payments](docs/BILLING.md)
-- [Setup & building](docs/SETUP.md)
-- [Training MOTH models](docs/TRAINING.md)
-- [Security, permissions & owner policy](docs/SECURITY.md)
-- [Community learning & MOTH Cloud protocols](docs/PROTOCOLS.md)
-- [Releasing & signed updates](docs/RELEASING.md)
-- [Known limitations & unfinished work](docs/LIMITATIONS.md)
-- [Verified test results](docs/TEST_RESULTS.md)
+Point the app at the development server with `VITE_MOTH_SERVER_URL=http://127.0.0.1:8900` (or Settings → Account).
+Development mode writes emails to `data/outbox/`.
 
 ## Tests
 
@@ -155,10 +121,6 @@ cd server && python -m pytest -q
 ```
 
 ```bash
-bash scripts/test-worker-install.sh
-```
-
-```bash
 cd app && npm test && npm run typecheck
 ```
 
@@ -166,7 +128,17 @@ cd app && npm test && npm run typecheck
 cargo test --manifest-path app/src-tauri/Cargo.toml
 ```
 
+Every release runs the full suite, real Windows and Linux worker installs, a real install of the signed desktop
+installer, and MOTH Cloud's install, update and rollback before anything is published.
+
+## Documentation
+
+[Architecture](docs/ARCHITECTURE.md) · [MOTH Cloud](docs/SERVER.md) · [Workers](docs/WORKER.md) ·
+[Training](docs/TRAINING.md) · [Plans & billing](docs/BILLING.md) · [Security](docs/SECURITY.md) ·
+[Protocols](docs/PROTOCOLS.md) · [Releasing](docs/RELEASING.md) · [Limitations](docs/LIMITATIONS.md) ·
+[Changelog](CHANGELOG.md)
+
 ## License
 
-No license has been chosen for this repository yet. Until the owner adds one, default copyright applies.
-Training-data licenses are tracked per dataset and recorded in every exported model's manifest.
+No license has been chosen for this repository yet, so default copyright applies. Training-data licenses are
+tracked per dataset and recorded in every model's manifest.
