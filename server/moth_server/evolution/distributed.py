@@ -82,7 +82,8 @@ def _round_weights(rd: Path, r: int) -> Path:
 
 
 SUCCESSOR_ROUND_STEPS = 1000
-MIN_LOCAL_STEPS = 20   # 0.10.0: a successor is averaged often, so the participants stay in step
+MIN_LOCAL_STEPS = 20
+SUCCESSOR_MAX_RELATIVE_NORM = 1000.0   # 0.10.0: a successor is averaged often, so the participants stay in step
 
 
 def model_config(exp: dict, base: dict) -> dict:
@@ -306,7 +307,12 @@ def accept_shard(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) -> dict:
     except Exception as e:  # noqa: BLE001
         return {"accepted": False, "reasons": [f"unreadable update: {e}"]}
     base = torch.load(_round_weights(rd, r), map_location="cpu", weights_only=True)
-    report = validate_delta(base, delta, max_relative_norm=EVOLUTION_MAX_RELATIVE_NORM)
+    # 1.0.15: a successor trained from scratch starts with deliberately tiny weights in some layers (e.g. the
+    # residual output projections), so a fast GPU's honest update can be many times their size. Its updates
+    # are held to a far looser size limit; every round is still accepted only if it lowers the loss on
+    # held-out text (advance), and non-finite updates are always refused.
+    limit = SUCCESSOR_MAX_RELATIVE_NORM if (exp.get("config") or {}).get("rebirth") else EVOLUTION_MAX_RELATIVE_NORM
+    report = validate_delta(base, delta, max_relative_norm=limit)
     if not report.ok:
         return {"accepted": False, "reasons": report.reasons}
     tmp = dest.with_suffix(".tmp")

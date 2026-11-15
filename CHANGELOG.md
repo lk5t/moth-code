@@ -3,6 +3,10 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.15 — GPU work on a new successor is no longer thrown away
+
+- Shared-round updates for a successor trained from scratch were refused as "update too large (relative norm 12.9 > 10.0)": some of its layers start with deliberately tiny weights, so a fast GPU's honest update is many times their size. Successor updates now have a much looser size limit; every round still has to lower the loss on held-out text, and non-finite updates are always refused.
+
 ## 1.0.14 — Every computer joins; Windows workers update themselves
 
 - The "Use cloud workers" switch is gone: when it was off it silently left every cloud-type computer out of training, including worker "serv 1" and MOTH Cloud's own worker ("no other computer can hold it"). Every connected computer now always takes part; single workers can still be paused or removed in Network.
