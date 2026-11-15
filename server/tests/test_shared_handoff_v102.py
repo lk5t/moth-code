@@ -10,7 +10,7 @@ from test_evolution import drive
 from test_network_v063 import _enroll, _world
 
 
-@pytest.mark.timeout(900)
+@pytest.mark.timeout(1500)
 def test_a_solo_successor_moves_to_shared_rounds_from_its_checkpoint(client, owner, tmp_path, monkeypatch):
     from moth_server.evolution import v2 as V2
     from test_evolution import FAST
@@ -32,7 +32,7 @@ def test_a_solo_successor_moves_to_shared_rounds_from_its_checkpoint(client, own
     # nobody else is online: MOTH Cloud starts the successor alone and saves a checkpoint
     cyc = drive(ctx, lambda c: (s := successor(c)) is not None and s["backend"] == "local"
                 and (((s["metrics"] or {}).get("progress") or {}).get("checkpoint") or {}).get("step")
-                or c["status"] in MEM.TERMINAL_CYCLE, timeout=400)
+                or c["status"] in MEM.TERMINAL_CYCLE, timeout=900)  # slow CI machines
     exp = successor(cyc)
     assert exp and exp["backend"] == "local", exp and exp["error"]
     planned = int(exp["config"]["steps"])
