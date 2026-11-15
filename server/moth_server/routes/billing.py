@@ -47,6 +47,13 @@ def usage_summary(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx
     return billing.summary(ctx.db, auth.user)
 
 
+@router.get("/limits")
+def usage_limits(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """1.0.12: the 5-hour and weekly usage as percentages (the chat composer's usage ring)."""
+    with ctx.db.tx() as c:
+        return billing.limits(c, auth.user)
+
+
 @router.get("/usage-daily")
 def usage_daily(days: int = 30, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     """1.0 usage page: tokens used per day (settled requests) for the last ``days`` days."""

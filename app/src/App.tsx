@@ -13,7 +13,8 @@ const SettingsView = lazy(() => import("@/features/settings/SettingsView").then(
 import { loadProjects } from "@/features/workspace/project-actions";
 import { views } from "@/views";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { initAccounts } from "@/lib/account";
+import { initAccounts, useAccount } from "@/lib/account";
+import { isOwnerView } from "@/lib/navigation";
 import { AccountDialog } from "@/features/account/AccountDialog";
 import { ReauthDialog } from "@/features/account/reauth";
 import { startConnectionMonitor } from "@/lib/connection";
@@ -28,6 +29,11 @@ export default function App() {
   const [info, setInfo] = useState<BackendInfo | null>(null);
   const [minSplash, setMinSplash] = useState(true);
   const view = useApp((s) => s.view);
+  const role = useAccount((s) => s.user?.role);
+  // 1.0.12 security: Owner-only views (MOTH's training, data, models, administration) never render for
+  // anyone else, however they were opened; the server also refuses their data to non-Owners.
+  const blocked = isOwnerView(view) && role !== "owner";
+  useEffect(() => { if (blocked) appStore.setState({ view: "home" }); }, [blocked]);
   const welcome = useWelcomeVisible();
 
   // If the event stream drops, check whether the backend process itself has failed
@@ -101,7 +107,7 @@ export default function App() {
               <ErrorBoundary label="The workspace"><WorkspaceShell /></ErrorBoundary>
             </div>
             {view === "settings" && <div className="h-full animate-view-in"><ErrorBoundary label="Settings"><Suspense fallback={null}><SettingsView /></Suspense></ErrorBoundary></div>}
-            {Extra && <div key={["intelligence", "evolution", "training", "models"].includes(view) ? "intelligence" : view} className="h-full animate-view-in">
+            {Extra && !blocked && <div key={["intelligence", "evolution", "training", "models"].includes(view) ? "intelligence" : view} className="h-full animate-view-in">
               <ErrorBoundary label="This view"><Extra /></ErrorBoundary></div>}
           </main>
         </div>

@@ -5,6 +5,7 @@ import { appStore, useApp } from "@/lib/app-state";
 import { WORKSPACES, navigate, workspaceOf } from "@/lib/navigation";
 import { Tip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { accountStore, useAccount } from "@/lib/account";
 import { LivingMoth } from "./LivingMoth";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { SidebarCollections, requestChat } from "./SidebarCollections";
@@ -13,11 +14,13 @@ import { FeatureSearch } from "./FeatureSearch";
 const icons = [Home, MessageSquare, FolderGit2, Brain, Network, Settings];
 export function NavRail() {
   const view = useApp((s) => s.view);
+  const owner = useAccount((s) => s.user?.role === "owner");
   const collapsed=useApp(s=>s.sidebarCollapsed),busy=useApp(s=>s.chatSession.busy);
   useEffect(() => {
     const shortcut = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || !e.altKey) return;
       const target = ({w: "workspace", i: "intelligence", s: "settings"} as const)[e.key.toLowerCase() as "w" | "i" | "s"];
+      if(target === "intelligence" && accountStore.getState().user?.role !== "owner") return;  // 1.0.12: Owner only
       if(target) {e.preventDefault(); navigate(target === "workspace" && appStore.getState().workspaceMode === "chat" ? "chat" : target);}
     };
     window.addEventListener("keydown", shortcut);return () => window.removeEventListener("keydown", shortcut);
@@ -29,7 +32,7 @@ export function NavRail() {
     </div>
     <button aria-label="New Chat" disabled={busy} onClick={()=>requestChat(null)} className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-md border border-border bg-surface-2 px-2 text-xs text-fg disabled:opacity-50"><Plus className="size-4"/>{!collapsed&&<span className="hidden md:inline">New Chat</span>}</button>
     <div className="grid shrink-0 gap-0.5">
-    {WORKSPACES.map((item,index)=>{const Icon=icons[index],selected=workspaceOf(view)===item.view;
+    {WORKSPACES.map((item,index)=>{if(item.ownerOnly&&!owner)return null;const Icon=icons[index],selected=workspaceOf(view)===item.view;
       return <Tip key={item.view} label={item.description}><button aria-label={item.label} aria-current={selected?"page":undefined} onClick={()=>navigate(item.view)} className={cn("relative flex h-8 min-w-0 items-center justify-center gap-2.5 rounded-md px-2 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline focus-visible:outline-accent",!collapsed&&"md:justify-start",selected&&"bg-surface-2 text-fg before:absolute before:left-0 before:top-1.5 before:h-5 before:w-0.5 before:rounded-full before:bg-accent before:shadow-[0_0_10px_var(--color-accent)]")}><Icon className="size-4 shrink-0"/>{!collapsed&&<span className="hidden truncate md:inline">{item.label}</span>}</button></Tip>;
     })}
     </div>

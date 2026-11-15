@@ -117,9 +117,8 @@ def chat(request: Request, body: dict, auth: Auth = Depends(current_auth), ctx: 
                         model=engine.manifest["name"], allow_existing=False)
     except billing.DuplicateRequest:
         raise HTTPException(409, "This request id was already used.") from None
-    except billing.InsufficientUsage:
-        raise HTTPException(402, "You've used your MOTH Cloud allowance for this period. Upgrade, use credits, or "
-                                 "switch to local inference.") from None
+    except billing.InsufficientUsage as e:
+        raise HTTPException(402, e.user_message()) from None
     cancel = threading.Event()
 
     from moth_server.evolution.compute import activity

@@ -3,6 +3,12 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.12 — Usage ring, 5-hour and weekly limits, Owner-only AI
+
+- Usage limits like Claude's: every plan has a rolling 5-hour and a rolling weekly allowance (Free 20k / 80k tokens, Pro 250k / 1.25M, Max 1M / 5M), on top of the monthly allowance. When one is reached, chat continues with credits or when it frees up, and the message says which limit and when.
+- Usage ring next to the chat box: how much of the plan is used, in percent (never tokens). Click it for the 5-hour and weekly percentages and when each frees up. The Owner is unlimited.
+- Security: the AI section (MOTH's training, data, models and their controls) is Owner-only. It is hidden from other accounts' menu, search and shortcut, and does not open for them even if opened directly; the Home screen's live-training link is Owner-only too. MOTH Cloud already refuses that data to non-Owners.
+
 ## 1.0.11 — No worker is left out
 
 - A worker whose job was taken back before it made progress got a speed of about 0 tokens/s recorded, and placement then never gave it work again, so it could never be measured again (worker #9: "0.0× this server's speed", no finished runs). A take-back without progress no longer records a speed, near-zero readings are ignored (the worker is judged by its hardware benchmark until its next real job), and existing near-zero readings are cleared automatically.

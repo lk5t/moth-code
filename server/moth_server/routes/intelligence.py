@@ -173,8 +173,8 @@ def chat(body: ChatIn, request: Request, auth: Auth = Depends(current_auth), ctx
                         model=ranked[0].name, allow_existing=False)
     except billing.DuplicateRequest:
         raise HTTPException(409, "This request id was already used.") from None
-    except billing.InsufficientUsage:
-        raise HTTPException(402, "You've used your MOTH Cloud allowance for this period.") from None
+    except billing.InsufficientUsage as e:
+        raise HTTPException(402, e.user_message()) from None
 
     cid = body.conversation_id
     if consent["keep_history"] and body.store and cid is None:

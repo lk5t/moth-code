@@ -20,6 +20,7 @@ import { sounds } from "@/lib/sounds";
 import { AnswerFooter, type AnswerMeta } from "@/features/intelligence/AnswerFooter";
 import { useCloudProgress } from "@/lib/cloud-progress";
 import { modelLabel } from "@/lib/model-label";
+import { UsageRing } from "@/components/UsageRing";
 
 interface ChatMessage {
   id: number | string;
@@ -372,6 +373,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                   }
                 }}
               />
+              <UsageRing refreshKey={busy} />
               {busy ? (
                 <Button size="icon" variant="secondary" title="Stop" onClick={() => cid !== null && post(`/api/chat/${cid}/cancel`)}>
                   <Square className="text-accent" />

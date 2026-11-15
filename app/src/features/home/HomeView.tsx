@@ -74,7 +74,7 @@ export function HomeView() {
         <Tile icon={<MessageSquare />} label="Your chats" value={chats?.length ?? null} />
       </section>
 
-      {running && <section aria-label="MOTH's progress" className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      {running && user?.role === "owner" && <section aria-label="MOTH's progress" className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <StageMeter loss={m.val_loss ?? m.train_loss} per={running.loss_per === "token" ? "token" : "byte"} />
         <button onClick={() => navigate("intelligence")} className="lift rounded-lg border border-border bg-bg p-3 text-left text-xs">
           <span className="text-faint">Live training</span>

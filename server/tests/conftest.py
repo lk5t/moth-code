@@ -169,3 +169,15 @@ def training_world(client, settings, owner, tmp_path):
                      train=TrainSpec(steps=6, lr=1e-4, batch_size=4, seq_len=32), min_contributions=2)
     client.put("/v1/admin/config/flags", json={"allow_cpu_workers": True}, headers=H(owner["token"]))
     return {"owner": owner, "base_model": Path(info["path"]), "tokenizer": tmp_path / "tok.json", "dataset": tmp_path / "ds"}
+
+
+@pytest.fixture(autouse=True)
+def _wide_usage_windows(monkeypatch, request):
+    """1.0.12: the 5-hour and weekly limits get their own tests (test_usage_limits_v1012); elsewhere they are
+    out of the way so the monthly allowance and credit tests measure what they always did."""
+    if "test_usage_limits_v1012" in request.node.nodeid:
+        return
+    from moth_server import billing
+
+    monkeypatch.setattr(billing, "DEFAULT_LIMITS", {k: {"session_tokens": 10**12, "weekly_tokens": 10**12}
+                                                    for k in ("free", "pro", "max")})

@@ -33,11 +33,33 @@ DEFAULT_PLANS = [
     {"code": "max", "name": "Max", "price_cents": 4000, "monthly_tokens": 20_000_000, "priority": 2, "sort": 2,
      "features": {"cloud_inference": True, "priority_queue": True}},
 ]
+# 1.0.12 usage limits like Claude's: a rolling 5-hour window and a rolling 7-day window per plan (tokens of the
+# plan's allowance; credits are extra and are not limited by these). Shown to users as percentages.
+SESSION_SECONDS = 5 * 3600
+WEEK_SECONDS = 7 * 86400
+DEFAULT_LIMITS = {"free": {"session_tokens": 20_000, "weekly_tokens": 80_000},
+                  "pro": {"session_tokens": 250_000, "weekly_tokens": 1_250_000},
+                  "max": {"session_tokens": 1_000_000, "weekly_tokens": 5_000_000}}
 ACTIVE_SUB_STATES = ("active", "trialing", "past_due")  # past_due keeps access during the provider's retry window
 
 
 class InsufficientUsage(Exception):
-    pass
+    """``reason`` says which limit was reached ("session", "weekly" or "period") and ``resets_at`` when."""
+
+    def __init__(self, message: str = "", reason: str = "period", resets_at: float | None = None):
+        super().__init__(message)
+        self.reason, self.resets_at = reason, resets_at
+
+    def user_message(self) -> str:
+        import datetime as _dt
+
+        when = (" It frees up again at " + _dt.datetime.fromtimestamp(self.resets_at, _dt.timezone.utc)
+                .strftime("%a %H:%M UTC") + ".") if self.resets_at else ""
+        if self.reason == "session":
+            return "You've reached your 5-hour usage limit." + when + " Upgrade or use credits to keep going."
+        if self.reason == "weekly":
+            return "You've reached your weekly usage limit." + when + " Upgrade or use credits to keep going."
+        return "You've used your MOTH Cloud allowance for this period. Upgrade, use credits, or switch to local inference."
 
 
 class BillingError(ValueError):
@@ -147,6 +169,36 @@ def ledger_entry(conn: Connection, user_id: int, amount: int, kind: str, idempot
     return {"id": lid, "balance_after": bal}
 
 
+# ---- 1.0.12 rolling limits -------------------------------------------------------------------
+def plan_limits(conn: Connection, code: str) -> dict[str, int]:
+    feats = json.loads(plan_row(conn, code).get("features") or "{}")
+    base = DEFAULT_LIMITS.get(code, DEFAULT_LIMITS["free"])
+    return {k: int(feats.get(k) or base[k]) for k in ("session_tokens", "weekly_tokens")}
+
+
+def _window(conn: Connection, user_id: int, seconds: int, t: float) -> tuple[int, float | None]:
+    """Plan-allowance tokens used in the last ``seconds`` and when the oldest of them leaves the window."""
+    rows = conn.execute(select(usage_events.c.status, usage_events.c.reserved_allowance, usage_events.c.charged_allowance,
+                               usage_events.c.created_at)
+                        .where(usage_events.c.user_id == user_id, usage_events.c.created_at > t - seconds,
+                               usage_events.c.unmetered.is_(False), usage_events.c.status != "released")).mappings().all()
+    used = sum(int(r["charged_allowance"] if r["status"] == "settled" else r["reserved_allowance"] or 0) for r in rows)
+    oldest = min((float(r["created_at"]) for r in rows), default=None)
+    return used, (oldest + seconds if oldest is not None else None)
+
+
+def limits(conn: Connection, user: dict, t: float | None = None) -> dict[str, Any]:
+    t = t or now()
+    code = effective_plan(conn, user)
+    lim = plan_limits(conn, code)
+    out: dict[str, Any] = {"plan": code, "unlimited": user["role"] == "owner"}
+    for key, seconds, cap in (("session", SESSION_SECONDS, lim["session_tokens"]), ("weekly", WEEK_SECONDS, lim["weekly_tokens"])):
+        used, resets = _window(conn, user["id"], seconds, t)
+        out[key] = {"percent": 0.0 if out["unlimited"] else round(min(100.0, 100.0 * used / max(1, cap)), 1),
+                    "resets_at": resets, "left": max(0, cap - used)}
+    return out
+
+
 # ---- metering --------------------------------------------------------------------------------
 def reserve(db: Database, user: dict, request_id: str, max_tokens: int, model: str | None = None,
             allow_existing: bool = True) -> dict:
@@ -166,6 +218,8 @@ def reserve(db: Database, user: dict, request_id: str, max_tokens: int, model: s
             return dict(c.execute(select(usage_events).where(usage_events.c.request_id == request_id)).mappings().first())
         period = current_period(c, user)
         free_allow = max(0, period["allowance"] - period["used"])
+        lim = limits(c, user)  # 1.0.12: the 5-hour and weekly windows cap what the plan's allowance can cover
+        free_allow = min(free_allow, lim["session"]["left"], lim["weekly"]["left"])
         from_allow = min(max_tokens, free_allow)
         if from_allow:
             res = c.execute(usage_periods.update().where(
@@ -175,7 +229,13 @@ def reserve(db: Database, user: dict, request_id: str, max_tokens: int, model: s
                 raise InsufficientUsage("usage changed concurrently; retry")
         from_credits = max_tokens - from_allow
         if from_credits:
-            ledger_entry(c, user["id"], -from_credits, "usage_hold", f"hold:{request_id}", reference=request_id)
+            try:
+                ledger_entry(c, user["id"], -from_credits, "usage_hold", f"hold:{request_id}", reference=request_id)
+            except InsufficientUsage:
+                for key in ("session", "weekly"):
+                    if lim[key]["left"] < max_tokens:
+                        raise InsufficientUsage("limit reached", key, lim[key]["resets_at"]) from None
+                raise
         c.execute(usage_events.insert().values(**base, reserved_allowance=from_allow, reserved_credits=from_credits,
                                                period_id=period["id"], unmetered=False))
         return dict(c.execute(select(usage_events).where(usage_events.c.request_id == request_id)).mappings().first())
