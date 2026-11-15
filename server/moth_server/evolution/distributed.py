@@ -160,6 +160,12 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     if resumed:
         state = torch.load(handed, map_location="cpu", weights_only=True)
         torch.save({k: v.float() if v.is_floating_point() else v for k, v in state.items()}, _round_weights(rd, 0))
+    elif successor and cfg.get("warm_start") and Path(cfg["warm_start"]["path"]).is_file() \
+            and _sha(Path(cfg["warm_start"]["path"])) == cfg["warm_start"]["sha256"]:
+        # 1.0.7: a declined successor's next attempt continues from its weights
+        state = torch.load(cfg["warm_start"]["path"], map_location="cpu", weights_only=False)
+        state = state["model"] if isinstance(state, dict) and "model" in state else state
+        torch.save({k: v.float() if v.is_floating_point() else v for k, v in state.items()}, _round_weights(rd, 0))
     elif successor:  # trained from scratch: every participant starts from the same seeded weights
         torch.save(_successor_init(exp, base), _round_weights(rd, 0))
     else:
@@ -190,7 +196,7 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     state_info = {"round": 0, "rounds": rounds, "shards": n, "local_steps": local_steps, "history": [],
                   "worker_ids": settings.get("worker_ids"),
                   "weights_sha256": _sha(_round_weights(rd, 0)),
-                  "started_from": "checkpoint" if resumed else "successor_init" if successor else "dev_checkpoint" if dev else "weights",
+                  "started_from": "checkpoint" if resumed else "declined_attempt" if successor and cfg.get("warm_start") else "successor_init" if successor else "dev_checkpoint" if dev else "weights",
                   "jobs": {}}
     _create_round_jobs(ctx, exp, base, state_info, need_bytes)
     return state_info

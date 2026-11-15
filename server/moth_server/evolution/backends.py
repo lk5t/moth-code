@@ -132,6 +132,8 @@ def _v2_spec(base: dict, cfg: dict, exp: dict, rd: Path | None = None) -> dict:
         if not (cfg.get("resume") and rd is not None):  # 1.0.5: a resumed successor keeps its own progress
             out.pop("init_checkpoint", None)
             out.pop("init_checkpoint_sha256", None)
+            if cfg.get("warm_start"):  # 1.0.7: continue a declined attempt's weights
+                out["init_checkpoint"], out["init_checkpoint_sha256"] = cfg["warm_start"]["path"], cfg["warm_start"]["sha256"]
     tr = base["info"].get("training") or {}
     out["lineage"] = {"lineage_id": base["info"].get("lineage_id"), "parent_version": base["version"],
                       "base_tokens": (base["info"].get("lineage_totals") or {}).get("tokens", tr.get('tokens')),

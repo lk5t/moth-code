@@ -3,6 +3,11 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.7 — Bigger models stop getting declined for the wrong reasons
+
+- A successor with its own (BPE) tokenizer failed the release check "not worse than the deployed model" because that check compared loss per token, and a BPE token carries several bytes, so its loss is naturally higher. Models with different tokenizers now skip that per-token check; the promotion gates already compare them fairly, per byte of the same text.
+- A declined successor is no longer thrown away: the next attempt of the same size continues from its trained weights (on MOTH Cloud and in shared rounds) instead of starting over from random weights, so each attempt adds to the last.
+
 ## 1.0.6 — All computers train one experiment together
 
 - With two or more computers online, MOTH Cloud, every worker and every contributing PC train the same experiment in shared rounds, one experiment at a time, instead of each computer training a different one.

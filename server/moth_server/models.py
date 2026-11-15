@@ -337,7 +337,14 @@ def evaluate(ctx: Ctx, version: int, tolerance: float = TOLERANCE, actor_id: int
         real_checks = all(result["checks"].values())
         current = deployed(ctx)
         regression_ok = True
-        if real_checks and current and current["version"] != version:
+        same_tok = (current or {}).get("info", {}).get("tokenizer_fingerprint") == rel["info"].get("tokenizer_fingerprint")
+        if real_checks and current and current["version"] != version and not same_tok:
+            # 1.0.7: token losses of different tokenizers are not comparable (a BPE token carries several
+            # bytes, so its loss is naturally higher); Evolution compares such models per byte instead
+            report["checks"]["not_worse_than_deployed"] = True
+            report["baseline_note"] = (f"v{current['version']} uses a different tokenizer: compared per byte of "
+                                       "text by the promotion gates, not per token here")
+        if real_checks and current and current["version"] != version and same_tok:
             base = _baseline(ctx, current, dataset)
             if base and base.get("metric") == result["score"]["metric"]:
                 limit = base["value"] * (1 + tolerance)

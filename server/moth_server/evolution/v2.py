@@ -319,6 +319,36 @@ MIN_SUCCESSOR_STEP_TOKENS = 8192
 from moth.training.speedups import SHORT_CONTEXT, SHORT_UNTIL  # noqa: E402
 
 
+def _warm_start(ctx: Ctx, rs: dict, tok: dict | None) -> dict | None:
+    """1.0.7: the newest declined successor of the same shape and tokenizer whose weights still exist.
+
+    A from-scratch successor is usually declined because it has had far less training than the model it
+    replaces, not because the bigger shape is worse; starting the next attempt from random weights threw
+    that training away every time."""
+    from moth_server import models as M
+
+    want_fp = (tok or {}).get("fingerprint")
+    for e in MEM.experiments(ctx, limit=200):
+        cfg = e.get("config") or {}
+        if not cfg.get("rebirth") or e["status"] not in ("rejected",) or not e.get("candidate_version"):
+            continue
+        if int(cfg["rebirth"].get("params_after") or 0) != int(rs["params_after"]):
+            continue
+        try:
+            rel = M.release(ctx, int(e["candidate_version"]))
+        except Exception:  # noqa: BLE001 — deleted by retention: nothing to continue from
+            continue
+        path = Path(rel.get("path") or "") / "model.pt"
+        if not path.is_file() or not rel.get("sha256"):
+            continue
+        if want_fp and rel["info"].get("tokenizer_fingerprint") != want_fp:
+            continue
+        done = ((e.get("metrics") or {}).get("training") or {})
+        return {"version": rel["version"], "path": str(path), "sha256": rel["sha256"], "experiment": e["id"],
+                "steps": int(done.get("step") or 0), "tokens": int(done.get("tokens") or 0)}
+    return None
+
+
 def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: dict, settings: dict, seed: int,
                   decision: dict) -> None:
     """0.9.2: a right-sized successor, trained from scratch (see capacity.right_size).
@@ -356,7 +386,10 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
     tokens = min(int(rs["tokens_target"]) * (2 ** retry), int(speed * hours * 3600))
     steps = max(REBIRTH_MIN_STEPS, tokens // max(1, tokens_per_step))
     cfg = _config(base, arch, src, mix, REBIRTH_LR, steps, settings, seed)
-    if seq > SHORT_CONTEXT and seq % SHORT_CONTEXT == 0:  # 1.0.5: short context first, full length at the end
+    warm = _warm_start(ctx, rs, tok)
+    if warm:  # 1.0.7: keep training the declined attempt instead of starting over from random weights
+        cfg["warm_start"] = warm
+    elif seq > SHORT_CONTEXT and seq % SHORT_CONTEXT == 0:  # 1.0.5: short context first, full length at the end
         cfg.update(short_context=SHORT_CONTEXT, short_until=SHORT_UNTIL)
     cfg.update(method="from_scratch", strategy="rebirth", batch_size=batch, seq_len=seq, no_single_worker=True,
                rebirth={"architecture": rs["architecture"], "params_before": rs["params_before"], "attempt": retry + 1,
@@ -372,7 +405,8 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
         cfg["mixture_schedule"] = sched
     a = rs["architecture"]
     _add(ctx, out, cfg, src, f"Right-sized successor: {rs['params_before']:,} → {rs['params_after']:,} parameters, "
-         f"{a.get('max_seq_len', 0):,}-token context{', new BPE tokenizer' if tok else ''}, trained from scratch for "
+         f"{a.get('max_seq_len', 0):,}-token context{', new BPE tokenizer' if tok else ''}, "
+         f"{'continuing the declined attempt v' + str(warm['version']) + ' for' if warm else 'trained from scratch for'} "
          f"{steps:,} steps (about {cfg['rebirth']['planned_hours']} h at the measured speed; shared with the workers "
          "when they are online). It replaces the current model only if it passes every gate.", 99)
 
