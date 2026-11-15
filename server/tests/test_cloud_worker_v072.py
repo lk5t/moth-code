@@ -36,14 +36,13 @@ def test_owner_choice_turns_it_off(client, owner):
     assert not CW.allowed(ctx)
     S.update(ctx, {"backends": {"local_cpu": True, "local_gpu": True, "workers": True},
                    "distributed": {"cloud_participates": False}})
-    assert not CW.allowed(ctx)
-    S.update(ctx, {"distributed": {"cloud_participates": True}})
+    assert CW.allowed(ctx)  # 1.0.9: while MOTH Cloud trains at all, it always joins shared training
     assert CW.status(ctx)["state"] in ("starting", "running", "off", "waiting", "re-enrolling", "error")
 
 
-def test_lost_registration_enrolls_again_but_an_owner_revoke_stands(client, owner):
-    """0.8.3: a registration lost any other way (replaced, invalid credential) no longer keeps MOTH Cloud
-    out of shared training for good; only the Owner's revoke in Network does."""
+def test_lost_registration_enrolls_again_and_so_does_a_revoked_one(client, owner):
+    """0.8.3: a lost registration enrolls again. 1.0.9: so does a revoked one: a permanent revoke silently
+    left MOTH Cloud out of every shared run."""
     from starlette.testclient import TestClient
 
     from conftest import H
@@ -60,12 +59,11 @@ def test_lost_registration_enrolls_again_but_an_owner_revoke_stands(client, owne
     assert r2 is not None
     live = ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))
     assert len(live) == 1 and live[0]["id"] != first["id"] and live[0]["name"] == CW.NAME
-    # the Owner revokes it in Network: it stays revoked and never enrolls again
+    # a revoke in Network ends that registration only: MOTH Cloud enrolls again and keeps training together
     assert client.post(f"/v1/training/workers/{live[0]['id']}/revoke", headers=H(owner["token"])).status_code == 200
-    assert CW.owner_revoked(ctx) and not CW.allowed(ctx)
-    assert CW.make_runner(ctx, TestClient(ctx.extras["app"])) is None
-    assert CW.status(ctx)["state"] == "revoked"
-    assert len(ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))) == 0
+    assert not CW.owner_revoked(ctx) and CW.allowed(ctx)
+    assert CW.make_runner(ctx, TestClient(ctx.extras["app"])) is not None
+    assert len(ctx.db.all(select(workers).where(workers.c.revoked_at.is_(None)))) == 1
 
 
 def test_cloud_worker_and_a_real_worker_on_the_same_computer_coexist(client, settings, owner):

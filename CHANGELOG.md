@@ -3,6 +3,12 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.9 — Everyone really trains together; worker actions
+
+- MOTH Cloud always takes part in shared training. An earlier version made a revoke of MOTH Cloud's own worker permanent, which silently left the server out of every shared run ("Shared runs with workers: revoked"); it now enrolls again by itself.
+- No switches for it: one experiment at a time is trained by every online computer, sharing its steps. Every online computer joins (GPUs and CPUs alike); each gets a share of steps that matches its measured speed.
+- Network → a worker → Actions: Restart, Update now, Run self-check, Show recent logs, Clear cache. The worker picks the action up at its next heartbeat and the result is shown. These are fixed actions, never shell commands, because a worker may be someone else's computer.
+
 ## 1.0.8 — Training data keeps its tokenizer
 
 - Fixed "FileNotFoundError: …/models/v00134/tokenizer.json": prepared training data pointed at the tokenizer inside the model folder it was made with, and model retention removed that folder after a newer model was promoted. Prepared data now keeps its own copy of the tokenizer; data prepared earlier recovers it from the base model when it is the same tokenizer (checked by fingerprint).

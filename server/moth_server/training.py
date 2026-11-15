@@ -477,9 +477,58 @@ def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None,
                                                            training_jobs.c.status == 'leased',
                                                            training_jobs.c.worker_id == worker['id'])
                               .values(result=json.dumps({'progress': metrics})))
+    cmd = pending_command(ctx, worker["id"])
     return {"reset_generation":generation,"paused": NR.fenced(ctx) or bool(worker["paused"]) or not worker_allowed(ctx, worker), "revoked": worker["revoked_at"] is not None,
+            **({"command": cmd} if cmd else {}),
             "job_cancelled": job_cancelled, "update": _worker_update(ctx, worker, version),
             "limits": json.loads(worker["limits"] or "{}"), "server_time": t}
+
+
+# ---- 1.0.9 remote actions -------------------------------------------------------------------------------
+# A fixed list on purpose: no shell commands. A worker may be someone else's personal computer, and a
+# leaked MOTH Cloud credential must never become "run anything on every connected PC".
+WORKER_ACTIONS = {
+    "restart": "Restart the worker (a running job is checkpointed and continues after the restart)",
+    "update": "Check for a newer MOTH Worker and install it now",
+    "selfcheck": "Report version, hardware, PyTorch/GPU, free disk and memory",
+    "logs": "Send the last 200 lines of the worker's log",
+    "clear_cache": "Delete cached job checkpoints (only when no job is running)",
+}
+COMMAND_TTL = 3600.0
+
+
+def queue_command(ctx: Ctx, worker_id: int, action: str, actor_id: int | None) -> dict:
+    if action not in WORKER_ACTIONS:
+        raise ValueError(f"unknown action; choose one of: {', '.join(WORKER_ACTIONS)}")
+    prev = ctx.db.get_config(f"worker_command:{worker_id}", {}) or {}
+    cmd = {"id": int(prev.get("id") or 0) + 1, "action": action, "at": now(), "by": actor_id}
+    ctx.db.set_config(f"worker_command:{worker_id}", cmd)
+    return cmd
+
+
+def pending_command(ctx: Ctx, worker_id: int) -> dict | None:
+    cmd = ctx.db.get_config(f"worker_command:{worker_id}", None)
+    res = ctx.db.get_config(f"worker_command_result:{worker_id}", None) or {}
+    if not cmd or res.get("id") == cmd.get("id") or now() - float(cmd.get("at") or 0) > COMMAND_TTL:
+        return None
+    return {"id": cmd["id"], "action": cmd["action"]}
+
+
+def record_command_result(ctx: Ctx, worker_id: int, cid: int, ok: bool, output: str) -> None:
+    cmd = ctx.db.get_config(f"worker_command:{worker_id}", None) or {}
+    if int(cmd.get("id") or -1) != int(cid):
+        return  # an old or unknown command: ignore
+    ctx.db.set_config(f"worker_command_result:{worker_id}",
+                      {"id": int(cid), "action": cmd.get("action"), "ok": bool(ok), "output": str(output)[-20000:], "at": now()})
+
+
+def command_state(ctx: Ctx, worker_id: int) -> dict:
+    cmd = ctx.db.get_config(f"worker_command:{worker_id}", None)
+    res = ctx.db.get_config(f"worker_command_result:{worker_id}", None)
+    if res and cmd and res.get("id") != cmd.get("id"):
+        res = None  # the result belongs to an earlier command
+    return {"actions": WORKER_ACTIONS, "command": cmd, "result": res,
+            "pending": bool(cmd and not res and now() - float(cmd.get("at") or 0) <= COMMAND_TTL)}
 
 
 def _worker_update(ctx: Ctx, worker: dict, version: str | None) -> str | None:

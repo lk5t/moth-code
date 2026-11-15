@@ -56,19 +56,9 @@ def participants(ctx: Ctx, need_bytes: int, worker_ids: list[int] | None = None)
             out.append({**w, "hw": hw})
     # Prefer workers with a history of verified useful work; new and slower devices remain eligible.
     out.sort(key=lambda w: (w['verified_jobs'] + 1) / (w['verified_jobs'] + w['failed_jobs'] + 2), reverse=True)
-    # Keep work on compatible GPUs when they exist. 1.0.2: CPUs (MOTH Cloud included) still join when they
-    # are at least a quarter as fast as the typical GPU: steps_for() gives each its share, so they add work
-    # without holding a round up.
-    gpu = [w for w in out if w["hw"].get("compute") == "gpu"]
-    if not gpu:
-        return out
-    speeds = sorted(float((w["hw"].get("benchmark") or {}).get("gflops") or 0) for w in gpu)
-    typical = speeds[len(speeds) // 2]
-    if typical <= 0:
-        return gpu
-    cpus = [w for w in out if w["hw"].get("compute") != "gpu"
-            and float((w["hw"].get("benchmark") or {}).get("gflops") or 0) >= 0.25 * typical]
-    return gpu + cpus
+    # 1.0.9: every online computer takes part (GPUs listed first); steps_for() gives each a share of the
+    # steps that matches its measured speed, so slower CPUs add work without holding a round up.
+    return [w for w in out if w["hw"].get("compute") == "gpu"] + [w for w in out if w["hw"].get("compute") != "gpu"]
 
 
 def available(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[bool, int]:
@@ -140,8 +130,7 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     # 1.0.6: the participants *share* the steps (each trains about steps / n), so more computers finish
     # the run sooner instead of each repeating the whole run; they are averaged at least every
     # SUCCESSOR_ROUND_STEPS local steps so they stay in step.
-    per_participant = max(MIN_LOCAL_STEPS, math.ceil(int(cfg["steps"]) / n)) if d.get("split_steps", True) \
-        else int(cfg["steps"])
+    per_participant = max(MIN_LOCAL_STEPS, math.ceil(int(cfg["steps"]) / n))
     rounds = max(1, int(d.get("rounds", 3)))
     rounds = max(rounds, min(500, math.ceil(per_participant / SUCCESSOR_ROUND_STEPS)))
     local_steps = max(1, math.ceil(per_participant / rounds))

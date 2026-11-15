@@ -50,7 +50,13 @@ class WorkerRunner:
         self.state_dir = Path(state_dir)
         (self.state_dir / "jobs").mkdir(parents=True, exist_ok=True)
         self.allow_cpu = allow_cpu
-        self.log = log
+        import collections
+
+        self._log_out = log
+        self._log_lines: collections.deque[str] = collections.deque(maxlen=200)  # 1.0.9: for the "logs" action
+        self.log = self._log
+        self.restart_requested = False
+        self._last_command = None
         self.heartbeat_seconds = heartbeat_seconds
         self.current_job: int | None = None
         self.progress: float | None = None
@@ -71,6 +77,77 @@ class WorkerRunner:
         self.reset_generation = None
         self.reset_retained = 0
         self.reset_lock = threading.Lock()
+
+    def _log(self, msg: str) -> None:
+        self._log_lines.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}")
+        self._log_out(msg)
+
+    # ---- 1.0.9 remote actions (a fixed list: never shell commands) ------------------------
+    def handle_command(self, cmd: dict) -> None:
+        cid, action = cmd.get("id"), cmd.get("action")
+        if cid is None or cid == self._last_command:
+            return
+        self._last_command = cid
+        ok, out = True, ""
+        try:
+            if action == "logs":
+                out = "\n".join(self._log_lines) or "(nothing logged yet)"
+            elif action == "selfcheck":
+                out = json.dumps(self._self_check(), indent=1)
+            elif action == "update":
+                self._next_update_check = self._update_retry_after = 0.0
+                out = "update check scheduled: a newer version is installed between jobs"
+            elif action == "clear_cache":
+                if self.current_job is not None:
+                    ok, out = False, f"job {self.current_job} is running; try again when it has finished"
+                else:
+                    n = 0
+                    root = self.state_dir / "jobs"
+                    for f in root.glob("*"):
+                        if f.is_file() and not f.is_symlink():
+                            f.unlink(missing_ok=True)
+                            n += 1
+                    out = f"removed {n} cached file(s)"
+            elif action == "restart":
+                self.restart_requested = True
+                if self.current_job is not None:
+                    self.cancelled_job = self.current_job  # checkpoint now; the job resumes after the restart
+                out = "restarting" + (f" (job {self.current_job} is checkpointed first)" if self.current_job else "")
+                self.stop_event.set()
+            else:
+                ok, out = False, f"unknown action {action!r}"
+        except Exception as e:  # noqa: BLE001 — report, never crash the worker
+            ok, out = False, f"{type(e).__name__}: {e}"
+        self.log(f"remote action {action}: {'ok' if ok else 'failed'}")
+        try:
+            self.client.command_result(cid, ok, out)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _self_check(self) -> dict[str, Any]:
+        import platform
+        import shutil as _sh
+
+        info: dict[str, Any] = {"worker_version": __version__, "python": platform.python_version(),
+                                "system": f"{platform.system()} {platform.release()}", "device": self.device,
+                                "paused": self.paused, "current_job": self.current_job}
+        try:
+            import torch
+            info["torch"] = torch.__version__
+            info["torch_cuda"] = torch.version.cuda
+            info["cuda_available"] = torch.cuda.is_available()
+            if torch.cuda.is_available():
+                info["gpu"] = torch.cuda.get_device_name(0)
+        except Exception as e:  # noqa: BLE001
+            info["torch"] = f"not usable: {e}"
+        du = _sh.disk_usage(self.state_dir)
+        info["disk_free_gb"] = round(du.free / 2**30, 1)
+        try:
+            hw = detect()
+            info.update({k: hw.get(k) for k in ("cpu_model", "cpu_count", "ram_gb", "ram_available_gb", "gpus")})
+        except Exception:  # noqa: BLE001
+            pass
+        return info
 
     def hardware(self) -> dict[str, Any]:
         """Detected hardware plus the measured benchmark (taken once, cached for a week)."""
@@ -96,6 +173,8 @@ class WorkerRunner:
         self.paused, self.revoked, self.limits = bool(resp["paused"] or pressure_reason(pressure())), resp["revoked"], resp.get("limits") or {}
         if resp.get("job_cancelled"):
             self.cancelled_job = self.current_job
+        if resp.get("command"):
+            self.handle_command(resp["command"])
         offered = resp.get("update")
         if offered and offered != __version__ and self.update_check_seconds is not None \
                 and time.time() >= self._update_retry_after:
@@ -189,7 +268,7 @@ class WorkerRunner:
         while not self.stop_event.is_set():
             try:
                 self.beat()
-                if self.revoked:
+                if self.revoked or self.restart_requested:
                     break
                 if self.maybe_update():
                     break  # the CLI restarts into the new version; no job is in progress here
@@ -206,6 +285,8 @@ class WorkerRunner:
                 if max_jobs and done >= max_jobs:
                     break
             except Stop:
+                if self.restart_requested:
+                    break
                 continue  # checkpoint saved; normal loop checks pause/exit
             except ServerError as e:
                 if e.status == 401:

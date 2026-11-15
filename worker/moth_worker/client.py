@@ -62,6 +62,11 @@ class WorkerClient:
                 for chunk in r.iter_bytes(1 << 20):
                     f.write(chunk)
 
+    def command_result(self, cid: int, ok: bool, output: str) -> None:
+        """1.0.9: the outcome of a remote action from MOTH Cloud."""
+        self._check(self.http.post("/v1/worker/command-result", headers=self._headers(),
+                                   json={"id": cid, "ok": ok, "output": output[-20000:]}))
+
     def report_update(self, from_version: str | None, to_version: str, ok: bool, error: str | None = None) -> None:
         self.http.post("/v1/updates/report", headers={**self._headers(), "X-Moth-Install-Id": f"worker-{self.token[:12]}"
                                                        if self.token else ""},

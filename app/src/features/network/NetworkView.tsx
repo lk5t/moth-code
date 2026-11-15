@@ -206,6 +206,7 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
                     </div>
                   )}
                 </div>
+                {w.status !== "revoked" && <WorkerActions id={w.id} />}
                 {w.status !== "revoked" && (
                   <div className="mt-2 flex items-center gap-4 text-[11px] text-muted">
                     {w.hardware.compute === "gpu" ? (
@@ -252,4 +253,44 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
       </div>
     </div>
   );
+}
+
+
+const ACTION_LABELS: Record<string, string> = {
+  restart: "Restart", update: "Update now", selfcheck: "Run self-check", logs: "Show recent logs", clear_cache: "Clear cache",
+};
+
+/** 1.0.9: fixed remote actions for one worker (never shell commands); picked up at its next heartbeat. */
+export function WorkerActions({ id }: { id: number }) {
+  const [st, setSt] = useState<{ pending: boolean; command: { action: string; at: number } | null;
+    result: { action: string; ok: boolean; output: string; at: number } | null } | null>(null);
+  const [open, setOpen] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const load = () => serverApi<any>(`/v1/training/workers/${id}/command`).then(setSt).catch(() => {});
+  useEffect(() => {
+    if (!open) return;
+    void load();
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [open, id]);
+  const run = (action: string) => {
+    setErr(null);
+    serverApi<any>(`/v1/training/workers/${id}/command`, { method: "POST", json: { action } })
+      .then(setSt).catch((e) => setErr((e as Error).message));
+  };
+  return <div className="mt-2 text-[11px]">
+    <button className="text-accent hover:underline" onClick={() => setOpen(!open)}>{open ? "Hide actions" : "Actions…"}</button>
+    {open && <div className="mt-1.5 flex flex-col gap-1.5">
+      <div className="flex flex-wrap gap-1">
+        {Object.entries(ACTION_LABELS).map(([a, label]) =>
+          <Button key={a} size="sm" variant="outline" disabled={!!st?.pending} onClick={() => run(a)}>{label}</Button>)}
+      </div>
+      {st?.pending && <div className="text-muted">Sent “{ACTION_LABELS[st.command?.action ?? ""] ?? st.command?.action}”: waiting for the worker (it checks in every 30 s)…</div>}
+      {st?.result && <div>
+        <div className={st.result.ok ? "text-muted" : "text-danger"}>{ACTION_LABELS[st.result.action] ?? st.result.action}: {st.result.ok ? "done" : "failed"} · {timeAgo(st.result.at)}</div>
+        <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap rounded border border-border bg-bg p-2 font-mono text-[10.5px] text-fg">{st.result.output}</pre>
+      </div>}
+      {err && <div className="text-danger">{err}</div>}
+    </div>}
+  </div>;
 }

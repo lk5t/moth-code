@@ -489,8 +489,6 @@ def _together(ctx: Ctx, settings: dict, running: list[dict], startable: list[dic
     """1.0.6: everyone trains one experiment together when shared rounds are possible."""
     from moth_server.evolution import distributed as D
 
-    if not (settings.get("distributed") or {}).get("one_experiment", True):
-        return False
     if any(e.get("backend") in ("worker",) for e in running):
         return False  # a single-worker job from before is finishing: let the scheduler run as before
     probe = (startable or running or [None])[0]
@@ -861,7 +859,7 @@ def _handoff_to_shared(ctx: Ctx, cyc: dict, exp: dict, settings: dict, elapsed: 
 
     cfg = exp.get("config") or {}
     res = exp.get("resources") or {}
-    if not (settings.get("distributed") or {}).get("handoff", True) or cfg.get("grow") or cfg.get("local_only"):
+    if cfg.get("grow") or cfg.get("local_only"):
         return False
     if str(res.get("device", "cpu")).startswith("cuda"):
         return False  # a GPU on this server is faster than sharing it with CPUs

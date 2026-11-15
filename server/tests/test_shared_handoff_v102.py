@@ -22,7 +22,7 @@ def test_a_solo_successor_moves_to_shared_rounds_from_its_checkpoint(client, own
     ctx = _world(client, owner, tmp_path, monkeypatch,
                  training={**FAST["training"], "steps": 4000, "checkpoint_interval": 10, "eval_interval": 1000},
                  backends={"local_cpu": True, "local_gpu": False, "workers": True},
-                 distributed={"min_participants": 2, "rounds": 1, "cloud_participates": False},
+                 distributed={"min_participants": 2, "rounds": 1},
                  budget={"max_cycle_hours": 2.0}, growth={"enabled": True})
     C.record_throughput(ctx, "local:cpu", 50_000, 1)
 

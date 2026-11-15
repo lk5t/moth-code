@@ -73,7 +73,7 @@ def cmd_run(args) -> int:
                           float(os.environ.get("MOTH_WORKER_UPDATE_CHECK_SECONDS", "1800")))
     print(f"MOTH Worker {__version__} running (worker #{cfg.worker_id}, server {cfg.server}).", flush=True)
     runner.run(max_jobs=args.max_jobs)
-    if runner.updated_to:
+    if runner.updated_to or runner.restart_requested:  # 1.0.9: also a remote "restart"
         updater.restart(sys.argv[1:])  # same command line, new version (via reexec_into_current)
     return 0 if not runner.revoked else 3
 

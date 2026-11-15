@@ -170,6 +170,31 @@ def my_workers(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                         "checkpoint_version": coord.config["version"] if coord else None}}
 
 
+class WorkerCommandIn(BaseModel):
+    action: str
+
+
+@router.get("/v1/training/workers/{wid}/command")
+def worker_command_state(wid: int, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    own_worker(ctx, auth, wid)
+    return T.command_state(ctx, wid)
+
+
+@router.post("/v1/training/workers/{wid}/command")
+def worker_command(wid: int, body: WorkerCommandIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """1.0.9: a fixed remote action for one of your workers (picked up at its next heartbeat)."""
+    w = own_worker(ctx, auth, wid)
+    if w["revoked_at"] is not None:
+        raise HTTPException(409, "This worker was removed.")
+    try:
+        T.queue_command(ctx, wid, body.action, auth.uid)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
+    from moth_server.audit import audit
+    audit(ctx.db, "worker.command", auth.uid, f"worker:{wid}", {"action": body.action})
+    return T.command_state(ctx, wid)
+
+
 @router.post("/v1/training/workers/{wid}/{action}")
 def control_worker(wid: int, action: str, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     w = own_worker(ctx, auth, wid)
@@ -371,4 +396,16 @@ async def job_snapshot(job_id: int, request: Request, w: dict = Depends(current_
 def job_fail(job_id: int, body: FailIn, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
     _job(ctx, w, job_id)
     T.fail_job(ctx, w, job_id, body.error)
+    return {"ok": True}
+
+
+class CommandResultIn(BaseModel):
+    id: int
+    ok: bool
+    output: str = ""
+
+
+@router.post("/v1/worker/command-result")
+def worker_command_result(body: CommandResultIn, w: dict = Depends(current_worker), ctx: Ctx = Depends(get_ctx)):
+    T.record_command_result(ctx, w["id"], body.id, body.ok, body.output)
     return {"ok": True}

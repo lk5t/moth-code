@@ -33,8 +33,7 @@ def allowed(ctx: Ctx) -> bool:
 
     s = S.get(ctx)
     be = s.get("backends") or {}
-    return bool((be.get("local_cpu") or be.get("local_gpu")) and (s.get("distributed") or {}).get("cloud_participates", True)
-                and not owner_revoked(ctx))
+    return bool(be.get("local_cpu") or be.get("local_gpu"))
 
 
 def _rows(ctx: Ctx) -> list[dict]:
@@ -54,8 +53,10 @@ def owner_revoked(ctx: Ctx) -> bool:
     Earlier versions also stopped it for good when its registration was lost another way (replaced by
     a re-enrollment, an invalid credential), which left MOTH Cloud out of every shared training run.
     """
-    rows = _rows(ctx)
-    return bool(rows and rows[0]["revoked_at"] is not None and str(rows[0]["token_hash"]).startswith("revoked-"))
+    # 1.0.9: MOTH Cloud always takes part in shared training. A revoke of its own worker (earlier versions
+    # made it permanent, which silently left MOTH Cloud out of every shared run) only ends that
+    # registration; it enrolls again on the next pass.
+    return False
 
 
 def set_status(ctx: Ctx, state: str, detail: str | None = None) -> None:

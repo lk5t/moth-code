@@ -116,7 +116,7 @@ def test_cloud_and_worker_train_masked_conversation_data_together(client, owner,
     ctx = _world(client, owner, tmp_path, monkeypatch, max_experiments_per_cycle=2,
                  training={**FAST["training"], "steps": 60},
                  backends={"local_cpu": True, "local_gpu": False, "workers": True},
-                 distributed={"one_experiment": False})  # 1.0.6: this checks the side-by-side mode
+                 distributed={"enabled": False})  # side by side: shared rounds turned off
     old = _enroll(client, owner, version="0.6.3")  # the published 0.6.3 worker cannot apply loss masks
     w = _enroll(client, owner)
     stop, seen = threading.Event(), []
