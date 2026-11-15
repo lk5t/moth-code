@@ -30,10 +30,13 @@ export default function App() {
   const [minSplash, setMinSplash] = useState(true);
   const view = useApp((s) => s.view);
   const role = useAccount((s) => s.user?.role);
+  const accountKnown = useAccount((s) => s.ready && (!s.token || !!s.user));
   // 1.0.12 security: Owner-only views (MOTH's training, data, models, administration) never render for
-  // anyone else, however they were opened; the server also refuses their data to non-Owners.
+  // anyone else, however they were opened; the server also refuses their data to non-Owners. While the
+  // saved account is still loading the view waits (hidden) instead of being sent away, so the Owner's app
+  // reopens where it was.
   const blocked = isOwnerView(view) && role !== "owner";
-  useEffect(() => { if (blocked) appStore.setState({ view: "home" }); }, [blocked]);
+  useEffect(() => { if (blocked && accountKnown) appStore.setState({ view: "home" }); }, [blocked, accountKnown]);
   const welcome = useWelcomeVisible();
 
   // If the event stream drops, check whether the backend process itself has failed

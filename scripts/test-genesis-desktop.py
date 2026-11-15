@@ -207,5 +207,5 @@ if __name__ == '__main__':
         main(parser.parse_args().installer)
     except Exception as e:
         detail = str(e).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-        print('::error title=GENESIS native Windows verification failed::' + detail, flush=True)
+        print('::error title=GENESIS native Windows verification failed::' + detail.encode('ascii', 'replace').decode('ascii'), flush=True)  # Windows console codepage
         raise
