@@ -141,13 +141,24 @@ def in_quiet_hours(settings: dict) -> bool:
 # ---- speed-aware placement (0.6.3) -----------------------------------------------------------------------
 NETWORK_FACTOR = 0.8   # until a worker's real throughput is measured, assume transfers cost it 20 %
 PREFER_WORKER = 0.8    # a worker at least this fast (relative to this server) takes work first: MOTH Cloud stays responsive
+MIN_MEASURED = 0.02   # 1.0.11: a measured speed below this is a stalled job's reading, not the computer's speed
 MIN_PARALLEL = 0.5     # slower than this, a parallel experiment would make the cycle longer than running it here later
 
 
 def throughput(ctx: Ctx) -> dict[str, float]:
     """Measured end-to-end training throughput (tokens/s, including downloads and uploads for workers),
-    per ``local:<device>`` and ``worker:<id>``."""
-    return ctx.db.get_config("compute_throughput", {}) or {}
+    per ``local:<device>`` and ``worker:<id>``.
+
+    1.0.11: readings of a worker that are next to nothing (left by jobs taken back before they started)
+    are dropped, so that worker is placed again by its benchmark and measured by its next real job."""
+    tp = ctx.db.get_config("compute_throughput", {}) or {}
+    local = tp.get("local:cpu")
+    stale = [k for k, v in tp.items() if local and k.startswith("worker:") and float(v or 0) < MIN_MEASURED * local]
+    if stale:
+        for k in stale:
+            tp.pop(k, None)
+        ctx.db.set_config("compute_throughput", tp)
+    return tp
 
 
 def record_throughput(ctx: Ctx, key: str, tokens: float | None, seconds: float | None) -> None:
@@ -216,9 +227,10 @@ def worker_speeds(ctx: Ctx, need_bytes: int = 0, worker_ids: list[int] | None = 
         if capacity_bytes(hw, json.loads(w["limits"] or "{}")) < need_bytes:
             continue
         gpu = hw.get("compute") == "gpu" or (hw.get("compute") is None and bool(hw.get("gpus")))
-        if tp.get(f"worker:{w['id']}") and tp.get("local:cpu"):
-            ratio, basis = tp[f"worker:{w['id']}"] / tp["local:cpu"], "measured"
-        else:
+        measured = (tp.get(f"worker:{w['id']}") or 0) / tp["local:cpu"] if tp.get("local:cpu") else 0
+        if measured >= MIN_MEASURED:
+            ratio, basis = measured, "measured"
+        else:  # 1.0.11: never measured, or a near-zero reading from a stalled job: judge by the hardware
             g = (hw.get("benchmark") or {}).get("gflops")
             lg = lg if lg is not None else local_gflops(ctx)
             if g and lg:

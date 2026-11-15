@@ -3,6 +3,10 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.11 — No worker is left out
+
+- A worker whose job was taken back before it made progress got a speed of about 0 tokens/s recorded, and placement then never gave it work again, so it could never be measured again (worker #9: "0.0× this server's speed", no finished runs). A take-back without progress no longer records a speed, near-zero readings are ignored (the worker is judged by its hardware benchmark until its next real job), and existing near-zero readings are cleared automatically.
+
 ## 1.0.10 — Says why a run is not shared
 
 - When a run on MOTH Cloud alone is not moved to shared training, Live activity now says exactly why (no other computer online, not enough free memory on the others — naming them, private data in the mix, or almost finished) instead of staying silent.

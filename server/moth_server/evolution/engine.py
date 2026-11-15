@@ -562,7 +562,8 @@ def _take_back_stalled(ctx: Ctx, cyc: dict, exp: dict, j: dict, res: dict, setti
     cfg = exp["config"] or {}
     done = float(j["progress"] or 0.0) * int(cfg.get("steps") or 0) * int(cfg.get("batch_size") or 0) * int(cfg.get("seq_len") or 0)
     began = float(res.get("leased_at") or now())
-    C.record_throughput(ctx, f"worker:{j['worker_id']}", max(1.0, done), max(1.0, now() - began))
+    if done > 0:  # 1.0.11: a job that never started measures nothing (it used to record ~0 tokens/s for good)
+        C.record_throughput(ctx, f"worker:{j['worker_id']}", done, max(1.0, now() - began))
     try:  # 0.9.0: continue from the progress the worker sent, not from step 0
         resumed = B.resume_from_snapshot(ctx, exp, json.loads(j["spec"]))
     except Exception:  # noqa: BLE001
