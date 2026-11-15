@@ -9,6 +9,6 @@ def test_missing_recorded_tokenizer_falls_back_to_the_copy_kept_with_the_data(tm
     d.mkdir()
     (d / "mixture.json").write_text(json.dumps({"tokenizer_path": str(tmp_path / "models/v00134/tokenizer.json"),
                                                 "tokenizer_fingerprint": "f", "domains": {}}))
-    assert dataset_meta(d)["tokenizer_path"].endswith("v00134/tokenizer.json")  # nothing better to offer
+    assert dataset_meta(d)["tokenizer_path"] == str(tmp_path / "models/v00134/tokenizer.json")  # nothing better
     (d / "tokenizer.json").write_text("{}")
     assert dataset_meta(d)["tokenizer_path"] == str(d / "tokenizer.json")
