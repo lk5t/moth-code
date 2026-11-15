@@ -441,9 +441,14 @@ def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
         startable = [e for e in sorted(MEM.experiments(ctx, cyc["id"]), key=lambda e: e["id"])
                      if e["status"] in ("planned", "waiting", "paused")
                      and not ((e["config"] or {}).get("requires_approval") and not (e["config"] or {}).get("approved_by"))]
-    if not settings.get("parallel_experiments", True):
+    if not settings.get("parallel_experiments", True) or _together(ctx, settings, running, startable):
+        # 1.0.6: with two or more computers online, one experiment at a time is trained by all of them
+        # (shared rounds) instead of each computer training a different experiment
+        running = [e for e in running if MEM.experiment(ctx, e["id"])["status"] == "running"]
         if not running and startable:
-            _try_start(ctx, cyc, startable[0], settings)
+            first = sorted(startable, key=lambda e: (not (e["config"] or {}).get("resume"),
+                                                     not (e["config"] or {}).get("rebirth"), e["id"]))[0]
+            _try_start(ctx, cyc, first, settings)
         return
     # 0.6.3 distributed network: independent experiments run side by side on separate compute —
     # one process on this server and one job per idle MOTH worker that can hold it.
@@ -478,6 +483,23 @@ def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
     if any(_is_training(ctx, e) for e in running):  # a job no worker has taken yet is not training
         MEM.update_cycle(ctx, cyc["id"], status="training",
                          result={**(MEM.cycle(ctx, cyc["id"])["result"] or {}), "waiting_reason": None})
+
+
+def _together(ctx: Ctx, settings: dict, running: list[dict], startable: list[dict]) -> bool:
+    """1.0.6: everyone trains one experiment together when shared rounds are possible."""
+    from moth_server.evolution import distributed as D
+
+    if not (settings.get("distributed") or {}).get("one_experiment", True):
+        return False
+    if any(e.get("backend") in ("worker",) for e in running):
+        return False  # a single-worker job from before is finishing: let the scheduler run as before
+    probe = (startable or running or [None])[0]
+    if probe is None:
+        return False
+    try:
+        return D.available(ctx, settings, _need_bytes(ctx, probe))[0]
+    except Exception:  # noqa: BLE001 — never block scheduling on the check
+        return False
 
 
 REASSIGN_SECONDS = 600.0
@@ -848,10 +870,9 @@ def _handoff_to_shared(ctx: Ctx, cyc: dict, exp: dict, settings: dict, elapsed: 
     MEM.update_experiment(ctx, exp["id"], resources={**res, "handoff_checked_at": now()})
     if not B.worker_training_supported(ctx, exp, masks=True):
         return False  # private data never leaves MOTH Cloud
-    others = [e for e in MEM.experiments(ctx, cyc["id"]) if e["id"] != exp["id"]
-              and e["status"] in ("running", "waiting", "queued", "paused")]
+    others = [e for e in MEM.experiments(ctx, cyc["id"]) if e["id"] != exp["id"] and e["status"] == "running"]
     if others and not cfg.get("rebirth"):
-        return False  # the other experiments use the workers in parallel already
+        return False  # another experiment is using the workers right now
     need = _need_bytes(ctx, exp)
     ok, n = D.available(ctx, settings, need)
     people = D.participants(ctx, need, settings.get("worker_ids")) if ok else []

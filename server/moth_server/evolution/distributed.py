@@ -91,7 +91,8 @@ def _round_weights(rd: Path, r: int) -> Path:
     return rd / f"round-{r:03d}.pt"
 
 
-SUCCESSOR_ROUND_STEPS = 1000   # 0.10.0: a successor is averaged often, so the participants stay in step
+SUCCESSOR_ROUND_STEPS = 1000
+MIN_LOCAL_STEPS = 20   # 0.10.0: a successor is averaged often, so the participants stay in step
 
 
 def model_config(exp: dict, base: dict) -> dict:
@@ -135,11 +136,15 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     d = settings.get("distributed") or {}
     people = participants(ctx, need_bytes, settings.get("worker_ids"))
     n = max(int(d.get("min_participants", 2)), min(int(d.get("max_participants", 8)), len(people)))
-    rounds = max(1, int(d.get("rounds", 3)))
     successor = bool(cfg.get("rebirth"))
-    if successor:
-        rounds = max(rounds, min(500, math.ceil(int(cfg["steps"]) / SUCCESSOR_ROUND_STEPS)))
-    local_steps = max(1, math.ceil(int(cfg["steps"]) / rounds))
+    # 1.0.6: the participants *share* the steps (each trains about steps / n), so more computers finish
+    # the run sooner instead of each repeating the whole run; they are averaged at least every
+    # SUCCESSOR_ROUND_STEPS local steps so they stay in step.
+    per_participant = max(MIN_LOCAL_STEPS, math.ceil(int(cfg["steps"]) / n)) if d.get("split_steps", True) \
+        else int(cfg["steps"])
+    rounds = max(1, int(d.get("rounds", 3)))
+    rounds = max(rounds, min(500, math.ceil(per_participant / SUCCESSOR_ROUND_STEPS)))
+    local_steps = max(1, math.ceil(per_participant / rounds))
     # 1.0.2: a run handed over from MOTH Cloud alone continues from its verified checkpoint
     resume = cfg.get("resume") or {}
     handed = rd / "resume-base.pt"
