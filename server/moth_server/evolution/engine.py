@@ -848,7 +848,7 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
                   "it will resume from its last checkpoint", level="warning", cycle_id=cyc["id"], experiment_id=exp["id"])
 
 
-HANDOFF_MIN_REMAINING = 0.1     # a run with less than this share left just finishes where it is (1.0.10: was 0.2)
+HANDOFF_MIN_REMAINING = 0.0     # 1.0.13: any run with at least two shared rounds left moves to shared training
 HANDOFF_CHECK_SECONDS = 120.0
 
 
