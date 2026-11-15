@@ -3,6 +3,10 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.8 — Training data keeps its tokenizer
+
+- Fixed "FileNotFoundError: …/models/v00134/tokenizer.json": prepared training data pointed at the tokenizer inside the model folder it was made with, and model retention removed that folder after a newer model was promoted. Prepared data now keeps its own copy of the tokenizer; data prepared earlier recovers it from the base model when it is the same tokenizer (checked by fingerprint).
+
 ## 1.0.7 — Bigger models stop getting declined for the wrong reasons
 
 - A successor with its own (BPE) tokenizer failed the release check "not worse than the deployed model" because that check compared loss per token, and a BPE token carries several bytes, so its loss is naturally higher. Models with different tokenizers now skip that per-token check; the promotion gates already compare them fairly, per byte of the same text.

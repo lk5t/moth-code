@@ -230,13 +230,27 @@ def open_dataset(path: str | Path, split: str, seq_len: int, weights: dict[str, 
     return TokenDataset(path, split, seq_len)
 
 
+def tokenizer_file(dataset: str | Path, recorded: str | Path) -> str:
+    """1.0.8: the tokenizer a dataset was prepared with: the recorded file, else the copy kept with the data.
+
+    The recorded file can live in a model folder that model retention later removes; data prepared since
+    1.0.8 keeps its own ``tokenizer.json`` next to ``mixture.json`` / ``meta.json``."""
+    if Path(recorded).is_file():
+        return str(recorded)
+    own = Path(dataset) / "tokenizer.json"
+    return str(own) if own.is_file() else str(recorded)
+
+
 def dataset_meta(path: str | Path) -> dict:
     p = Path(path)
     if (p / "mixture.json").exists():
         mix = json.loads((p / "mixture.json").read_text())
-        return {"tokenizer_path": mix["tokenizer_path"], "tokenizer_fingerprint": mix["tokenizer_fingerprint"],
+        return {"tokenizer_path": tokenizer_file(p, mix["tokenizer_path"]), "tokenizer_fingerprint": mix["tokenizer_fingerprint"],
                 "mixture": True, "build_sha256": mix.get("build_sha256"),
                 "tokens": {"train": sum(d["tokens"]["train"] for d in mix["domains"].values()),
                            "val": sum(d["tokens"]["val"] for d in mix["domains"].values())},
                 "domains": {d: v["tokens"] for d, v in mix["domains"].items()}}
-    return json.loads((p / "meta.json").read_text())
+    meta = json.loads((p / "meta.json").read_text())
+    if meta.get("tokenizer_path"):
+        meta["tokenizer_path"] = tokenizer_file(p, meta["tokenizer_path"])
+    return meta

@@ -374,8 +374,12 @@ def tokenize_build(build_dir: Path, tok, tokenizer_path: Path, out: Path | None 
     licenses: dict[str, set[str]] = {}
     for s in manifest["sources"]:
         licenses.setdefault(s["domain"], set()).add(s["license"])
+    out.mkdir(parents=True, exist_ok=True)
+    own_tok = out / "tokenizer.json"  # 1.0.8: the data keeps its own tokenizer (model folders get cleaned up)
+    if Path(tokenizer_path).resolve() != own_tok.resolve():
+        shutil.copyfile(tokenizer_path, own_tok)
     mixture: dict[str, Any] = {"format": 1, "tokenizer_fingerprint": tok.fingerprint(),
-                               "tokenizer_path": str(Path(tokenizer_path).resolve()),
+                               "tokenizer_path": str(own_tok.resolve()),
                                "build_sha256": manifest["content_sha256"], "domains": {}}
     for p in sorted((build_dir / "domains").glob("*.jsonl")):
         d = p.stem

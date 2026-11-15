@@ -59,6 +59,18 @@ def _run(spec: dict[str, Any]) -> dict[str, Any]:
     from moth.training.data import dataset_meta
 
     meta = dataset_meta(spec["dataset"])  # a prepared dataset or a Data Factory mixture
+    if not Path(meta["tokenizer_path"]).is_file():
+        # 1.0.8: data prepared before 1.0.8 points at a tokenizer in a model folder that retention removed;
+        # the base model carries the same tokenizer (checked by fingerprint) - keep a copy with the data
+        from moth.model.tokenizer import Tokenizer
+
+        cand = base / "tokenizer.json"
+        if cand.is_file() and Tokenizer.load(cand).fingerprint() == meta["tokenizer_fingerprint"]:
+            shutil.copyfile(cand, Path(spec["dataset"]) / "tokenizer.json")
+            meta = dataset_meta(spec["dataset"])
+        else:
+            raise FileNotFoundError(f"the tokenizer this data was prepared with is gone ({meta['tokenizer_path']}) "
+                                    "and the base model's tokenizer is different; the data must be prepared again")
     if meta["tokenizer_fingerprint"] != manifest["tokenizer_fingerprint"] and not spec.get("from_scratch"):
         raise ValueError("the dataset was tokenized with a different tokenizer than the base model "
                          "(an architecture/tokenizer migration is required, not continued training)")
