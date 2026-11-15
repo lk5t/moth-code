@@ -89,3 +89,21 @@ Size ladder, memory lookup, tools (calculator/code runner), 👍/👎 on replies
 ## Not included
 Daily streak, personalities, chat export, prompt library, voice, day/night theme, milestone celebrations
 (unless asked).
+
+---
+
+# Next update — planned (asked for after 1.0.10, not built yet)
+
+## Use up to 90 % of every computer
+Every computer in the training network has more memory and CPU than the current limits let MOTH use. The
+limits move up to about 90 %, on MOTH Cloud and on every worker, while the safety stops stay.
+
+- **Memory a worker offers a job**: up to 90 % of its RAM (today 70 % of RAM and at most 80 % of what is free),
+  and up to 90 % of a GPU's memory (unchanged). Jobs that need more than a machine has still go elsewhere.
+- **Bigger batches to fill that memory**: the batch probe aims for about 90 % memory use instead of stopping
+  early, so each step does more work (same tokens in total, fewer, fuller steps).
+- **CPU threads**: MOTH Cloud trains on all physical cores (today half of them by default); workers likewise.
+- **MOTH Cloud's free-memory reserve**: from 1 GB to what the server itself needs to keep serving chats.
+- **Safety stays**: training still pauses at 85 °C, on low battery and when a computer's owner pauses it; a
+  personal PC can still set its own lower limit in Network.
+- **Shown in Network**: each computer's current use against its 90 % ceiling.
