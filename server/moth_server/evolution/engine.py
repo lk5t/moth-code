@@ -491,6 +491,9 @@ def _together(ctx: Ctx, settings: dict, running: list[dict], startable: list[dic
 
     if any(e.get("backend") in ("worker",) for e in running):
         return False  # a single-worker job from before is finishing: let the scheduler run as before
+    if any(e.get("backend") == "local" and (MEM.experiment(ctx, e["id"]).get("resources") or {}).get("handoff_reason")
+           for e in running):
+        return False  # 1.0.13: a run that cannot be shared keeps MOTH Cloud; the workers take other experiments
     probe = (startable or running or [None])[0]
     if probe is None:
         return False
@@ -848,7 +851,7 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
                   "it will resume from its last checkpoint", level="warning", cycle_id=cyc["id"], experiment_id=exp["id"])
 
 
-HANDOFF_MIN_REMAINING = 0.0     # 1.0.13: any run with at least two shared rounds left moves to shared training
+HANDOFF_MIN_STEPS = 100        # 1.0.13: any run with at least this many steps left moves to shared training
 HANDOFF_CHECK_SECONDS = 120.0
 
 
@@ -897,7 +900,7 @@ def _handoff_to_shared(ctx: Ctx, cyc: dict, exp: dict, settings: dict, elapsed: 
             if online else "no other computer is online"))
     planned = int(cfg["steps"])
     step = int((B.progress(ctx, exp) or {}).get("step") or 0)
-    if planned - step < max(HANDOFF_MIN_REMAINING * planned, 2 * D.SUCCESSOR_ROUND_STEPS if cfg.get("rebirth") else 100):
+    if planned - step < HANDOFF_MIN_STEPS:
         return _not_shared(ctx, cyc, exp, "it is almost finished: handing it over now would not save time")
     if not B.pause_local(ctx, exp, wait_s=120):
         return False  # still busy saving: try again later

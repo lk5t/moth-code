@@ -3,6 +3,11 @@
 Earlier entries describe historical development/release claims. The current verified status, including
 the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
 
+## 1.0.13 — Workers always join
+
+- A run training on MOTH Cloud alone moves to shared training with the workers at any point while it has at least 100 steps left (no percentage cut-off, no minimum number of rounds).
+- A run that cannot be shared (private data) keeps MOTH Cloud, and the idle workers train other experiments of the cycle instead of waiting.
+
 ## 1.0.12 — Usage ring, 5-hour and weekly limits, Owner-only AI
 
 - Usage limits like Claude's: every plan has a rolling 5-hour and a rolling weekly allowance (Free 20k / 80k tokens, Pro 250k / 1.25M, Max 1M / 5M), on top of the monthly allowance. When one is reached, chat continues with credits or when it frees up, and the message says which limit and when.
