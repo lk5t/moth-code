@@ -100,7 +100,14 @@ def _node() -> str | None:
     return shutil.which("node")
 
 
-def run_js(code: str, name: str, tests: list[tuple[list, Any]], timeout: float = 6.0) -> bool:
+def _js_env() -> dict[str, str]:
+    """A minimal environment for the test program: no secrets, but what Node.js needs to start
+    (Windows needs SYSTEMROOT and a temp directory)."""
+    keep = ("PATH", "SYSTEMROOT", "SystemRoot", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE", "LANG")
+    return {k: v for k, v in os.environ.items() if k in keep}
+
+
+def run_js(code: str, name: str, tests: list[tuple[list, Any]], timeout: float = 15.0) -> bool:
     node = _node()
     if not node or not code.strip():
         return False
@@ -111,7 +118,7 @@ def run_js(code: str, name: str, tests: list[tuple[list, Any]], timeout: float =
         p.write_text(f"{code}\n{checks}\n", encoding="utf-8")
         try:
             r = subprocess.run([node, str(p)], cwd=d, capture_output=True, timeout=timeout,
-                               env={"PATH": os.environ.get("PATH", "")})
+                               env=_js_env())
             return r.returncode == 0
         except (subprocess.TimeoutExpired, OSError):
             return False
