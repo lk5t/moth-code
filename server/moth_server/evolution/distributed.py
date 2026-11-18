@@ -82,6 +82,8 @@ def _round_weights(rd: Path, r: int) -> Path:
 
 
 SUCCESSOR_ROUND_STEPS = 1000
+OUTER_LR = 0.7        # 1.1 DiLoCo outer learning rate and Nesterov momentum (Douillard et al., 2023)
+OUTER_MOMENTUM = 0.9
 MIN_LOCAL_STEPS = 20
 SUCCESSOR_MAX_RELATIVE_NORM = 1000.0   # 0.10.0: a successor is averaged often, so the participants stay in step
 
@@ -369,14 +371,28 @@ def advance(ctx: Ctx, exp: dict, settings: dict) -> dict[str, Any]:
     base_w = torch.load(_round_weights(rd, r), map_location="cpu", weights_only=True)
     items = [torch.load(rd / f"delta-r{r:03d}-s{i}.pt", map_location="cpu", weights_only=False) for i in sorted(done)]
     total = sum(max(1, it["tokens"]) for it in items)
-    avg = {k: sum(it["delta"][k].float() * (max(1, it["tokens"]) / total) for it in items) for k in base_w}
-    new_w = {k: (v.float() + avg[k]).to(v.dtype) if v.is_floating_point() else v for k, v in base_w.items()}
+    avg = {k: sum(it["delta"][k].float() * (max(1, it["tokens"]) / total) for it in items)
+           for k in base_w if base_w[k].is_floating_point()}
     base = M.release(ctx, exp["base_version"])
     model_cfg = model_config(exp, base)
     before = _probe_loss(base_w, model_cfg, rd / "probe.bin")
-    after = _probe_loss(new_w, model_cfg, rd / "probe.bin")
+    # 1.1 DiLoCo: the averaged change is the outer gradient of a Nesterov-momentum step carried across rounds,
+    # which learns more per round than applying the plain average. If it does not help on the held-out probe,
+    # the plain average is tried, and if neither helps the round is discarded (as before).
+    mom_path = rd / "outer-momentum.pt"
+    mom = torch.load(mom_path, map_location="cpu", weights_only=True) if mom_path.exists() else {}
+    new_mom = {k: OUTER_MOMENTUM * mom.get(k, torch.zeros_like(d)) + d for k, d in avg.items()}
+    diloco = {k: (v.float() + OUTER_LR * (avg[k] + OUTER_MOMENTUM * new_mom[k])).to(v.dtype) if k in avg else v
+              for k, v in base_w.items()}
+    plain = {k: (v.float() + avg[k]).to(v.dtype) if k in avg else v for k, v in base_w.items()}
+    method, new_w, after = "diloco", diloco, _probe_loss(diloco, model_cfg, rd / "probe.bin")
+    if not (math.isfinite(after) and after <= before * (1 + PROBE_TOLERANCE)):
+        method, new_w, after = "average", plain, _probe_loss(plain, model_cfg, rd / "probe.bin")
+        new_mom = {k: OUTER_MOMENTUM * mom.get(k, torch.zeros_like(d)) for k, d in avg.items()}  # damp the momentum
     accepted = math.isfinite(after) and after <= before * (1 + PROBE_TOLERANCE)
     torch.save(new_w if accepted else base_w, _round_weights(rd, r + 1))
+    if accepted:
+        torch.save(new_mom, mom_path)
     contributors = {}
     for it in items:
         w = str(it.get("worker_id"))
@@ -386,11 +402,13 @@ def advance(ctx: Ctx, exp: dict, settings: dict) -> dict[str, Any]:
                           "train_loss": sum(it['train_loss'] * it['tokens'] for it in items) / total
                           if all(it.get('train_loss') is not None for it in items) else None,
                           "probe_after": round(after, 5), "accepted": accepted, "contributors": contributors,
+                          "method": method if accepted else None,
                           "batch_tuning": {str(it["worker_id"]): it.get("batch_tuning") for it in items},
                           "at": now()})
     MEM.event(ctx, "distributed.round", f"Experiment #{exp['id']}: round {r + 1}/{st['rounds']} from {len(items)} "
               f"participant(s): probe loss {before:.3f} → {after:.3f} "
-              + ("(applied)" if accepted else "(discarded: worse than before)"),
+              + (f"(applied, {'DiLoCo step' if method == 'diloco' else 'plain average'})" if accepted
+                 else "(discarded: worse than before)"),
               level="info" if accepted else "warning", cycle_id=exp["cycle_id"], experiment_id=exp["id"])
     st["round"] = r + 1
     st["weights_sha256"] = _sha(_round_weights(rd, r + 1))

@@ -23,7 +23,7 @@ DEFAULTS: dict[str, Any] = {
     "paused": False,
     "interval_hours": 0.0,           # unused since 0.6.3: rounds run back to back (kept for API compatibility)
     "auto_deploy": True,             # deploy a candidate that passed every gate (then monitor it)
-    "max_experiments_per_cycle": 2,
+    "max_experiments_per_cycle": 1,   # 1.1: one experiment at full power (every computer on it)
     "training": {"steps": 200, "lr": 3e-4, "batch_size": 8, "seq_len": 256, "weight_decay": 0.0,
                  "eval_interval": 50, "checkpoint_interval": 25, "batch_autotune": True},
     "min_dataset_tokens": 20_000,    # an approved dataset needs at least this many training tokens
@@ -171,6 +171,22 @@ def migrate(ctx: Ctx) -> bool:
         ctx.db.set_config(KEY, {**stored, "monitoring": {**mon, "min_requests": 0}})
     ctx.db.set_config(MIGRATION_V071, {"done": True, "previous": mon.get("min_requests") if isinstance(mon, dict) else None})
     return changed
+
+
+MIGRATION_V11 = "evolution_settings_v11_one_experiment"
+
+
+def migrate_v11(ctx: Ctx) -> bool:
+    """1.1: one experiment per cycle at full power (every computer on it) instead of several splitting the
+    computers. Runs once (flagged); a value the Owner sets afterwards persists."""
+    if ctx.db.get_config(MIGRATION_V11, None):
+        return False
+    stored = ctx.db.get_config(KEY, {}) or {}
+    prev = stored.get("max_experiments_per_cycle")
+    if prev not in (None, 1):
+        ctx.db.set_config(KEY, {**stored, "max_experiments_per_cycle": 1})
+    ctx.db.set_config(MIGRATION_V11, {"done": True, "previous": prev})
+    return prev not in (None, 1)
 
 
 def runtime(ctx: Ctx) -> dict[str, Any]:

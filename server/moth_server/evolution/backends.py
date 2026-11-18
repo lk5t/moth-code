@@ -112,6 +112,7 @@ def _v2_spec(base: dict, cfg: dict, exp: dict, rd: Path | None = None) -> dict:
         out["mixture"] = cfg["mixture"]["weights"]
         if cfg.get("mixture_schedule"):
             out["mixture_schedule"] = cfg["mixture_schedule"]
+    out["lr_schedule"] = cfg.get("lr_schedule", "wsd")  # 1.1: warm-up / stable / decay
     if cfg.get("short_context"):  # 1.0.5: a resumed run keeps the short phase where the whole run had it
         until = float(cfg.get("short_until") or 0)
         res = cfg.get("resume") or {}

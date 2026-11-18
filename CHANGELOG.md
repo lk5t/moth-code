@@ -3,6 +3,12 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 1.0.22 — Big update, stage 1: more learning per hour
+
+- **DiLoCo shared training.** Each shared round's averaged change becomes the outer gradient of a Nesterov-momentum step carried across rounds (outer learning rate 0.7, momentum 0.9), which learns more per round than applying the plain average. If that step does not lower the held-out loss, the plain average is tried, and if neither helps the round is discarded as before.
+- **Warm-up / stable / cool-down learning rate (WSD)** for every run: full learning rate for most of the run and a linear cool-down over the last 20 % (it was a cosine curve that started shrinking almost at once). This is the schedule continuous training needs.
+- **One experiment at full power.** A cycle runs one experiment on every computer instead of two splitting them (applied once to existing installs; the Owner can raise it again).
+
 ## 1.0.21 — Training data trimmed for coding and security
 
 Retired (no longer offered, approved or added automatically; data prepared earlier stays readable): TinyStories and TinyStories (full set), Cosmopedia stories, Cosmopedia web-seeded articles, FineWeb-Edu, Simple English Wikipedia, SmolTalk Magpie-Ultra conversations, SmolTalk constraints/rewriting/summaries, MetaMathQA and Cosmopedia math texts. They were general reading that took training time from code and security.

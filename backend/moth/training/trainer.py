@@ -72,6 +72,9 @@ class TrainConfig:
     # (fractions of max_steps; after the last phase the run uses ``mixture``)
     mixture_schedule: list[dict[str, Any]] | None = None
     # 1.0.5: train the first ``short_until`` of the run on ``short_context``-token rows (same tokens)
+    # 1.1: "cosine" (before) or "wsd" (warm-up, stable, linear decay over the last decay_fraction)
+    lr_schedule: str = "cosine"
+    decay_fraction: float = 0.2
     short_context: int = 0
     short_until: float = 0.0
     threads: int | None = None  # CPU threads (None = all but one)
@@ -129,6 +132,14 @@ def lr_at(step: int, cfg: TrainConfig) -> float:
         return cfg.lr * (step + 1) / cfg.warmup_steps
     if step >= cfg.max_steps:
         return cfg.min_lr
+    if cfg.lr_schedule == "wsd":
+        # 1.1 warm-up / stable / decay: full learning rate for most of the run, a linear cool-down over the
+        # last ``decay_fraction``; any checkpoint can be finished with a short cool-down (continuous training)
+        decay_start = int(cfg.max_steps * (1 - cfg.decay_fraction))
+        if step < decay_start:
+            return cfg.lr
+        frac = (step - decay_start) / max(1, cfg.max_steps - decay_start)
+        return cfg.lr + (cfg.min_lr - cfg.lr) * frac
     ratio = (step - cfg.warmup_steps) / max(1, cfg.max_steps - cfg.warmup_steps)
     return cfg.min_lr + 0.5 * (1 + math.cos(math.pi * ratio)) * (cfg.lr - cfg.min_lr)
 

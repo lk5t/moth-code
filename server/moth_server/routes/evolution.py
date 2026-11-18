@@ -36,6 +36,7 @@ def setup(ctx: Ctx) -> None:
         ctx.db.set_config('genesis_state', {'status': 'not_prepared'})
     try:  # 0.7.1: the minimum monitored requests is 0 (once; later Owner values persist)
         S.migrate(ctx)
+        S.migrate_v11(ctx)
     except Exception:  # noqa: BLE001 — never blocks start-up; retried on the next start
         import logging
 
