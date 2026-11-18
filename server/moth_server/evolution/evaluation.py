@@ -352,7 +352,8 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
     overall = sum(w * v for w, v in parts) / sum(w for w, _ in parts) if parts else None
     gates = [x for x in gates if x["gate"] != "target_improvement"] + ([{
         "gate": "target_improvement", "passed": True, "change": improvement, "informational": True,
-        "detail": f"the training data's held-out score changed {improvement:+.2%} (counted twice in the overall change)"}]
+        "detail": f"{'the curriculum' if mixture else 'the training data'}'s held-out score changed {improvement:+.2%} "
+                  "(counted twice in the overall change)"}]
         if improvement is not None else [])
     gates.append({"gate": "overall_improvement", "passed": overall is not None and overall >= float(g["min_improvement"]),
                   "change": overall, "detail": (f"overall change across the training data, every capability group and "
