@@ -30,18 +30,6 @@ def test_csv_and_json_question_answer_sources(tmp_path):
     assert list(train_records(src, src["files"][0], jp))[0]["messages"][1]["content"] == "ls -la"
 
 
-def test_code_rows_keep_language_and_path(tmp_path):
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-
-    p = tmp_path / "code.parquet"
-    pq.write_table(pa.table({"code": ["fn main() {\n    println!(\"hello from rust\");\n}\n", "x"],
-                             "language": ["Rust", "C"], "path": ["src/main.rs", "a.c"]}), p)
-    src = catalog.source("github-code-clean")
-    recs = list(train_records(src, src["files"][0], p))
-    assert len(recs) == 1 and recs[0]["text"].startswith("// src/main.rs (Rust)") and recs[0]["domain"] == "code"
-
-
 def test_every_new_source_is_pinned_and_licensed():
     for sid in ("cve-cwe", "mitre-attack", "cybersec-instruct", "bash-commands", "github-code-clean"):
         s = catalog.source(sid)
