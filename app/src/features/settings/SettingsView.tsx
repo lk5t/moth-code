@@ -23,11 +23,12 @@ import { ChatRetention } from "./ChatRetention";
 import { ConnectionSection } from "./ConnectionSection";
 import { AlertsSection } from "./AlertsSection";
 import { ConnectionsSection } from "./ConnectionsSection";
+import { ServersSection } from "./ServersSection";
 import { TwoFactorSection } from "@/features/account/TwoFactorSection";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 /** Settings in a few plain groups instead of one long page (0.5.4). */
-const TABS = ["Account", "Privacy & AI", "Plan & referrals", "Code agent", "Updates & about", "Advanced"] as const;
+const TABS = ["Account", "Privacy & AI", "Plan & referrals", "Code agent", "Servers & security", "Updates & about", "Advanced"] as const;
 type Tab = (typeof TABS)[number];
 
 interface Permissions {
@@ -93,6 +94,7 @@ export function SettingsView() {
         </> : <p className="text-xs text-muted">Advanced operations, including Genesis Reset, are available to the MOTH Owner only.</p>)}
         {tab === "Privacy & AI" && <><ChatRetention /><IntelligenceSection /><OnDeviceSection /></>}
         {tab === "Plan & referrals" && <><UsageSection /><ReferralsSection /></>}
+        {tab === "Servers & security" && <ServersSection />}
         {tab === "Updates & about" && <>{owner && <AlertsSection />}<UpdatesSection /></>}
 
         {tab === "Code agent" && <Card>

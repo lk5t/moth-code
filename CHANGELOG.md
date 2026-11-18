@@ -3,6 +3,12 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 1.0.18 — Servers and engagements
+
+- **Servers.** Save SSH profiles (name, host, user, port, optional key file) in Settings → Servers & security. MOTH's agent can run commands on them with the new `ssh_run` tool; every command is shown to you and needs your approval, and output streams live. No passwords are stored: the system's ssh uses your own keys or SSH agent; new host keys are pinned on first use.
+- **Engagements** for authorized security testing: name the scope (hosts, IPs, CIDR ranges, domains, `*.example.com` for subdomains) and an optional end time. While an engagement is active, MOTH refuses any command, local or over SSH, that names a target outside the scope or runs outside the time window, and logs every command it runs (Log button) as the record for the report. With no engagement active, coding and server work run as before.
+- The agent can list saved servers and the active scope (`list_servers`).
+
 ## 1.0.17 — Coding first
 
 - MOTH becomes a coding and systems AI first: the main training mix is now 55 % code (including shell and server work) and 28 % conversation (it was 42 % conversation, 40 % code); the skills stage gives code 38 %. Each run's final part is 50 % conversation and 30 % code, so replies end cleanly and still explain the code.

@@ -29,6 +29,11 @@ class Services:
 
     @classmethod
     def create(cls, paths: Paths) -> "Services":
+        from moth.security import engagements
+        from moth.workspace import servers
+
+        engagements.configure(paths.home)
+        servers.configure(paths.home)
         bus = EventBus()
         approvals = ApprovalBroker(notify=lambda req: bus.publish("approval", {"request": req.public()}))
         return cls(paths=paths, db=Database(paths.db), bus=bus, terminals=TerminalManager(), approvals=approvals)

@@ -18,6 +18,8 @@ from moth.workspace.files import FileOps
 from moth.workspace.git import Git, GitError
 from moth.workspace.scanner import file_tree
 from moth.workspace.terminal import run_command
+from moth.security import engagements
+from moth.workspace import servers
 
 MAX_RESULT_CHARS = 6000
 
@@ -173,8 +175,17 @@ def _delete_file(ctx: AgentContext, a: dict) -> ToolResult:
     return ToolResult(True, f"deleted {path}", change={"type": "delete", "path": path, "before": before})
 
 
+def _scope(cmd: str, host: str | None = None) -> None:
+    """1.0.18: an active engagement allows commands against its scope only."""
+    v = engagements.check(cmd, host)
+    if not v.ok:
+        engagements.log(cmd, host or "local", False, None, f"refused: {v.reason}")
+        raise PermissionDenied(f"refused: {v.reason}")
+
+
 def _run_command(ctx: AgentContext, a: dict) -> ToolResult:
     cmd = a["command"]
+    _scope(cmd)
     ctx.authorize(ActionKind.EXECUTE, cmd)
     timeout = min(float(a.get("timeout", ctx.command_timeout)), 3600.0)
     ctx.emit({"kind": "command_start", "command": cmd})
@@ -182,8 +193,40 @@ def _run_command(ctx: AgentContext, a: dict) -> ToolResult:
                       on_output=lambda t: ctx.emit({"kind": "command_output", "data": t}),
                       timeout=timeout, cancel_event=ctx.cancel)
     status = "cancelled" if res.cancelled else "timed out" if res.timed_out else f"exit code {res.exit_code}"
+    engagements.log(cmd, "local", res.ok, res.exit_code, res.output)
     return ToolResult(res.ok, f"$ {cmd}\n{res.output}\n[{status}, {res.duration:.1f}s]",
                       data={"exit_code": res.exit_code, "command": cmd, "duration": res.duration})
+
+
+def _ssh_run(ctx: AgentContext, a: dict) -> ToolResult:
+    """1.0.18: run a command on a saved server over SSH. Always asks the user first."""
+    row = servers.get(a["server"])
+    cmd = a["command"]
+    _scope(cmd, row["host"])
+    target = f"{row['user']}@{row['host']}: {cmd}"
+    ctx.emit({"kind": "approval_wait", "action": "ssh", "target": target})
+    approved = ctx.approvals.request("ssh", target, f"run a command on server {row['name']}", "high",
+                                     {"task_id": ctx.task_id, "detail": cmd[:2000]}, cancel_event=ctx.cancel)
+    ctx.emit({"kind": "approval_result", "action": "ssh", "target": target, "approved": approved})
+    if not approved:
+        raise PermissionDenied(f"the user did not approve: ssh {target}")
+    ctx.emit({"kind": "command_start", "command": f"[{row['name']}] {cmd}"})
+    res = servers.run(row, cmd, timeout=min(float(a.get("timeout", ctx.command_timeout)), 3600.0),
+                      on_output=lambda t: ctx.emit({"kind": "command_output", "data": t}), cancel=ctx.cancel)
+    ok = res["exit_code"] == 0 and not res["timed_out"] and not res["cancelled"]
+    engagements.log(cmd, row["host"], ok, res["exit_code"], res["output"])
+    status = "cancelled" if res["cancelled"] else "timed out" if res["timed_out"] else f"exit code {res['exit_code']}"
+    return ToolResult(ok, f"[{row['name']}] $ {cmd}\n{res['output']}\n[{status}, {res['duration']:.1f}s]",
+                      data={"exit_code": res["exit_code"], "command": cmd, "server": row["name"]})
+
+
+def _list_servers(ctx: AgentContext, a: dict) -> ToolResult:
+    rows = servers.all_()
+    eng = engagements.active()
+    text = "\n".join(f"{r['name']}: {r['user']}@{r['host']}:{r['port']}" for r in rows) or "no saved servers"
+    if eng:
+        text += f"\nactive engagement '{eng['name']}', scope: {', '.join(eng['scope'])}"
+    return ToolResult(True, text)
 
 
 def _git_status(ctx: AgentContext, a: dict) -> ToolResult:
@@ -224,6 +267,9 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("delete_file", "delete a file (asks the user)", {"path": "string"}, _delete_file),
     Tool("run_command", "run a shell command in the project root", {"command": "string", "timeout": "?integer"},
          _run_command),
+    Tool("list_servers", "list saved servers and the active engagement's scope", {}, _list_servers),
+    Tool("ssh_run", "run a command on a saved server over SSH (asks the user)",
+         {"server": "string: saved server name", "command": "string", "timeout": "?integer"}, _ssh_run),
     Tool("git_status", "show changed files", {}, _git_status),
     Tool("git_diff", "show a diff", {"path": "?string"}, _git_diff),
     Tool("git_commit", "commit all changes", {"message": "string"}, _git_commit),
@@ -242,5 +288,7 @@ def execute_tool(ctx: AgentContext, name: str, args: Any) -> ToolResult:
         return ToolResult(False, str(e), data={"denied": True})
     except PathOutsideWorkspace as e:
         return ToolResult(False, f"not permitted: {e}", data={"denied": True})
+    except servers.ServerError as e:
+        return ToolResult(False, str(e))
     except (ToolError, GitError, FileNotFoundError, IsADirectoryError, ValueError, PermissionError, OSError) as e:
         return ToolResult(False, f"{type(e).__name__}: {e}")
