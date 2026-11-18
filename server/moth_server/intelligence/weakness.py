@@ -34,7 +34,8 @@ TARGETS: dict[str, tuple[float, float]] = {
 DOMAINS = {"math": ["math"], "reasoning": ["reasoning", "knowledge"], "code": ["code"],
            "instruction": ["conversation", "writing"], "safety": ["conversation"],
            "language": ["language"], "knowledge": ["knowledge"], "conversation": ["conversation"],
-           "writing": ["writing"], "dialogue": ["conversation"], "codegen": ["code"], "debugging": ["code"]}
+           "writing": ["writing"], "dialogue": ["conversation"], "codegen": ["code"], "debugging": ["code"],
+           "codegen_js": ["code"], "security": ["code"]}
 REGRESSION_TOLERANCE = 0.02
 
 

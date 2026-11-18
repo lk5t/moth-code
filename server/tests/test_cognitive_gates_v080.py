@@ -8,9 +8,11 @@ from moth_server.intelligence import weakness as W
 
 def test_builtin_suites_are_stable_and_map_to_training_domains():
     a, b = EV.builtin_suites(), EV.builtin_suites()
-    assert [s["id"] for s in a] == ["capability:dialogue:builtin", "capability:codegen:builtin", "capability:debugging:builtin"]
+    assert [s["id"] for s in a] == ["capability:dialogue:builtin", "capability:codegen:builtin", "capability:debugging:builtin",
+                                     "capability:codegen_js:builtin", "capability:security:builtin"]
     assert [s["sha"] for s in a] == [s["sha"] for s in b]  # deterministic: cached results stay comparable
     assert W.DOMAINS["dialogue"] == ["conversation"] and W.DOMAINS["debugging"] == ["code"]
+    assert W.DOMAINS["codegen_js"] == W.DOMAINS["security"] == ["code"]
 
 
 def test_group_gate_catches_a_coding_regression_hidden_by_conversation_gains():
