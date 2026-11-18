@@ -77,6 +77,11 @@ class TrainConfig:
     decay_fraction: float = 0.2
     short_context: int = 0
     short_until: float = 0.0
+    # 1.1 mistakes-first: after each evaluation, domains with a higher validation loss get more of the next
+    # steps (at most ±50 % of their planned share)
+    focus_weak: bool = False
+    # 1.1 learning-rate probe: a short trial at 0.5×, 1× and 2× the rate before a fresh run; the best is used
+    lr_probe: bool = False
     threads: int | None = None  # CPU threads (None = all but one)
     lineage: dict[str, Any] = field(default_factory=dict)  # lineage id, parent checkpoint, cumulative counters
 
@@ -144,6 +149,29 @@ def lr_at(step: int, cfg: TrainConfig) -> float:
     return cfg.min_lr + 0.5 * (1 + math.cos(math.pi * ratio)) * (cfg.lr - cfg.min_lr)
 
 
+FOCUS_MIN, FOCUS_MAX = 0.5, 1.5
+
+
+def focus_multipliers(per_domain: dict[str, float]) -> dict[str, float]:
+    """1.1 mistakes-first: domain d's share is scaled by (loss_d / mean)², bounded to [0.5, 1.5]."""
+    vals = [v for v in per_domain.values() if v == v and v != float("inf")]
+    if len(vals) < 2:
+        return {}
+    mean = sum(vals) / len(vals)
+    return {d: round(min(FOCUS_MAX, max(FOCUS_MIN, (v / mean) ** 2)), 4) for d, v in per_domain.items()
+            if v == v and v != float("inf") and mean > 0}
+
+
+def focused(weights: dict[str, float] | None, focus: dict[str, float]) -> dict[str, float] | None:
+    if not weights or not focus:
+        return weights
+    return {d: float(w) * focus.get(d, 1.0) for d, w in weights.items()}
+
+
+LR_PROBE_FACTORS = (0.5, 1.0, 2.0)
+LR_PROBE_MIN_RUN = 600  # shorter runs are not worth the probe's extra steps
+
+
 def build_model_config(cfg: TrainConfig, tokenizer_vocab: int) -> MothConfig:
     overrides = dict(cfg.model_overrides)
     vocab = ((tokenizer_vocab + 63) // 64) * 64  # pad for efficient matmuls
@@ -175,6 +203,7 @@ class Trainer:
         self.step = 0
         self.best_val = float("inf")
         self.tokens_seen = 0  # this run
+        self.focus: dict[str, float] = {}
 
     # ---- helpers -----------------------------------------------------------
     SAMPLE_PROMPT = "Hello! How are you today?"
@@ -272,6 +301,58 @@ class Trainer:
             return overall, per
         return per["all"], {}
 
+    def _lr_probe(self, model, optimizer, scaler, train, val, amp_dtype) -> dict[str, Any] | None:
+        """1.1: try 0.5×, 1× and 2× the learning rate for a few steps each from the same weights, and keep
+        the one with the lowest validation loss. Weights, optimizer and random state are restored afterwards,
+        so the run itself starts exactly as before, only with the chosen rate."""
+        import copy
+
+        cfg = self.cfg
+        n = max(10, min(40, cfg.max_steps // 40))
+        snap_model = copy.deepcopy(model.state_dict())
+        snap_opt = copy.deepcopy(optimizer.state_dict())
+        rng = torch.get_rng_state()
+        results: dict[float, float] = {}
+        for f in LR_PROBE_FACTORS:
+            model.load_state_dict(snap_model)
+            optimizer.load_state_dict(copy.deepcopy(snap_opt))
+            gen = torch.Generator().manual_seed(cfg.seed + 99)
+            loss_v = float("inf")
+            try:
+                for i in range(n):
+                    if self.should_stop():
+                        break
+                    for g in optimizer.param_groups:  # a short warm-up inside the probe
+                        g["lr"] = cfg.lr * f * min(1.0, (i + 1) / max(1, n // 4))
+                    x, y, m = train.batch(cfg.batch_size, gen, self.device)
+                    with torch.autocast(self.device, dtype=amp_dtype, enabled=amp_dtype is not None):
+                        _, loss = model(x, y, loss_mask=m)
+                    if not torch.isfinite(loss):
+                        raise FloatingPointError
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer.zero_grad(set_to_none=True)
+                else:
+                    loss_v = self.evaluate(model, val, amp_dtype)
+            except FloatingPointError:
+                optimizer.zero_grad(set_to_none=True)
+            results[f] = loss_v if loss_v == loss_v else float("inf")
+        model.load_state_dict(snap_model)
+        optimizer.load_state_dict(snap_opt)
+        torch.set_rng_state(rng)
+        model.train()
+        if self.should_stop() or all(v == float("inf") for v in results.values()):
+            return None
+        best = min(results, key=lambda f: (results[f], abs(f - 1.0)))
+        cfg.lr *= best
+        cfg.min_lr *= best
+        out = {"factor": best, "lr": cfg.lr, "steps_each": n, "val_loss": {str(k): v for k, v in results.items()}}
+        self.emit("lr_probe", **out)
+        return out
+
     # ---- main loop -----------------------------------------------------------
     def run(self) -> dict[str, Any]:
         with RunLock(self.run_dir, owner=self.cfg.run_name):
@@ -359,6 +440,15 @@ class Trainer:
                                 seq_len=cfg.seq_len)
             cfg.batch_size, cfg.grad_accum = tuning["batch_size"], tuning["grad_accum"]
 
+        probe = None
+        if ck is None and cfg.lr_probe and cfg.max_steps >= LR_PROBE_MIN_RUN:
+            probe = self._lr_probe(model, optimizer, scaler, train, val, amp_dtype)
+        if ck is not None and ck.get("lr_probe"):
+            cfg.lr, cfg.min_lr = float(ck["lr_probe"]["lr"]), cfg.min_lr * float(ck["lr_probe"]["factor"])
+            probe = ck["lr_probe"]
+        if ck is not None and ck.get("focus") and cfg.focus_weak and hasattr(train, "set_weights"):
+            self.focus = dict(ck["focus"])
+            train.set_weights(focused(phase_weights(cfg, self.step) or cfg.mixture, self.focus))
         self.emit("start", device=self.device, params=model.num_params(), model_config=self.model_cfg.to_dict(),
                   resumed_from=resumed_from, precision=str(amp_dtype or "fp32"),
                   train_tokens=len(train), val_tokens=len(val), batch_tuning=tuning)
@@ -370,7 +460,7 @@ class Trainer:
         def checkpoint() -> None:
             save_checkpoint(self.run_dir, self.step, {
                 "model": model.state_dict(), "optimizer": optimizer.state_dict(),
-                "batch_tuning": tuning,
+                "batch_tuning": tuning, "lr_probe": probe, "focus": self.focus,
                 "train_loss": last_train_loss, "val_loss": last_val_loss,
                 "scaler": scaler.state_dict() if use_scaler else None,
                 "step": self.step, "best_val": self.best_val, "tokens_seen": self.tokens_seen,
@@ -398,7 +488,7 @@ class Trainer:
                 if cfg.mixture_schedule and hasattr(train, "set_weights"):
                     phase = phase_weights(cfg, self.step)
                     if phase is not getattr(train, "_phase", None):
-                        train.set_weights(phase or cfg.mixture)
+                        train.set_weights(focused(phase or cfg.mixture, self.focus))
                         train._phase = phase
                 lr = lr_at(self.step, cfg)
                 for g in optimizer.param_groups:
@@ -438,6 +528,10 @@ class Trainer:
                     self.emit("metrics", split="val", loss=vl, perplexity=math.exp(min(vl, 20)), best=improved,
                               domains=per_domain, tokens_seen=self.tokens_seen)
                     self._emit_sample(model)
+                    if cfg.focus_weak and per_domain and hasattr(train, "set_weights") and self.step < cfg.max_steps:
+                        self.focus = focus_multipliers(per_domain)
+                        train.set_weights(focused(phase_weights(cfg, self.step) or cfg.mixture, self.focus))
+                        self.emit("focus", multipliers=self.focus)
                     if improved:
                         checkpoint()  # the selected weights must keep their own optimizer/RNG state
                         shutil.copyfile(latest_checkpoint(self.run_dir), self.run_dir / "checkpoints" / "best.pt.tmp")

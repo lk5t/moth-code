@@ -250,13 +250,17 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
         variants = [v for v in variants if v[3] not in suspended]
         out["notes"].append(why_not)
         out["suspended_strategies"] = sorted(suspended)
+    cont = continue_from(ctx, base)
     for why, mix, lr, strategy in variants:
         if not mix.get("weights"):
             continue
         cfg = _config(base, arch, src, mix, lr, int(tr["steps"]), settings, cycle_seed)
         cfg["strategy"] = strategy
+        if cont:  # 1.1: keep training the newest candidate instead of starting over from the live model
+            cfg["continue_from"] = cont
         _add(ctx, out, cfg, src, f"{why} (stage {mix['stage']}); lr {lr:.2e}, {cfg['steps']} steps"
-             + ("; continues the development checkpoint" if dev else ""), int(settings["max_experiments_per_cycle"]))
+             + (f"; continues candidate v{cont['version']} (experiment #{cont['experiment']})" if cont
+                else "; continues the development checkpoint" if dev else ""), int(settings["max_experiments_per_cycle"]))
     if not [e for e in out["experiments"] if e["config"].get("method") != "expansion"]:
         _explore(ctx, out, base, arch, src, tilted, balanced, lrs, settings, cycle_seed)
     g = settings.get("growth") or {}
@@ -407,6 +411,8 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
                rebirth={"architecture": rs["architecture"], "params_before": rs["params_before"], "attempt": retry + 1,
                         "params_after": rs["params_after"], "optimal_params": rs["optimal_params"],
                         "speed_basis": rs.get("speed_basis", "estimated"),
+                        # 1.1: same tokenizer and nothing to continue: start from the current model's weights
+                        "transfer_from_base": not tok and not warm,
                         **({"tokenizer": tok} if tok else {}),
                         "planned_tokens": steps * tokens_per_step,
                         "planned_hours": round(steps * tokens_per_step / max(1.0, speed) / 3600, 1)})
@@ -591,6 +597,47 @@ def mixture_improvement(cand_scores: dict, base_scores: dict, weights: dict[str,
             total += w * (float(b["value"]) - float(c["value"])) / abs(float(b["value"]))
             wsum += w
     return total / wsum if wsum else None
+
+
+CONTINUE_MAX_LOSS_RATIO = 1.05  # a candidate this much worse than the live model is not continued
+
+
+def _val(info: dict) -> float | None:
+    tr = info.get("training") or {}
+    v = tr.get("best_val") if tr.get("best_val") is not None else tr.get("val_loss")
+    return float(v) if v is not None else None
+
+
+def continue_from(ctx: Ctx, base: dict) -> dict[str, Any] | None:
+    """1.1 continuous model: the newest declined candidate trained from this same live model.
+
+    A candidate that is not promoted usually learned something, just not enough to pass every gate in one
+    run. Starting the next run from the live model again threw that training away; now the next run keeps
+    training the newest such candidate (same shape, verified checkpoint, not collapsed: validation loss at
+    most 5 % above the live model's). The result still has to pass every gate against the live model."""
+    from moth_server import models as M
+    from moth.training.checkpoint import file_sha256
+
+    base_val = _val(base["info"])
+    for e in MEM.experiments(ctx, limit=200):
+        cfg = e.get("config") or {}
+        if e["status"] != "rejected" or e.get("base_version") != base["version"] or not e.get("candidate_version") \
+                or cfg.get("rebirth") or cfg.get("grow") or cfg.get("method") == "expansion":
+            continue
+        try:
+            rel = M.release(ctx, int(e["candidate_version"]))
+        except Exception:  # noqa: BLE001 — removed by retention
+            continue
+        dev = (rel or {}).get("info", {}).get("dev_checkpoint") or {}
+        val = _val((rel or {}).get("info") or {})
+        if not dev.get("path") or not Path(dev["path"]).is_file() or val is None or base_val is None \
+                or val > base_val * CONTINUE_MAX_LOSS_RATIO or val != val:
+            continue
+        if file_sha256(Path(dev["path"])) != dev.get("sha256"):
+            continue
+        return {"version": rel["version"], "experiment": e["id"], "path": dev["path"], "sha256": dev["sha256"],
+                "val_loss": val}
+    return None
 
 
 # ---- the lineage's development checkpoint ----------------------------------------------------------------------

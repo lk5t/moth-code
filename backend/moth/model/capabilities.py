@@ -334,6 +334,14 @@ def run_suite(model, tok, spec: dict[str, Any]) -> dict[str, Any]:
         return dialogue_suite(model, tok, **{k: spec[k] for k in ("limit", "max_new") if k in spec})
     if cap in ("codegen", "debugging"):
         return coding_suite(model, tok, cap)
+    if cap == "codegen_js":  # 1.1
+        from moth.model.exams import js_suite
+        return js_suite(model, tok)
+    if cap == "security":  # 1.1
+        from moth.model.exams import security_suite
+        return security_suite(model, tok)
     fn = SUITES[cap]
     kw = {k: spec[k] for k in ("limit", "max_new") if k in spec}
+    if cap == "holdout" and "max_bytes" in spec:
+        kw["max_bytes"] = int(spec["max_bytes"])
     return fn(model, tok, spec["path"], **kw)

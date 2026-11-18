@@ -3,6 +3,17 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 1.1.0 — Big update: faster, steadier training and a coding/security exam
+
+- **Continuous model.** A run that is not promoted is no longer thrown away: the next run keeps training the newest such candidate (same shape, verified checkpoint, validation loss at most 5 % above the live model's). It still has to pass every check against the live model.
+- **Mistakes first.** After each evaluation, the skill areas with the highest validation loss get more of the next steps (each area's share changes by at most ±50 %).
+- **Learning-rate probe.** Before a fresh run, MOTH tries 0.5×, 1× and 2× the planned learning rate for a few steps and keeps the best.
+- **Bigger models start from the current one.** A larger successor with the same tokenizer starts from the current model's weights where the shapes overlap, instead of random weights.
+- **Fairer promotion.** A quick pre-check rejects clearly worse candidates before the full benchmark; bigger, steadier benchmark samples.
+- **New exams:** 12 JavaScript tasks run under Node.js, and a 30-question security exam (vulnerability classes, ATT&CK, protocols, shell and defensive practice). Both count toward promotion.
+- **Owner dashboard:** *Candidates vs the live model* shows every recent candidate with its loss change and exactly which checks it passed or failed; *Where training time goes* splits recent experiments into preparing, waiting, training and evaluating.
+- Sequence packing was already on; no change.
+
 ## 1.0.22 — Big update, stage 1: more learning per hour
 
 - **DiLoCo shared training.** Each shared round's averaged change becomes the outer gradient of a Nesterov-momentum step carried across rounds (outer learning rate 0.7, momentum 0.9), which learns more per round than applying the plain average. If that step does not lower the held-out loss, the plain average is tried, and if neither helps the round is discarded as before.

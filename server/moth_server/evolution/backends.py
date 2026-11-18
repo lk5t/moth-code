@@ -113,6 +113,8 @@ def _v2_spec(base: dict, cfg: dict, exp: dict, rd: Path | None = None) -> dict:
         if cfg.get("mixture_schedule"):
             out["mixture_schedule"] = cfg["mixture_schedule"]
     out["lr_schedule"] = cfg.get("lr_schedule", "wsd")  # 1.1: warm-up / stable / decay
+    out["focus_weak"] = bool(cfg.get("mixture"))  # 1.1: weak domains get more of the next steps
+    out["lr_probe"] = not cfg.get("resume")        # 1.1: pick 0.5× / 1× / 2× the rate from a short trial
     if cfg.get("short_context"):  # 1.0.5: a resumed run keeps the short phase where the whole run had it
         until = float(cfg.get("short_until") or 0)
         res = cfg.get("resume") or {}
@@ -123,6 +125,9 @@ def _v2_spec(base: dict, cfg: dict, exp: dict, rd: Path | None = None) -> dict:
     dev = base["info"].get("dev_checkpoint") or {}
     if dev.get("path"):
         out["init_checkpoint"], out["init_checkpoint_sha256"] = dev["path"], dev.get("sha256")
+    cont = cfg.get("continue_from") or {}
+    if cont.get("path") and not cfg.get("grow") and not cfg.get("rebirth"):  # 1.1: continuous model
+        out["init_checkpoint"], out["init_checkpoint_sha256"] = cont["path"], cont["sha256"]
     if cfg.get("resume") and not cfg.get("grow") and rd is not None:  # 0.9.0: continue from a worker's progress
         out["init_checkpoint"] = str(rd / "resume-base.pt")
         out["init_checkpoint_sha256"] = cfg["resume"]["sha256"]
@@ -130,6 +135,8 @@ def _v2_spec(base: dict, cfg: dict, exp: dict, rd: Path | None = None) -> dict:
         out["grow"] = {"add_layers": cfg["grow"]["add_layers"], "ffn_hidden": cfg["grow"]["ffn_hidden"]}
     if cfg.get("rebirth"):  # 0.9.2: a right-sized successor: new shape, same tokenizer, trained from scratch
         out["architecture"] = cfg["rebirth"]["architecture"]
+        if cfg["rebirth"].get("transfer_from_base"):
+            out["transfer_from_base"] = True
         if not (cfg.get("resume") and rd is not None):  # 1.0.5: a resumed successor keeps its own progress
             out.pop("init_checkpoint", None)
             out.pop("init_checkpoint_sha256", None)

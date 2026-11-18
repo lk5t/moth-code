@@ -92,6 +92,7 @@ export function EvolutionPanel({ section = "all" }: { section?: "all" | "improve
       </Card>}
       {section !== "advanced" && cyc && <CycleCard cyc={cyc} />}
       {section !== "advanced" && st.comparison && <Comparison c={st.comparison} />}
+      {section !== "advanced" && <><Candidates /><SpeedReport /></>}
       {section === "all" && <><Versions reload={load} /><Data reload={load} /><ActivityLog st={st} /></>}
       {section !== "improvements" && <><Resources /><SettingsCard s={s} reload={load} advanced={section === "advanced"} /></>}
     </div>
@@ -209,6 +210,84 @@ function Comparison({ c }: { c: Any }) {
         <CardDescription>The same deterministic benchmarks for both models. A candidate is promoted only if every check passes — lower training loss alone never counts.</CardDescription>
       </CardHeader>
       <CardContent><GateTable gates={c.gates} /></CardContent>
+    </Card>
+  );
+}
+
+const GATE_NAME: Record<string, string> = {
+  overall_improvement: "overall improvement", prescreen: "quick pre-check", release_checks: "release checks",
+  capability_groups: "skill groups", retention: "kept old skills", reply_quality: "reply quality",
+};
+const gateName = (g: string) => GATE_NAME[g] ?? g.replace(/_/g, " ");
+
+/** 1.1 Dashboard 2.0: every recent candidate against the live model, with why it was or was not promoted. */
+function Candidates() {
+  const { data } = usePoll<Any>("/v1/admin/evolution/candidates?limit=12", 30000);
+  const [open, setOpen] = useState<number | null>(null);
+  if (!data) return null;
+  const live = data.live;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><FlaskConical className="size-4 text-accent" />Candidates vs the live model</CardTitle>
+        <CardDescription>
+          {live ? <>Live: <span className="font-mono">v{live.version}</span>{live.val_loss != null ? ` · validation loss ${live.val_loss.toFixed(3)}` : ""}{live.params ? ` · ${formatNumber(live.params)} parameters` : ""}. </> : "No live model yet. "}
+          Each run keeps training the newest candidate; it replaces the live model only when it passes every check.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1 text-xs">
+        {!data.candidates.length && <div className="text-faint">No candidates yet.</div>}
+        {data.candidates.map((c: Any) => {
+          const better = c.val_change != null && c.val_change < 0;
+          return <div key={c.experiment} className="rounded px-2 py-1 hover:bg-surface-2">
+            <button className="flex w-full items-center justify-between gap-2 text-left" onClick={() => setOpen(open === c.experiment ? null : c.experiment)}>
+              <span className="min-w-0 truncate">
+                <span className="font-mono">v{c.version}</span> <span className="text-muted">#{c.experiment} · {c.method ?? "—"}{c.continued_from ? ` · continued v${c.continued_from}` : ""}</span>
+                {c.val_change != null && <span className={cn("ml-1", better ? "text-success" : "text-warning")}>loss {better ? "" : "+"}{(c.val_change * 100).toFixed(1)}%</span>}
+                {c.improvement != null && <span className="text-faint"> · overall {(c.improvement * 100).toFixed(1)}%</span>}
+              </span>
+              <Badge variant={c.status === "passed" ? "success" : c.status === "rejected" ? "warning" : "default"}>{c.status === "passed" ? "promoted" : c.status === "rejected" ? "not promoted" : c.status}</Badge>
+            </button>
+            {open === c.experiment && <div className="mt-1 flex flex-col gap-0.5 border-l border-border pl-2 text-muted">
+              {c.failed_gates.length ? c.failed_gates.map((g: Any) => <div key={g.gate}><span className="text-warning">✗ {gateName(g.gate)}</span>{g.detail ? ` — ${g.detail}` : ""}</div>)
+                : c.status === "rejected" && c.reason ? <div>{c.reason}</div> : null}
+              {c.passed_gates.length > 0 && <div className="text-success">✓ {c.passed_gates.map(gateName).join(", ")}</div>}
+              {!c.kept && <div className="text-faint">Weights removed by retention.</div>}
+            </div>}
+          </div>;
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+const PHASE: Record<string, { label: string; color: string }> = {
+  preparing: { label: "Preparing", color: "bg-faint" }, waiting: { label: "Waiting for compute", color: "bg-warning" },
+  training: { label: "Training", color: "bg-accent" }, evaluating: { label: "Evaluating", color: "bg-success" },
+};
+
+/** 1.1 Speed report: where the time of recent experiments went. */
+function SpeedReport() {
+  const { data } = usePoll<Any>("/v1/admin/evolution/speed?limit=20", 60000);
+  if (!data || !data.experiments.length) return null;
+  const hours = (s: number) => s >= 3600 ? `${(s / 3600).toFixed(1)} h` : `${Math.round(s / 60)} min`;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Activity className="size-4 text-accent" />Where training time goes</CardTitle>
+        <CardDescription>The last {data.experiments.length} finished experiments. {data.note}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2 text-xs">
+        <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-2" role="img" aria-label="Time split">
+          {Object.keys(PHASE).map((k) => data.share[k] > 0 && <div key={k} className={PHASE[k].color} style={{ width: `${data.share[k] * 100}%` }} title={`${PHASE[k].label}: ${(data.share[k] * 100).toFixed(0)}%`} />)}
+        </div>
+        <div className="grid grid-cols-2 gap-1 md:grid-cols-4">
+          {Object.keys(PHASE).map((k) => <div key={k} className="flex items-center gap-1.5">
+            <span className={cn("size-2 rounded-full", PHASE[k].color)} />{PHASE[k].label}
+            <span className="text-muted">{(data.share[k] * 100).toFixed(0)}% · {hours(data.total_seconds[k])}</span>
+          </div>)}
+        </div>
+      </CardContent>
     </Card>
   );
 }

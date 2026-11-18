@@ -111,7 +111,17 @@ def _successor_init(exp: dict, base: dict) -> dict:
 
     torch.manual_seed(int((exp.get("config") or {}).get("seed") or 0))
     m = MothModel(MothConfig.from_dict(model_config(exp, base)))
-    return {k: v.detach().float() if v.is_floating_point() else v for k, v in m.state_dict().items()}
+    state = {k: v.detach().float() if v.is_floating_point() else v for k, v in m.state_dict().items()}
+    if ((exp.get("config") or {}).get("rebirth") or {}).get("transfer_from_base"):
+        # 1.1: same tokenizer: start from the current model's weights where the shapes overlap
+        from pathlib import Path
+
+        from moth.model.growth import transfer_state
+
+        raw = torch.load(Path(base["path"]) / "model.pt", map_location="cpu", weights_only=False)
+        old = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
+        state, _ = transfer_state({k: v.float() if v.is_floating_point() else v for k, v in old.items()}, state)
+    return state
 
 
 def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
@@ -142,6 +152,10 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     handed = rd / "resume-base.pt"
     resumed = bool(resume.get("sha256") and handed.is_file() and _sha(handed) == resume["sha256"])
     dev = {} if successor or resumed else (base["info"].get("dev_checkpoint") or {})
+    cont = cfg.get("continue_from") or {}
+    if cont.get("path") and not successor and not resumed and Path(cont["path"]).is_file() \
+            and _sha(Path(cont["path"])) == cont.get("sha256"):  # 1.1: keep training the newest candidate
+        dev = {"path": cont["path"], "sha256": cont["sha256"]}
     if not successor and not resumed:
         src = Path(dev["path"]) if dev.get("path") else Path(base["path"]) / "model.pt"
         expected_sha = dev.get("sha256") if dev.get("path") else base["sha256"]

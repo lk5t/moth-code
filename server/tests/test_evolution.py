@@ -333,7 +333,8 @@ def test_degraded_candidate_is_rejected_and_never_deployed(client, settings, wor
     cand = register_candidate(ctx, exp, bad)
     verdict = EV.gate(ctx, cand, base, d | {"sha256": d["sha256"]}, S.get(ctx))
     assert not verdict["passed"]
-    assert not next(g for g in verdict["gates"] if g["gate"] == "overall_improvement")["passed"]  # 1.0.16
+    # 1.1: a clearly worse model is rejected by the quick pre-screen (or, if close, by the overall check)
+    assert not next(g for g in verdict["gates"] if g["gate"] in ("prescreen", "overall_improvement"))["passed"]
     assert ctx.extras["deployed_version"] == world["base"]
 
 

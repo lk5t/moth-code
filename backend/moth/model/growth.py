@@ -244,3 +244,26 @@ def assert_function_preserved(old_state, old_cfg: MothConfig, new_state, new_cfg
     if not math.isfinite(diff) or diff > atol:
         raise AssertionError(f"growth changed the model's outputs (max logit difference {diff:.2e})")
     return diff
+
+
+def transfer_state(old: dict[str, torch.Tensor], new: dict[str, torch.Tensor]) -> tuple[dict[str, torch.Tensor], float]:
+    """1.1: start a bigger model (same tokenizer) from the current one instead of from random weights.
+
+    Every tensor the two shapes share by name gets the old values in its overlapping corner (embeddings,
+    norms, attention and MLP weights, the first layers); the rest keeps the new model's fresh initialization.
+    This is not function-preserving like ``grow_checkpoint`` (width changes), but it keeps much of what the
+    current model learned as a head start. Returns the new state and the fraction of new weights transferred."""
+    out: dict[str, torch.Tensor] = {}
+    moved = total = 0
+    for k, t in new.items():
+        total += t.numel()
+        o = old.get(k)
+        if o is None or not t.is_floating_point() or o.dim() != t.dim():
+            out[k] = t
+            continue
+        sl = tuple(slice(0, min(a, b)) for a, b in zip(o.shape, t.shape))
+        c = t.detach().clone()
+        c[sl] = o[sl].to(c.dtype)
+        moved += c[sl].numel()
+        out[k] = c
+    return out, (moved / total if total else 0.0)

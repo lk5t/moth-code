@@ -79,7 +79,10 @@ def add_task_suite(ctx: Ctx, name: str, capability: str, data: bytes) -> dict[st
     return meta
 
 
-CAPABILITY_LIMITS = {"math": 50, "reasoning": 200, "code": 50, "instruction": 30, "holdout": 200}
+# 1.1: bigger fixed test sets, so small real improvements are not lost in sampling noise
+CAPABILITY_LIMITS = {"math": 100, "reasoning": 400, "code": 100, "instruction": 60, "holdout": 500}
+HOLDOUT_MAX_BYTES = 200_000
+PRESCREEN_DROP = 0.05  # 1.1: a candidate clearly worse on held-out text is rejected before the full exam
 
 
 def capability_suites(ctx: Ctx) -> list[dict[str, Any]]:
@@ -114,7 +117,8 @@ def capability_suites(ctx: Ctx) -> list[dict[str, Any]]:
         dom = p.stem.split("_", 1)[1]
         lim = CAPABILITY_LIMITS["holdout"]
         out.append({"id": f"capability:holdout:{dom}", "kind": "capability", "capability": "holdout", "path": str(p),
-                    "limit": lim, "name": f"Held-out {dom}", "sha": _sha(f"capability/v2:holdout:{lim}:{file_sha(p)}")})  # v2: with bits per byte
+                    "limit": lim, "max_bytes": HOLDOUT_MAX_BYTES, "name": f"Held-out {dom}",
+                    "sha": _sha(f"capability/v3:holdout:{lim}:{HOLDOUT_MAX_BYTES}:{file_sha(p)}")})
     from moth_server.evolution import settings as _S
 
     if (_S.get(ctx).get("evaluation") or {}).get("builtin_suites", True):
@@ -138,12 +142,22 @@ def builtin_suites() -> list[dict[str, Any]]:
         items = json.dumps(coding.eval_items(kind), sort_keys=True)
         out.append({"id": f"capability:{kind}:builtin", "kind": "capability", "capability": kind,
                     "name": name, "sha": _sha(f"capability/v1:{kind}:" + items)})
+    # 1.1: a coding and security-testing AI is also judged on JavaScript it writes (run with Node.js) and on a
+    # fixed security exam
+    from moth.model import exams
+
+    out.append({"id": "capability:codegen_js:builtin", "kind": "capability", "capability": "codegen_js",
+                "name": "JavaScript (executed, held out)",
+                "sha": _sha("capability/v1:codegen_js:" + json.dumps(exams.js_items(), sort_keys=True))})
+    out.append({"id": "capability:security:builtin", "kind": "capability", "capability": "security",
+                "name": "Security exam (held out)", "sha": _sha("capability/v1:security:" + json.dumps(exams.SECURITY_EXAM))})
     return out
 
 
 # 0.8.0: capability groups that must stay balanced (conversation and coding are the priorities)
 GROUPS = {"conversation": ("dialogue", "instruction", "holdout_conversation"),
-          "coding": ("codegen", "debugging", "code", "holdout_code")}
+          "coding": ("codegen", "debugging", "code", "holdout_code", "codegen_js"),
+          "security": ("security",)}
 
 
 def group_changes(suites: list[dict], base: dict, cand: dict) -> dict[str, dict[str, Any]]:
@@ -259,12 +273,15 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
                   "candidate": (ev.get("score") or {}).get("value"),
                   "baseline": ((ev.get("baseline") or {}).get("score") or {}).get("value")})
     suites = build_suites(ctx, candidate)
+    cross = (candidate["info"].get("tokenizer_fingerprint") or "") != (base["info"].get("tokenizer_fingerprint") or "")
+    early = _prescreen(ctx, candidate, base, suites, target_dataset, mixture, cross, gates)
+    if early is not None:
+        return early
     base_scores = benchmark(ctx, base["version"], Path(base["path"]), suites)
     cand_scores = benchmark(ctx, candidate["version"], Path(candidate["path"]), suites)
     # 0.10.0: a successor with its own tokenizer is compared per byte of the same held-out text
     # (token losses of different tokenizers are not comparable); token-level datasets of the old
     # tokenizer cannot score it and are left out ("no baseline").
-    cross = (candidate["info"].get("tokenizer_fingerprint") or "") != (base["info"].get("tokenizer_fingerprint") or "")
     if cross:
         base_scores = {**base_scores, "suites": per_byte(base_scores["suites"])}
         cand_scores = {**cand_scores, "suites": per_byte(cand_scores["suites"])}
@@ -399,6 +416,35 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
                           "detail": f"peak memory {ratio:.0%} of the base model's"})
     return {"passed": all(x["passed"] for x in gates), "gates": gates, "primary_improvement": improvement,
             "release_status": rel["status"], "performance": {"candidate": cp, "base": bp}}
+
+
+def _prescreen(ctx: Ctx, candidate: dict, base: dict, suites: list[dict], target_dataset: dict,
+               mixture: dict | None, cross: bool, gates: list[dict]) -> dict[str, Any] | None:
+    """1.1 quick check: score only the held-out text first. A candidate clearly worse there (at least
+    PRESCREEN_DROP) is rejected without the full exam; the scores are cached, so a candidate that passes
+    does not repeat this work."""
+    target_id = f"retention:{target_dataset['sha256'][:16]}"
+    quick = [s for s in suites if s["id"] == target_id or s["id"].startswith("capability:holdout:")]
+    if not quick:
+        return None
+    b = benchmark(ctx, base["version"], Path(base["path"]), quick)["suites"]
+    c = benchmark(ctx, candidate["version"], Path(candidate["path"]), quick)["suites"]
+    if cross:
+        b, c = per_byte(b), per_byte(c)
+    if mixture:
+        from moth_server.evolution.v2 import mixture_improvement
+
+        change = mixture_improvement(c, b, mixture.get("weights") or {})
+    else:
+        bt, ct = b.get(target_id) or {}, c.get(target_id) or {}
+        change = _better(float(ct["value"]), float(bt["value"]), False) if bt.get("ok") and ct.get("ok") else None
+    if change is None or change > -PRESCREEN_DROP:
+        return None
+    gates.append({"gate": "prescreen", "passed": False, "change": change,
+                  "detail": f"quick check: held-out text got {change:+.2%} worse (more than {PRESCREEN_DROP:.0%}), "
+                            "so the full exam was skipped"})
+    return {"passed": False, "gates": gates, "primary_improvement": change, "release_status": None,
+            "performance": {"candidate": {}, "base": {}}}
 
 
 MIN_TOKENS_PER_SECOND = 15.0

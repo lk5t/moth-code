@@ -125,6 +125,7 @@ def _run(spec: dict[str, Any]) -> dict[str, Any]:
         init_optimizer=True, mixture=spec.get("mixture"), mixture_schedule=spec.get("mixture_schedule"), keep_every=0,
         short_context=int(spec.get("short_context") or 0), short_until=float(spec.get("short_until") or 0.0),
         lr_schedule=str(spec.get("lr_schedule") or "cosine"), decay_fraction=float(spec.get("decay_fraction") or 0.2),
+        focus_weak=bool(spec.get("focus_weak", False)), lr_probe=bool(spec.get("lr_probe", False)),
         lineage=dict(spec.get("lineage") or {}),
     )
     trainer = Trainer(cfg)
@@ -135,6 +136,23 @@ def _run(spec: dict[str, Any]) -> dict[str, Any]:
     if trainer.tokenizer.vocab_size > base_cfg.vocab_size:
         raise ValueError("the dataset tokenizer has more tokens than the base model's vocabulary")
     trainer.model_cfg = base_cfg
+    if spec.get("from_scratch") and spec.get("transfer_from_base") and init_path is None \
+            and latest_checkpoint(run_dir) is None and meta["tokenizer_fingerprint"] == manifest["tokenizer_fingerprint"]:
+        # 1.1: a bigger successor with the same tokenizer starts from the current model's weights
+        from moth.model.growth import transfer_state
+        from moth.model.transformer import MothModel
+        from moth.training.checkpoint import atomic_torch_save
+
+        raw = torch.load(base / "model.pt", map_location="cpu", weights_only=False)
+        old = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
+        torch.manual_seed(int(spec.get("seed", 1337)))
+        fresh = MothModel(base_cfg).state_dict()
+        state, frac = transfer_state({k: v.float() if v.is_floating_point() else v for k, v in old.items()}, fresh)
+        tp = run_dir / "transfer-init.pt"
+        atomic_torch_save({"model": state, "model_config": base_cfg.to_dict(),
+                           "tokenizer_fingerprint": meta["tokenizer_fingerprint"]}, tp)
+        cfg.init_from, cfg.init_optimizer = str(tp), False
+        trainer.emit("transfer", fraction=round(frac, 4))
     resumed = latest_checkpoint(run_dir) is not None
     t0 = time.time()
     res = trainer.run()

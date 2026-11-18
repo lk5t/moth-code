@@ -535,6 +535,22 @@ def events(limit: int = 100, level: str | None = None, auth: Auth = Depends(requ
     return MEM.events(ctx, min(limit, 1000), level=level)
 
 
+@router.get("/candidates")
+def candidates(limit: int = 20, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """1.1: recent candidates against the live model, with the reasons each was or was not promoted."""
+    from moth_server.evolution import report
+
+    return report.candidates(ctx, min(max(1, limit), 100))
+
+
+@router.get("/speed")
+def speed(limit: int = 20, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    """1.1: where the time of recent experiments went (preparing, waiting, training, evaluating)."""
+    from moth_server.evolution import report
+
+    return report.speed(ctx, min(max(1, limit), 100))
+
+
 @router.get("/versions")
 def versions(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
     """Model version history with lineage, scores and rollback eligibility."""
