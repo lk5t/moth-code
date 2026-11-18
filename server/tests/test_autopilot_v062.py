@@ -267,7 +267,7 @@ def test_discovery_fits_the_budget_to_the_disk(client, owner, monkeypatch):
 
     from moth_server.intelligence import discovery, library
     ctx = client.app.state.ctx
-    discovery.update(ctx, {"approved_sources": ["cosmopedia-stories"], "max_source_chars": 2_000_000_000,
+    discovery.update(ctx, {"approved_sources": ["cosmopedia-textbooks"], "max_source_chars": 2_000_000_000,
                            "max_download_bytes": 10**11})
     usage = namedtuple("u", "total used free")
     gb = 1024 ** 3
@@ -278,7 +278,7 @@ def test_discovery_fits_the_budget_to_the_disk(client, owner, monkeypatch):
     monkeypatch.setattr(library, "check_updates", lambda ctx, sources=None: [])
     st = discovery.ensure_data(ctx)
     assert st["build"] == 7
-    cap = started["max_chars"]["cosmopedia-stories"]
+    cap = started["max_chars"]["cosmopedia-textbooks"]
     assert 500_000 <= cap < 2_000_000_000
-    assert discovery.download_bytes(ctx, [__import__("moth.datafactory.catalog", fromlist=["x"]).source("cosmopedia-stories")],
-                                     cap) + discovery.build_bytes([__import__("moth.datafactory.catalog", fromlist=["x"]).source("cosmopedia-stories")], cap) <= 3 * gb
+    assert discovery.download_bytes(ctx, [__import__("moth.datafactory.catalog", fromlist=["x"]).source("cosmopedia-textbooks")],
+                                     cap) + discovery.build_bytes([__import__("moth.datafactory.catalog", fromlist=["x"]).source("cosmopedia-textbooks")], cap) <= 3 * gb

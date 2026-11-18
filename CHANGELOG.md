@@ -3,6 +3,12 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 1.0.21 — Training data trimmed for coding and security
+
+Retired (no longer offered, approved or added automatically; data prepared earlier stays readable): TinyStories and TinyStories (full set), Cosmopedia stories, Cosmopedia web-seeded articles, FineWeb-Edu, Simple English Wikipedia, SmolTalk Magpie-Ultra conversations, SmolTalk constraints/rewriting/summaries, MetaMathQA and Cosmopedia math texts. They were general reading that took training time from code and security.
+
+Kept: every code and security source, Cosmopedia textbooks (including computer science), OpenAssistant 1 and 2, Dolly and the verified conversations (so MOTH can still explain and ask), GSM8K, ARC and the small verified sets. The library now grows through cybersecurity instructions, multi-language GitHub code, CVE/CWE, OpenAssistant 2, SmolTalk code, OpenCoder and Cosmopedia textbooks.
+
 ## 1.0.20 — A coding and security-testing AI
 
 - CVE/CWE and MITRE ATT&CK now count as code, so with the cybersecurity instructions, bash and multi-language code they share the largest part (55 %) of every training mix instead of the 4 % knowledge share.

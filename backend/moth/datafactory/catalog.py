@@ -183,6 +183,12 @@ from moth.datafactory.security_sources import SOURCES as _SECURITY  # noqa: E402
 
 SOURCES += _SECURITY
 
+# 1.0.21: MOTH is a coding and security-testing AI. General reading (stories, encyclopedia, web, heavy maths
+# and general chat) is retired: it is no longer offered or approved. Entries stay in the catalog so data
+# prepared earlier can still be read and attributed.
+RETIRED = {"tinystories", "tinystories-full", "cosmopedia-stories", "cosmopedia-web", "fineweb-edu",
+           "simple-wikipedia", "smoltalk-magpie", "smoltalk-skills", "metamathqa", "cosmopedia-math"}
+
 # Rough bytes of downloaded file per character of text it yields (parquet is compressed).
 BYTES_PER_CHAR = {"parquet_text": 0.45, "parquet_messages": 0.45, "parquet_qa": 0.45, "stories": 1.0,
                   "qa_json": 1.1, "oasst_trees": 0.5}

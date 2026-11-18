@@ -28,15 +28,14 @@ from moth_server.evolution import settings as S
 # Trusted catalog sources in the order the autopilot adds them: coding first, then reasoning,
 # instruction following and general language. Every one has a verified license and attribution.
 PRIORITY = ["python-stdlib", "synthetic-arithmetic", "synthetic-instructions", "synthetic-python", "synthetic-reasoning", "synthetic-language", "synthetic-dialogue", "synthetic-debugging", "synthetic-code_explain", "synthetic-test_writing", "mbpp", "magicoder-oss", "codefeedback", "glaive-code", "bash-commands", "mitre-attack", "gsm8k", "arc", "oasst1",
-            "dolly-15k", "tinystories", "simple-wikipedia"]
+            "dolly-15k"]
 GB = 1024 ** 3
 MAX_SOURCE_CHARS = 2_000_000_000   # per source; the library grows towards this as the model needs more data (0.9.0)
 # 0.9.0: large licensed sources the library adds by itself, one per growth step, conversation and code first
 # (the 50/40/10 focus), then knowledge, maths and general language. Each is pinned file by file and used shard
 # by shard, so adding one downloads only what the current budget needs.
-LADDER = ["cybersec-instruct", "github-code-clean", "cve-cwe", "oasst2", "smoltalk-code", "smoltalk-skills", "opencoder-sft", "metamathqa", "smoltalk-magpie",
-          "cosmopedia-textbooks", "opencoder-diverse", "cosmopedia-math", "cosmopedia-stories", "tinystories-full",
-          "fineweb-edu", "cosmopedia-web"]
+LADDER = ["cybersec-instruct", "github-code-clean", "cve-cwe", "oasst2", "smoltalk-code", "opencoder-sft",
+          "cosmopedia-textbooks", "opencoder-diverse"]  # 1.0.21: coding and security first; general reading retired
 
 MIN_STEPS, MAX_STEPS = 50, 20_000
 STALL_CYCLES = 3          # cycles without an accepted improvement before the engine slows down

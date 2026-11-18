@@ -22,7 +22,14 @@ LICENSES = {"CC0-1.0", "PSF-2.0", "MIT", "Apache-2.0", "CC-BY-4.0", "CC-BY-SA-3.
 
 
 def policy(ctx: Ctx) -> dict:
-    return {**DEFAULTS, **(ctx.db.get_config(KEY, {}) or {})}
+    from moth.datafactory.catalog import RETIRED
+
+    p = {**DEFAULTS, **(ctx.db.get_config(KEY, {}) or {})}
+    kept = [s for s in p["approved_sources"] if s not in RETIRED]
+    if len(kept) != len(p["approved_sources"]):  # 1.0.21: retired sources leave the approved set for good
+        p = {**p, "approved_sources": kept}
+        ctx.db.set_config(KEY, p)
+    return p
 
 
 def update(ctx: Ctx, changes: dict) -> dict:
@@ -34,6 +41,7 @@ def update(ctx: Ctx, changes: dict) -> dict:
     if not isinstance(p['enabled'], bool) or not isinstance(p['approved_sources'], list) \
             or not isinstance(p['autonomous_sources'], bool):
         raise ValueError("Invalid discovery switches or sources")
+    p['approved_sources'] = [s for s in p['approved_sources'] if s not in catalog.RETIRED]
     for sid in p['approved_sources']:
         try:
             src = catalog.source(sid)
@@ -63,7 +71,7 @@ def status(ctx: Ctx) -> dict:
             "discovered": [{**catalog.public(catalog.with_pin(s, library.pins(ctx).get(s['id']))),
                             "approved": s['id'] in p['approved_sources'],
                             "license_verified": s['license'] in LICENSES and bool(s.get('attribution'))}
-                           for s in catalog.SOURCES]}
+                           for s in catalog.SOURCES if s['id'] not in catalog.RETIRED]}
 
 
 def download_bytes(ctx: Ctx, approved: list[dict], max_chars: int) -> int:
