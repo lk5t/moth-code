@@ -107,3 +107,38 @@ limits move up to about 90 %, on MOTH Cloud and on every worker, while the safet
 - **Safety stays**: training still pauses at 85 °C, on low battery and when a computer's owner pauses it; a
   personal PC can still set its own lower limit in Network.
 - **Shown in Network**: each computer's current use against its 90 % ceiling.
+
+---
+
+# Big update 1.1 — faster, more efficient training (agreed, in progress)
+
+Goal: much more learning per hour of compute, and far fewer good runs thrown away.
+
+## Stop wasting training
+1. **One continuous model.** One model trains non-stop; checkpoints are judged every few hours and promoted
+   only if better than the live model. A "no" means it keeps training, never that the work is lost.
+2. **Warm-up / hold / cool-down learning rate (WSD).** Lets a checkpoint be judged at its best without
+   restarting the run.
+
+## More learning per hour
+3. **DiLoCo syncing.** Computers' updates are combined with an outer optimizer (Nesterov momentum) instead
+   of plain averaging, and they sync less often.
+4. **One experiment at full power** instead of several splitting the computers.
+8. **Sequence packing** (mostly already in place: training reads one continuous token stream, no padding).
+9. **Learn from mistakes first.** More of each run goes to what MOTH gets most wrong.
+10. **Grow instead of restart.** A bigger MOTH is grown from the current one (wider and deeper, keeping what
+    it learned) instead of a successor trained from scratch.
+11. **Self-tuning learning rate.** A short probe picks each run's learning rate.
+
+## Fairer, cheaper checks
+6. **Bigger fixed test sets with a statistical margin**, so real improvements are recognised.
+7. **Quick checks while training, full checks only at promotion.**
+12. **Code tests that run** (Python, JavaScript, shell where available), not just loss.
+13. **Security-skills exam**: fixed, automatically scored questions on CVEs, ATT&CK and shell commands.
+
+## Visibility
+14. **Training dashboard 2.0**: the continuous model, every checkpoint against the live model, and why it was
+    or wasn't promoted.
+15. **Speed report**: where the time goes (training, syncing, evaluating, waiting).
+
+Not included: giving the RTX 3050 a special role (declined).
