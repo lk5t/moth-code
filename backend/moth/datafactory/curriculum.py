@@ -26,14 +26,14 @@ STAGES: list[dict[str, Any]] = [
      "priorities": {"conversation": 0.35, "writing": 0.12, "knowledge": 0.15, "language": 0.12, "code": 0.1,
                     "math": 0.08, "reasoning": 0.08}},
     {"id": "skills", "name": "Maths, reasoning and code",
-     "priorities": {"code": 0.28, "math": 0.2, "reasoning": 0.17, "conversation": 0.15, "knowledge": 0.1,
-                    "language": 0.06, "writing": 0.04}},
-    # 0.8.0 COGNITIVE EVOLUTION: the steady state centres on conversation (50 %) and coding (40 %), with
-    # 10 % for the other foundations. These are starting proportions: measured weaknesses still shift
-    # them (``weakness``), replay floors protect what was learned, and repetition caps still apply.
-    {"id": "balanced", "name": "Conversation and coding focus",
-     "priorities": {"conversation": 0.42, "writing": 0.08, "code": 0.40, "knowledge": 0.03, "language": 0.03,
-                    "math": 0.02, "reasoning": 0.02}},
+     "priorities": {"code": 0.38, "math": 0.15, "reasoning": 0.15, "conversation": 0.15, "knowledge": 0.08,
+                    "language": 0.05, "writing": 0.04}},
+    # 1.0.17: MOTH is a coding and systems AI first: code (including shell and server work) leads, with
+    # enough conversation to explain what it is doing. These are starting proportions: measured weaknesses
+    # still shift them (``weakness``), replay floors protect what was learned, and repetition caps apply.
+    {"id": "balanced", "name": "Coding first, with conversation",
+     "priorities": {"code": 0.55, "conversation": 0.28, "reasoning": 0.05, "writing": 0.04, "knowledge": 0.04,
+                    "language": 0.02, "math": 0.02}},
 ]
 
 REPLAY_FLOOR = 0.03  # every learned domain keeps at least this share (memory protection)

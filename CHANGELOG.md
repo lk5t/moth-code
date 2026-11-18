@@ -3,6 +3,11 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 1.0.17 — Coding first
+
+- MOTH becomes a coding and systems AI first: the main training mix is now 55 % code (including shell and server work) and 28 % conversation (it was 42 % conversation, 40 % code); the skills stage gives code 38 %. Each run's final part is 50 % conversation and 30 % code, so replies end cleanly and still explain the code.
+- MOTH's default system prompt describes it as a coding and systems assistant that explains what it is doing and why.
+
 ## 1.0.16 — Promotion 2.0
 
 - **New promotion rules.** A candidate is judged on its *overall* change: the training data's held-out gain (counted twice), every capability group's mean change and the retained data's mean change, averaged; it must improve by at least 0.5 %. A single test only fails on a real collapse (more than 10 % worse; accuracy more than 10 points or 3 standard errors), and a capability group's mean may drop at most 5 %. Before, any one small, noisy test moving by 2 % rejected the whole model (v139 and v140). Safety checks (loads, generates, speed, memory, fair per-byte comparison across tokenizers) are unchanged.

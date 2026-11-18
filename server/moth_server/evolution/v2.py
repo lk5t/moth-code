@@ -435,7 +435,12 @@ def chat_schedule(weights: dict[str, float]) -> list[dict] | None:
         return None
     rest = {d: w for d, w in weights.items() if d != "conversation"}
     total = sum(rest.values()) or 1.0
-    finish = {"conversation": 0.7, **{d: round(0.3 * w / total, 4) for d, w in rest.items()}}
+    # 1.0.17: the finish stays conversation-led (clean replies that explain) with a strong share of code
+    code = 0.3 if weights.get("code") else 0.0
+    rest = {d: w for d, w in rest.items() if d != "code" or not code}
+    total = sum(rest.values()) or 1.0
+    finish = {"conversation": 0.5, **({"code": code} if code else {}),
+              **{d: round((0.5 - code) * w / total, 4) for d, w in rest.items()}}
     return [{"until": CHAT_WARMUP, "weights": {"conversation": 1.0}, "phase": "chat warm-up"},
             {"until": CHAT_FINISH, "weights": dict(weights), "phase": "curriculum"},  # [1:] = regular runs
             {"until": 1.01, "weights": finish, "phase": "chat finish"}]
