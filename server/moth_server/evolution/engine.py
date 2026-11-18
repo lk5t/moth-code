@@ -413,10 +413,27 @@ def _need_bytes(ctx: Ctx, exp: dict) -> int:
 def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
     exps = sorted(MEM.experiments(ctx, cyc["id"]), key=lambda e: e["id"])
     started = float(cyc["started_at"] or cyc["created_at"])
-    if now() - started > float(settings["budget"]["max_cycle_hours"]) * 3600:
-        for e in exps:
-            if e["status"] not in MEM.TERMINAL_EXPERIMENT + ("trained",):
-                _stop_experiment(ctx, e, "the cycle's time budget was used up")
+    budget = float(settings["budget"]["max_cycle_hours"]) * 3600
+    if now() - started > budget:
+        # 1.0.16: a successor, or a run at least half done, finishes instead of being thrown away (experiment
+        # #8 lost ~10 h of successor training this way); the rest stop. At twice the budget everything stops.
+        unfinished = [e for e in exps if e["status"] not in MEM.TERMINAL_EXPERIMENT + ("trained",)]
+        finishing = [e for e in unfinished if now() - started <= 2 * budget and e["status"] == "running"
+                     and ((e["config"] or {}).get("rebirth") or float(e.get("progress") or 0) >= 0.5)]
+        if finishing:
+            for e in unfinished:
+                if e not in finishing:
+                    _stop_experiment(ctx, e, "the cycle's time budget was used up")
+            if not (cyc["result"] or {}).get("overtime"):
+                MEM.update_cycle(ctx, cyc["id"], result={**(cyc["result"] or {}), "overtime": now()})
+                MEM.event(ctx, "cycle.overtime", "The cycle's time budget was used up; "
+                          + ", ".join(f"experiment #{e['id']} ({float(e.get('progress') or 0):.0%} done)" for e in finishing)
+                          + " finishes first instead of being thrown away.", cycle_id=cyc["id"])
+            for e in finishing:
+                _advance_running(ctx, cyc, MEM.experiment(ctx, e["id"]), settings)
+            return
+        for e in unfinished:
+            _stop_experiment(ctx, e, "the cycle's time budget was used up")
         MEM.event(ctx, "cycle.budget", "The cycle's time budget was used up; evaluating what finished",
                   level="warning", cycle_id=cyc["id"])
         MEM.update_cycle(ctx, cyc["id"], status="evaluating")
@@ -1016,6 +1033,7 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
         B.cleanup_run(ctx, e)
     if waiting_remote:
         return
+    _try_soup(ctx, cyc, base, settings)
     exps = MEM.experiments(ctx, cyc["id"])
     passed = [e for e in exps if e["status"] == "passed"]
     if not passed:
@@ -1035,6 +1053,79 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
         _schedule_next(ctx, failed=False)
         return
     MEM.update_cycle(ctx, cyc["id"], status="deploying", candidate_version=best["candidate_version"])
+
+
+SOUP_MAX = 3
+
+
+def _try_soup(ctx: Ctx, cyc: dict, base: dict, settings: dict) -> None:
+    """1.0.16: average the weights of this cycle's best candidates trained from the same model (a "model soup").
+
+    Runs started from the same weights stay close enough that their average usually generalises better than
+    each one alone. The average is judged by exactly the same gates; if it scores higher than every passed
+    candidate it takes the best experiment's place, otherwise nothing changes. Successors and growth runs
+    (other shapes) never take part. Tried once per cycle."""
+    import shutil
+    from pathlib import Path
+
+    import torch
+
+    from moth_server import models as M
+    from moth.model.registry import sha256_file
+
+    if (cyc["result"] or {}).get("soup"):
+        return
+    exps = [e for e in MEM.experiments(ctx, cyc["id"]) if e["status"] in ("passed", "rejected") and e.get("candidate_version")
+            and not (e["config"] or {}).get("rebirth") and not (e["config"] or {}).get("grow")
+            and e.get("base_version") == cyc.get("base_version")]
+    MEM.update_cycle(ctx, cyc["id"], result={**(MEM.cycle(ctx, cyc["id"])["result"] or {}), "soup": {"tried": True}})
+    if len(exps) < 2:
+        return
+    exps.sort(key=lambda e: -((e["metrics"] or {}).get("primary_improvement") or -1.0))
+    exps = exps[:SOUP_MAX]
+    try:
+        rels = [M.release(ctx, int(e["candidate_version"])) for e in exps]
+        states = [torch.load(Path(r["path"]) / "model.pt", map_location="cpu", weights_only=True) for r in rels]
+        keys = set(states[0])
+        if any(set(st) != keys or any(st[k].shape != states[0][k].shape for k in keys) for st in states[1:]):
+            return
+        avg = {k: (sum(st[k].float() for st in states) / len(states)).to(states[0][k].dtype)
+               if states[0][k].is_floating_point() else states[0][k] for k in keys}
+        lead = exps[0]
+        work = B.run_dir(ctx, lead).parent / f"soup-cycle-{cyc['id']:05d}"
+        shutil.rmtree(work, ignore_errors=True)
+        shutil.copytree(rels[0]["path"], work)
+        torch.save(avg, work / "model.pt")
+        man = json.loads((work / "manifest.json").read_text())
+        man["sha256"] = sha256_file(work / "model.pt")
+        (work / "manifest.json").write_text(json.dumps(man))
+        soup_exp = {**lead, "config": {**(lead["config"] or {}), "method": "soup"}}
+        cand = B.register_candidate(ctx, soup_exp, work)
+        shutil.rmtree(work, ignore_errors=True)
+        verdict = EV.gate(ctx, cand, base, DS.get(ctx, lead["dataset_id"]), settings,
+                          mixture=(lead["config"] or {}).get("mixture"))
+    except Exception as ex:  # noqa: BLE001 — the soup is a bonus; the cycle continues without it
+        MEM.event(ctx, "soup.skipped", f"Averaging the cycle's candidates did not work: {ex}", level="warning",
+                  cycle_id=cyc["id"])
+        return
+    best_passed = max(((e["metrics"] or {}).get("primary_improvement") or -1.0 for e in exps if e["status"] == "passed"),
+                      default=None)
+    gain = verdict["primary_improvement"]
+    names = ", ".join(f"v{e['candidate_version']}" for e in exps)
+    if verdict["passed"] and (best_passed is None or (gain or 0) > best_passed):
+        MEM.update_experiment(ctx, lead["id"], status="passed", candidate_version=cand["version"], error=None,
+                              metrics={**(lead["metrics"] or {}), "gates": verdict["gates"], "primary_improvement": gain,
+                                       "performance": verdict["performance"],
+                                       "soup_of": [e["candidate_version"] for e in exps]})
+        MEM.event(ctx, "soup.passed", f"The average of {names} (v{cand['version']}) passed every gate and beat each of "
+                  f"them ({gain:+.2%} overall): it is this cycle's candidate.", cycle_id=cyc["id"],
+                  experiment_id=lead["id"], improvement=gain)
+    else:
+        if M.release(ctx, cand["version"])["status"] == "published":
+            M._set(ctx, cand["version"], "evaluated", error="Weight average not promoted by evolution.")
+        MEM.event(ctx, "soup.rejected", f"The average of {names} (v{cand['version']}) was "
+                  + ("not better than the best candidate" if verdict["passed"] else "rejected by the gates")
+                  + "; the individual candidates stand.", cycle_id=cyc["id"])
 
 
 def _deploying(ctx: Ctx, cyc: dict, settings: dict) -> None:

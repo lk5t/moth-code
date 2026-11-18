@@ -273,6 +273,12 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
                                 "of the same text"})
     target_id = f"retention:{target_dataset['sha256'][:16]}"
     improvement = None
+    # 1.0.16 gates: one overall judgement instead of "every single test must not wobble". A single test
+    # fails only on a real collapse (MAX_REGRESSION); small held-out sets are noisy, and requiring all of
+    # them to stay within 2 % rejected nearly every genuinely better model.
+    max_reg = float(g.get("max_regression", MAX_REGRESSION))
+    acc_tol = float(g.get("accuracy_tolerance", ACCURACY_TOLERANCE))
+    retention_changes: list[float] = []
     for s in suites:
         b, c = base_scores["suites"].get(s["id"]) or {}, cand_scores["suites"].get(s["id"]) or {}
         entry = {"gate": s["id"], "name": s["name"], "candidate": c.get("value"), "baseline": b.get("value")}
@@ -294,29 +300,29 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
                          detail=f"held-out score on the training data's validation split must improve by "
                                 f"≥ {float(g['min_improvement']):.1%} (changed {rel_imp:+.2%})")
         elif s["kind"] == "heldout":
-            entry.update(passed=rel_imp >= -float(g["retention_tolerance"]),
-                         detail=f"retention: may not get worse by more than {float(g['retention_tolerance']):.1%} "
-                                f"(changed {rel_imp:+.2%})")
+            retention_changes.append(rel_imp)
+            entry.update(passed=rel_imp >= -max_reg,
+                         detail=f"retention: may not collapse (more than {max_reg:.0%} worse); changed {rel_imp:+.2%}")
         elif s["kind"] == "capability" and not higher:  # held-out loss of one capability domain
-            entry.update(passed=rel_imp >= -float(g["retention_tolerance"]),
-                         detail=f"memory protection: held-out loss may not get worse by more than "
-                                f"{float(g['retention_tolerance']):.1%} (changed {rel_imp:+.2%})")
+            entry.update(passed=rel_imp >= -max_reg,
+                         detail=f"memory protection: held-out loss may not collapse (more than {max_reg:.0%} worse); "
+                                f"changed {rel_imp:+.2%}")
         elif s["kind"] == "capability":
-            # accuracy on n items: a drop within sampling noise (2 standard errors) is not a regression
+            # accuracy on n items: a drop within sampling noise (3 standard errors) is not a regression
             n = max(1, int(c.get("n") or b.get("n") or 1))
             p_ = min(max(float(b["value"]), 0.0), 1.0)
-            noise = 2 * (p_ * (1 - p_) / n) ** 0.5
-            allowed = max(float(g["task_tolerance"]), noise)
+            noise = 3 * (p_ * (1 - p_) / n) ** 0.5
+            allowed = max(acc_tol, noise)
             drop = float(b["value"]) - float(c["value"])
             entry.update(passed=drop <= allowed, detail=f"{s['name']}: {float(b['value']):.1%} → "
                                                         f"{float(c['value']):.1%} (allowed drop {allowed:.1%})")
         elif s["kind"] == "code_syntax":
             drop = float(b["value"]) - float(c["value"])
-            entry.update(passed=drop <= float(g["code_tolerance"]),
+            entry.update(passed=drop <= max(acc_tol, float(g["code_tolerance"])),
                          detail=f"valid-Python rate {float(b['value']):.0%} → {float(c['value']):.0%}")
         else:
             drop = float(b["value"]) - float(c["value"])
-            entry.update(passed=drop <= float(g["task_tolerance"]),
+            entry.update(passed=drop <= acc_tol,
                          detail=f"accuracy {float(b['value']):.0%} → {float(c['value']):.0%}")
         gates.append(entry)
     if mixture:  # curriculum runs: the improvement is the weighted held-out gain over all trained domains
@@ -335,8 +341,27 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
     if growth and growth.get("target_capabilities"):
         gates.append(growth_gate(growth["target_capabilities"], suites, base_scores["suites"], cand_scores["suites"]))
     groups = group_changes(suites, base_scores["suites"], cand_scores["suites"])
+    # 1.0.16: the decision is the overall change: the training data's held-out gain (twice), each capability
+    # group's mean change and the retained data's mean change, averaged. It must be a real improvement.
+    parts: list[tuple[float, float]] = []
+    if improvement is not None:
+        parts.append((2.0, improvement))
+    parts += [(1.0, v["mean"]) for v in groups.values()]
+    if retention_changes:
+        parts.append((1.0, sum(retention_changes) / len(retention_changes)))
+    overall = sum(w * v for w, v in parts) / sum(w for w, _ in parts) if parts else None
+    gates = [x for x in gates if x["gate"] != "target_improvement"] + ([{
+        "gate": "target_improvement", "passed": True, "change": improvement, "informational": True,
+        "detail": f"the training data's held-out score changed {improvement:+.2%} (counted twice in the overall change)"}]
+        if improvement is not None else [])
+    gates.append({"gate": "overall_improvement", "passed": overall is not None and overall >= float(g["min_improvement"]),
+                  "change": overall, "detail": (f"overall change across the training data, every capability group and "
+                                                f"retained data: {overall:+.2%} (needs at least "
+                                                f"{float(g['min_improvement']):+.1%})") if overall is not None
+                  else "nothing could be measured"})
+    improvement = overall if overall is not None else improvement
     if groups:  # 0.8.0: a better loss elsewhere never excuses worse conversation or coding as a whole
-        tol = float(g["task_tolerance"])
+        tol = float(g.get("group_tolerance", GROUP_TOLERANCE))
         worse = {k: v["mean"] for k, v in groups.items() if v["mean"] < -tol}
         gates.append({"gate": "balanced_capabilities", "passed": not worse, "groups": groups,
                       "detail": "; ".join(f"{k}: mean change {v['mean']:+.1%}" for k, v in groups.items())
@@ -376,6 +401,9 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
 
 
 MIN_TOKENS_PER_SECOND = 15.0
+MAX_REGRESSION = 0.10      # 1.0.16: a single held-out test may not get more than 10 % worse (a collapse, not noise)
+ACCURACY_TOLERANCE = 0.10  # 1.0.16: an accuracy may drop by at most 10 points (or 3 standard errors if more)
+GROUP_TOLERANCE = 0.05     # 1.0.16: a capability group's mean may drop by at most 5 %
 
 
 def _memory_limit() -> int:

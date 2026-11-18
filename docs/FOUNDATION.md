@@ -4,7 +4,7 @@
 contains no trained Foundation checkpoint, split weights, or matching completed evaluation report.
 Earlier corpus/run/release descriptions below are historical claims and have not been independently
 verified. Foundation training must not be described as complete on this evidence. The short 49.3M
-architecture smoke run in [CONTINUATION.md](CONTINUATION.md) is not a trained Foundation release.
+architecture smoke run is not a trained Foundation release.
 
 MOTH 0.1 is the root of the one MOTH model lineage. Everything later (0.2, 0.3 …) continues these weights;
 nothing restarts from random weights unless a new architecture is deliberately created.
@@ -78,7 +78,7 @@ deployed model (signature and SHA-256 verified) and answer on the computer.
 ## Results
 
 No trained Foundation quality result was verified in this continuation. See
-[CONTINUATION.md](CONTINUATION.md) for actual tests and remaining model-quality requirements.
+[LIMITATIONS.md](LIMITATIONS.md) for remaining model-quality requirements.
 
 ## Safe preparation and resume
 

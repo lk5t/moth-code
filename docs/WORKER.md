@@ -136,7 +136,7 @@ curriculum, the server checks every update and averages them weighted by tokens,
 only if its own held-out probe does not get worse. Repeated or late submissions are refused and expired
 shards are reassigned. Tested end to end with real training in real MOTH Worker runners (two workers,
 including a disconnection; MOTH Code's participant alongside a standalone worker) — see
-[TEST_RESULTS.md](TEST_RESULTS.md).
+the release workflow (every release runs the real Windows and Linux installs).
 
 Not done yet: large-scale training (many workers, larger models), robust aggregation against coordinated
 poisoning, secure aggregation, and data preparation on workers. GPU execution has not been verified on

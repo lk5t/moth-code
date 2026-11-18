@@ -1,6 +1,6 @@
 # Known limitations & remaining requirements (0.5.4)
 
-Current verified implementation status and remaining requirements are in [CONTINUATION.md](CONTINUATION.md).
+What is still missing or unverified is listed below; what changed in each version is in the [changelog](../CHANGELOG.md).
 This page lists what depends on the Owner's infrastructure or accounts, what could not be verified in
 the development environment, and what is unfinished — so nothing is overstated.
 

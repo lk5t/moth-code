@@ -320,32 +320,44 @@ from moth.training.speedups import SHORT_CONTEXT, SHORT_UNTIL  # noqa: E402
 
 
 def _warm_start(ctx: Ctx, rs: dict, tok: dict | None) -> dict | None:
-    """1.0.7: the newest declined successor of the same shape and tokenizer whose weights still exist.
+    """1.0.7: the newest earlier attempt at a successor of the same shape and tokenizer whose weights still exist.
 
     A from-scratch successor is usually declined because it has had far less training than the model it
     replaces, not because the bigger shape is worse; starting the next attempt from random weights threw
-    that training away every time."""
+    that training away every time. 1.0.16: a successor stopped unfinished (e.g. by the cycle's time budget)
+    counts too, continuing from the weights it saved when it moved to shared training or its newest round."""
     from moth_server import models as M
+    from moth_server.evolution import backends as B
+    from moth.training.checkpoint import file_sha256
 
     want_fp = (tok or {}).get("fingerprint")
     for e in MEM.experiments(ctx, limit=200):
         cfg = e.get("config") or {}
-        if not cfg.get("rebirth") or e["status"] not in ("rejected",) or not e.get("candidate_version"):
+        if not cfg.get("rebirth") or e["status"] not in ("rejected", "cancelled", "failed"):
             continue
         if int(cfg["rebirth"].get("params_after") or 0) != int(rs["params_after"]):
             continue
-        try:
-            rel = M.release(ctx, int(e["candidate_version"]))
-        except Exception:  # noqa: BLE001 — deleted by retention: nothing to continue from
-            continue
-        path = Path(rel.get("path") or "") / "model.pt"
-        if not path.is_file() or not rel.get("sha256"):
-            continue
-        if want_fp and rel["info"].get("tokenizer_fingerprint") != want_fp:
+        if want_fp and ((cfg["rebirth"].get("tokenizer") or {}).get("fingerprint") or want_fp) != want_fp:
             continue
         done = ((e.get("metrics") or {}).get("training") or {})
-        return {"version": rel["version"], "path": str(path), "sha256": rel["sha256"], "experiment": e["id"],
-                "steps": int(done.get("step") or 0), "tokens": int(done.get("tokens") or 0)}
+        if e.get("candidate_version"):
+            try:
+                rel = M.release(ctx, int(e["candidate_version"]))
+            except Exception:  # noqa: BLE001 — deleted by retention: nothing to continue from
+                rel = None
+            path = Path((rel or {}).get("path") or "") / "model.pt"
+            if rel and path.is_file() and rel.get("sha256") and \
+                    (not want_fp or rel["info"].get("tokenizer_fingerprint") == want_fp):
+                return {"version": rel["version"], "path": str(path), "sha256": rel["sha256"], "experiment": e["id"],
+                        "steps": int(done.get("step") or 0), "tokens": int(done.get("tokens") or 0)}
+        rd = B.run_dir(ctx, e)
+        rounds = sorted(rd.glob("round-*.pt")) if rd.is_dir() else []
+        for path in ([rd / "resume-base.pt"] if (rd / "resume-base.pt").is_file() else []) + rounds[::-1][:1]:
+            resume = cfg.get("resume") or {}
+            if path.name == "resume-base.pt" and resume.get("sha256") and file_sha256(path) != resume["sha256"]:
+                continue
+            return {"version": None, "path": str(path), "sha256": file_sha256(path), "experiment": e["id"],
+                    "steps": int(resume.get("step") or done.get("step") or 0), "tokens": int(resume.get("tokens") or 0)}
     return None
 
 
@@ -406,7 +418,7 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
     a = rs["architecture"]
     _add(ctx, out, cfg, src, f"Right-sized successor: {rs['params_before']:,} → {rs['params_after']:,} parameters, "
          f"{a.get('max_seq_len', 0):,}-token context{', new BPE tokenizer' if tok else ''}, "
-         f"{'continuing the declined attempt v' + str(warm['version']) + ' for' if warm else 'trained from scratch for'} "
+         f"{('continuing the declined attempt v' + str(warm['version']) if warm.get('version') else 'continuing experiment #' + str(warm['experiment']) + chr(39) + 's training (' + format(warm['steps'], ',') + ' steps done)') + ' for' if warm else 'trained from scratch for'} "
          f"{steps:,} steps (about {cfg['rebirth']['planned_hours']} h at the measured speed; shared with the workers "
          "when they are online). It replaces the current model only if it passes every gate.", 99)
 

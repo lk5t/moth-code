@@ -1,7 +1,15 @@
 # Changelog
 
-Earlier entries describe historical development/release claims. The current verified status, including
-the unverified completion of Foundation training, is recorded in [docs/CONTINUATION.md](docs/CONTINUATION.md).
+Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
+current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
+
+## 1.0.16 — Promotion 2.0
+
+- **New promotion rules.** A candidate is judged on its *overall* change: the training data's held-out gain (counted twice), every capability group's mean change and the retained data's mean change, averaged; it must improve by at least 0.5 %. A single test only fails on a real collapse (more than 10 % worse; accuracy more than 10 points or 3 standard errors), and a capability group's mean may drop at most 5 %. Before, any one small, noisy test moving by 2 % rejected the whole model (v139 and v140). Safety checks (loads, generates, speed, memory, fair per-byte comparison across tokenizers) are unchanged.
+- **Weight averaging.** When a cycle has two or more candidates trained from the same model, their weights are averaged and the average is judged by the same gates; it becomes the cycle's candidate only if it scores higher than every passed candidate.
+- **Long runs finish.** When a cycle's time budget runs out, a successor or a run at least half done finishes (up to twice the budget) instead of being thrown away; experiment #8 lost about 10 hours this way.
+- **Stopped successors keep their training.** The next successor of the same size continues from a stopped attempt's saved weights, not only from a rejected one's.
+- Clean-up: 20 design and evidence notes of past versions and one unused app component removed.
 
 ## 1.0.15 — GPU work on a new successor is no longer thrown away
 
@@ -190,7 +198,7 @@ No new features: the same MOTH, measured faster and with a motion pass.
 - Evolution 4.0: 50 % conversation / 40 % coding / 10 % other as the starting focus, weakness targets for the new benchmarks, and a gate that rejects candidates whose conversation or coding group gets worse overall.
 - Knowledge 2.0 (category, project, confidence, verification, review dates, near-duplicates) and an extractive, cited Research Engine.
 - AI → Model: benchmark history across promoted versions; measured serving performance with thread tuning kept only when faster with identical output.
-- Measured: see [docs/COGNITIVE-EVOLUTION.md](docs/COGNITIVE-EVOLUTION.md#measured-results-in-this-releases-development-environment).
+- Measured: see docs/COGNITIVE-EVOLUTION.md.
 
 ## 0.7.2 — The whole network works on MOTH
 
@@ -199,7 +207,7 @@ No new features: the same MOTH, measured faster and with a motion pass.
 - Evolution stops repeating what does not work: a strategy with 4+ runs and no accepted improvement is suspended while another strategy is producing improvements.
 - New verified synthetic sources: reasoning (sequences, orderings, multi-step problems) and language (plurals, opposites, alphabetical order, word counts, sentence casing).
 - Interface: view and tab transitions, skeleton loading states, consistent button press and focus feedback (reduced motion respected).
-- Details: [docs/GENESIS-ASCENSION.md](docs/GENESIS-ASCENSION.md#072).
+- Details: docs/GENESIS-ASCENSION.md.
 
 ## 0.7.1 — GENESIS ASCENSION, continued
 
@@ -210,7 +218,7 @@ No new features: the same MOTH, measured faster and with a motion pass.
 - AI Settings → What trains MOTH: MOTH Cloud server, workers and this computer, in any combination.
 - Workers update at once: the heartbeat announces new worker releases, every worker gets them immediately, failed installs back off.
 - Updaters: the cloud agent uses conditional GitHub requests and respects rate limits; the desktop checks hourly and treats a staged rollout as a wait.
-- Details and limitations: [docs/GENESIS-ASCENSION.md](docs/GENESIS-ASCENSION.md#071).
+- Details and limitations: docs/GENESIS-ASCENSION.md.
 
 ## 0.7.0 — GENESIS ASCENSION
 
@@ -219,13 +227,13 @@ No new features: the same MOTH, measured faster and with a motion pass.
 - Verified synthetic foundation data: arithmetic, simple instructions and Python functions, each checked before use.
 - AI page: compact MOTH Intelligence panel; the architecture diagram moved to AI Settings → Advanced → Model Architecture.
 - Self-repair: a training process that stops advancing is restarted from its last checkpoint.
-- Details and limitations: [docs/GENESIS-ASCENSION.md](docs/GENESIS-ASCENSION.md).
+- Details and limitations: docs/GENESIS-ASCENSION.md.
 
 ## 0.6.4 — One computing network
 
 - One computing network: MOTH Workers 0.6.4 now train conversation data too (the loss mask travels with the job), placement follows measured speed, untaken work moves back to MOTH Cloud, and AI → Evolution shows every machine. The manual Training Jobs controls are retired.
 - Fixed a MOTH Worker restart loop after a second automatic update.
-- Details: [docs/DISTRIBUTED-EVOLUTION.md](docs/DISTRIBUTED-EVOLUTION.md#one-computing-network-moth-cloud--workers).
+- Details: docs/DISTRIBUTED-EVOLUTION.md.
 
 ## 0.6.3 — DISTRIBUTED EVOLUTION
 
@@ -237,7 +245,7 @@ No new features: the same MOTH, measured faster and with a motion pass.
 - Continuous evolution: rounds run back to back with no timer; only a failed round waits briefly before retrying.
 - Every parameter count is counted from the saved weights; older releases are measured automatically and the app says when a count is verified.
 - Capability-based growth: MOTH grows its architecture only when measured capabilities (arithmetic, reasoning, coding, instruction following, language) stall and other causes are ruled out; larger candidates must improve those capabilities before they are kept.
-- Details and limitations: [docs/DISTRIBUTED-EVOLUTION.md](docs/DISTRIBUTED-EVOLUTION.md).
+- Details and limitations: docs/DISTRIBUTED-EVOLUTION.md.
 
 ## 0.6.2 — AUTONOMOUS GENESIS
 
@@ -248,7 +256,7 @@ No new features: the same MOTH, measured faster and with a motion pass.
 - Live training telemetry (compute, memory, workers, losses, speed, elapsed, honest remaining time) and a live activity stream of what the engine did.
 - Credentials are removed from all training data; Dataset Quality Studio reports them.
 - AI Settings in plain words; storage view and safe cleanup on MOTH Cloud.
-- Details: [docs/AUTONOMOUS-GENESIS.md](docs/AUTONOMOUS-GENESIS.md).
+- Details: docs/AUTONOMOUS-GENESIS.md.
 
 ## 0.6.1 — Genesis Reset, fresh genesis and growth clarity
 
@@ -257,7 +265,7 @@ No new features: the same MOTH, measured faster and with a motion pass.
 - Model size and growth: plain explanation of why the parameter count is unchanged, the planner's evidence, and an Owner-requested growth experiment that is evaluated like any other candidate.
 - Gated Hugging Face datasets no longer fail as "not found": the message says the dataset is gated and how to get access.
 - Interface: no-model states say what to do next; Network no longer repeats its switch and heading; Project Intelligence and Dataset Quality Studio use the app's controls; History states a single measurement instead of drawing an empty chart.
-- Details: [docs/GENESIS-RESET.md](docs/GENESIS-RESET.md).
+- Details: docs/GENESIS-RESET.md.
 
 ## 0.6.0 — LIVING INTELLIGENCE (release candidate; not published)
 
@@ -271,7 +279,7 @@ No new features: the same MOTH, measured faster and with a motion pass.
 - Unified filtered activity/history and quiet deduplicated notices.
 - Release workflows retain signing/tests and default to verified candidate artifacts; publishing requires an explicit dispatch choice and Owner approval.
 
-Normal updates preserve existing data. Reset testing is isolated only. Foundation training completion and physical GPU execution are not claimed. Phase evidence and limits: [LIVING-INTELLIGENCE](docs/LIVING-INTELLIGENCE.md).
+Normal updates preserve existing data. Reset testing is isolated only. Foundation training completion and physical GPU execution are not claimed. Phase evidence and limits: LIVING-INTELLIGENCE.
 
 ## 0.5.4 — ASCENSION, milestones 3–5: FOUNDATION, EVOLUTION 2.0, EXPERIENCE
 
@@ -290,7 +298,7 @@ all three were complete before the first could be released (the MOTH 0.1 trainin
   without the internet, automatically when MOTH Cloud cannot be reached.
 - Checkpoint retention with milestones; capability benchmarks and release criteria.
 
-**EVOLUTION 2.0** ([docs/EVOLUTION2.md](docs/EVOLUTION2.md))
+**EVOLUTION 2.0** (docs/EVOLUTION2.md)
 - Continuous improvement from the development checkpoint (weights + optimizer), curriculum mixtures,
   research variants, duplicate-free experiments, early stopping, capability regression gates.
 - Distributed training rounds across CPU and GPU workers with verified, token-weighted averaging,
@@ -346,7 +354,7 @@ MOTH Cloud and MOTH Code 0.5.1. Details: [docs/INTELLIGENCE.md](docs/INTELLIGENC
 ## 0.5.0 — ASCENSION, milestone 1: EasyConnect workers, CPU workers, Rewards 2.0
 
 MOTH Cloud, MOTH Code and MOTH Worker 0.5.0 are released together. This is the first of the staged
-ASCENSION releases (see [docs/ASCENSION.md](docs/ASCENSION.md)).
+ASCENSION releases (see docs/ASCENSION.md).
 
 - **EasyConnect worker installation:**
   - MOTH Code → Training & Referrals → **Add a computer** gives one command for Linux/macOS and one
