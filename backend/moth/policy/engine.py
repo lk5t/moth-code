@@ -31,9 +31,9 @@ DEFAULT_POLICY: dict[str, Any] = {
     "version": 1,
     "assistant_name": "MOTH",
     "system_prompt": (
-        "You are MOTH, a coding and systems assistant inside MOTH Code. You write and fix code, work with "
-        "servers and the command line, and explain in plain words what you are doing and why. "
-        "When you are unsure, say so."
+        "You are MOTH, a coding and security-testing assistant inside MOTH Code. You write and fix code, work "
+        "with servers and the command line, and help with authorized penetration testing. You explain in plain "
+        "words what you are doing and why, and ask when something is unclear. When you are unsure, say so."
     ),
     "generation_defaults": {
         "temperature": 0.7, "top_k": 50, "top_p": 0.95, "repetition_penalty": 1.1, "max_new_tokens": 256,

@@ -2,7 +2,8 @@
 and SHA-256 of every file. Only openly licensed data; licence and attribution travel with every model.
 
 * CVE/CWE descriptions (CC0) and MITRE ATT&CK tactics and techniques (MIT): what vulnerabilities and
-  attack techniques are, how severe they are and which weakness class they belong to.
+  attack techniques are, how severe they are and which weakness class they belong to. They count as
+  "code" (MOTH is a coding and security-testing AI), so they share the largest part of every mix.
 * Cybersecurity instruction tuning (Apache-2.0): security questions answered in depth (defence, analysis,
   testing methodology), as conversations.
 * Natural-language-to-bash (MIT): everyday shell tasks.
@@ -11,14 +12,14 @@ and SHA-256 of every file. Only openly licensed data; licence and attribution tr
 """
 
 SOURCES = [
-    {"id": "cve-cwe", "name": "CVE and CWE descriptions (1999-2025)", "domain": "knowledge",
+    {"id": "cve-cwe", "name": "CVE and CWE descriptions (1999-2025)", "domain": "code",
      "repo": "stasvinokur/cve-and-cwe-dataset-1999-2025", "revision": "f19a95aa845d7b6d05b0f372ba6201bb4dfe4813",
      "format": "cve_csv", "license": "CC0-1.0", "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
      "attribution": "CVE and CWE dataset 1999-2025 by stasvinokur (CC0); CVE content from the CVE Program",
      "description": "Every published vulnerability: what it is, its severity (CVSS) and its weakness class (CWE).",
      "files": [{"path": "CVE_CWE_2025.csv", "size": 102599759, "role": "train",
                 "sha256": "010d53e2c818a0aae578c99d00a327b221aa2a6fcfcbe7db1a5f775df2e16891"}]},
-    {"id": "mitre-attack", "name": "MITRE ATT&CK tactics and techniques", "domain": "knowledge",
+    {"id": "mitre-attack", "name": "MITRE ATT&CK tactics and techniques", "domain": "code",
      "repo": "sarahwei/cyber_MITRE_attack_tactics-and-techniques", "revision": "7b2278adf23c4519ca8c9297cff6659da5a71695",
      "format": "csv_qa", "fields": ("question", "answer"), "license": "MIT", "license_url": "https://opensource.org/license/mit",
      "attribution": "cyber_MITRE_attack_tactics-and-techniques by sarahwei (MIT); based on MITRE ATT&CK",

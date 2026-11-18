@@ -3,6 +3,11 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 1.0.20 — A coding and security-testing AI
+
+- CVE/CWE and MITRE ATT&CK now count as code, so with the cybersecurity instructions, bash and multi-language code they share the largest part (55 %) of every training mix instead of the 4 % knowledge share.
+- MOTH's system prompt describes it as a coding and security-testing assistant: it writes and fixes code, works with servers and the command line, helps with authorized penetration testing, explains what it is doing and asks when something is unclear.
+
 ## 1.0.19 — Security datasets and code in many languages
 
 Five new training sources, each openly licensed and pinned to an exact upstream version with the size and SHA-256 of every file:
