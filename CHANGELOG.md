@@ -3,6 +3,20 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 1.0.19 — Security datasets and code in many languages
+
+Five new training sources, each openly licensed and pinned to an exact upstream version with the size and SHA-256 of every file:
+
+| Source | What MOTH learns | Licence |
+| --- | --- | --- |
+| CVE and CWE descriptions (1999-2025) | every published vulnerability: what it is, its severity (CVSS) and weakness class (CWE) | CC0 |
+| MITRE ATT&CK tactics and techniques | the attack-technique framework: tactics, techniques, detection and mitigation | MIT |
+| Cybersecurity instruction tuning | security questions answered in depth: defence, analysis, hardening, testing methodology | Apache-2.0 |
+| Natural language to bash | everyday shell tasks and the command that does them | MIT |
+| GitHub code (github-code-clean) | real, permissively licensed code in ~30 languages (C, C++, Go, Rust, Java, JavaScript, TypeScript, PHP, Ruby, shell, SQL…) | Apache-2.0 |
+
+The small ones join the data library first; the larger ones lead the list the library grows through.
+
 ## 1.0.18 — Servers and engagements
 
 - **Servers.** Save SSH profiles (name, host, user, port, optional key file) in Settings → Servers & security. MOTH's agent can run commands on them with the new `ssh_run` tool; every command is shown to you and needs your approval, and output streams live. No passwords are stored: the system's ssh uses your own keys or SSH agent; new host keys are pinned on first use.

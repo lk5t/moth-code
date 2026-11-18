@@ -178,6 +178,11 @@ from moth.datafactory.large_sources import SOURCES as _LARGE  # noqa: E402
 
 SOURCES += _LARGE
 
+# 1.0.19: security knowledge and code in many languages (see security_sources)
+from moth.datafactory.security_sources import SOURCES as _SECURITY  # noqa: E402
+
+SOURCES += _SECURITY
+
 # Rough bytes of downloaded file per character of text it yields (parquet is compressed).
 BYTES_PER_CHAR = {"parquet_text": 0.45, "parquet_messages": 0.45, "parquet_qa": 0.45, "stories": 1.0,
                   "qa_json": 1.1, "oasst_trees": 0.5}

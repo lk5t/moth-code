@@ -168,6 +168,42 @@ def train_records(src: dict[str, Any], f: dict[str, Any], path: Path) -> Iterato
             if q and a:
                 yield {"uid": f"{base}:{row.get('index', i)}", "source": sid, "domain": src.get("domain", "code"),
                        "messages": _msgs(("user", q[:12_000]), ("assistant", a[:16_000]))}
+    elif fmt == "csv_qa":  # 1.0.19: question/answer columns in a CSV file
+        import csv
+
+        q_key, a_key = src.get("fields", ("question", "answer"))
+        with open(path, encoding="utf-8", newline="") as fh:
+            for i, row in enumerate(csv.DictReader(fh)):
+                q, a = (row.get(q_key) or "").strip(), (row.get(a_key) or "").strip()
+                if q and a:
+                    yield {"uid": f"{base}:{i}", "source": sid, "domain": src.get("domain", "knowledge"),
+                           "messages": _msgs(("user", q[:12_000]), ("assistant", a[:16_000]))}
+    elif fmt == "cve_csv":  # 1.0.19: one vulnerability per row, as a question and a factual answer
+        import csv
+
+        csv.field_size_limit(10_000_000)
+        with open(path, encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh):
+                cve, desc = (row.get("CVE-ID") or "").strip(), (row.get("DESCRIPTION") or "").strip()
+                if not cve or not desc or desc.startswith("** REJECT"):
+                    continue
+                sev = (row.get("SEVERITY") or "").strip()
+                score = next((row.get(k) for k in ("CVSS-V4", "CVSS-V3", "CVSS-V2")
+                              if (row.get(k) or "None") not in ("None", "")), None)
+                cwe = (row.get("CWE-ID") or "").strip()
+                facts = ", ".join(x for x in (f"severity {sev.lower()}" if sev and sev != "None" else "",
+                                              f"CVSS {score}" if score else "",
+                                              f"weakness {cwe}" if cwe and cwe not in ("None", "NVD-CWE-noinfo", "NVD-CWE-Other") else "") if x)
+                yield {"uid": f"{base}:{cve}", "source": sid, "domain": src.get("domain", "knowledge"),
+                       "messages": _msgs(("user", f"What is {cve}?"),
+                                         ("assistant", f"{cve}: {desc[:6000]}" + (f" ({facts})" if facts else "")))}
+    elif fmt == "parquet_code":  # 1.0.19: source files with their language and path (github-code-clean)
+        for i, row in enumerate(_parquet_rows(path, ["code", "language", "path"])):
+            code = (row.get("code") or "").strip()
+            if 40 <= len(code) <= 40_000:
+                lang, p = row.get("language") or "", row.get("path") or ""
+                yield {"uid": f"{base}:{i}", "source": sid, "domain": src["domain"],
+                       "text": f"// {p} ({lang})\n{code}"}
     elif fmt == "parquet_text":  # 0.9.0: documents (Cosmopedia, FineWeb-Edu)
         for i, row in enumerate(_parquet_rows(path, [src.get("text_field", "text")])):
             text = (row.get(src.get("text_field", "text")) or "").strip()
