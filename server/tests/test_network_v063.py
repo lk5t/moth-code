@@ -144,7 +144,9 @@ def test_cloud_and_worker_train_masked_conversation_data_together(client, owner,
     assert wrk["started_at"] < end_l and loc["started_at"] < wrk["started_at"] + wrk["compute_seconds"] + 60
     # the worker trained with the mask: some targets were excluded, never all
     masked = [s for s in seen if s]
-    assert masked and all(0 < ones <= n for n, ones in masked) and any(ones < n for n, ones in masked)
+    # some targets masked, never more than the batch; a short batch may hold only prompt text (1.0.20: longer
+    # system prompt), so a batch with no learnable token is allowed as long as others have some
+    assert masked and all(0 <= ones <= n for n, ones in masked) and any(0 < ones < n for n, ones in masked)
     assert None not in seen
     tp = C.throughput(ctx)
     assert tp.get(f"worker:{w['worker_id']}", 0) > 0 and tp.get("local:cpu", 0) > 0
