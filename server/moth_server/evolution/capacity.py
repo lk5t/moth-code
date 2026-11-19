@@ -61,7 +61,27 @@ ACTIONS = ("continue_training", "improve_data", "adjust_training", "foundation_t
 # measurably better. Shapes grow in width and depth together, like the presets.
 SHAPES = ((128, 4, 4, 384), (192, 6, 6, 576), (256, 6, 4, 768), (320, 8, 5, 960), (384, 8, 6, 1152),
           (512, 8, 8, 1536), (512, 12, 8, 1536), (640, 12, 10, 1920), (768, 12, 12, 2304))
-REBIRTH_FACTOR = 4.0          # a successor is planned when the right size is at least this many times larger
+REBIRTH_FACTOR = 4.0          # (before 2.1) a successor was planned only when the right size was ≥ 4× larger
+# 2.1 gradual growth: MOTH grows in small steps (100K → 300K → 900K …), each a few hours at most and starting
+# from the previous model's weights, instead of one huge jump trained from scratch for days.
+GROWTH_STEP = 3.0             # a successor is at most 3× the current model's parameters
+GROWTH_MIN = 1.8              # … and at least 1.8× (smaller steps are not worth a new model)
+BPE_MIN_PARAMS = 2_000_000    # small steps keep the byte-level tokenizer (weights carry over); the BPE switch
+                              # comes once the model is big enough that its larger vocabulary is a small share
+
+
+def _shapes():
+    """Candidate shapes from tiny to large (d_model, layers, heads, ffn): fine steps so growth can be gradual."""
+    out = []
+    for d in (32, 48, 64, 80, 96, 128, 160, 192, 224, 256, 320, 384, 448, 512, 640, 768):
+        heads = max(1, d // 32)
+        while (d // heads) % 2:
+            heads -= 1
+        for layers in (2, 3, 4, 6, 8, 10, 12):
+            if layers > max(2, d // 24):
+                continue
+            out.append((d, layers, heads, 3 * d))
+    return out
 TOKENS_PER_PARAM_TARGET = 20.0
 DAY_SECONDS = 86400.0
 
@@ -248,18 +268,17 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
         from moth_server.intelligence import library
 
         waiting = None
-        if not blocked and not rs.get("tokenizer") and library.byte_level(base):
+        if not blocked and not rs.get("tokenizer") and not rs.get("keep_bytes") and library.byte_level(base):
             waiting = library.ensure_successor_tokenizer(ctx)  # 0.10.0: a BPE successor needs its own data
         if waiting:
             cause("successor_tokenizer", True, waiting)
             out["successor_waiting"] = waiting
         elif not blocked:
             out.update(rebirth=rs, params_after=rs["params_after"])
-            return decide("rebirth", f"MOTH is far too small to write sentences. Training a right-sized successor "
-                          f"({rs['params_after']:,} parameters).",
-                          f"{rs['params_before']:,} parameters is {rs['params_after'] / max(1, rs['params_before']):.0f}× "
-                          f"smaller than what the measured compute can train in about a day; growth adds at most 50% "
-                          f"per step and cannot widen the model, so a successor is trained from scratch on the same "
+            return decide("rebirth", f"Growing MOTH one step: {rs['params_before']:,} → {rs['params_after']:,} parameters.",
+                          f"the measured compute can train about {rs['optimal_params']:,} parameters properly in a day; "
+                          f"MOTH grows gradually (at most {GROWTH_STEP:.0f}× per step"
+                          f"{', starting from the current model' + chr(39) + 's weights' if not rs.get('tokenizer') else ''}) on the same "
                           f"curriculum{' with a new BPE tokenizer' if rs.get('tokenizer') else ''} "
                           f"({rs['architecture']['max_seq_len']}-token context; speed {rs['speed_basis']}: "
                           f"{rs['successor_tokens_per_second']:,.0f} tokens/s) and replaces the current model only "
@@ -424,8 +443,11 @@ def right_size(ctx: Ctx, base: dict, settings: dict, probe: bool = True) -> dict
     workers = sum(float(v) for k, v in tp.items() if k.startswith("worker:") and v)
     share = (local + workers) / local      # the workers add speed in proportion to the server's
     max_params = int(g.get("max_params", 0)) or None
-    tok = library.successor_tokenizer(ctx) if library.byte_level(base) else None
+    byte = library.byte_level(base)
+    keep_bytes = byte and params * GROWTH_STEP < BPE_MIN_PARAMS  # 2.1: small steps stay byte-level
+    tok = library.successor_tokenizer(ctx) if byte and not keep_bytes else None
     vocab = ((int(tok["vocab_size"]) + 63) // 64) * 64 if tok else cfg_model.vocab_size
+    cap = params * GROWTH_STEP if not tok else max(params * GROWTH_STEP, BPE_MIN_PARAMS)
     context = max(cfg_model.max_seq_len, SUCCESSOR_CONTEXT)
     seq = min(context, int(((settings.get("training") or {}).get("seq_len")) or 256) * 8)
     flops_rate = 6.0 * params * (local + workers)  # the old compute rule, only to skip hopeless shapes
@@ -436,11 +458,15 @@ def right_size(ctx: Ctx, base: dict, settings: dict, probe: bool = True) -> dict
     # and for the difference between a short probe and a real run.
     here = _probe(ctx, {**cfg_model.to_dict()}, seq) if probe else None
     factor = min(100.0, max(0.1, local / here)) if here else 1.0
-    for d, layers, heads, ffn in SHAPES:
+    shapes = []
+    for d, layers, heads, ffn in _shapes():
         c = MothConfig.from_dict({**cfg_model.to_dict(), "d_model": d, "n_layers": layers, "n_heads": heads,
                                   "n_kv_heads": heads, "ffn_hidden": ffn, "vocab_size": vocab, "max_seq_len": context})
-        n = c.num_params()
-        if max_params and n > max_params:
+        shapes.append((c.num_params(), c))
+    for n, c in sorted(shapes, key=lambda x: x[0]):
+        if n <= params * 1.05:
+            continue
+        if n > cap or (max_params and n > max_params):
             break
         need = TOKENS_PER_PARAM_TARGET * n / DAY_SECONDS   # tokens/s that trains it properly in a day
         estimate = flops_rate / (6.0 * n)
@@ -457,14 +483,15 @@ def right_size(ctx: Ctx, base: dict, settings: dict, probe: bool = True) -> dict
     if best is None:
         return None
     n, cfg_new, tps = best
-    if n < params * REBIRTH_FACTOR:
+    if n < params * GROWTH_MIN:
         return None
     arch = {k: getattr(cfg_new, k) for k in ("d_model", "n_layers", "n_heads", "n_kv_heads", "ffn_hidden",
                                                "vocab_size", "max_seq_len")}
     return {"params_before": params, "params_after": n, "optimal_params": int(tps * DAY_SECONDS / TOKENS_PER_PARAM_TARGET),
             "architecture": arch, "tokens_per_second_now": local + workers,
             "successor_tokens_per_second": round(tps, 1), "speed_basis": basis, "seq_len": seq,
-            "tokenizer": tok, "tokens_target": int(TOKENS_PER_PARAM_TARGET * n)}
+            "tokenizer": tok, "tokens_target": int(TOKENS_PER_PARAM_TARGET * n), "keep_bytes": bool(keep_bytes),
+            "gradual": True}
 
 
 def successor_running(ctx: Ctx) -> bool:

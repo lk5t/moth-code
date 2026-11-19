@@ -108,6 +108,9 @@ def test_successor_is_trained_by_the_workers_together(client, owner, tmp_path, m
 def test_successor_with_its_own_tokenizer_is_judged_per_byte(client, owner, tmp_path, monkeypatch):
     """A byte-level lineage's successor trains on data prepared with a new BPE tokenizer and is compared
     with the current model in bits per byte of the same held-out text."""
+    from moth_server.evolution import capacity as _CAP
+    monkeypatch.setattr(_CAP, "BPE_MIN_PARAMS", 0)  # 2.1: tiny test models switch to BPE at once
+    monkeypatch.setattr(_CAP, "GROWTH_STEP", 1000.0)
     from moth_server.evolution import settings as S, v2 as V2
     from moth_server.intelligence import library
     from test_evolution_v053 import _world as world053

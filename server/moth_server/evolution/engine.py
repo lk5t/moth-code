@@ -815,6 +815,15 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
         from moth_server.evolution import v2 as V2
 
         stop = V2.early_stop_reason(V2.val_history(rd / "events.jsonl"), settings)
+        rb = (exp.get("config") or {}).get("rebirth") or {}
+        from moth_server.evolution.capacity import GROWTH_STEP
+        if not stop and rb and not rb.get("gradual") and int(rb.get("params_after") or 0) > \
+                int(rb.get("params_before") or 0) * GROWTH_STEP * 1.5:
+            # 2.1 gradual growth: a successor planned as one huge jump (days of training from scratch) is
+            # replaced by small steps that each start from the previous model
+            stop = (f"replanned: MOTH now grows in small steps ({int(rb['params_before']):,} → at most "
+                    f"{int(rb['params_before'] * GROWTH_STEP):,} parameters) instead of one jump to "
+                    f"{int(rb['params_after']):,}")
         if stop:  # research lab: a run that stopped improving is not worth more compute
             B.kill_local(ctx, exp)
             MEM.update_experiment(ctx, exp["id"], status="rejected", error=f"stopped early: {stop}", finished_at=now(),

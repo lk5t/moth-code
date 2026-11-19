@@ -55,6 +55,8 @@ class TrainConfig:
     eval_iters: int = 20
     log_interval: int = 10
     checkpoint_interval: int = 500
+    # 2.1: also save at least this often (minutes), so a restart never loses more than this much training
+    checkpoint_minutes: float = 15.0
     keep_checkpoints: int = 3
     keep_every: int = 0  # also keep every N-th step's checkpoint (milestones)
     device: str = "auto"  # auto | cuda | cpu
@@ -455,6 +457,7 @@ class Trainer:
         model.train()
         tokens_per_step = cfg.batch_size * cfg.grad_accum * train.seq_len
         t_last, tokens_since = time.time(), 0
+        last_ckpt = time.time()  # 2.1: time-based checkpoints
         stop_reason = "completed"
 
         def checkpoint() -> None:
@@ -536,8 +539,10 @@ class Trainer:
                         checkpoint()  # the selected weights must keep their own optimizer/RNG state
                         shutil.copyfile(latest_checkpoint(self.run_dir), self.run_dir / "checkpoints" / "best.pt.tmp")
                         (self.run_dir / "checkpoints" / "best.pt.tmp").replace(self.run_dir / "checkpoints" / "best.pt")
-                if self.step % cfg.checkpoint_interval == 0:
+                if self.step % cfg.checkpoint_interval == 0 or (
+                        cfg.checkpoint_minutes and time.time() - last_ckpt >= cfg.checkpoint_minutes * 60):
                     checkpoint()
+                    last_ckpt = time.time()
                 if cfg.duty_cycle < 1.0:  # throttle to respect user resource limits
                     busy = time.time() - t_step
                     time.sleep(busy * (1.0 / max(cfg.duty_cycle, 0.05) - 1.0))

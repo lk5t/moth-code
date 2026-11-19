@@ -13,7 +13,9 @@ def test_right_size_from_measured_compute(client, owner, tmp_path, monkeypatch):
     assert CAP.right_size(ctx, base, S.get(ctx)) is None  # nothing measured yet: no guess
     C.record_throughput(ctx, "local:cpu", 50_000, 1)  # 50k tokens/s, like a 6-core server on a 100k model
     rs = CAP.right_size(ctx, base, S.get(ctx))
-    assert rs and rs["params_after"] >= 4 * rs["params_before"] and rs["params_after"] <= rs["optimal_params"]
+    # 2.1 gradual growth: one step is 1.8–3× the current size, never one huge jump
+    assert rs and 1.8 * rs["params_before"] <= rs["params_after"] <= 3 * rs["params_before"]
+    assert rs["params_after"] <= rs["optimal_params"] and rs["gradual"]
     assert rs["architecture"]["d_model"] > json.loads(open(f"{base['path']}/config.json").read())["d_model"]
     S.update(ctx, {"growth": {"max_params": rs["params_before"] * 2}})  # the Owner's ceiling is respected
     assert CAP.right_size(ctx, base, S.get(ctx)) is None
@@ -35,7 +37,7 @@ def test_successor_trains_from_scratch_and_must_pass_the_gates(client, owner, tm
     assert succ["config"]["method"] == "from_scratch" and succ["config"]["no_single_worker"]
     assert r["architecture"]["max_seq_len"] == 2048 and succ["config"]["seq_len"] <= 2048  # 2.1: 2,048-token context
     assert r["speed_basis"] == "measured"  # 0.10.0: the successor's own shape was timed
-    assert r["params_after"] >= 4 * r["params_before"]
+    assert 1.8 * r["params_before"] <= r["params_after"] <= 3 * r["params_before"]  # 2.1: a gradual step
     assert any(e["kind"] == "growth.not_proposed" or e["kind"] == "experiment.planned" for e in MEM.events(ctx, 50))
     cyc = drive(ctx, lambda c: c["status"] in MEM.TERMINAL_CYCLE, timeout=900)
     succ = MEM.experiment(ctx, succ["id"])
