@@ -3,6 +3,11 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.1.2 — Clear worker status
+
+- "Workers online" counted MOTH Cloud's own built-in worker, so it showed "1" even when none of your computers was connected. It now counts only your workers ("none of N connected" when they are all offline; "+ MOTH Cloud" when the built-in one is helping).
+- The live training view says why a run trains on MOTH Cloud alone (for example "no other computer is online" or "it needs about X GB of free memory and your worker has less").
+
 ## 2.1.1 — MOTH grows gradually
 
 - **Small growth steps.** A bigger MOTH is at most 3× the current one (100K → about 270K → about 700K …) instead of one jump to ~18M parameters trained from scratch for days. Each step trains in hours, starts from the current model's weights (same tokenizer), and must pass the promotion rule. Small steps keep the byte-level tokenizer; the switch to the BPE tokenizer comes once MOTH passes about 2M parameters.

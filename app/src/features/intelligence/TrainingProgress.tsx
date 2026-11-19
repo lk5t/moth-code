@@ -29,7 +29,10 @@ function SystemStrip({ resources, network }: { resources: Any | null; network: A
     if (local.memory) cells.push([<MemoryStick key="m" />, "Memory", `${gb(local.memory.used)} of ${gb(local.memory.total)} in use`]);
     cells.push([<HardDrive key="g" />, gpu ? "GPU memory" : "GPU", gpu ? `${gb(gpu.memory_total - gpu.memory_free)} of ${gb(gpu.memory_total)} · ${gpu.name}` : "None on MOTH Cloud — CPU and worker training"]);
   }
-  if (network) cells.push([<Network key="n" />, "Workers online", `${network.workers_online} (${network.gpu_online} GPU · ${network.cpu_online} CPU)`]);
+  // 2.1: your own workers; MOTH Cloud's built-in worker is not counted (it was the "1" when nothing else was online)
+  if (network) cells.push([<Network key="n" />, "Your workers online", network.workers_online
+    ? `${network.workers_online} (${network.gpu_online} GPU · ${network.cpu_online} CPU)${network.cloud_worker_online ? " + MOTH Cloud" : ""}`
+    : network.workers_registered ? `none of ${network.workers_registered} connected` : "none added yet"]);
   if (!cells.length) return null;
   return <dl aria-label="Compute right now" className="stagger grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
     {cells.map(([icon, label, value]) => <div key={label} className="lift flex items-start gap-2 rounded-lg border border-border bg-bg px-3 py-2 text-xs [&_svg]:mt-0.5 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-accent">
@@ -68,6 +71,8 @@ function Experiment({ experiment, report, paused, nowSec, arch }: { experiment: 
     {experiment.successor && <p className="mt-2 rounded-md border border-accent/40 bg-accent-soft px-2 py-1 text-[0.6875rem] text-fg">
       Training MOTH's bigger successor: {Number(experiment.successor.params_before).toLocaleString()} → <b>{Number(experiment.successor.params_after).toLocaleString()}</b> parameters
       {experiment.successor.architecture?.max_seq_len ? ` · reads ${experiment.successor.architecture.max_seq_len.toLocaleString()} tokens at once` : ""}</p>}
+    {running && experiment.backend !== "distributed" && experiment.not_shared_reason && <p className="mt-2 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-[0.6875rem] text-warning">
+      Training on MOTH Cloud alone: {experiment.not_shared_reason}.</p>}
     <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,3fr)]">
       <div className="rounded-lg border border-border bg-[radial-gradient(ellipse_at_top,rgb(193_18_31/0.10),transparent_70%)] p-2">
         <LossChart points={report.history ?? []} live={active} />

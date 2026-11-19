@@ -611,6 +611,9 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     online = [w for w in ctx.db.all(_select(workers).where(workers.c.revoked_at.is_(None)))]
     t = __import__("time").time()
     on = [w for w in online if (w["last_heartbeat_at"] or 0) >= t - 180]
+    # 2.1: MOTH Cloud's own built-in worker is not "a worker online": count only other computers
+    cloud_on = [w for w in on if _json.loads(w["hardware"] or "{}").get("worker_kind") == "cloud"]
+    on = [w for w in on if w not in cloud_on]
     gpu = sum(1 for w in on if _json.loads(w["hardware"] or "{}").get("compute") == "gpu")
     latest = library.latest_ready(ctx)
     lib = None
@@ -635,6 +638,8 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                                                   or int((((e["config"].get("rebirth") or {}).get("architecture") or {})
                                                           .get("vocab_size")) or _base_vocab(ctx, e)) > 512) else "byte",
                           "requires_approval": bool(e["config"].get("requires_approval") and not e["config"].get("approved_by")),
+                          # 2.1: why a run trains on MOTH Cloud alone (e.g. "no other computer is online")
+                          "not_shared_reason": (e.get("resources") or {}).get("handoff_reason"),
                           "progress": e.get("progress"), "metrics": e.get("metrics"),
                           "measurement": B.progress(ctx, e)
                           if e.get('backend') == 'local' and e['status'] in ('running', 'paused')
@@ -708,6 +713,8 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
             "next_cycle_at_estimate": st.get("next_cycle_at") or None, "curriculum": CU.state(ctx).get("stage")},
         "datasets": lib,
         "network": {"workers_online": len(on), "gpu_online": gpu, "cpu_online": len(on) - gpu,
+                    "cloud_worker_online": bool(cloud_on),
+                    "workers_registered": sum(1 for w in online if _json.loads(w["hardware"] or "{}").get("worker_kind") != "cloud"),
                     "verified_tokens": int(ctx.db.one(_select(func.coalesce(func.sum(workers.c.trained_tokens), 0)
                                                               .label("t")))["t"]),
                     "verified_jobs": int(ctx.db.one(_select(func.coalesce(func.sum(workers.c.verified_jobs), 0)
