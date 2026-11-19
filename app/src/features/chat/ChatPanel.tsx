@@ -1,7 +1,7 @@
 import { navigate } from "@/lib/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MothEvent } from "@/lib/events";
-import { ArrowUp, Cloud, FileText, LogIn, MessageSquarePlus, Paperclip, RefreshCw, Square, Upload, X } from "lucide-react";
+import { ArrowUp, Bug, Code2, HelpCircle, Radar, ShieldCheck, Cloud, FileText, LogIn, MessageSquarePlus, Paperclip, RefreshCw, Square, Upload, X } from "lucide-react";
 import { formatAttachments, formatBytes, onDesktopDrop, readFiles, readPaths, splitAttachments, type Attachment } from "@/lib/attachments";
 import { useCloudStatus } from "@/lib/cloud";
 import { openAccountDialog } from "@/features/account/AccountDialog";
@@ -22,14 +22,32 @@ import { AnswerFooter, type AnswerMeta } from "@/features/intelligence/AnswerFoo
 import { useCloudProgress } from "@/lib/cloud-progress";
 import { modelLabel } from "@/lib/model-label";
 import { UsageRing } from "@/components/UsageRing";
+import { parseScan, scanToChat, startScan, type ScanPlan } from "@/lib/scans";
+import { ConfirmScan, ScanCard } from "@/features/security/ScanCard";
 
 interface ChatMessage {
   id: number | string;
-  role: "user" | "assistant" | "error";
+  role: "user" | "assistant" | "error" | "scan";
+  scan?: { stage: "confirm" | "starting" | "running" | "cancelled" | "refused"; text: string; plan?: ScanPlan; refused?: string; id?: string };
   content: string;
-  meta?: ({ model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string; compacted?: boolean } & AnswerMeta) | null;
+  meta?: ({ scan_id?: string; model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string; compacted?: boolean } & AnswerMeta) | null;
   streaming?: boolean;
 }
+
+/** 2.0 starter prompts: what MOTH can do, one click away. */
+const STARTERS = [
+  { label: "Fix a bug in my code", text: "Fix this bug: ", icon: Bug },
+  { label: "Explain an error", text: "Explain this error and how to fix it: ", icon: HelpCircle },
+  { label: "Write a function", text: "Write a Python function that ", icon: Code2 },
+  { label: "Scan my server", text: "Check 192.168.1.10 for vulnerabilities", icon: Radar },
+  { label: "Learn a security topic", text: "Explain how SQL injection works and how to prevent it", icon: ShieldCheck },
+];
+const PROJECT_STARTERS = [
+  { label: "Explain this project", text: "Explain how this project is organised", icon: HelpCircle },
+  { label: "Help debug a problem", text: "Help me debug: ", icon: Bug },
+  { label: "Write tests", text: "Write tests for ", icon: Code2 },
+  { label: "Review for security", text: "Review this project for security problems", icon: ShieldCheck },
+];
 
 interface Conversation {
   id: number;
@@ -163,6 +181,8 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
   const early = useRef<MothEvent[]>([]);
   const skipFetch = useRef<number | null>(null);
   cidRef.current = cid;
+  const messagesRef = useRef<ChatMessage[]>([]);
+  messagesRef.current = messages;
 
   const apply = (e: MothEvent) => {
     setMessages((cur) => {
@@ -195,10 +215,41 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     if (e.conversation_id === cidRef.current) apply(e);
   });
 
+  const setScan = (key: ChatMessage["id"], patch: Partial<NonNullable<ChatMessage["scan"]>>) =>
+    setMessages((cur) => cur.map((m) => m.id === key && m.scan ? { ...m, scan: { ...m.scan, ...patch } } : m));
+  const confirmScan = async (m: ChatMessage) => {
+    if (!m.scan) return;
+    setScan(m.id, { stage: "starting" });
+    try { const s = await startScan(m.scan.text); setScan(m.id, { stage: "running", id: s.id }); sounds.click(); }
+    catch (e) { setScan(m.id, { stage: "refused", refused: (e as Error).message }); }
+  };
+  // when a chat scan finishes, its summary is saved into the conversation, so follow-up questions have it as context
+  const savedScans = useRef(new Set<string>());
+  useEvent("scan", (e) => {
+    if (e.kind !== "finished" || savedScans.current.has(e.scan.id)) return;
+    const local = messagesRef.current.find((m) => m.scan?.id === e.scan.id);
+    if (!local?.scan) return;
+    savedScans.current.add(e.scan.id);
+    scanToChat(e.scan.id, cidRef.current, local.scan.text).then(async (r) => {
+      sounds.chime(); reloadConversations();
+      const history = await get<ChatMessage[]>(`/api/conversations/${r.conversation_id}/messages?limit=100`);
+      skipFetch.current = r.conversation_id; cidRef.current = r.conversation_id; setCid(r.conversation_id); setMessages(history);
+    }).catch(() => {});
+  });
+
   const send = async (regenerate = false) => {
     const typed = input.trim() || (attached.length ? "Take a look at these files." : "");
     const text = regenerate ? [...messages].reverse().find((m)=>m.role === "user")?.content ?? "" : formatAttachments(typed, attached);
     if (!text || busy) return;
+    if (!regenerate && !attached.length) {  // 2.0: "scan 10.0.0.5 port 8080" asks for a Yes and runs here, not in the cloud
+      const asked = await parseScan(typed).catch(() => null);
+      if (asked?.plan || asked?.refused) {
+        setInput(""); followTail.current = true; sounds.click();
+        setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: typed },
+          { id: `s${Date.now()}`, role: "scan", content: "", scan: asked.plan ? { stage: "confirm", text: typed, plan: asked.plan } : { stage: "refused", text: typed, refused: asked.refused! } }]);
+        return;
+      }
+    }
     if(!regenerate) {setInput("");setAttached([]);setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: text }]);}
     sounds.click();
     followTail.current=true;setBusy(true);
@@ -331,16 +382,29 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                   </div>
                 )}
                 {!noModel && <div className="flex flex-wrap gap-1.5">
-                  {(general ? ["Explain a concept", "Help me plan", "Write something"] : ["Explain this project", "Help debug a problem", "Review a change"]).map((prompt) =>
-                    <button key={prompt} className="cursor-pointer rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-accent/50 hover:text-fg"
-                      onClick={() => { setInput(prompt + ": "); composer.current?.focus(); }}>{prompt}</button>)}
+                  {(general ? STARTERS : PROJECT_STARTERS).map((st, i) =>
+                    <button key={st.label} style={{ animationDelay: `${i * 50}ms` }} className="lift flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-muted animate-slide-up hover:border-accent/50 hover:text-fg"
+                      onClick={() => { setInput(st.text); composer.current?.focus(); }}><st.icon className="size-3.5 text-accent" />{st.label}</button>)}
                 </div>}
               </div>
             ) : (
               <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
                 {messages.map((m,index) => {
                   const content = <div key={m.id} className={cn("flex animate-message-in", m.role === "user" && "justify-end")}>
-                    {m.role === "user" ? (
+                    {m.role === "scan" && m.scan ? (
+                      <div className="flex w-full gap-2.5"><MothEmblem motion={m.scan.stage === "running" ? "generating" : "none"} className="mt-0.5 size-5 shrink-0" />
+                        {m.scan.stage === "confirm" || m.scan.stage === "starting"
+                          ? <ConfirmScan plan={m.scan.plan!} busy={m.scan.stage === "starting"} onYes={() => void confirmScan(m)} onNo={() => setScan(m.id, { stage: "cancelled" })} />
+                          : m.scan.stage === "running" && m.scan.id ? <ScanCard id={m.scan.id} compact />
+                          : m.scan.stage === "cancelled" ? <div className="text-[0.8125rem] text-muted">Okay, nothing was scanned.</div>
+                          : <div className="max-w-xl rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[0.8125rem] text-warning">I won't scan that: {m.scan.refused}</div>}
+                      </div>
+                    ) : m.role === "assistant" && m.meta?.scan_id ? (
+                      <div className="flex w-full gap-2.5"><MothEmblem motion="none" className="mt-0.5 size-5 shrink-0" />
+                        <div className="min-w-0 flex-1 space-y-1.5"><ScanCard id={m.meta.scan_id} compact />
+                          <details className="text-[0.6875rem] text-muted"><summary className="cursor-pointer hover:text-fg">Full write-up</summary><div className="mt-1 text-[0.8125rem] text-fg"><Markdown text={m.content} /></div></details></div>
+                      </div>
+                    ) : m.role === "user" ? (
                       <UserBubble text={m.content} />
                     ) : m.role === "error" ? (
                       <ErrorNotice error={m.content} />

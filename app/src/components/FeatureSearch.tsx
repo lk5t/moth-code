@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { UI_SIZES, UI_SIZE_LABEL, setUiSize } from "@/lib/ui-size";
 import { motionStore, setMotion } from "@/lib/motion";
 import { requestChat } from "./SidebarCollections";
+import { stopAllScans } from "@/lib/scans";
 import { openProjectPath, pickProject } from "@/features/workspace/project-actions";
 
 export type CommandGroup = "Actions" | "Chats" | "Projects" | "Go to" | "Settings";
@@ -52,6 +53,8 @@ export function FeatureSearch({ compact = false }: { compact?: boolean } = {}) {
     const out: CommandItem[] = [
       { id: "new-chat", group: "Actions", label: "New chat", description: "Start a fresh conversation with MOTH", run: () => requestChat(null) },
       { id: "open-project", group: "Actions", label: "Open a project folder", description: "Pick a folder to code in", run: () => void pickProject().catch(() => {}) },
+      { id: "scan", group: "Actions", label: "Scan a server for vulnerabilities", description: "Type the address in chat; MOTH asks for your Yes first", run: () => { requestChat(null); } },
+      { id: "stop-scans", group: "Actions", label: "Stop all scans", run: () => void stopAllScans().catch(() => {}) },
       { id: "sidebar", group: "Actions", label: "Show or hide the sidebar", run: () => appStore.setState((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })) },
       ...UI_SIZES.map((s) => ({ id: `size-${s}`, group: "Actions" as const, label: `App size: ${UI_SIZE_LABEL[s]}`, description: "Make the whole app smaller or bigger",
         keys: s === "compact" ? "Ctrl 0" : undefined, run: () => setUiSize(s) })),

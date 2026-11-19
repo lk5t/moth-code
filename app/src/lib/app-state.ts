@@ -14,7 +14,7 @@ export interface OpenFile {
   language: string;
 }
 
-export type View = "home" | "overview" | "data" | "activity" | "chat" | "workspace" | "intelligence" | "evolution" | "network" | "owner" | "training" | "models" | "settings";
+export type View = "home" | "overview" | "data" | "activity" | "chat" | "workspace" | "intelligence" | "evolution" | "network" | "owner" | "training" | "models" | "settings" | "scans";
 /** AI workspace sections. Older names (overview, training, improvements, advanced) remain accepted and map onto them. */
 export type AiTab = "evolution" | "model" | "data" | "history" | "settings";
 export type IntelligenceTab = AiTab | "overview" | "training" | "improvements" | "advanced" | "network";
