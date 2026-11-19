@@ -202,3 +202,19 @@ def _wide_usage_windows(monkeypatch, request):
 
     monkeypatch.setattr(billing, "DEFAULT_LIMITS", {k: {"session_tokens": 10**12, "weekly_tokens": 10**12}
                                                     for k in ("free", "pro", "max")})
+
+
+def pytest_collection_modifyitems(config, items):
+    """2.2.4: MOTH_TEST_SHARD="i/n" runs only the i-th of n parts (whole test files, round-robin), so CI runs
+    the suite on several machines at once instead of one 25–30 minute job."""
+    import os
+
+    shard = os.environ.get("MOTH_TEST_SHARD", "")
+    if not shard:
+        return
+    i, n = (int(x) for x in shard.split("/"))
+    files = sorted({item.nodeid.split("::")[0] for item in items})
+    mine = {f for k, f in enumerate(files) if k % n == i - 1}
+    keep = [item for item in items if item.nodeid.split("::")[0] in mine]
+    config.hook.pytest_deselected(items=[item for item in items if item not in keep])
+    items[:] = keep

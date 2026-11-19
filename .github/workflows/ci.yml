@@ -42,12 +42,13 @@ jobs:
         run: python scripts/verify-foundation-training.py --out "${{ runner.temp }}/moth-foundation-smoke"
 
   server:
-    name: MOTH Server tests (${{ matrix.db }})
+    name: MOTH Server tests (${{ matrix.db }}, part ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         db: [sqlite, postgres]
+        shard: [1, 2, 3, 4]  # 2.2.4: the suite took 25–30 minutes on one machine
     services:
       postgres:
         image: postgres:16
@@ -78,6 +79,7 @@ jobs:
         working-directory: server
         env:
           MOTH_TEST_DATABASE_URL: ${{ matrix.db == 'postgres' && 'postgresql+psycopg://moth:moth-ci-only@localhost:5432/moth_test' || '' }}
+          MOTH_TEST_SHARD: ${{ matrix.shard }}/4
         run: python -m pytest -q
 
   worker-install:
