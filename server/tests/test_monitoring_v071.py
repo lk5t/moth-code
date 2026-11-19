@@ -81,3 +81,32 @@ def test_owner_minimum_above_zero_still_waits_for_traffic(client, owner, tmp_pat
     EN._monitoring(ctx, MEM.cycle(ctx, cid), settings)
     cyc = MEM.cycle(ctx, cid)
     assert cyc['status'] == 'monitoring' and 'minimum monitored requests' in cyc['result']['waiting_reason']
+
+
+def test_without_any_users_the_30_minute_window_ends_after_the_health_checks(client, owner, tmp_path, monkeypatch):
+    """2.2.5: no chats in the last day → nothing to watch; passed health checks finish monitoring early."""
+    from moth_server.routes import admin as A
+
+    ctx, stable, candidate = _two_releases(client, owner, tmp_path)
+    monkeypatch.setattr(A, 'flags', lambda c: {'cloud_inference_enabled': True})
+    cid = _monitoring_cycle(ctx, stable, candidate)
+    settings = S.get(ctx)
+    assert settings['monitoring']['minutes'] == 30.0  # the window is NOT shortened by settings here
+    for _ in range(EN.HEALTH_CHECKS_WITHOUT_TRAFFIC):
+        EN._monitoring(ctx, MEM.cycle(ctx, cid), settings)
+    cyc = MEM.cycle(ctx, cid)
+    assert cyc['status'] == 'completed' and ctx.extras['deployed_version'] == candidate
+
+
+def test_with_recent_users_the_full_window_still_applies(client, owner, tmp_path, monkeypatch):
+    from moth_server.evolution import compute as C
+    from moth_server.routes import admin as A
+
+    ctx, stable, candidate = _two_releases(client, owner, tmp_path)
+    monkeypatch.setattr(A, 'flags', lambda c: {'cloud_inference_enabled': True})
+    C.activity(ctx).finish(stable, True, 0.5, 10)  # someone chatted today
+    cid = _monitoring_cycle(ctx, stable, candidate)
+    settings = S.get(ctx)
+    for _ in range(EN.HEALTH_CHECKS_WITHOUT_TRAFFIC + 2):
+        EN._monitoring(ctx, MEM.cycle(ctx, cid), settings)
+    assert MEM.cycle(ctx, cid)['status'] == 'monitoring'

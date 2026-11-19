@@ -1201,6 +1201,7 @@ def _probe(ctx: Ctx, version: int | None = None) -> str | None:
 
 
 HEALTH_CHECKS_WITHOUT_TRAFFIC = 3
+QUIET_WINDOW_S = 24 * 3600  # 2.2.5: no chats in this long → no users to monitor
 
 
 def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
@@ -1268,7 +1269,11 @@ def _monitoring(ctx: Ctx, cyc: dict, settings: dict) -> None:
                          result={**res, "outcome": "superseded"})
         _schedule_next(ctx, failed=False)
         return
-    if now() - started >= float(mon["minutes"]) * 60:
+    # 2.2.5: with no users chatting in the last day there is nothing for the staged rollout to watch; the
+    # health checks are the only evidence, so the window ends once they have passed instead of after 30 minutes
+    quiet = C.activity(ctx).per_minute(QUIET_WINDOW_S) == 0 and \
+        int(res.get("health_checks") or 0) >= HEALTH_CHECKS_WITHOUT_TRAFFIC
+    if quiet or now() - started >= float(mon["minutes"]) * 60:
         min_requests = int(mon["min_requests"])
         from moth_server.routes.admin import flags
 

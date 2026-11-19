@@ -3,6 +3,10 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.2.5 — No 30-minute wait when nobody is chatting
+
+- A new model is first served to 20 % of chats and watched for 30 minutes, then rolled out to everyone or rolled back. With no users there is nothing to watch, so the wait only delayed MOTH. When nobody has chatted in the last day, monitoring now ends once three health checks have passed (about a minute and a half). With real users the full 30-minute staged rollout applies as before.
+
 ## 2.2.4 — Workers see their real free memory; unjudged growth no longer counts
 
 - **Workers on Linux** measured free memory without the file cache that the system frees instantly when needed. A server full of datasets looked 97 % full, and experiments needing 0.6 GB were refused ("no other computer can hold it"). Workers now use the memory the system can actually hand out, including inside containers.

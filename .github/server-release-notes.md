@@ -6,6 +6,8 @@ workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
 What's new in 2.2:
 
+- **2.2.5:** with no chats in the last day, a new model's monitoring ends after three passed health checks instead of 30 minutes.
+
 - **2.2.4:** workers on Linux count reclaimable file cache as free memory (they looked 97 % full and were refused experiments), and growth attempts that crashed in evaluation no longer block their size.
 
 - **2.2.3: MOTH Cloud installs Node.js by itself** (official build, SHA-256 verified, into its data folder, no administrator rights), so the JavaScript exam runs.
