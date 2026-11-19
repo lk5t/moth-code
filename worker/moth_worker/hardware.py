@@ -244,7 +244,7 @@ def measured_device(home: Path, hw: dict[str, Any]) -> tuple[str, dict | None]:
     previous = torch.get_num_threads()
     samples = []
     try:
-        ceiling = max(1, cpu_count() - 1)
+        ceiling = max(1, cpu_count())  # 2.1: dedicated workers may use every core
         for threads in sorted({1, max(1, ceiling // 2), ceiling}):
             torch.set_num_threads(threads)
             samples.append(benchmark('cpu', seconds=.2))

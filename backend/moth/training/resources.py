@@ -21,12 +21,16 @@ def cpu_count() -> int:
 USE_FRACTION = 0.9  # 2.0: a contributing computer gives MOTH about 90% of its power, keeping the rest for itself
 
 
-def training_threads(limit: int | None = None) -> int:
-    """CPU threads for MOTH's training: about 90% of the cores (always at least one core left free on 2+ cores),
-    unless the owner set a limit."""
+def training_threads(limit: int | None = None, dedicated: bool = False) -> int:
+    """CPU threads for MOTH's training, unless the owner set a limit.
+
+    2.1: a dedicated training server (a standalone MOTH Worker) uses every core; a computer someone also works
+    on (the desktop app's "contribute this computer") uses about 90% and always leaves a core free."""
     n = cpu_count()
     if limit:
         return max(1, min(n, int(limit)))
+    if dedicated:
+        return n
     return max(1, min(n - 1 if n > 1 else 1, int(n * USE_FRACTION)))
 
 

@@ -18,7 +18,7 @@ export interface CommandItem { id: string; group: CommandGroup; label: string; d
 interface MessageHit { conversation_id: number; title: string; snippet: string; project_id: number | null }
 
 const ICON = { Actions: Zap, Chats: MessageSquare, Projects: FolderGit2, "Go to": Sparkles, Settings } as const;
-export const SETTINGS_TABS = ["Account", "Appearance", "Privacy & AI", "Plan & referrals", "Code agent", "Servers & security", "Updates & about", "Advanced"];
+export const SETTINGS_TABS = ["Account", "Appearance", "Privacy & AI", "Plan & referrals", "Code agent", "Updates & about", "Advanced"];
 
 /** Open a Settings tab, also when Settings is already showing. */
 export function openSettingsTab(tab: string) {

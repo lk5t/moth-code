@@ -139,7 +139,8 @@ class Participant:
 
         client = WorkerClient(cfg["server"], cfg["worker_token"])
         namespace = hashlib.sha256(f"{cfg['server']}:{cfg.get('account_id')}:{cfg.get('device_id')}".encode()).hexdigest()[:24]
-        self.runner = WorkerRunner(client, self.dir / namespace, log=self.log, heartbeat_seconds=30.0, update_check_seconds=None)
+        self.runner = WorkerRunner(client, self.dir / namespace, log=self.log, heartbeat_seconds=30.0, update_check_seconds=None,
+                                   dedicated=False)
         detected = self.runner.hardware
         self.runner.hardware = lambda: {**detected(), "client": "moth-code"}  # shown as "this app" to the Owner
         self.error = None

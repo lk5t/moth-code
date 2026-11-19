@@ -45,8 +45,11 @@ def utilization(hw: dict[str, Any]) -> dict[str, float | None]:
 class WorkerRunner:
     def __init__(self, client: WorkerClient, state_dir: Path, allow_cpu: bool = False,
                  log: Callable[[str], None] = print, heartbeat_seconds: float = 30.0,
-                 update_check_seconds: float | None = 900.0):
+                 update_check_seconds: float | None = 900.0, dedicated: bool = True):
         self.client = client
+        # 2.1: a standalone worker is a dedicated training server (full power, always on); the desktop app's
+        # built-in contributor passes dedicated=False and stays gentle
+        self.dedicated = dedicated
         self.state_dir = Path(state_dir)
         (self.state_dir / "jobs").mkdir(parents=True, exist_ok=True)
         self.allow_cpu = allow_cpu
@@ -315,7 +318,7 @@ class WorkerRunner:
             weights = self.client.download(jid, "weights", spec["base_sha256"])
             data = self.client.download(jid, "shard", spec["shard_sha256"])
             from moth.training.resources import training_threads
-            torch.set_num_threads(training_threads(self.limits.get("cpu_threads")))
+            torch.set_num_threads(training_threads(self.limits.get("cpu_threads"), self.dedicated))
             total, count = _eval_loss(weights, data, spec["model_config"],
                                       progress=lambda p: setattr(self, "progress", p))
             payload = _json.dumps({"total": total, "count": count}).encode()
@@ -421,14 +424,15 @@ class WorkerRunner:
                 raise RuntimeError("the job's loss mask does not match its shard")
             device = self.device or ("cuda" if compute_kind(detect()) == "gpu" else "cpu")
             limits = {**job.get("limits", {}), **self.limits}
-            if device == "cpu":  # 2.0: about 90% of the cores (a core stays free), unless the owner set a limit
+            if device == "cpu":  # dedicated servers: every core; shared computers: ~90% (2.1), unless the owner set a limit
                 from moth.training.resources import training_threads
                 bench = int((self.bench or {}).get("threads") or 0)
                 # the hardware benchmark's best thread count caps it (more threads can be slower on some CPUs)
+                full = training_threads(None, self.dedicated)
                 torch.set_num_threads(training_threads(limits.get("cpu_threads")) if limits.get("cpu_threads") or not bench
-                                      else min(training_threads(), bench))
-            if device == "cuda":  # 2.0: up to 90% of the GPU's memory unless the owner set another share
-                torch.cuda.set_per_process_memory_fraction(float(limits.get("gpu_memory_fraction") or 0.9))
+                                      else min(full, bench))
+            if device == "cuda":  # dedicated: 95% of the GPU's memory; shared computers 90%; or the owner's share
+                torch.cuda.set_per_process_memory_fraction(float(limits.get("gpu_memory_fraction") or (0.95 if self.dedicated else 0.9)))
             phase("loading the model")
             base = torch.load(io.BytesIO(weights), map_location="cpu", weights_only=True)
             model = MothModel(MothConfig.from_dict(spec["model_config"])).to(device)
