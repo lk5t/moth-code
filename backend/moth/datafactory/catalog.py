@@ -175,7 +175,10 @@ SOURCES: list[dict[str, Any]] = [
           ("javascript", "Verified JavaScript", "code", 8_000,
            "JavaScript functions with random parameters; Node.js runs each against its tests before use."),
           ("shell", "Verified Bash", "code", 5_000,
-           "Bash one-liners for file tasks; each runs on prepared files and must print the expected output."))],
+           "Bash one-liners for file tasks; each runs on prepared files and must print the expected output."),
+          ("security_explain", "Verified security explanations and fixes", "code", 10_000,
+           "Vulnerable code with its fix (MOTH's audit must flag the first and pass the second), what each scan, "
+           "audit and configuration finding means and how to fix it."))],
 ]
 
 # 0.9.0: large licensed sources (tens of GB in total), pinned file by file. A ``sharded`` source is used one

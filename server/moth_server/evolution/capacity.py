@@ -377,7 +377,7 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
                   out["causes"][-1]["detail"] + f": grow {best['ratio'] - 1:.0%} ({params:,} → {best['params']:,} parameters)")
 
 
-SUCCESSOR_CONTEXT = 1024      # 0.10.0: successors read 4× more text at once (RoPE positions, no learned table)
+SUCCESSOR_CONTEXT = 2048      # 2.1: successors read 2,048 tokens at once (0.10.0: 1,024; RoPE positions, no learned table)
 PROBE_TTL = DAY_SECONDS       # measured shape speeds are reused for a day
 
 
@@ -427,7 +427,7 @@ def right_size(ctx: Ctx, base: dict, settings: dict, probe: bool = True) -> dict
     tok = library.successor_tokenizer(ctx) if library.byte_level(base) else None
     vocab = ((int(tok["vocab_size"]) + 63) // 64) * 64 if tok else cfg_model.vocab_size
     context = max(cfg_model.max_seq_len, SUCCESSOR_CONTEXT)
-    seq = min(context, int(((settings.get("training") or {}).get("seq_len")) or 256) * 4)
+    seq = min(context, int(((settings.get("training") or {}).get("seq_len")) or 256) * 8)
     flops_rate = 6.0 * params * (local + workers)  # the old compute rule, only to skip hopeless shapes
     best = None
     basis = "measured"

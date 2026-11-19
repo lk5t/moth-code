@@ -264,3 +264,60 @@ def generate(kind: str, n: int, seed: int = 0, source_id: str | None = None) -> 
                 break
             yield {"uid": f"{sid}:{made}", "source": sid, "domain": "code", "messages": _msgs(q, a)}
             made += 1
+
+
+# ---- 2.1 self-quiz: problems whose answers are checked by running them ------------------------------------
+
+def _code_of(answer: str) -> str:
+    import re as _re
+    blocks = _re.findall(r"```[^\n]*\n(.*?)```", answer or "", _re.S)
+    return (blocks[-1] if blocks else answer or "").strip()
+
+
+def sql_quiz(rng: random.Random):
+    """(question, reference answer, check(answer) -> bool): the answer's SQL must return the right rows."""
+    kind, cols, rows = _table(rng)
+    question, query, want = _sql_task(rng, kind, cols, rows)
+    schema = f"{kind}({', '.join(c for c, _ in cols)})"
+    data = "\n".join(", ".join(map(str, r)) for r in rows)
+
+    def run(sql: str):
+        sql = sql.strip().rstrip(";")
+        if not sql.lower().startswith(("select", "with")) or ";" in sql:
+            return None
+        db = sqlite3.connect(":memory:")
+        try:
+            db.execute(f"CREATE TABLE {kind} ({', '.join(f'{c} {t}' for c, t in cols)})")
+            db.executemany(f"INSERT INTO {kind} VALUES ({', '.join('?' * len(cols))})", rows)
+            return [tuple(round(v, 6) if isinstance(v, float) else v for v in r) for r in db.execute(sql).fetchmany(100)]
+        except sqlite3.Error:
+            return None
+        finally:
+            db.close()
+
+    expected = run(query)
+    if expected is None:
+        return None
+    return (f"I have a table {schema} with these rows:\n{data}\n\n{question} Write the SQL query.",
+            f"```sql\n{query}\n```", lambda answer: run(_code_of(answer)) == expected)
+
+
+def js_quiz(rng: random.Random):
+    """(question, reference answer, check(answer) -> bool): Node.js runs the answer against the tests."""
+    if not shutil.which("node"):
+        return None
+    task, name, code, tests = _js_candidates(rng)
+    if not _node_verify([(task, name, code, tests)])[0]:
+        return None
+    return (f"Write a JavaScript function named `{name}` that can {task}.", f"```javascript\n{code}\n```",
+            lambda answer: f"{name}" in _code_of(answer) and _node_verify([(task, name, _code_of(answer), tests)])[0])
+
+
+def python_quiz(rng: random.Random):
+    from moth.datafactory.synthetic import PY_PROMPTS, PY_TASKS, passes
+    task, name, code, tests = rng.choice(PY_TASKS)
+    return (rng.choice(PY_PROMPTS).format(task=task), f"```python\n{code}\n```",
+            lambda answer: f"def {name}" in _code_of(answer) and passes(_code_of(answer), name, tests))
+
+
+QUIZZES = {"python_code": python_quiz, "sql": sql_quiz, "javascript": js_quiz}

@@ -69,3 +69,18 @@ def test_answers_have_their_code_checked():
     from moth.agent.checkers import check_answer
     got = check_answer("```python\ndef f(x):\n    return x\n```\n```python\ndef g(:\n```\n```text\nnot code\n```")
     assert [c["ok"] for c in got] == [True, False] and got[1]["problem"].startswith("line 1")
+
+
+def test_security_explain_examples_are_checked():
+    """2.1: every vulnerable/fixed pair is confirmed by MOTH's own audit rules before it is used."""
+    from moth.datafactory import security_explain as S
+    from moth.security.audit import config_audit
+    for lang, bad, good in S.PAIRS:
+        b, g = bad.format(v="data", t="users"), good.format(v="data", t="users")
+        assert S._flags(lang, b) and not S._flags(lang, g), (lang, b)
+    for name, bad, good in S.CONFIG_LINES:
+        assert config_audit([(name, bad)])["findings"] and not config_audit([(name, good)])["findings"]
+    ex = list(synthetic.generate("security_explain", 300, seed=4))
+    assert len(ex) == 300 and all(e["domain"] == "code" for e in ex)
+    assert any("Fixed:" in e["messages"][1]["content"] for e in ex) and any("How to fix it" in e["messages"][1]["content"] for e in ex)
+    assert "synthetic-security_explain" in {s["id"] for s in catalog.SOURCES}

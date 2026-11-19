@@ -97,7 +97,7 @@ def test_successor_is_trained_by_the_workers_together(client, owner, tmp_path, m
     assert exp["candidate_version"], exp["error"]
     cand = M.release(ctx, exp["candidate_version"])
     cfg = cand["info"].get("config") or {}
-    assert cfg["d_model"] == arch["d_model"] and cfg["max_seq_len"] == 1024
+    assert cfg["d_model"] == arch["d_model"] and cfg["max_seq_len"] == 2048
     assert cand["info"]["params"] == exp["config"]["rebirth"]["params_after"]
     gates = {g["gate"]: g for g in (exp["metrics"] or {}).get("gates", [])}
     if "speed" in gates:  # a bigger model is held to an absolute speed, not "as fast as the tiny one"

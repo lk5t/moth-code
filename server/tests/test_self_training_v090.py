@@ -16,15 +16,17 @@ def test_answer_checks():
 def test_a_self_quiz_keeps_verified_answers_and_corrections(client, owner, tmp_path, monkeypatch):
     ctx, stable, cand = _two_releases(client, owner, tmp_path)
     answers = iter(["The answer is 4230."] + ["no idea"] * 1000)
-    monkeypatch.setattr(ST, "_ask", lambda engine, q, t: next(answers))
+    monkeypatch.setattr(ST, "_ask", lambda engine, q, t, max_new=96: next(answers))
     from moth.datafactory import synthetic
 
     monkeypatch.setitem(synthetic.GENERATORS, "arithmetic", lambda rng: ("94 × 45 = ?", "94 × 45 = 4230. The answer is 4230."))
     r = ST.run_round(ctx, per_kind=3, samples=1, seed=7)
     assert r["kinds"]["arithmetic"] == {"tried": 3, "correct": 1, "rate": 0.333}
-    assert r["verified"] == 1 and r["corrections"] == 11
+    # 2.1: 3 problems each in 4 checked kinds and 3 code kinds (wrong code answers become corrections too)
+    assert r["verified"] == 1 and r["corrections"] == 20
+    assert {r["kinds"][k]["tried"] for k in ("python_code", "sql")} == {3}
     recs = ST.records(ctx)
-    assert len(recs) == 12
+    assert len(recs) == 21
     good = next(x for x in recs if x["source"] == "self-verified")
     assert good["messages"][1]["content"] == "The answer is 4230."  # MOTH's own (checked) words
     fix = next(x for x in recs if x["source"] == "self-corrections")
@@ -41,3 +43,25 @@ def test_no_model_no_quiz(client, owner):
     ctx = client.app.state.ctx
     ctx.extras.pop("inference_engine", None)
     assert ST.run_round(ctx) is None and not ST.maybe_run(ctx)
+
+
+def test_code_answers_count_only_when_they_run(client, owner, tmp_path, monkeypatch):
+    """2.1: a SQL answer is kept as self-verified only if SQLite returns the right rows."""
+    from moth.datafactory import multilang
+
+    ctx, stable, cand = _two_releases(client, owner, tmp_path)
+    monkeypatch.setattr(ST, "KINDS", {})
+    monkeypatch.setattr(ST, "CODE_KINDS", ("sql",))
+    calls = {"n": 0}
+
+    def ask(engine, q, t, max_new=96):
+        calls["n"] += 1
+        return "```sql\nSELECT 1\n```" if calls["n"] % 2 else "I don't know"
+    monkeypatch.setattr(ST, "_ask", ask)
+    real = multilang.sql_quiz
+    monkeypatch.setitem(multilang.QUIZZES, "sql", lambda rng: (lambda q: (q[0], q[1], lambda a: "SELECT 1" in a))(real(rng)))
+    r = ST.run_round(ctx, per_kind=4, samples=1, seed=3)
+    assert r["kinds"]["sql"]["tried"] == 4 and r["kinds"]["sql"]["correct"] == 2
+    recs = [x for x in ST.records(ctx) if x["kind"] == "sql"]
+    assert {x["source"] for x in recs} == {"self-verified", "self-corrections"}
+    assert all("```sql" in x["messages"][1]["content"] for x in recs)  # corrections carry the checked query

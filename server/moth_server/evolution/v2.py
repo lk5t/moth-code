@@ -322,6 +322,8 @@ REBIRTH_MIN_STEPS = 500
 MIN_SUCCESSOR_STEP_TOKENS = 8192
 from moth.training.speedups import SHORT_CONTEXT, SHORT_UNTIL  # noqa: E402
 
+YOUNG_SHORT_UNTIL = 0.5  # 2.1: share of a young model's run on short rows
+
 
 def _warm_start(ctx: Ctx, rs: dict, tok: dict | None) -> dict | None:
     """1.0.7: the newest earlier attempt at a successor of the same shape and tokenizer whose weights still exist.
@@ -519,6 +521,12 @@ def _config(base, arch, src, mix, lr, steps, settings, seed) -> dict[str, Any]:
     sched = chat_schedule(cfg["mixture"]["weights"])
     if sched:
         cfg["mixture_schedule"] = sched[1:]
+    # 2.1 easy first: while MOTH is young (the curriculum's foundation stage, e.g. after a Genesis Reset) the
+    # first half of each run uses short rows; full-length rows come once the basics are in place
+    seq = int(cfg["seq_len"])
+    if (mix.get("stage") == "foundation" and seq > SHORT_CONTEXT and seq % SHORT_CONTEXT == 0
+            and not cfg.get("short_context")):
+        cfg.update(short_context=SHORT_CONTEXT, short_until=YOUNG_SHORT_UNTIL)
     return cfg
 
 

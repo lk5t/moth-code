@@ -32,7 +32,11 @@ PER_KIND = 40
 SAMPLES = 2                       # attempts per problem (sampled): any verified one is kept
 MAX_RECORDS = 200_000
 KINDS = {"arithmetic": "math", "instructions": "conversation", "reasoning": "reasoning", "language": "language"}
-CAPABILITY = {"arithmetic": "math", "instructions": "instruction", "reasoning": "reasoning", "language": "language"}
+CAPABILITY = {"arithmetic": "math", "instructions": "instruction", "reasoning": "reasoning", "language": "language",
+              "python_code": "codegen", "sql": "codegen_sql", "javascript": "codegen_js"}
+# 2.1: code problems whose answers are checked by running them (Python sandboxed, SQL in SQLite, JS in Node.js)
+CODE_KINDS = ("python_code", "sql", "javascript")
+CODE_PER_KIND = 20
 KEY = "self_training"
 NUM = re.compile(r"-?\d+(?:\.\d+)?")
 
@@ -65,11 +69,11 @@ def correct(answer: str, reference: str) -> bool:
     return bool(want) and want in _norm(answer)
 
 
-def _ask(engine, question: str, temperature: float) -> str:
+def _ask(engine, question: str, temperature: float, max_new: int = 96) -> str:
     from moth.model.chat_format import Message
     from moth.model.generation import GenerationParams
 
-    params = GenerationParams.from_dict({"max_new_tokens": 96, "temperature": temperature, "top_p": 0.95})
+    params = GenerationParams.from_dict({"max_new_tokens": max_new, "temperature": temperature, "top_p": 0.95})
     parts: list[str] = []
     engine.chat([Message("user", question)], params, parts.append, threading.Event())
     return "".join(parts).strip()
@@ -115,6 +119,40 @@ def run_round(ctx: Ctx, per_kind: int = PER_KIND, samples: int = SAMPLES, seed: 
                 records.append({"uid": uid, "source": "self-corrections", "domain": domain, "kind": kind,
                                 "messages": [{"role": "user", "content": q}, {"role": "assistant", "content": ref}]})
         stats[kind] = {"tried": tried, "correct": right, "rate": round(right / max(1, tried), 3)}
+    from moth.datafactory import multilang
+
+    for kind in CODE_KINDS:  # 2.1: the answer counts only if it runs and gives the right result
+        rng = random.Random(f"self:{kind}:{seed}")
+        tried = right = attempts = 0
+        while tried < min(per_kind, CODE_PER_KIND) and attempts < CODE_PER_KIND * 5:
+            attempts += 1
+            quiz = multilang.QUIZZES[kind](rng)
+            if quiz is None:
+                if kind == "javascript":
+                    break  # no Node.js on this server
+                continue
+            q, ref, check = quiz
+            tried += 1
+            good = None
+            for i in range(samples):
+                try:
+                    ans = _ask(engine, q, 0.0 if i == 0 else 0.8, max_new=220)
+                except Exception:  # noqa: BLE001
+                    ans = ""
+                try:
+                    ok = bool(ans) and check(ans)
+                except Exception:  # noqa: BLE001 - a crashing answer is a wrong answer
+                    ok = False
+                if ok:
+                    good = ans
+                    break
+            uid = f"self:{seed}:{kind}:{tried}"
+            src = "self-verified" if good else "self-corrections"
+            right += bool(good)
+            records.append({"uid": uid, "source": src, "domain": "code", "kind": kind,
+                            "messages": [{"role": "user", "content": q}, {"role": "assistant", "content": good or ref}]})
+        if tried:
+            stats[kind] = {"tried": tried, "correct": right, "rate": round(right / max(1, tried), 3)}
     p = path(ctx)
     p.parent.mkdir(parents=True, exist_ok=True)
     lines = (p.read_text(encoding="utf-8").splitlines() if p.exists() else []) + [json.dumps(r) for r in records]

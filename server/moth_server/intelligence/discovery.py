@@ -203,6 +203,7 @@ GENERATED_V080 = ("synthetic-reasoning", "synthetic-language", "synthetic-dialog
 
 
 GENERATED_V200 = ("synthetic-sql", "synthetic-javascript", "synthetic-shell")
+GENERATED_V210 = ("synthetic-security_explain",)
 
 
 def adopt_generated_sources(ctx: Ctx) -> list[str]:
@@ -214,7 +215,8 @@ def adopt_generated_sources(ctx: Ctx) -> list[str]:
     2.0, once more: the self-checked SQL, JavaScript and Bash examples join the same way."""
     out: list[str] = []
     for flag, sources, what in (("discovery_generated_v080", GENERATED_V080, "conversation and coding curricula"),
-                                ("discovery_generated_v200", GENERATED_V200, "SQL, JavaScript and Bash examples")):
+                                ("discovery_generated_v200", GENERATED_V200, "SQL, JavaScript and Bash examples"),
+                                ("discovery_generated_v210", GENERATED_V210, "security explanations and fixes")):
         if ctx.db.get_config(flag, None):
             continue
         p = policy(ctx)

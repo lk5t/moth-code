@@ -33,7 +33,7 @@ def test_successor_trains_from_scratch_and_must_pass_the_gates(client, owner, tm
     succ = next(e for e in MEM.experiments(ctx, cyc["id"]) if (e["config"] or {}).get("rebirth"))
     r = succ["config"]["rebirth"]
     assert succ["config"]["method"] == "from_scratch" and succ["config"]["no_single_worker"]
-    assert r["architecture"]["max_seq_len"] == 1024 and succ["config"]["seq_len"] <= 1024  # 0.10.0: longer context
+    assert r["architecture"]["max_seq_len"] == 2048 and succ["config"]["seq_len"] <= 2048  # 2.1: 2,048-token context
     assert r["speed_basis"] == "measured"  # 0.10.0: the successor's own shape was timed
     assert r["params_after"] >= 4 * r["params_before"]
     assert any(e["kind"] == "growth.not_proposed" or e["kind"] == "experiment.planned" for e in MEM.events(ctx, 50))
