@@ -72,9 +72,12 @@ def detect() -> dict[str, Any]:
     disk = shutil.disk_usage(Path.home())
     ram_available_gb = None
     if ram_gb is not None:
-        try:
-            available = os.sysconf('SC_AVPHYS_PAGES') * os.sysconf('SC_PAGE_SIZE')
-        except (OSError, ValueError, AttributeError):
+        # 2.2.4: MemAvailable (free + reclaimable file cache), not free pages alone: on a server full of datasets
+        # free pages are near zero, so the worker looked 97 % full and was refused 0.6 GB experiments
+        from moth.training.autotune import _available_ram
+
+        available = _available_ram()
+        if available is None:
             measured = _windows_memory()
             available = measured[1] if measured else 0  # unknown is not fully available RAM
         total, available = memory_budget(int(ram_gb * 2**30), available)

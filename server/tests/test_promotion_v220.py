@@ -103,3 +103,14 @@ def test_a_failed_growth_size_is_retried_on_a_new_base_or_after_two_days(monkeyp
     assert CAP.rebirth_blocked(None, 270_000, 150) is None        # two days later it is tried again
     rows.append({"status": "running", "base_version": 150, "config": {"rebirth": {"params_after": 270_000}}})
     assert "already being trained" in CAP.rebirth_blocked(None, 270_000, 150)
+
+
+def test_growth_that_was_never_evaluated_does_not_block_its_size(monkeypatch):
+    import time
+
+    from moth_server.evolution import capacity as CAP
+
+    rows = [{"status": "failed", "base_version": 197, "finished_at": time.time(), "error": "evaluation failed: KeyError: 'value'",
+             "config": {"rebirth": {"params_after": 271_920}}} for _ in range(3)]
+    monkeypatch.setattr(CAP.MEM, "experiments", lambda ctx, limit=200: rows)
+    assert CAP.rebirth_blocked(None, 271_920, 197) is None

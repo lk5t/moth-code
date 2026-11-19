@@ -3,6 +3,11 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.2.4 — Workers see their real free memory; unjudged growth no longer counts
+
+- **Workers on Linux** measured free memory without the file cache that the system frees instantly when needed. A server full of datasets looked 97 % full, and experiments needing 0.6 GB were refused ("no other computer can hold it"). Workers now use the memory the system can actually hand out, including inside containers.
+- **Growth attempts that could not be evaluated** (the "KeyError: 'value'" crash fixed in 2.2.2) no longer count as rejected. They were never judged, so they no longer block that model size.
+
 ## 2.2.3 — MOTH Cloud installs Node.js by itself
 
 - When Node.js is missing, MOTH Cloud downloads the official Node.js 22 LTS build from nodejs.org into its own data folder. No administrator rights are needed.

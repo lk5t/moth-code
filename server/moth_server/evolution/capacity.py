@@ -532,6 +532,9 @@ def rebirth_blocked(ctx: Ctx, params_after: int, base_version: int | None = None
     cutoff = time.time() - RETRY_GROWTH_AFTER_S
     failed = [e for e in recent if int(e["config"]["rebirth"].get("params_after") or 0) == params_after
               and e["status"] in ("rejected", "failed")
+              # 2.2.4: a candidate that could not be evaluated (e.g. the KeyError crash fixed in 2.2.2) was never
+              # judged, so it does not count against its size
+              and not str(e.get("error") or "").startswith("evaluation failed")
               and (base_version is None or e.get("base_version") == base_version)
               and float(e.get("finished_at") or e.get("created_at") or 0) >= cutoff]
     if len(failed) >= 2:

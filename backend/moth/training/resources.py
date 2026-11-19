@@ -40,6 +40,13 @@ def memory_budget(total: int, available: int) -> tuple[int, int]:
         if cap != 'max':
             total = min(total, int(cap))
             used = int(Path('/sys/fs/cgroup/memory.current').read_text())
+            try:  # 2.2.4: reclaimable file cache counts as available inside a container too
+                for line in Path('/sys/fs/cgroup/memory.stat').read_text().splitlines():
+                    if line.startswith('inactive_file '):
+                        used = max(0, used - int(line.split()[1]))
+                        break
+            except (OSError, ValueError, IndexError):
+                pass
             available = min(available, max(0, int(cap) - used))
     except (OSError, ValueError):
         pass
