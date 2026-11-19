@@ -64,6 +64,44 @@ def put_consent(body: ConsentIn, auth: Auth = Depends(current_auth), ctx: Ctx = 
     return {"consent": out}
 
 
+# ---- 2.1 app preferences that follow the account to other computers --------------------------------------
+PREF_KEYS = {"ui_size": ("compact", "normal", "large"), "motion": (True, False), "quiet_alerts": (True, False),
+             "sounds": (True, False)}
+
+
+class PrefsIn(BaseModel):
+    ui_size: str | None = None
+    motion: bool | None = None
+    quiet_alerts: bool | None = None
+    sounds: bool | None = None
+
+
+def _prefs(user: dict) -> dict:
+    ui = json.loads(user.get("settings") or "{}").get("ui") or {}
+    return {k: ui[k] for k in PREF_KEYS if k in ui}
+
+
+@router.get("/v1/me/preferences")
+def get_prefs(auth: Auth = Depends(current_auth)):
+    return {"preferences": _prefs(auth.user)}
+
+
+@router.put("/v1/me/preferences")
+def put_prefs(body: PrefsIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.db import users
+
+    values = {k: v for k, v in body.model_dump().items() if v is not None}
+    for k, v in values.items():
+        if v not in PREF_KEYS[k]:
+            raise HTTPException(422, f"Unknown value for {k}.")
+    with ctx.db.tx() as c:
+        row = c.execute(select(users.c.settings).where(users.c.id == auth.uid)).first()
+        s = json.loads(row[0] or "{}")
+        s["ui"] = {**(s.get("ui") or {}), **values}
+        c.execute(users.update().where(users.c.id == auth.uid).values(settings=json.dumps(s)))
+    return {"preferences": {k: s["ui"][k] for k in PREF_KEYS if k in s["ui"]}}
+
+
 # ---- conversations (memory controls) --------------------------------------------------------------------
 def _conv(ctx: Ctx, uid: int, cid: int) -> dict:
     c = ctx.db.one(select(conversations).where(conversations.c.id == cid, conversations.c.user_id == uid))

@@ -30,6 +30,7 @@ export function setAlertPrefs(p: Partial<AlertPrefs>) {
   const next = { ...alertPrefs(), ...p };
   try { localStorage.setItem(PREFS, JSON.stringify(next)); } catch { /* per-viewer convenience only */ }
   void applyTray(next);
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("moth:alert-prefs"));  // 2.1: settings sync
 }
 
 async function applyTray(p: AlertPrefs) {

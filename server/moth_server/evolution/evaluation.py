@@ -1,7 +1,21 @@
 """Candidate evaluation: consistent benchmark suites and promotion gates.
 
 A candidate is compared with its base (normally the deployed model) on the same deterministic suites
-(``moth.model.benchmark``), run in an isolated subprocess. It is promoted only if **every** gate passes:
+(``moth.model.benchmark``), run in an isolated subprocess.
+
+2.1 promotion rule (rewritten): **better overall, and nothing broken.** A candidate is promoted when
+
+1. it is sound: loads with a valid checksum, generates, finite scores (``release_checks``);
+2. nothing collapsed: no single measured area is more than ``COLLAPSE`` (25 %) worse, no accuracy drops by
+   more than ``ACCURACY_TOLERANCE`` points or 3 standard errors, and no whole capability group (conversation,
+   coding, security) is more than ``GROUP_TOLERANCE`` (10 %) worse;
+3. it stays practical: speed and memory within limits;
+4. it is better overall: the weighted change over the training data's held-out text (counted twice), every
+   capability group, retained data and the general evaluation text is at least ``gates.min_improvement``.
+
+Smaller drops in one area are allowed when the model is better overall; they are listed as *trade-offs*
+instead of blocking the promotion (before 2.1 every single area had to stay within 2–10 %, which rejected
+nearly every genuinely better young model on noise). The individual checks were:
 
 * ``release_checks`` — the existing release gate (``models.evaluate``): loads with a valid checksum,
   generates, finite score, and not worse than the deployed model on the general evaluation dataset;
@@ -269,12 +283,19 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
     gates: list[dict[str, Any]] = []
     rel = M.evaluate(ctx, candidate["version"])
     ev = rel.get("evaluation") or {}
-    gates.append({"gate": "release_checks", "passed": rel["status"] == "published",
-                  "detail": "loads with a valid checksum, generates, and is not worse than the deployed model on "
-                            "the general evaluation dataset" if rel["status"] == "published" else
-                  (rel.get("error") or f"release gate result: {rel['status']}"),
-                  "candidate": (ev.get("score") or {}).get("value"),
-                  "baseline": ((ev.get("baseline") or {}).get("score") or {}).get("value")})
+    # 2.1: being a little worse on the general evaluation text no longer blocks on its own; it is one part of
+    # the overall change (only a collapse blocks)
+    rel_c, rel_b = (ev.get("score") or {}).get("value"), ((ev.get("baseline") or {}).get("score") or {}).get("value")
+    general_change = _better(float(rel_c), float(rel_b), False) if rel_c is not None and rel_b else None
+    sound = rel["status"] == "published" or (ev.get("reason") == "regression" and rel["status"] == "evaluated")
+    collapse = float(g.get("max_regression", COLLAPSE))
+    release_ok = sound and (general_change is None or general_change >= -collapse)
+    gates.append({"gate": "release_checks", "passed": release_ok, "change": general_change,
+                  "trade_off": bool(release_ok and general_change is not None and general_change < 0),
+                  "detail": ("loads with a valid checksum, generates and has finite scores"
+                             + (f"; general evaluation text {general_change:+.2%}" if general_change is not None else ""))
+                  if release_ok else (rel.get("error") or f"release gate result: {rel['status']}"),
+                  "candidate": rel_c, "baseline": rel_b})
     suites = build_suites(ctx, candidate)
     cross = (candidate["info"].get("tokenizer_fingerprint") or "") != (base["info"].get("tokenizer_fingerprint") or "")
     early = _prescreen(ctx, candidate, base, suites, target_dataset, mixture, cross, gates)
@@ -296,7 +317,7 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
     # 1.0.16 gates: one overall judgement instead of "every single test must not wobble". A single test
     # fails only on a real collapse (MAX_REGRESSION); small held-out sets are noisy, and requiring all of
     # them to stay within 2 % rejected nearly every genuinely better model.
-    max_reg = float(g.get("max_regression", MAX_REGRESSION))
+    max_reg = collapse
     acc_tol = float(g.get("accuracy_tolerance", ACCURACY_TOLERANCE))
     retention_changes: list[float] = []
     for s in suites:
@@ -321,10 +342,10 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
                                 f"≥ {float(g['min_improvement']):.1%} (changed {rel_imp:+.2%})")
         elif s["kind"] == "heldout":
             retention_changes.append(rel_imp)
-            entry.update(passed=rel_imp >= -max_reg,
+            entry.update(passed=rel_imp >= -max_reg, trade_off=-max_reg <= rel_imp < 0,
                          detail=f"retention: may not collapse (more than {max_reg:.0%} worse); changed {rel_imp:+.2%}")
         elif s["kind"] == "capability" and not higher:  # held-out loss of one capability domain
-            entry.update(passed=rel_imp >= -max_reg,
+            entry.update(passed=rel_imp >= -max_reg, trade_off=-max_reg <= rel_imp < 0,
                          detail=f"memory protection: held-out loss may not collapse (more than {max_reg:.0%} worse); "
                                 f"changed {rel_imp:+.2%}")
         elif s["kind"] == "capability":
@@ -334,8 +355,8 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
             noise = 3 * (p_ * (1 - p_) / n) ** 0.5
             allowed = max(acc_tol, noise)
             drop = float(b["value"]) - float(c["value"])
-            entry.update(passed=drop <= allowed, detail=f"{s['name']}: {float(b['value']):.1%} → "
-                                                        f"{float(c['value']):.1%} (allowed drop {allowed:.1%})")
+            entry.update(passed=drop <= allowed, trade_off=0 < drop <= allowed,
+                         detail=f"{s['name']}: {float(b['value']):.1%} → {float(c['value']):.1%} (allowed drop {allowed:.1%})")
         elif s["kind"] == "code_syntax":
             drop = float(b["value"]) - float(c["value"])
             entry.update(passed=drop <= max(acc_tol, float(g["code_tolerance"])),
@@ -345,6 +366,8 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
             entry.update(passed=drop <= acc_tol,
                          detail=f"accuracy {float(b['value']):.0%} → {float(c['value']):.0%}")
         gates.append(entry)
+    if general_change is not None:
+        retention_changes.append(general_change)  # 2.1: the general evaluation text counts with the retained data
     if mixture:  # curriculum runs: the improvement is the weighted held-out gain over all trained domains
         from moth_server.evolution.v2 import mixture_improvement
 
@@ -381,13 +404,14 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
                                                 f"{float(g['min_improvement']):+.1%})") if overall is not None
                   else "nothing could be measured"})
     improvement = overall if overall is not None else improvement
-    if groups:  # 0.8.0: a better loss elsewhere never excuses worse conversation or coding as a whole
+    if groups:  # a whole skill (conversation, coding, security) may not collapse, whatever improves elsewhere
         tol = float(g.get("group_tolerance", GROUP_TOLERANCE))
         worse = {k: v["mean"] for k, v in groups.items() if v["mean"] < -tol}
         gates.append({"gate": "balanced_capabilities", "passed": not worse, "groups": groups,
+                      "trade_off": not worse and any(v["mean"] < 0 for v in groups.values()),
                       "detail": "; ".join(f"{k}: mean change {v['mean']:+.1%}" for k, v in groups.items())
-                                + (f" — {', '.join(worse)} got worse beyond {tol:.0%}" if worse else
-                                   " — no capability group got worse")})
+                                + (f" — {', '.join(worse)} got more than {tol:.0%} worse" if worse else
+                                   f" — no skill group got more than {tol:.0%} worse")})
     bp, cp = base_scores["performance"], cand_scores["performance"]
     # 0.10.0: a bigger model (growth or a successor) is meant to be slower and larger than its base, so
     # it is held to absolute limits instead: fast enough to chat with, and fitting comfortably in memory.
@@ -417,7 +441,11 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
             gates.append({"gate": "memory", "passed": ratio <= 1 + float(g["max_memory_growth"]),
                           "candidate": cp["peak_memory_bytes"], "baseline": bp["peak_memory_bytes"],
                           "detail": f"peak memory {ratio:.0%} of the base model's"})
-    return {"passed": all(x["passed"] for x in gates), "gates": gates, "primary_improvement": improvement,
+    trade_offs = [x.get("name") or x["gate"] for x in gates if x.get("trade_off")]
+    passed = all(x["passed"] for x in gates)
+    return {"passed": passed, "gates": gates, "primary_improvement": improvement, "trade_offs": trade_offs,
+            "decision": ("promoted: better overall" + (f", with small trade-offs in {', '.join(trade_offs[:5])}" if trade_offs else ""))
+            if passed else "kept the current model: " + "; ".join(x["gate"] for x in gates if not x["passed"]),
             "release_status": rel["status"], "performance": {"candidate": cp, "base": bp}}
 
 
@@ -451,9 +479,10 @@ def _prescreen(ctx: Ctx, candidate: dict, base: dict, suites: list[dict], target
 
 
 MIN_TOKENS_PER_SECOND = 15.0
-MAX_REGRESSION = 0.10      # 1.0.16: a single held-out test may not get more than 10 % worse (a collapse, not noise)
-ACCURACY_TOLERANCE = 0.10  # 1.0.16: an accuracy may drop by at most 10 points (or 3 standard errors if more)
-GROUP_TOLERANCE = 0.05     # 1.0.16: a capability group's mean may drop by at most 5 %
+COLLAPSE = 0.25            # 2.1: a single area blocks only when it gets more than 25 % worse (1.0.16: 10 %)
+MAX_REGRESSION = COLLAPSE  # name kept for older imports
+ACCURACY_TOLERANCE = 0.15  # 2.1: an accuracy may drop by at most 15 points, or 3 standard errors if more (was 10)
+GROUP_TOLERANCE = 0.10     # 2.1: a whole skill group's mean may drop by at most 10 % (was 5 %)
 
 
 def _memory_limit() -> int:

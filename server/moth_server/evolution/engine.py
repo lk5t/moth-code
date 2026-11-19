@@ -1005,10 +1005,15 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
                       cycle_id=cyc["id"], experiment_id=e["id"])
             continue
         metrics = {**(e["metrics"] or {}), "gates": verdict["gates"], "primary_improvement": verdict["primary_improvement"],
+                   "trade_offs": verdict.get("trade_offs") or [],
                    "performance": verdict["performance"]}
         failed = [g["gate"] for g in verdict["gates"] if not g["passed"]]
         MEM.update_experiment(ctx, e["id"], status="passed" if verdict["passed"] else "rejected", metrics=metrics,
                               finished_at=now(), error=None if verdict["passed"] else "failed: " + ", ".join(failed))
+        if verdict["passed"] and M.release(ctx, cand["version"])["status"] == "evaluated":
+            # 2.1: slightly worse on the general evaluation text but better overall: evolution's verdict
+            # publishes it (the trade-off is recorded in the gates)
+            M._set(ctx, cand["version"], "published", error=None, published_at=now())
         if not verdict["passed"] and M.release(ctx, cand["version"])["status"] == "published":
             # passed the basic release checks but not evolution's gates: never deployable by accident
             M._set(ctx, cand["version"], "evaluated", error="Not promoted by evolution (failed: " + ", ".join(failed)
@@ -1113,6 +1118,8 @@ def _try_soup(ctx: Ctx, cyc: dict, base: dict, settings: dict) -> None:
     gain = verdict["primary_improvement"]
     names = ", ".join(f"v{e['candidate_version']}" for e in exps)
     if verdict["passed"] and (best_passed is None or (gain or 0) > best_passed):
+        if M.release(ctx, cand["version"])["status"] == "evaluated":  # 2.1: see _evaluating
+            M._set(ctx, cand["version"], "published", error=None, published_at=now())
         MEM.update_experiment(ctx, lead["id"], status="passed", candidate_version=cand["version"], error=None,
                               metrics={**(lead["metrics"] or {}), "gates": verdict["gates"], "primary_improvement": gain,
                                        "performance": verdict["performance"],

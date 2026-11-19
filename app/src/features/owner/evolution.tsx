@@ -252,6 +252,7 @@ function Candidates() {
               {c.failed_gates.length ? c.failed_gates.map((g: Any) => <div key={g.gate}><span className="text-warning">✗ {gateName(g.gate)}</span>{g.detail ? ` — ${g.detail}` : ""}</div>)
                 : c.status === "rejected" && c.reason ? <div>{c.reason}</div> : null}
               {c.passed_gates.length > 0 && <div className="text-success">✓ {c.passed_gates.map(gateName).join(", ")}</div>}
+              {c.trade_offs?.length > 0 && <div className="text-muted">Allowed trade-offs (better overall): {c.trade_offs.join(", ")}</div>}
               {!c.kept && <div className="text-faint">Weights removed by retention.</div>}
             </div>}
           </div>;

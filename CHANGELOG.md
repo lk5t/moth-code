@@ -3,6 +3,36 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.1.0 — Security in chat, smarter training, dedicated workers
+
+**Security, right in chat (no separate page)**
+- "Audit my code": secrets and risky code (eval, shell injection, SQL built from strings, unsafe deserialisation, HTML injection, disabled TLS checks, debug mode…) in Python, JavaScript/TypeScript, PHP, Go, Java, C/C++, Ruby and shell. Secrets are never shown in full.
+- "Check my dependencies": requirements, pyproject and package files against a built-in list of well-known vulnerable versions (not exhaustive, and it says so).
+- "Is my nginx/SSH/Docker config secure?": the open project's configs or files you attach.
+- "Test my website https://…": after your Yes, MOTH reads the site and tries harmless test values (GET only, never submits forms or changes data) for unencoded reflection (XSS), database errors (SQL injection), open redirects and forms without CSRF tokens, plus the header, TLS and exposed-file checks.
+- Every finding has **Ask MOTH**, which asks for an explanation and a step-by-step fix.
+- The Security page and Settings → Servers & security are gone; results live in the chat.
+
+**Promotion rewritten: better overall, and nothing broken**
+- Before, every single check had to pass, so a model that was better overall was thrown out when one test wobbled. MOTH never got past 0.0.4 because of this.
+- Now a new model takes over when it is **better overall** (at least +0.2 %, was +0.5 %: the training data's held-out text counts twice, every skill group, retained data and the general evaluation text) and **nothing is broken**: it loads and generates, no single area is more than 25 % worse (was 10 %), no accuracy drops more than 15 points or 3 standard errors (was 10), no whole skill group (conversation, coding, security) is more than 10 % worse (was 5 %), and speed and memory stay within limits.
+- Being a little worse on the general evaluation text no longer blocks on its own; it is part of the overall score.
+- Smaller drops are shown as **allowed trade-offs** in Candidates vs the live model. Old default limits stored in settings move to the new ones once; values you set yourself stay.
+
+**MOTH learns faster**
+- Self-quiz on code: MOTH writes Python, SQL and JavaScript answers that are run; only answers that work are kept (wrong ones become corrections).
+- New self-checked security dataset: vulnerable code and its fix (MOTH's own audit must flag the first and pass the second), what each finding means and how to fix it, and risky configuration lines.
+- Bigger successors read 2,048 tokens at once (was 1,024).
+- Young models (the foundation stage) start each run on short rows when longer rows are configured.
+
+**App**
+- Settings sync: app size, animations, quiet alerts and sounds follow your account to your other computers.
+- Guided tour on first start (Settings → Account → Take the tour).
+- "MOTH is learning" on Home for everyone while a training run is going.
+
+**Workers**
+- Standalone workers are dedicated training servers: every CPU core and 95 % of GPU memory, always on (they still pause above 85 °C or on low battery). The desktop app's "contribute this computer" stays gentle (about 90 %).
+
 ## 2.0.0 — MOTH 2.0: a coding and security-testing assistant that acts
 
 **App**

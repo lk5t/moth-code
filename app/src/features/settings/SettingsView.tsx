@@ -1,4 +1,5 @@
 import { reopenWelcome } from "@/features/onboarding/Welcome";
+import { reopenTour } from "@/features/onboarding/Tour";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { useSavedSection } from "@/lib/use-saved-section";
 import { NativeResetPanel } from "@/features/intelligence/NativeResetPanel";
@@ -89,7 +90,7 @@ export function SettingsView() {
           ))}
         </TabsList>
         <TabsContent value={tab} className="flex flex-col gap-3">
-        {tab === "Account" && <><Button variant="secondary" onClick={reopenWelcome}>Show the quick introduction</Button><AccountSection /><TwoFactorSection /><ConnectionsSection /><ConnectionSection /></>}
+        {tab === "Account" && <><div className="flex gap-2"><Button variant="secondary" onClick={reopenTour}>Take the tour</Button><Button variant="secondary" onClick={reopenWelcome}>Show the quick introduction</Button></div><AccountSection /><TwoFactorSection /><ConnectionsSection /><ConnectionSection /></>}
         {tab === "Advanced" && (owner ? <>
           <p className="text-xs text-muted">Rarely needed, irreversible operations for the Owner. Everyday settings are in the other tabs.</p>
           <DiagnosticsPanel />

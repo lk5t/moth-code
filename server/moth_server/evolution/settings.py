@@ -28,7 +28,7 @@ DEFAULTS: dict[str, Any] = {
                  "eval_interval": 50, "checkpoint_interval": 25, "batch_autotune": True},
     "min_dataset_tokens": 20_000,    # an approved dataset needs at least this many training tokens
     "gates": {
-        "min_improvement": 0.005,      # primary held-out score must improve by at least 0.5 %
+        "min_improvement": 0.002,      # 2.1: better overall by at least 0.2 % (was 0.5 %, too much per run for a young model)
         "retention_tolerance": 0.02,   # no retained capability may get more than 2 % worse
         "code_tolerance": 0.05,        # valid-Python rate may drop by at most 5 points
         "task_tolerance": 0.02,        # task-suite accuracy may drop by at most 2 points
@@ -187,6 +187,29 @@ def migrate_v11(ctx: Ctx) -> bool:
         ctx.db.set_config(KEY, {**stored, "max_experiments_per_cycle": 1})
     ctx.db.set_config(MIGRATION_V11, {"done": True, "previous": prev})
     return prev not in (None, 1)
+
+
+MIGRATION_V21 = "evolution_settings_v21_promotion"
+
+
+def migrate_v21(ctx: Ctx) -> bool:
+    """2.1: the overall-gain bar becomes 0.2 % where it was still the old 0.5 % default (or the stricter
+    per-test limits were stored). Runs once (flagged); a value the Owner sets afterwards persists."""
+    if ctx.db.get_config(MIGRATION_V21, None):
+        return False
+    stored = ctx.db.get_config(KEY, {}) or {}
+    gates = dict(stored.get("gates") or {})
+    prev = dict(gates)
+    if gates.get("min_improvement") == 0.005:
+        gates["min_improvement"] = 0.002
+    for k, old in (("max_regression", 0.10), ("accuracy_tolerance", 0.10), ("group_tolerance", 0.05)):
+        if gates.get(k) == old:
+            gates.pop(k)
+    changed = gates != prev
+    if changed:
+        ctx.db.set_config(KEY, {**stored, "gates": gates})
+    ctx.db.set_config(MIGRATION_V21, {"done": True, "previous": prev})
+    return changed
 
 
 def runtime(ctx: Ctx) -> dict[str, Any]:

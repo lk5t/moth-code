@@ -47,6 +47,7 @@ def candidates(ctx: Ctx, limit: int = 20) -> dict[str, Any]:
             "failed_gates": [{"gate": g.get("gate"), "detail": g.get("detail"), "change": g.get("change")}
                              for g in gates if not g.get("passed")],
             "passed_gates": [g.get("gate") for g in gates if g.get("passed")],
+            "trade_offs": [g.get("name") or g.get("gate") for g in gates if g.get("trade_off")],  # 2.1
             "reason": e.get("error"), "finished_at": e.get("finished_at"),
         })
         if len(rows) >= limit:

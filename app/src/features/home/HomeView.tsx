@@ -74,12 +74,14 @@ export function HomeView() {
         <Tile icon={<MessageSquare />} label="Your chats" value={chats?.length ?? null} />
       </section>
 
-      {running && user?.role === "owner" && <section aria-label="MOTH's progress" className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      {/* 2.1: everyone sees MOTH learning; the Owner can open the full live view */}
+      {running && <section aria-label="MOTH is learning" className="grid gap-3 animate-slide-up md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <StageMeter loss={m.val_loss ?? m.train_loss} per={running.loss_per === "token" ? "token" : "byte"} />
-        <button onClick={() => navigate("intelligence")} className="lift rounded-lg border border-border bg-bg p-3 text-left text-xs">
-          <span className="text-faint">Live training</span>
-          <span className="mt-1 block text-sm text-fg">{typeof m.fraction === "number" ? `${Math.round(m.fraction * 100)}% of this run` : "Starting…"}</span>
-          <span className="mt-1 block text-accent">Watch it learn →</span>
+        <button disabled={user?.role !== "owner"} onClick={() => navigate("intelligence")} className="lift rounded-lg border border-border bg-bg p-3 text-left text-xs disabled:cursor-default">
+          <span className="flex items-center gap-1.5 text-faint"><span className="live-dot" />MOTH is learning</span>
+          <span className="mt-1 block text-sm text-fg">{typeof m.fraction === "number" ? `${Math.round(m.fraction * 100)}% of this training run` : "Starting…"}</span>
+          <span className="mt-1 block text-muted">{running.successor ? "Training a bigger, smarter MOTH. It takes over only if it passes every check." : "Each run that passes every check makes MOTH a little smarter."}</span>
+          {user?.role === "owner" && <span className="mt-1 block text-accent">Watch it learn →</span>}
         </button>
       </section>}
 

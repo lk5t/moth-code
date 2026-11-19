@@ -21,10 +21,12 @@ import { ReauthDialog } from "@/features/account/reauth";
 import { startConnectionMonitor } from "@/lib/connection";
 import { startUpdater } from "@/lib/updater";
 import { startAlerts } from "@/lib/alerts";
+import { startPrefsSync } from "@/lib/prefs-sync";
 import { Celebrations } from "@/components/Celebrations";
 import { Ambient } from "@/components/Ambient";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { Welcome, useWelcomeVisible } from "@/features/onboarding/Welcome";
+import { Tour } from "@/features/onboarding/Tour";
 
 export default function App() {
   const [info, setInfo] = useState<BackendInfo | null>(null);
@@ -61,7 +63,7 @@ export default function App() {
         if (i.status === "ready") {
           startLivingActivity();
           startEvents();
-          initAccounts().catch(() => {}).finally(() => { startConnectionMonitor(); startAlerts(); });
+          initAccounts().catch(() => {}).finally(() => { startConnectionMonitor(); startAlerts(); startPrefsSync(); });
           const projects = await loadProjects().catch(() => [] as Project[]);
           let last: string | null = null;
           try {
@@ -102,7 +104,7 @@ export default function App() {
   return (
     <TooltipProvider>
       <div className="relative flex h-full flex-col animate-fade-in">
-        {welcome && <Welcome />}
+        {welcome ? <Welcome /> : <Tour />}
         <div className="flex min-h-0 flex-1">
           <NavRail />
           <main className="min-w-0 flex-1">
