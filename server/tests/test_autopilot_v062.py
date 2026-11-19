@@ -54,7 +54,7 @@ def test_trains_longer_when_results_keep_improving(client):
 
 def test_lower_learning_rate_when_progress_stalls(client):
     ctx = client.app.state.ctx
-    _exp(ctx, "rejected", 0.001); _exp(ctx, "rejected", 0.002)
+    _exp(ctx, "rejected", 0.0005); _exp(ctx, "rejected", 0.001)  # below the 2.1 bar (0.2 %)
     s = S.get(ctx)
     out, decisions = AP.adapt(ctx, s)
     assert out["training"]["lr"] == s["training"]["lr"] / 2
