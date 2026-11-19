@@ -14,7 +14,7 @@ export interface OpenFile {
   language: string;
 }
 
-export type View = "home" | "overview" | "data" | "activity" | "chat" | "workspace" | "intelligence" | "evolution" | "network" | "owner" | "training" | "models" | "settings" | "scans";
+export type View = "home" | "overview" | "data" | "activity" | "chat" | "workspace" | "intelligence" | "evolution" | "network" | "owner" | "training" | "models" | "settings";
 /** AI workspace sections. Older names (overview, training, improvements, advanced) remain accepted and map onto them. */
 export type AiTab = "evolution" | "model" | "data" | "history" | "settings";
 export type IntelligenceTab = AiTab | "overview" | "training" | "improvements" | "advanced" | "network";
@@ -29,7 +29,7 @@ function navigation(): Partial<AppState> {
   try {
     const n = JSON.parse(localStorage.getItem("moth.navigation") ?? "{}");
     return {
-      view: ["home", "overview", "data", "activity", "chat", "workspace", "intelligence", "evolution", "network", "training", "models", "owner", "settings", "scans"].includes(n.view) ? n.view : "chat",
+      view: ["home", "overview", "data", "activity", "chat", "workspace", "intelligence", "evolution", "network", "training", "models", "owner", "settings"].includes(n.view) ? n.view : "chat",
       workspaceMode: n.workspaceMode === "code" ? "code" : "chat",
       intelligenceTab: aiTab(n.intelligenceTab),
       ...(typeof n.sidebarCollapsed === "boolean" ? {sidebarCollapsed:n.sidebarCollapsed} : {}),

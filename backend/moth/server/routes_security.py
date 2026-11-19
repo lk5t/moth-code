@@ -51,6 +51,14 @@ class StrongerIn(BaseModel):
     confirmed: bool = False
 
 
+class AuditIn(BaseModel):
+    message: str
+    project_id: int | None = None
+    files: list[dict] = []          # attached files: [{"path": ..., "content": ...}]
+    conversation_id: int | None = None
+    save: bool = True
+
+
 class ToChatIn(BaseModel):
     conversation_id: int | None = None
     question: str = ""
@@ -163,6 +171,49 @@ def register(app: FastAPI, svc: Services, deps) -> None:
     @app.post("/api/scans/{sid}/stronger", dependencies=deps)
     def stronger(sid: str, body: StrongerIn):
         return found(lambda: scans.run_stronger(sid, body.step_id, body.confirmed))
+
+    # ---- 2.1 security checks on your own files (nothing is contacted) -----------------------------------
+    @app.post("/api/security/parse", dependencies=deps)
+    def security_parse(body: ScanAsk):
+        from moth.security import audit
+        return {"tool": audit.parse_request(body.message)}
+
+    @app.post("/api/security/audit", dependencies=deps)
+    def security_audit(body: AuditIn):
+        import json as _json
+
+        from moth.security import audit
+        tool = audit.parse_request(body.message)
+        if tool is None:
+            raise HTTPException(400, "Ask for a code, dependency or configuration check")
+        files = [(str(f.get("path", ""))[:300], str(f.get("content", ""))) for f in body.files[:50]]
+        root = svc.workspace(body.project_id).root if body.project_id is not None else None
+        if tool == "config_audit" and (files or root):
+            report = audit.config_audit(files or audit.project_configs(root))
+        elif root is None:
+            what = {"code_audit": "your code", "deps_audit": "your dependencies", "config_audit": "your configuration files"}[tool]
+            raise HTTPException(409, f"Open the project in Projects (or attach the files) so MOTH can check {what}.")
+        elif tool == "code_audit":
+            report = audit.code_audit(root)
+        elif tool == "deps_audit":
+            report = audit.deps_audit(root)
+        else:
+            report = audit.config_audit(audit.project_configs(root))
+        out = {"report": report, "conversation_id": body.conversation_id}
+        if body.save:
+            cid, now = body.conversation_id, time.time()
+            if cid is None or not svc.db.one("SELECT id FROM conversations WHERE id=?", (cid,)):
+                cid = int(svc.db.execute("INSERT INTO conversations(project_id, title, created_at) VALUES (?,?,?)",
+                                         (body.project_id, report["kind"], now)).lastrowid)
+            svc.db.execute("INSERT INTO messages(conversation_id, role, content, meta, ts) VALUES (?,?,?,?,?)",
+                           (cid, "user", body.message.strip()[:4000], None, now))
+            svc.db.execute("INSERT INTO messages(conversation_id, role, content, meta, ts) VALUES (?,?,?,?,?)",
+                           (cid, "assistant", audit.report_markdown(report),
+                            _json.dumps({"model": "MOTH security check", "report": report}), now + 0.001))
+            svc.bus.publish("conversations", {"changed": [cid]})
+            out["conversation_id"] = cid
+        svc.db.log_activity("security", f"{report['kind']}: {report['total']} finding(s)", body.project_id)
+        return out
 
     @app.post("/api/scans/{sid}/to-chat", dependencies=deps)
     def scan_to_chat(sid: str, body: ToChatIn):

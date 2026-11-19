@@ -106,7 +106,7 @@ function startTaskAlerts() {
     const total = Object.values(c).reduce((n: number, v) => n + Number(v || 0), 0);
     const message = e.scan.status === "error" ? `Scan of ${e.scan.target} could not finish` :
       `Scan of ${e.scan.target} ${e.scan.status === "stopped" ? "stopped" : "finished"}: ${total} finding${total === 1 ? "" : "s"}${serious ? `, ${serious} serious` : ""}`;
-    pushInbox({ id: `scan:${e.scan.id}:${e.scan.finished_at ?? ""}`, tone, title: "Security scan", message, kind: "scan", view: "scans" });
+    pushInbox({ id: `scan:${e.scan.id}:${e.scan.finished_at ?? ""}`, tone, title: "Security scan", message, kind: "scan", view: "chat" });
   }));
 }
 

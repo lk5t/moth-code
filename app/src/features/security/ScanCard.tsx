@@ -4,8 +4,8 @@ import { AlertTriangle, CheckCircle2, Radar, ShieldAlert, ShieldCheck, Square } 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { navigate } from "@/lib/navigation";
-import { SEV_STYLE, SEVERITIES, runStronger, stopScan, useScan, type Finding, type ScanPlan } from "@/lib/scans";
+import { SEV_STYLE, SEVERITIES, askAbout, runStronger, stopScan, useScan, type AuditReport, type Finding, type ScanPlan } from "@/lib/scans";
+import { MessageCircleQuestion } from "lucide-react";
 
 export function SeverityBadge({ s, className }: { s: Finding["severity"]; className?: string }) {
   return <span className={cn("inline-flex shrink-0 items-center rounded border px-1.5 py-px text-[0.625rem] font-semibold uppercase tracking-wide", SEV_STYLE[s], className)}>{s}</span>;
@@ -44,7 +44,6 @@ export function ScanCard({ id, compact = false }: { id: string; compact?: boolea
         <div className={cn("text-[0.6875rem]", running ? "shimmer-text" : "text-muted")}>{scan.error ?? scan.phase}{running && ` · ${Math.round(scan.progress * 100)}%`}</div>
       </div>
       {running && <Button size="sm" variant="secondary" onClick={() => stopScan(scan.id)}><Square className="text-accent" /> Stop</Button>}
-      {!running && !compact && <Button size="sm" variant="ghost" onClick={() => navigate("scans")}>Open in Security</Button>}
     </div>
     {running && <Progress value={scan.progress * 100} className="rounded-none" />}
     <div className="space-y-2 p-3">
@@ -55,9 +54,9 @@ export function ScanCard({ id, compact = false }: { id: string; compact?: boolea
         <li key={i} className="rounded-lg border border-border bg-bg/60 p-2 animate-found">
           <div className="flex items-center gap-2"><SeverityBadge s={f.severity} /><span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">{f.title}</span>
             <span className="shrink-0 font-mono text-[0.625rem] text-faint">{f.port ? `:${f.port}` : ""}{f.ref ? ` · ${f.ref}` : ""}</span></div>
-          {!compact && <><div className="mt-1 text-[0.6875rem] text-muted">{f.evidence}</div><div className="mt-0.5 text-[0.6875rem] text-fg"><span className="text-success">Fix:</span> {f.fix}</div></>}
+          {!compact && <><div className="mt-1 text-[0.6875rem] text-muted">{f.evidence}</div><div className="mt-0.5 text-[0.6875rem] text-fg"><span className="text-success">Fix:</span> {f.fix}</div>
+            <AskButton onClick={() => askAbout(f)} /></>}
         </li>)}</ul>}
-      {compact && scan.findings.length > 5 && <div className="text-[0.6875rem] text-muted">+{scan.findings.length - 5} more in Security</div>}
       {!running && scan.status === "done" && !total && scan.open_ports.length > 0 && <div className="flex items-center gap-1.5 text-xs text-success"><CheckCircle2 className="size-3.5" />Nothing stood out in the safe checks.</div>}
       {scan.stronger.filter((x) => x.status === "offered" || x.result).map((st) =>
         <div key={st.id} className="rounded-lg border border-warning/30 bg-warning/5 p-2 text-[0.6875rem]">
@@ -70,6 +69,37 @@ export function ScanCard({ id, compact = false }: { id: string; compact?: boolea
             : <Button size="sm" variant="secondary" className="mt-1.5" onClick={() => setAsking(st.id)}>Run this step…</Button>)}
         </div>)}
       {err && <div role="alert" className="text-[0.6875rem] text-danger">{err}</div>}
+    </div>
+  </div>;
+}
+
+function AskButton({ onClick }: { onClick: () => void }) {
+  return <button onClick={onClick} className="mt-1 inline-flex items-center gap-1 rounded px-1 text-[0.6875rem] text-accent hover:bg-accent-soft">
+    <MessageCircleQuestion className="size-3" />Ask MOTH</button>;
+}
+
+/** 2.1: results of a code, dependency or configuration check, shown in chat. */
+export function ReportCard({ report }: { report: AuditReport }) {
+  const total = report.total;
+  return <div className="w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-surface animate-spring">
+    <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+      {total ? <AlertTriangle className="size-4 text-warning" /> : <ShieldCheck className="size-4 text-success" />}
+      <div className="min-w-0 flex-1"><div className="text-[0.8125rem] font-medium">{report.kind}</div>
+        <div className="text-[0.6875rem] text-muted">{report.note}</div></div>
+      <div className="flex gap-1">{SEVERITIES.filter((v) => report.counts?.[v]).map((v) => <SeverityBadge key={v} s={v} className="px-1" />)}</div>
+    </div>
+    <div className="space-y-1.5 p-3">
+      {!total && <div className="flex items-center gap-1.5 text-xs text-success"><CheckCircle2 className="size-3.5" />Nothing stood out.</div>}
+      <ul className="space-y-1.5">{report.findings.slice(0, 50).map((f, i) =>
+        <li key={i} className="rounded-lg border border-border bg-bg/60 p-2 animate-found" style={{ animationDelay: `${Math.min(i, 10) * 40}ms` }}>
+          <div className="flex items-center gap-2"><SeverityBadge s={f.severity} /><span className="min-w-0 flex-1 truncate text-xs font-medium text-fg">{f.title}</span>
+            <span className="shrink-0 font-mono text-[0.625rem] text-faint">{f.ref}</span></div>
+          <div className="mt-1 font-mono text-[0.6875rem] text-muted">{f.where}</div>
+          <div className="mt-0.5 truncate text-[0.6875rem] text-muted" title={f.evidence}>{f.evidence}</div>
+          <div className="mt-0.5 text-[0.6875rem] text-fg"><span className="text-success">Fix:</span> {f.fix}</div>
+          <AskButton onClick={() => askAbout(f)} />
+        </li>)}</ul>
+      {total > 50 && <div className="text-[0.6875rem] text-muted">+{total - 50} more (see the full write-up below).</div>}
     </div>
   </div>;
 }

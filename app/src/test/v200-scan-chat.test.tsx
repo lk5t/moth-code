@@ -55,3 +55,17 @@ it("No cancels, and refusals are explained", async () => {
   expect(await screen.findByText(/I won't scan that: address ranges/)).toBeInTheDocument();
   expect(mocks.post).not.toHaveBeenCalledWith("/api/scans", expect.anything());
 });
+
+it("2.1: code audits run from chat, show findings and offer Ask MOTH", async () => {
+  const report = { kind: "Code audit", note: "Checked 3 files", total: 1, counts: { critical: 0, high: 1, medium: 0, low: 0, info: 0 },
+    findings: [{ severity: "high", title: "eval/exec on dynamic input", where: "a.py:1", evidence: "x = eval(user)", fix: "Parse the data instead.", ref: "CWE-95" }] };
+  mocks.post.mockImplementation(async (path: string) => path === "/api/security/parse" ? { tool: "code_audit" } : path === "/api/security/audit" ? { report, conversation_id: 7 } : {});
+  mocks.get.mockResolvedValue([{ id: 1, role: "user", content: "audit my code for security" }, { id: 2, role: "assistant", content: "**Code audit**", meta: { report } }]);
+  render(<ChatPanel general />);
+  type("audit my code for security");
+  expect(await screen.findByText("eval/exec on dynamic input")).toBeInTheDocument();
+  expect(mocks.post).toHaveBeenCalledWith("/api/security/audit", expect.objectContaining({ message: "audit my code for security" }));
+  expect(mocks.post).not.toHaveBeenCalledWith("/api/chat", expect.anything());
+  fireEvent.click(screen.getByRole("button", { name: /Ask MOTH/ }));
+  await waitFor(() => expect((screen.getByRole("textbox", { name: "Message MOTH" }) as HTMLTextAreaElement).value).toContain("eval/exec on dynamic input"));
+});

@@ -22,15 +22,15 @@ import { AnswerFooter, type AnswerMeta } from "@/features/intelligence/AnswerFoo
 import { useCloudProgress } from "@/lib/cloud-progress";
 import { modelLabel } from "@/lib/model-label";
 import { UsageRing } from "@/components/UsageRing";
-import { parseScan, scanToChat, startScan, type ScanPlan } from "@/lib/scans";
-import { ConfirmScan, ScanCard } from "@/features/security/ScanCard";
+import { parseScan, parseSecurity, runAudit, scanToChat, startScan, type AuditReport, type ScanPlan } from "@/lib/scans";
+import { ConfirmScan, ReportCard, ScanCard } from "@/features/security/ScanCard";
 
 interface ChatMessage {
   id: number | string;
   role: "user" | "assistant" | "error" | "scan";
   scan?: { stage: "confirm" | "starting" | "running" | "cancelled" | "refused"; text: string; plan?: ScanPlan; refused?: string; id?: string };
   content: string;
-  meta?: ({ scan_id?: string; code_checks?: { language: string; ok: boolean; problem: string | null }[]; via?: string; prompt?: string; model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string; compacted?: boolean } & AnswerMeta) | null;
+  meta?: ({ report?: AuditReport; scan_id?: string; code_checks?: { language: string; ok: boolean; problem: string | null }[]; via?: string; prompt?: string; model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string; compacted?: boolean } & AnswerMeta) | null;
   streaming?: boolean;
 }
 
@@ -46,7 +46,8 @@ const PROJECT_STARTERS = [
   { label: "Explain this project", text: "Explain how this project is organised", icon: HelpCircle },
   { label: "Help debug a problem", text: "Help me debug: ", icon: Bug },
   { label: "Write tests", text: "Write tests for ", icon: Code2 },
-  { label: "Review for security", text: "Review this project for security problems", icon: ShieldCheck },
+  { label: "Audit my code", text: "Audit my code for security problems", icon: ShieldCheck },
+  { label: "Check dependencies", text: "Check my dependencies for vulnerabilities", icon: Radar },
 ];
 
 interface Conversation {
@@ -62,6 +63,11 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
   const [mode, setMode] = useState<"chat" | "agent">("chat");
   const [remembered, setRemembered] = useState<string | null>(null);
   useEffect(() => { if (!remembered) return; const t = setTimeout(() => setRemembered(null), 6000); return () => clearTimeout(t); }, [remembered]);
+  useEffect(() => {  // 2.1: "Ask MOTH" on a security finding puts the question in the chat box
+    const ask = (e: Event) => { setMode("chat"); setInput((e as CustomEvent<string>).detail); setTimeout(() => composer.current?.focus(), 0); };
+    window.addEventListener("moth:ask", ask);
+    return () => window.removeEventListener("moth:ask", ask);
+  }, []);
   useEffect(() => {  // 1.0: "Fix this" and the error watcher open the agent with the new task
     const open = () => setMode("agent");
     window.addEventListener("moth:open-agent", open);
@@ -241,6 +247,22 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     const typed = input.trim() || (attached.length ? "Take a look at these files." : "");
     const text = regenerate ? [...messages].reverse().find((m)=>m.role === "user")?.content ?? "" : formatAttachments(typed, attached);
     if (!text || busy) return;
+    if (!regenerate) {  // 2.1: "audit my code" / "check my dependencies" / "is this nginx config secure?" run here, on your files
+      const sec = await parseSecurity(typed).catch(() => null);
+      if (sec?.tool) {
+        setInput(""); setAttached([]); followTail.current = true; sounds.click(); setBusy(true);
+        setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: text }, { id: `a${Date.now()}`, role: "assistant", content: "", streaming: true }]);
+        try {
+          const r = await runAudit({ message: typed, project_id: project?.id ?? contextProjectId ?? null, files: attached.map((f) => ({ path: f.path, content: f.content })), conversation_id: cid });
+          const history = await get<ChatMessage[]>(`/api/conversations/${r.conversation_id}/messages?limit=100`);
+          skipFetch.current = r.conversation_id; cidRef.current = r.conversation_id; setCid(r.conversation_id); setMessages(history);
+          reloadConversations(); sounds.chime();
+        } catch (e) {
+          setMessages((m) => [...m.filter((x) => !x.streaming), { id: `e${Date.now()}`, role: "error", content: String((e as Error).message ?? e) }]);
+        } finally { setBusy(false); }
+        return;
+      }
+    }
     if (!regenerate && !attached.length) {  // 2.0: "scan 10.0.0.5 port 8080" asks for a Yes and runs here, not in the cloud
       const asked = await parseScan(typed).catch(() => null);
       if (asked?.plan || asked?.refused) {
@@ -395,13 +417,18 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                       <div className="flex w-full gap-2.5"><MothEmblem motion={m.scan.stage === "running" ? "generating" : "none"} className="mt-0.5 size-5 shrink-0" />
                         {m.scan.stage === "confirm" || m.scan.stage === "starting"
                           ? <ConfirmScan plan={m.scan.plan!} busy={m.scan.stage === "starting"} onYes={() => void confirmScan(m)} onNo={() => setScan(m.id, { stage: "cancelled" })} />
-                          : m.scan.stage === "running" && m.scan.id ? <ScanCard id={m.scan.id} compact />
+                          : m.scan.stage === "running" && m.scan.id ? <ScanCard id={m.scan.id} />
                           : m.scan.stage === "cancelled" ? <div className="text-[0.8125rem] text-muted">Okay, nothing was scanned.</div>
                           : <div className="max-w-xl rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[0.8125rem] text-warning">I won't scan that: {m.scan.refused}</div>}
                       </div>
+                    ) : m.role === "assistant" && m.meta?.report ? (
+                      <div className="flex w-full gap-2.5"><MothEmblem motion="none" className="mt-0.5 size-5 shrink-0" />
+                        <div className="min-w-0 flex-1 space-y-1.5"><ReportCard report={m.meta.report} />
+                          <details className="text-[0.6875rem] text-muted"><summary className="cursor-pointer hover:text-fg">Full write-up</summary><div className="mt-1 text-[0.8125rem] text-fg"><Markdown text={m.content} /></div></details></div>
+                      </div>
                     ) : m.role === "assistant" && m.meta?.scan_id ? (
                       <div className="flex w-full gap-2.5"><MothEmblem motion="none" className="mt-0.5 size-5 shrink-0" />
-                        <div className="min-w-0 flex-1 space-y-1.5"><ScanCard id={m.meta.scan_id} compact />
+                        <div className="min-w-0 flex-1 space-y-1.5"><ScanCard id={m.meta.scan_id} />
                           <details className="text-[0.6875rem] text-muted"><summary className="cursor-pointer hover:text-fg">Full write-up</summary><div className="mt-1 text-[0.8125rem] text-fg"><Markdown text={m.content} /></div></details></div>
                       </div>
                     ) : m.role === "user" ? (

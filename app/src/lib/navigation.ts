@@ -6,7 +6,6 @@ export const WORKSPACES: { view: View; label: string; description: string; owner
   { view: "chat", label: "Chat", description: "Conversations with MOTH" },
   { view: "workspace", label: "Projects", description: "Coding projects, files, editor and autonomous tasks" },
   { view: "intelligence", label: "AI", description: "Evolution, live training, data and model history", ownerOnly: true },
-  { view: "scans", label: "Security", description: "Scans you confirmed in chat: findings, fixes and logs" },
   { view: "network", label: "Network", description: "Workers, servers and your computer's contribution" },
   { view: "settings", label: "Settings", description: "Account, preferences, updates and administration" },
 ];

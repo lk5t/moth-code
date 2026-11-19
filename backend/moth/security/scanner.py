@@ -53,7 +53,10 @@ _INTENT = re.compile(
     r"\b(scan|scans|scanning|check|test|pentest|pen-?test|audit|probe|enumerate|assess|"
     r"find\s+(?:any\s+|the\s+|some\s+)?(?:vulns?|vulnerabilit(?:y|ies)|issues|weaknesses|open\s+ports|problems|holes)|"
     r"look\s+for\s+(?:vulns?|vulnerabilit)|vulnerabilit(?:y|ies)\s+(?:on|in|for|at)|vuln\s+scan|port\s*scan)", re.I)
-_URL = re.compile(r"\b(https?)://([A-Za-z0-9.-]+|\[[0-9a-fA-F:]+\])(?::(\d{1,5}))?", re.I)
+_URL = re.compile(r"\b(https?)://([A-Za-z0-9.-]+|\[[0-9a-fA-F:]+\])(?::(\d{1,5}))?(/[^\s'\"<>]*)?", re.I)
+# 2.1: asking about a website or web app (not just a host) starts the website test instead of a port scan
+_WEB = re.compile(r"\b(web\s?site|web\s?app\w*|site|page|xss|cross.site|sql\s?injection|sqli|csrf|forms?|open\s?redirect|"
+                  r"owasp|web\s?(vuln\w*|security|test\w*))\b", re.I)
 _IP = re.compile(r"(?<![\w.])(\d{1,3}(?:\.\d{1,3}){3})(?:/(\d{1,2}))?(?::(\d{1,5}))?(?![\w.])")
 _HOST = re.compile(r"(?<![\w./@-])((?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,24}|localhost)(?::(\d{1,5}))?(?![\w-])")
 _PORTS = re.compile(r"\bports?\s+((?:\d{1,5}\s*(?:-\s*\d{1,5})?\s*(?:,|and|&|\s)\s*)*\d{1,5}(?:\s*-\s*\d{1,5})?)", re.I)
@@ -72,8 +75,13 @@ class ScanPlan:
     ports: list[int]
     default_ports: bool
     scheme: str | None = None
+    kind: str = "network"     # 2.1: "network" (ports and services) or "web" (website test)
+    path: str = "/"
 
     def describe(self) -> str:
+        if self.kind == "web":
+            port = "" if self.ports[0] in (80, 443) else f":{self.ports[0]}"
+            return f"the website {self.scheme or 'http'}://{self.target}{port}{self.path}"
         where = self.target if len(self.hosts) == 1 else f"{self.target} ({len(self.hosts)} addresses)"
         if self.default_ports:
             return f"{where}, {len(self.ports)} common ports"
@@ -104,12 +112,13 @@ def parse_request(text: str) -> ScanPlan | None:
     """A scan request in a chat message, or None when the message is not asking for one."""
     if not _INTENT.search(text or ""):
         return None
-    target, scheme, ports = None, None, []
+    target, scheme, ports, path = None, None, [], "/"
     m = _URL.search(text)
     if m:
         scheme, target = m.group(1).lower(), m.group(2).strip("[]")
         if m.group(3):
             ports.append(int(m.group(3)))
+        path = (m.group(4) or "/").rstrip(".,)")[:300] or "/"
     if target is None:
         m = _IP.search(text)
         if m and all(0 <= int(p) <= 255 for p in m.group(1).split(".")):
@@ -138,6 +147,10 @@ def parse_request(text: str) -> ScanPlan | None:
     if len(ports) > MAX_PORTS:
         raise ScanRefused(f"one scan checks at most {MAX_PORTS} ports")
     hosts = _expand(target)
+    if _WEB.search(text) and len(hosts) == 1 and (scheme or len(ports) == 1):
+        port = ports[0] if not default else (443 if scheme == "https" else 80)
+        return ScanPlan(target=target, hosts=hosts, ports=[port], default_ports=False,
+                        scheme=scheme or ("https" if port in HTTPS_PORTS else "http"), kind="web", path=path)
     return ScanPlan(target=target, hosts=hosts, ports=ports, default_ports=default, scheme=scheme)
 
 
@@ -292,6 +305,9 @@ class Scan:
     log: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
     resolved: dict[str, str] = field(default_factory=dict)
+    kind: str = "network"
+    scheme: str | None = None
+    path: str = "/"
 
     def public(self, with_log: bool = False) -> dict[str, Any]:
         d = asdict(self)
@@ -368,7 +384,7 @@ class ScanManager:
             if running >= MAX_RUNNING:
                 raise ScanRefused(f"{running} scans are already running; wait for one to finish or stop it")
             s = Scan(id=time.strftime("%Y%m%d-%H%M%S-") + secrets.token_hex(3), target=plan.target, hosts=plan.hosts,
-                     ports=plan.ports, confirmed_at=time.time())
+                     ports=plan.ports, confirmed_at=time.time(), kind=plan.kind, scheme=plan.scheme, path=plan.path)
             self._scans[s.id] = s
             self._cancel[s.id] = threading.Event()
         self._log(s, "confirmed", target=plan.describe())
@@ -393,6 +409,12 @@ class ScanManager:
                 _check_address(ip)
                 s.resolved[h] = ip
                 self._log(s, "resolve", host=h, ip=ip)
+            if s.kind == "web":
+                self._web_test(s, cancel)
+                s.status = "stopped" if cancel.is_set() else "done"
+                s.phase = "Stopped" if cancel.is_set() else "Finished"
+                s.progress = s.progress if cancel.is_set() else 1.0
+                return
             s.phase = "Scanning ports"
             jobs = [(h, p) for h in s.hosts for p in s.ports]
             done = 0
@@ -650,6 +672,131 @@ class ScanManager:
             if st == 200 and test(b) and not (soft404 and b == ref_body):
                 self._add(s, Finding(sev, title, port, f"GET {path} → 200", fix, host))
 
+    # ---- 2.1 website test ------------------------------------------------------------------------------
+    WEB_MAX_PAGES = 12
+    WEB_MAX_PROBES = 24
+    SQL_ERRORS = re.compile(r"you have an error in your sql syntax|warning: mysql|mysqli?_|unclosed quotation mark|"
+                            r"quoted string not properly terminated|pg::syntaxerror|psycopg2\.|sqlite3?::|sqlite_error|"
+                            r"ora-\d{5}|syntax error at or near|unterminated quoted string|sqlstate\[", re.I)
+    REDIRECT_PARAMS = {"next", "url", "redirect", "redirect_uri", "redirect_url", "return", "returnto", "return_to",
+                       "continue", "dest", "destination", "goto"}
+
+    def _web_test(self, s: Scan, cancel: threading.Event) -> None:
+        """Looks at the site's pages and forms, then sends a few harmless test values (GET only, never submits
+        forms, never changes data): unencoded reflection (possible XSS), database errors on a quote (possible
+        SQL injection), open redirects, and forms without CSRF protection."""
+        from html.parser import HTMLParser
+        from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit
+
+        host, port, tls = s.hosts[0], s.ports[0], (s.scheme == "https")
+        ip = s.resolved[host]
+        base = f"{s.scheme}://{host}{'' if port in (80, 443) else f':{port}'}"
+        s.open_ports.append({"host": host, "port": port, "service": "https" if tls else "http", "banner": ""})
+
+        class Page(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.links, self.forms, self._form = [], [], None
+
+            def handle_starttag(self, tag, attrs):
+                a = dict(attrs)
+                if tag == "a" and a.get("href"):
+                    self.links.append(a["href"])
+                elif tag == "form":
+                    self._form = {"method": (a.get("method") or "get").lower(), "action": a.get("action") or "", "inputs": []}
+                    self.forms.append(self._form)
+                elif tag in ("input", "textarea", "select") and self._form is not None:
+                    self._form["inputs"].append({"name": a.get("name") or "", "type": (a.get("type") or "text").lower()})
+
+            def handle_endtag(self, tag):
+                if tag == "form":
+                    self._form = None
+
+        def get(path):
+            if not _RATE.wait(cancel):
+                raise OSError("stopped")
+            return self._http(s, host, ip, port, tls, path)
+
+        s.phase = "Reading the site"
+        try:
+            self._inspect_http(s, host, ip, port, tls)  # headers, versions, exposed files, directory listing
+            if tls:
+                self._inspect_tls(s, host, ip, port)
+        except (OSError, http.client.HTTPException, ssl.SSLError) as e:
+            raise ScanRefused(f"the website did not answer: {str(e)[:120]}") from None
+        queue, seen, params = [s.path or "/"], set(), []   # params: (path, name, other query pairs)
+        pages = 0
+        while queue and pages < self.WEB_MAX_PAGES and not cancel.is_set():
+            path = queue.pop(0)
+            if path in seen:
+                continue
+            seen.add(path)
+            try:
+                status, headers, body = get(path)
+            except (OSError, http.client.HTTPException):
+                continue
+            pages += 1
+            s.progress = 0.4 * pages / self.WEB_MAX_PAGES
+            self._emit(s)
+            if "html" not in headers.get("content-type", "html"):
+                continue
+            pg = Page()
+            try:
+                pg.feed(body)
+            except Exception:  # noqa: BLE001 - broken HTML is still a page
+                pass
+            for href in pg.links:
+                u = urlsplit(urljoin(base + path, href))
+                if u.scheme in ("http", "https") and u.hostname == host and (u.port or (443 if u.scheme == "https" else 80)) == port:
+                    p = (u.path or "/") + (f"?{u.query}" if u.query else "")
+                    if p not in seen and len(queue) < 50:
+                        queue.append(p)
+                    q = parse_qsl(u.query, keep_blank_values=True)
+                    for i, (k, _) in enumerate(q):
+                        params.append((u.path or "/", k, q[:i] + q[i + 1:]))
+            for f in pg.forms:
+                names = [i["name"] for i in f["inputs"] if i["name"]]
+                if f["method"] == "post" and not any(re.search(r"csrf|xsrf|token|authenticity|nonce", n, re.I) for n in names):
+                    self._add(s, Finding("medium", "Form without a CSRF token", port, f"POST form on {path} (fields: {', '.join(names[:6]) or 'none'})",
+                                         "Add a per-session CSRF token to every form that changes something, and set SameSite cookies.", host, "CWE-352"))
+                if not tls and any(i["type"] == "password" for i in f["inputs"]):
+                    self._add(s, Finding("high", "Password form over plain HTTP", port, f"login form on {path}",
+                                         "Serve the site only over HTTPS and redirect HTTP to HTTPS.", host, "CWE-319"))
+                if f["method"] == "get":
+                    action = urlsplit(urljoin(base + path, f["action"] or path)).path or "/"
+                    for n in names:
+                        params.append((action, n, [(o, "1") for o in names if o != n]))
+        # harmless probes, one parameter at a time
+        uniq = list({(p, n): (p, n, rest) for p, n, rest in params}.values())[: self.WEB_MAX_PROBES]
+        s.phase = f"Testing {len(uniq)} input{'s' if len(uniq) != 1 else ''} with harmless values"
+        marker = "moth" + secrets.token_hex(3)
+        for i, (path, name, rest) in enumerate(uniq):
+            if cancel.is_set():
+                break
+            q = lambda v: path + "?" + urlencode(rest + [(name, v)])  # noqa: E731
+            try:
+                _, _, body = get(q(f"{marker}<x\">"))
+                if f"{marker}<x\">" in body:
+                    self._add(s, Finding("high", "Input shown back without encoding (possible XSS)", port,
+                                         f"parameter '{name}' on {path} returns <x\"> unchanged",
+                                         "Encode output for where it is placed (HTML, attribute, JavaScript), and add a Content-Security-Policy.", host, "CWE-79"))
+                _, _, normal = get(q("1"))
+                _, _, quoted = get(q("1'"))
+                if self.SQL_ERRORS.search(quoted) and not self.SQL_ERRORS.search(normal):
+                    self._add(s, Finding("critical", "Database error on a quote (possible SQL injection)", port,
+                                         f"parameter '{name}' on {path} shows a database error for 1'",
+                                         "Use parameterised queries everywhere and hide database errors from visitors.", host, "CWE-89"))
+                if name.lower() in self.REDIRECT_PARAMS:
+                    st, hd, _ = get(q("https://example.org/moth-check"))
+                    if 300 <= st < 400 and hd.get("location", "").startswith("https://example.org/moth-check"):
+                        self._add(s, Finding("medium", "Open redirect", port, f"parameter '{name}' on {path} redirects anywhere",
+                                             "Only redirect to your own paths or an allow-list of sites.", host, "CWE-601"))
+            except (OSError, http.client.HTTPException):
+                continue
+            s.progress = 0.4 + 0.6 * (i + 1) / max(1, len(uniq))
+            self._emit(s)
+        self._log(s, "web_test", pages=pages, inputs=len(uniq))
+
     def _offer_stronger(self, s: Scan) -> None:
         for op in s.open_ports:
             if op["port"] == 21 or op.get("service") == "ftp":
@@ -709,7 +856,8 @@ def summary_markdown(scan: dict[str, Any]) -> str:
     """What MOTH says in chat about a finished scan: plain-language summary, each finding, and how to fix it."""
     c = scan["counts"]
     opened = scan["open_ports"]
-    lines = [f"**Scan of {scan['target']}** — {scan['status']}"]
+    what = "Website test" if scan.get("kind") == "web" else "Scan"
+    lines = [f"**{what} of {scan['target']}** — {scan['status']}"]
     if scan.get("error"):
         lines.append(f"\nThe scan could not finish: {scan['error']}")
         return "\n".join(lines)
@@ -719,8 +867,9 @@ def summary_markdown(scan: dict[str, Any]) -> str:
         return "\n".join(lines)
     total = sum(c.values())
     sev_text = ", ".join(f"{n} {s}" for s, n in c.items() if n)
-    lines.append(f"\nOpen ports: {', '.join(str(o['port']) + ' (' + o['service'] + ')' for o in opened[:12])}"
-                 + (" …" if len(opened) > 12 else ""))
+    if scan.get("kind") != "web":
+        lines.append(f"\nOpen ports: {', '.join(str(o['port']) + ' (' + o['service'] + ')' for o in opened[:12])}"
+                     + (" …" if len(opened) > 12 else ""))
     lines.append(f"\nFound {total} issue{'s' if total != 1 else ''}" + (f" ({sev_text})." if total else ". Nothing stood out in the safe checks."))
     for f in scan["findings"][:20]:
         ref = f" ({f['ref']})" if f.get("ref") else ""

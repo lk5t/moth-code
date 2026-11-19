@@ -39,3 +39,16 @@ export const SEV_STYLE: Record<Severity, string> = {
   low: "bg-[#7aa2f7]/12 text-[#9db8ff] border-[#7aa2f7]/30",
   info: "bg-surface-3 text-muted border-border",
 };
+
+/** 2.1: security checks on your own files (code, dependencies, configuration). Nothing is contacted. */
+export interface AuditFinding { severity: Severity; title: string; where: string; evidence: string; fix: string; ref: string }
+export interface AuditReport { kind: string; findings: AuditFinding[]; total: number; counts: Record<Severity, number>; note: string }
+export const parseSecurity = (message: string) => post<{ tool: string | null }>("/api/security/parse", { message });
+export const runAudit = (body: { message: string; project_id: number | null; files: { path: string; content: string }[]; conversation_id: number | null }) =>
+  post<{ report: AuditReport; conversation_id: number }>("/api/security/audit", body);
+
+/** "Ask MOTH" on a finding: puts a question about it into the chat box. */
+export function askAbout(f: { title: string; evidence: string; fix: string; where?: string; port?: number | null; ref?: string }) {
+  const where = f.where ?? (f.port ? `port ${f.port}` : "");
+  window.dispatchEvent(new CustomEvent("moth:ask", { detail: `Explain this security finding and how to fix it step by step: "${f.title}"${f.ref ? ` (${f.ref})` : ""}${where ? ` at ${where}` : ""}. Evidence: ${f.evidence}` }));
+}
