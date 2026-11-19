@@ -210,9 +210,24 @@ def _check_build(ctx: Ctx) -> dict | None:
     return None
 
 
+def _check_node(ctx: Ctx) -> dict | None:
+    """2.2.3: Node.js for the JavaScript exam; installed into the data directory when missing."""
+    from moth_server import tools
+
+    r = tools.ensure_node(ctx)
+    if r["status"] == "installed":
+        return _record(ctx, "Node.js was missing (the JavaScript exam could not run)",
+                       f"installed Node.js {r['version']} for MOTH Cloud", True)
+    if r["status"] == "failed":
+        return _record(ctx, "Node.js was missing (the JavaScript exam could not run)",
+                       "could not install Node.js; trying again in six hours", False, r["reason"])
+    return None
+
+
 CHECKS: list[tuple[str, Callable[[Ctx], dict | None]]] = [
     ("evolution", _check_evolution), ("pipeline", _check_pipeline), ("serving", _check_serving),
-    ("cloud_worker", _check_cloud_worker), ("disk", _check_disk), ("cycle", _check_cycle), ("build", _check_build)]
+    ("cloud_worker", _check_cloud_worker), ("disk", _check_disk), ("cycle", _check_cycle), ("build", _check_build),
+    ("node", _check_node)]
 
 
 def run_checks(ctx: Ctx) -> list[dict]:
@@ -238,6 +253,12 @@ def start(ctx: Ctx) -> threading.Thread | None:
         return None
     ctx.extras["supervisor_started"] = time.time()
     stop = ctx.extras.setdefault("supervisor_stop", threading.Event())
+    try:  # 2.2.3: an already installed Node.js is on PATH before the first evaluation
+        from moth_server import tools
+
+        tools.activate(ctx)
+    except Exception:  # noqa: BLE001
+        log.exception("could not activate installed tools")
 
     def loop() -> None:
         while not stop.wait(INTERVAL):

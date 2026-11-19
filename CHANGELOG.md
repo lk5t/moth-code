@@ -3,6 +3,13 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.2.3 — MOTH Cloud installs Node.js by itself
+
+- When Node.js is missing, MOTH Cloud downloads the official Node.js 22 LTS build from nodejs.org into its own data folder. No administrator rights are needed.
+  - The download is checked against the published SHA-256 list and unpacked safely.
+  - It is put on MOTH Cloud's PATH, so the JavaScript exam runs again and JavaScript skill counts towards promotion.
+  - A failed download is retried every six hours. Settings → Advanced → Diagnostics shows the attempt.
+
 ## 2.2.2 — Candidates are evaluated again
 
 - Every candidate failed with "evaluation failed: KeyError: 'value'", so none could be judged or promoted. The cause: the JavaScript exam needs Node.js, which MOTH Cloud does not have. It returned "Node.js is not installed" without a score, and the benchmark crashed on the missing score, failing the whole evaluation. A suite that cannot run is now "not measurable", and one suite's error no longer fails the others.

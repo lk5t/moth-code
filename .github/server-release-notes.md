@@ -6,6 +6,8 @@ workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
 What's new in 2.2:
 
+- **2.2.3: MOTH Cloud installs Node.js by itself** (official build, SHA-256 verified, into its data folder, no administrator rights), so the JavaScript exam runs.
+
 - **2.2.2: candidates are evaluated again.** Every evaluation crashed with "KeyError: 'value'" because the JavaScript exam (which needs Node.js) returned no score. A suite that cannot run is now just not measurable.
 
 - **2.2.1: MOTH grows again.** A growth size rejected twice was blocked forever, so parameters stopped growing. Now only failures on the same base within two days count, and a smaller step is tried meanwhile.
