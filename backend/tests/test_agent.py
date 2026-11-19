@@ -298,8 +298,8 @@ def test_write_approval_carries_before_and_after_for_review(env, tmp_path):
                 return
             time.sleep(0.02)
     threading.Thread(target=loop, daemon=True).start()
-    original = (p / "README.md").read_text()
+    original = (p / "README.md").read_bytes().decode("utf-8")  # exact bytes (Windows writes \r\n)
     state, _ = run(env, [call("write_file", path="README.md", content="# new\n"), call("finish", summary="x")], verify=False)
     change = seen[0]["context"]["change"]
     assert change == {"path": "README.md", "before": original, "after": "# new\n", "before_truncated": False, "after_truncated": False}
-    assert (p / "README.md").read_text() == original  # rejected: nothing written
+    assert (p / "README.md").read_bytes().decode("utf-8") == original  # rejected: nothing written
