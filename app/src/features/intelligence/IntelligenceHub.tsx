@@ -116,7 +116,7 @@ export function IntelligenceHub() {
         </TabsContent>}
         {tab === "settings" && <TabsContent value="settings" className="space-y-3">
           {owner && <AiSettings />}
-          <p className="pt-2 text-[10px] uppercase tracking-[0.22em] text-faint">Advanced</p>
+          <p className="pt-2 text-[0.625rem] uppercase tracking-[0.22em] text-faint">Advanced</p>
           {owner ? <><GrowthDiagnostics /><EvolutionPanel section="advanced" /><Advanced title="Detailed model status"><ModelOverview /></Advanced><Advanced title="Local training and checkpoints"><TrainingView scope="training" /></Advanced><Advanced title="Model packages on this computer"><ModelsView /></Advanced><Advanced title="Feedback and shared knowledge"><IntelligencePanel sections={["feedback", "knowledge"]} /></Advanced></> : <p className="text-xs text-muted">Advanced training and deployment controls require the Owner.</p>}
         </TabsContent>}
       </Tabs>}

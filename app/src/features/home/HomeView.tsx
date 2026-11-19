@@ -28,7 +28,7 @@ export function greeting(hour: number): string {
 function Tile({ icon, label, value, live }: { icon: React.ReactNode; label: string; value: number | string | null; live?: boolean }) {
   return <div className="lift relative overflow-hidden rounded-xl border border-border bg-surface px-3 py-2.5">
     {live && <span className="pointer-events-none absolute -right-5 -top-5 size-16 rounded-full bg-accent/20 blur-xl" />}
-    <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider text-faint [&_svg]:size-3.5 [&_svg]:text-accent">{icon}{label}{live && <span className="live-dot ml-auto" />}</div>
+    <div className="flex items-center gap-1.5 text-[0.65625rem] uppercase tracking-wider text-faint [&_svg]:size-3.5 [&_svg]:text-accent">{icon}{label}{live && <span className="live-dot ml-auto" />}</div>
     <div className="mt-1 font-mono text-lg text-fg">{typeof value === "number" ? <AnimatedNumber value={value} /> : value ?? "—"}</div>
   </div>;
 }

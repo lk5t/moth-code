@@ -62,7 +62,7 @@ export function DiagnosticsPanel() {
       </div>
       <details>
         <summary className="cursor-pointer text-muted hover:text-fg">Recent warnings and errors ({data.errors.length})</summary>
-        <ul className="mt-1 max-h-64 space-y-0.5 overflow-auto font-mono text-[11px]">{data.errors.map((e: Any, i: number) =>
+        <ul className="mt-1 max-h-64 space-y-0.5 overflow-auto font-mono text-[0.6875rem]">{data.errors.map((e: Any, i: number) =>
           <li key={i} className={e.level === "error" || e.level === "critical" ? "text-warning" : "text-muted"}>{at(e.at)} {e.logger}: {e.message}</li>)}</ul>
       </details>
     </div>}

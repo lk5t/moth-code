@@ -141,7 +141,7 @@ export function AgentPanel() {
         ) : (
           <div className="flex w-full flex-col gap-3">
             <div className="flex items-start justify-between gap-3">
-              <div className="selectable text-[13px] font-medium">{task.goal}</div>
+              <div className="selectable text-[0.8125rem] font-medium">{task.goal}</div>
               <Badge variant={tone[task.status]}>{label[task.status] ?? task.status}</Badge>
             </div>
             <div className="flex gap-2">
@@ -169,20 +169,20 @@ export function AgentPanel() {
             )}
             {task.plan.length > 0 && task.status !== "plan_ready" && (
               <div className="rounded-lg border border-border bg-surface p-3">
-                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">Plan (by MOTH)</div>
+                <div className="mb-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">Plan (by MOTH)</div>
                 <ol className="space-y-1 text-xs">
                   {task.plan.map((p, i) => <li key={i} className="flex gap-2"><span className="text-faint">{i + 1}.</span>{p}</li>)}
                 </ol>
               </div>
             )}
-            {task.notes.map((n, i) => <div key={i} className="text-[11px] text-muted">{n}</div>)}
+            {task.notes.map((n, i) => <div key={i} className="text-[0.6875rem] text-muted">{n}</div>)}
 
             {task.steps.map((s) => <StepCard key={s.i} step={s} />)}
 
             {running && (
               <div className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent-soft p-3">
                 <div className="flex items-center gap-2 text-xs"><MothEmblem motion="working" className="size-5" />{live.phase || "Working…"}</div>
-                {live.output && <pre className="selectable max-h-48 overflow-auto font-mono text-[11px] text-muted">{live.output}</pre>}
+                {live.output && <pre className="selectable max-h-48 overflow-auto font-mono text-[0.6875rem] text-muted">{live.output}</pre>}
               </div>
             )}
             {task.report && <ReportCard report={task.report} />}
@@ -198,7 +198,7 @@ export function AgentPanel() {
             onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && goal.trim()) start(); }} />
           <Button disabled={!goal.trim() || !!running} onClick={start}><Play /> Start</Button>
         </div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-3 px-1 text-[11px] text-muted">
+        <div className="mt-1.5 flex flex-wrap items-center gap-3 px-1 text-[0.6875rem] text-muted">
           <label className="flex cursor-pointer items-center gap-1.5"><input type="checkbox" checked={planFirst}
             onChange={(e) => setPlanFirst(e.target.checked)} className="accent-[var(--color-accent)]" /> Show me the plan first</label>
           <button className="cursor-pointer hover:text-fg" onClick={() => setGoal("Write tests for the most important functions in this project, run them, and fix anything they reveal.")}>
@@ -222,7 +222,7 @@ function StepCard({ step }: { step: Step }) {
         <span className="ml-auto text-faint">{open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}</span>
       </button>
       {step.thought && <div className="px-3 pb-2 text-xs italic text-muted">{step.thought}</div>}
-      {open && <pre className="selectable max-h-72 overflow-auto border-t border-border px-3 py-2 font-mono text-[11px] text-muted">{step.result}</pre>}
+      {open && <pre className="selectable max-h-72 overflow-auto border-t border-border px-3 py-2 font-mono text-[0.6875rem] text-muted">{step.result}</pre>}
     </div>
   );
 }
@@ -231,32 +231,32 @@ function ReportCard({ report }: { report: Report }) {
   const v = report.verification;
   return (
     <div className="rounded-lg border border-border bg-surface p-3 text-xs">
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">Report</div>
+      <div className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">Report</div>
       {report.error && <div className="mb-2 flex gap-2 text-warning"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" />{report.error}</div>}
       {report.model_summary && (
         <div className="mb-2">
-          <div className="text-[11px] text-faint">MOTH's summary (its own words, not verified)</div>
+          <div className="text-[0.6875rem] text-faint">MOTH's summary (its own words, not verified)</div>
           <div className="selectable mt-0.5">{report.model_summary}</div>
         </div>
       )}
-      <div className="text-[11px] text-faint">Changes actually made</div>
+      <div className="text-[0.6875rem] text-faint">Changes actually made</div>
       {report.changes.length ? (
         <ul className="mb-2 mt-0.5 space-y-0.5 font-mono">{report.changes.map((c, i) => <li key={i}>{c.type} {c.path ?? c.hash?.slice(0, 10)}</li>)}</ul>
       ) : <div className="mb-2 mt-0.5 text-muted">No files were changed.</div>}
       {report.commands.length > 0 && (
         <>
-          <div className="text-[11px] text-faint">Commands</div>
+          <div className="text-[0.6875rem] text-faint">Commands</div>
           <ul className="mb-2 mt-0.5 space-y-0.5 font-mono">{report.commands.map((c, i) => <li key={i} className={c.ok ? "" : "text-danger"}>{c.ok ? "✓" : "✗"} {c.command}</li>)}</ul>
         </>
       )}
-      <div className="text-[11px] text-faint">Verification</div>
+      <div className="text-[0.6875rem] text-faint">Verification</div>
       <div className="mt-0.5 flex items-center gap-1.5">
         {!v ? <><CircleDashed className="size-3.5 text-faint" /> Not needed (no file changes).</>
           : !v.ran ? <><CircleDashed className="size-3.5 text-faint" /> Not run: {v.reason}</>
           : v.passed ? <><CheckCircle2 className="size-3.5 text-success" /> <span className="font-mono">{v.command}</span> passed</>
           : <><XCircle className="size-3.5 text-danger" /> <span className="font-mono">{v.command}</span> failed (exit {v.exit_code})</>}
       </div>
-      {v?.ran && !v.passed && v.output_tail && <pre className="selectable mt-2 max-h-48 overflow-auto font-mono text-[11px] text-muted">{v.output_tail}</pre>}
+      {v?.ran && !v.passed && v.output_tail && <pre className="selectable mt-2 max-h-48 overflow-auto font-mono text-[0.6875rem] text-muted">{v.output_tail}</pre>}
     </div>
   );
 }

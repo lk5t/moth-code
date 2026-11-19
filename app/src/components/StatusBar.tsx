@@ -47,7 +47,7 @@ export function StatusBar() {
     : conn === "offline" ? "bg-danger" : "bg-warning animate-pulse";
 
   return (
-    <footer className="flex h-6 shrink-0 items-center gap-4 border-t border-border bg-bg px-3 text-[11px] text-faint">
+    <footer className="flex h-6 shrink-0 items-center gap-4 border-t border-border bg-bg px-3 text-[0.6875rem] text-faint">
       {!backendUp && (
         <span className="flex items-center gap-1.5"><span className="size-1.5 animate-pulse rounded-full bg-danger" />restarting local services…</span>
       )}

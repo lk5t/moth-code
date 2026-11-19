@@ -81,7 +81,7 @@ function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric
         return (
           <g key={f}>
             <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} className="stroke-border" strokeWidth={1} />
-            <text x={pad.l - 6} y={y(v) + 3} textAnchor="end" className="fill-[var(--color-faint,#888)] text-[10px]">
+            <text x={pad.l - 6} y={y(v) + 3} textAnchor="end" className="fill-[var(--color-faint,#888)] text-[0.625rem]">
               {metric === "parameters" ? formatNumber(Math.round(v)) : metric === "training_steps" ? v.toFixed(0)
                 : pts[0].b.higher_is_better ? `${(v * 100).toFixed(0)}%` : v.toFixed(2)}
             </text>
@@ -94,7 +94,7 @@ function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric
           onClick={() => onSelect?.(p.v)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.v); } }} className="cursor-pointer">
           <title>{`${p.v.model_version ?? p.v.name}: ${fmt(p.b)}`}</title>
           <circle cx={x(p.i)} cy={y(p.b.value)} r={3.5} className="fill-accent" />
-          <text x={x(p.i)} y={H - 10} textAnchor="middle" className="fill-[var(--color-muted,#999)] text-[10px]">
+          <text x={x(p.i)} y={H - 10} textAnchor="middle" className="fill-[var(--color-muted,#999)] text-[0.625rem]">
             {p.v.model_version ? `MOTH ${p.v.model_version}` : `v${p.v.version}`}
           </text>
         </g>
@@ -208,7 +208,7 @@ export function IntelligenceView({ embedded = false, focus = "all" }: { embedded
               {[...versions].reverse().map((v) => (
                 <li key={v.version} className="flex flex-col gap-0.5 border-l-2 border-border pl-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[13px] font-medium text-fg">{modelLabel(v)}</span>
+                    <span className="text-[0.8125rem] font-medium text-fg">{modelLabel(v)}</span>
                     <span className="text-faint">v{v.version}</span>
                     <Badge>{METHOD[v.method] ?? v.method}</Badge>
                     {v.deployed && <Badge variant="success">serving</Badge>}

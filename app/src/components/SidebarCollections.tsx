@@ -35,10 +35,10 @@ export function SidebarCollections(){
     {!chats?.length&&!loadError&&<p className="px-2 py-1 text-faint">{search?'No matching conversations.':'Start a new chat with MOTH.'}</p>}
     {loadError&&<p role="alert" className="px-2 text-danger">Chat history unavailable. <button onClick={()=>void reload()} className="underline">Retry</button></p>}
    </div>
-   <section aria-label="Recent projects"><div className="mb-1 flex items-center justify-between"><h2 className="text-[10px] uppercase tracking-wider text-faint">Projects</h2><button aria-label="Open project" title="Open project" disabled={opening} onClick={()=>void open()} className="rounded p-1 text-muted hover:text-fg"><Plus className="size-3.5"/></button></div>
+   <section aria-label="Recent projects"><div className="mb-1 flex items-center justify-between"><h2 className="text-[0.625rem] uppercase tracking-wider text-faint">Projects</h2><button aria-label="Open project" title="Open project" disabled={opening} onClick={()=>void open()} className="rounded p-1 text-muted hover:text-fg"><Plus className="size-3.5"/></button></div>
     {recent.map(project=><button key={project.id} disabled={opening} title={project.path} onClick={()=>void open(project.path)} className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-muted hover:bg-surface-2 hover:text-fg disabled:opacity-50"><FolderOpen className="size-3 shrink-0"/><span className="truncate">{project.name}</span></button>)}
     {!recent.length&&<p className="px-2 py-1 text-faint">Open a project when you need coding tools.</p>}
-    <button className="mt-1 px-2 text-[11px] text-muted hover:text-fg" onClick={()=>navigate('workspace')}>All projects and coding tools</button>
+    <button className="mt-1 px-2 text-[0.6875rem] text-muted hover:text-fg" onClick={()=>navigate('workspace')}>All projects and coding tools</button>
     {error&&<p role="alert" className="px-2 text-danger">{error}</p>}
    </section>
   </div>

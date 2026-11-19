@@ -183,11 +183,11 @@ export function UpdatesPanel() {
               <span className="font-medium">Backups</span>
               <Button size="sm" variant="secondary" onClick={() => run(() => post("/v1/admin/updates/server/backup-now"), "A verified backup will be taken within a few minutes.")}>Back up now</Button>
             </div>
-            {(agent?.backups ?? []).length ? <ul className="space-y-0.5 font-mono text-[11px] text-muted">{[...(agent?.backups ?? [])].reverse().map((b: Any) => {
+            {(agent?.backups ?? []).length ? <ul className="space-y-0.5 font-mono text-[0.6875rem] text-muted">{[...(agent?.backups ?? [])].reverse().map((b: Any) => {
               const name = typeof b === "string" ? b : b.name;
               return <li key={name}>{name}{typeof b === "object" && b.bytes ? ` · ${(b.bytes / 2 ** 20).toFixed(1)} MB` : ""}</li>;
             })}</ul> : <p className="text-faint">No backups reported yet. A verified backup is taken before every update.</p>}
-            <p className="mt-1 text-[11px] text-faint">Each backup holds the database and settings, checked before it is kept (the newest are kept). Restoring is done with the server's “moth” command, so newer data is never overwritten by accident.</p>
+            <p className="mt-1 text-[0.6875rem] text-faint">Each backup holds the database and settings, checked before it is kept (the newest are kept). Restoring is done with the server's “moth” command, so newer data is never overwritten by accident.</p>
           </div>
           {u.pending_migrations.some((m: Any) => m.destructive) && (
             <div className="rounded border border-warning/40 bg-warning/10 p-2">
@@ -255,7 +255,7 @@ export function UpdatesPanel() {
                 <Badge variant={depBadge(d.status)}>{d.status.replace("_", " ")}</Badge>
               </button>
               {d.error && <div className="text-danger">{d.error}</div>}
-              {open === d.id && <pre className="selectable mt-1 max-h-60 overflow-auto whitespace-pre-wrap rounded bg-surface-2 p-2 text-[11px] text-muted">{d.log || "No log."}</pre>}
+              {open === d.id && <pre className="selectable mt-1 max-h-60 overflow-auto whitespace-pre-wrap rounded bg-surface-2 p-2 text-[0.6875rem] text-muted">{d.log || "No log."}</pre>}
             </div>
           ))}
         </CardContent>
@@ -346,7 +346,7 @@ export function ModelsPanel() {
         <Button size="sm" variant="ghost" onClick={() => confirm("Roll back MOTH Cloud to the previously deployed model?") && run(() => post("/v1/admin/models/rollback"), "Rolled back.")}>Roll back model</Button>
         <span className="text-muted">Active model: {data.deployed ? `v${data.deployed}` : "none"} · inference on {data.hardware.cuda ? "GPU" : "CPU"}</span>
       </div>
-      <div className="text-[11px] text-faint">Workflow: upload (Owner · model packages) → evaluate (automatic) → publish (automatic when every check passes) → deploy (you) → serving.</div>
+      <div className="text-[0.6875rem] text-faint">Workflow: upload (Owner · model packages) → evaluate (automatic) → publish (automatic when every check passes) → deploy (you) → serving.</div>
       {!data.releases.length && <EmptyState title="No models yet">Publish one from Owner · model packages, or let the training network produce checkpoints.</EmptyState>}
       {data.releases.map((r: Any) => {
         const ev = r.evaluation;
@@ -356,7 +356,7 @@ export function ModelsPanel() {
           <Card key={r.version} className={r.status === "deployed" ? "border-accent/50 shadow-glow" : ""}>
             <CardContent className="flex flex-col gap-1.5 text-xs">
               <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2 text-[13px] font-medium">
+                <div className="flex min-w-0 items-center gap-2 text-[0.8125rem] font-medium">
                   v{r.version} · {r.name}
                   <Badge variant={STATE_VARIANT[r.status] ?? "default"}>{r.status}</Badge>
                   {r.previously_deployed && r.status !== "deployed" && <Badge>previously deployed</Badge>}

@@ -29,11 +29,11 @@ export function AccountMenu() {
           <div className="flex items-center gap-2.5 border-b border-border px-2 pb-2.5 pt-1.5">
             <Avatar name={user.username} url={user.avatar_url} size={34} />
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 truncate text-[13px] font-medium">
+              <div className="flex items-center gap-1.5 truncate text-[0.8125rem] font-medium">
                 {user.display_name}
                 {user.role === "owner" && <Badge variant="accent">Owner</Badge>}
               </div>
-              <div className="truncate text-[11px] text-muted">@{user.username} · {user.plan}</div>
+              <div className="truncate text-[0.6875rem] text-muted">@{user.username} · {user.plan}</div>
             </div>
           </div>
         ) : (
@@ -41,7 +41,7 @@ export function AccountMenu() {
         )}
         {accounts.length > 0 && (
           <div className="border-b border-border py-1">
-            <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-faint">Accounts</div>
+            <div className="px-2 py-1 text-[0.625rem] uppercase tracking-wider text-faint">Accounts</div>
             {accounts.map((a) => {
               const key = accountKey(a.server, a.username);
               return (

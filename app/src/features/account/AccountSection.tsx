@@ -87,7 +87,7 @@ export function AccountSection() {
             <div>
               <div className="flex items-center justify-between">
                 <Label className="flex items-center gap-1.5"><Monitor className="size-3" />Active sessions</Label>
-                <button className="cursor-pointer text-[11px] text-muted hover:text-fg" onClick={() => run(async () => { await serverApi("/v1/auth/sessions/revoke-others", { method: "POST" }); loadSessions(); }, "Signed out everywhere else.")}>Sign out other sessions</button>
+                <button className="cursor-pointer text-[0.6875rem] text-muted hover:text-fg" onClick={() => run(async () => { await serverApi("/v1/auth/sessions/revoke-others", { method: "POST" }); loadSessions(); }, "Signed out everywhere else.")}>Sign out other sessions</button>
               </div>
               <div className="mt-1 space-y-1">
                 {sessions.map((s) => (

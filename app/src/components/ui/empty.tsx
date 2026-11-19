@@ -22,9 +22,9 @@ export function EmptyState({
   return (
     <div className={cn("flex h-full flex-col items-center justify-center gap-2 p-6 text-center animate-fade-in", className)}>
       {icon ? <div className="mb-1 text-faint [&_svg]:size-6">{icon}</div> : <MothEmblem motion="idle" className="mb-1 size-10 opacity-90" />}
-      <div className="text-[13px] font-medium text-fg">{title}</div>
+      <div className="text-[0.8125rem] font-medium text-fg">{title}</div>
       {children && <div className="max-w-sm text-xs leading-relaxed text-muted">{children}</div>}
-      <div className="mt-2 max-w-sm text-[11px] text-faint">Tip: {TIPS[tip]}</div>
+      <div className="mt-2 max-w-sm text-[0.6875rem] text-faint">Tip: {TIPS[tip]}</div>
     </div>
   );
 }

@@ -52,9 +52,9 @@ function useAction() {
 const Stat = ({ label, value, sub, icon, live }: { label: string; value: React.ReactNode; sub?: string; icon?: React.ReactNode; live?: boolean }) => (
   <div className={`lift relative overflow-hidden rounded-lg border bg-bg px-3 py-2.5 ${live ? "border-accent/40" : "border-border"}`}>
     {live && <span className="pointer-events-none absolute -right-6 -top-6 size-16 rounded-full bg-accent/20 blur-xl" />}
-    <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-wider text-faint [&_svg]:size-3.5 [&_svg]:text-accent">{icon}{label}{live && <span className="live-dot ml-auto" />}</div>
+    <div className="flex items-center gap-1.5 text-[0.65625rem] uppercase tracking-wider text-faint [&_svg]:size-3.5 [&_svg]:text-accent">{icon}{label}{live && <span className="live-dot ml-auto" />}</div>
     <div className="mt-0.5 font-mono text-base">{typeof value === "number" ? <AnimatedNumber value={value} /> : value}</div>
-    {sub && <div className="text-[11px] text-muted">{sub}</div>}
+    {sub && <div className="text-[0.6875rem] text-muted">{sub}</div>}
   </div>
 );
 
@@ -82,11 +82,11 @@ function MothNow() {
     <div className="flex flex-wrap items-center gap-4">
       <MothEmblem motion={training ? "training" : "idle"} glow className="size-14 shrink-0" />
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] uppercase tracking-wider text-faint">MOTH right now</p>
+        <p className="text-[0.6875rem] uppercase tracking-wider text-faint">MOTH right now</p>
         <h2 className="truncate text-lg font-semibold">{cur ? modelLabel(cur) : "No model yet"}</h2>
         <p className="mt-0.5 flex items-center gap-2 text-xs text-muted">{training && <span className="live-dot" />}{status ?? "Checking…"}</p>
       </div>
-      {cur?.params != null && <div className="text-right"><p className="text-[11px] text-faint">Parameters</p>
+      {cur?.params != null && <div className="text-right"><p className="text-[0.6875rem] text-faint">Parameters</p>
         <p className="font-mono text-xl text-fg"><AnimatedNumber value={Number(cur.params)} /></p></div>}
       {Number.isFinite(pct) && <svg viewBox="0 0 44 44" className="size-14 -rotate-90" role="img" aria-label={`${pct}% done`}>
         <circle cx="22" cy="22" r="18" fill="none" stroke="currentColor" strokeOpacity="0.12" strokeWidth="4" />
@@ -125,7 +125,7 @@ function Overview() {
       </div>
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><Activity className="size-4 text-accent" />System health</CardTitle></CardHeader>
-        <CardContent className="grid grid-cols-[180px_1fr] gap-y-1.5 text-xs text-muted">
+        <CardContent className="grid grid-cols-[11.25rem_1fr] gap-y-1.5 text-xs text-muted">
           <span>Uptime</span><span className="text-fg">{Math.round(o.system.uptime_seconds / 3600)} h</span>
           <span>Database</span><span className="text-fg">{o.system.database} {o.system.database_bytes != null && `· ${bytes(o.system.database_bytes)}`}</span>
           <span>Model & data storage</span><span className="text-fg">{bytes(o.system.storage_bytes)} · coordinator {bytes(o.system.coordinator_bytes)}</span>
@@ -186,7 +186,7 @@ function Users() {
                 </div>
                 <div className="flex items-end gap-2">
                   <div><Label>Grant plan</Label>
-                    <select className="mt-1 h-8 rounded-md border border-border bg-bg px-2 text-[13px]" value={grant.plan} onChange={(e) => setGrant({ ...grant, plan: e.target.value })}>
+                    <select className="mt-1 h-8 rounded-md border border-border bg-bg px-2 text-[0.8125rem]" value={grant.plan} onChange={(e) => setGrant({ ...grant, plan: e.target.value })}>
                       {["free", "pro", "max"].map((p) => <option key={p}>{p}</option>)}
                     </select>
                   </div>
@@ -347,7 +347,7 @@ function Flags() {
     <Card>
       <CardContent className="flex flex-col">
         {Object.entries(data.feature_flags).map(([k, v]) => (
-          <div key={k} className="flex items-center justify-between border-b border-border py-2.5 text-[13px] last:border-0">
+          <div key={k} className="flex items-center justify-between border-b border-border py-2.5 text-[0.8125rem] last:border-0">
             <span>{FLAG_LABELS[k] ?? k}</span>
             <Switch checked={!!v} onCheckedChange={(val) => run(() => serverApi("/v1/admin/config/flags", { method: "PUT", json: { [k]: val } }), "Flag updated.", load)} />
           </div>
@@ -365,7 +365,7 @@ function Audit() {
     <Card>
       <CardContent className="flex flex-col gap-2">
         <Input placeholder="Filter by action prefix (e.g. admin. or auth.login)" value={action} onChange={(e) => setAction(e.target.value)} />
-        <div className="max-h-[60vh] overflow-auto text-[11px]">
+        <div className="max-h-[60vh] overflow-auto text-[0.6875rem]">
           {data?.map((a) => (
             <div key={a.id} className="grid grid-cols-[120px_200px_1fr] gap-2 border-b border-border py-1">
               <span className="text-faint">{new Date(a.ts * 1000).toLocaleString()}</span>

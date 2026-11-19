@@ -1,7 +1,8 @@
 import { navigate } from "@/lib/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MothEvent } from "@/lib/events";
-import { ArrowUp, Cloud, LogIn, MessageSquarePlus, RefreshCw, Square } from "lucide-react";
+import { ArrowUp, Cloud, FileText, LogIn, MessageSquarePlus, Paperclip, RefreshCw, Square, Upload, X } from "lucide-react";
+import { formatAttachments, formatBytes, onDesktopDrop, readFiles, readPaths, splitAttachments, type Attachment } from "@/lib/attachments";
 import { useCloudStatus } from "@/lib/cloud";
 import { openAccountDialog } from "@/features/account/AccountDialog";
 import { get, post } from "@/lib/backend";
@@ -48,6 +49,23 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     window.addEventListener("moth:open-agent", open);
     return () => window.removeEventListener("moth:open-agent", open);
   }, []);
+  // 2.0: files and folders dropped into chat
+  const [attached, setAttached] = useState<Attachment[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const [dropNote, setDropNote] = useState<string | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const addAttachments = (r: { files: Attachment[]; skipped: { path: string; reason: string }[] }) => {
+    setAttached((cur) => [...cur.filter((c) => !r.files.some((f) => f.path === c.path)), ...r.files].slice(0, 30));
+    setDropNote(r.skipped.length ? `Skipped ${r.skipped.length}: ${r.skipped.slice(0, 3).map((x) => `${x.path} (${x.reason})`).join(", ")}${r.skipped.length > 3 ? "…" : ""}` : null);
+  };
+  useEffect(() => {
+    let off = () => {};
+    let alive = true;
+    onDesktopDrop({ over: setDragging, drop: (paths) => { readPaths(paths).then(addAttachments).catch((e) => setDropNote(String(e.message ?? e))); } })
+      .then((u) => { if (alive) off = u; else u(); }).catch(() => {});
+    return () => { alive = false; off(); };
+  }, []);
+  useEffect(() => { if (!dropNote) return; const t = setTimeout(() => setDropNote(null), 8000); return () => clearTimeout(t); }, [dropNote]);
   const { status: cloud, reload: reloadCloud } = useCloudStatus();
   const {data: liveModel} = useCloudProgress();
   const [search, setSearch] = useState("");
@@ -178,9 +196,10 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
   });
 
   const send = async (regenerate = false) => {
-    const text = regenerate ? [...messages].reverse().find((m)=>m.role === "user")?.content ?? "" : input.trim();
+    const typed = input.trim() || (attached.length ? "Take a look at these files." : "");
+    const text = regenerate ? [...messages].reverse().find((m)=>m.role === "user")?.content ?? "" : formatAttachments(typed, attached);
     if (!text || busy) return;
-    if(!regenerate) {setInput("");setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: text }]);}
+    if(!regenerate) {setInput("");setAttached([]);setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: text }]);}
     sounds.click();
     followTail.current=true;setBusy(true);
     const isNew = cid === null;
@@ -208,7 +227,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     } catch (e) {
       sendingNew.current = false;
       setBusy(false);
-      if(!regenerate) setInput(text);
+      if(!regenerate) setInput(splitAttachments(text).body);
       setMessages((m) => [...m, { id: `e${Date.now()}`, role: "error", content: String((e as Error).message ?? e) }]);
     }
   };
@@ -240,7 +259,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                 key={m}
                 onClick={() => setMode(m)}
                 className={cn(
-                  "cursor-pointer rounded px-2.5 py-0.5 text-[11px] font-medium capitalize text-muted transition-colors",
+                  "cursor-pointer rounded px-2.5 py-0.5 text-[0.6875rem] font-medium capitalize text-muted transition-colors",
                   mode === m && "bg-accent text-white shadow-glow",
                 )}
               >
@@ -271,7 +290,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
             <MessageSquarePlus />
           </Button>
         )}
-        {!general && <span className="flex min-w-0 items-center gap-1 text-[11px] text-faint" title={cloud?.model?.name}>
+        {!general && <span className="flex min-w-0 items-center gap-1 text-[0.6875rem] text-faint" title={cloud?.model?.name}>
           <Cloud className="size-3" />
           <span className="truncate">{currentLabel}</span>
         </span>}
@@ -280,7 +299,13 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
       {mode === "agent" ? (
         <AgentPanel />
       ) : (
-        <>
+        <div className="relative flex min-h-0 flex-1 flex-col"
+          onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
+          onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
+          onDrop={(e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); setDragging(false); readFiles(e.dataTransfer.files).then(addAttachments).catch(() => {}); }}>
+          {dragging && <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-accent/70 bg-bg/80 text-sm text-fg backdrop-blur-sm animate-fade-in">
+            <Upload className="size-6 animate-bounce text-accent" />Drop files or folders to share them with MOTH
+            <span className="text-[0.6875rem] text-muted">Text files only · keys and .env files are never read</span></div>}
           <div ref={scroller} onScroll={(event)=>{const node=event.currentTarget;followTail.current=node.scrollHeight-node.scrollTop-node.clientHeight < 80;}} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
             {hasOlder && <Button size="sm" variant="ghost" onClick={loadOlder}>Load older messages</Button>}
             {messages.length === 0 ? (
@@ -316,24 +341,24 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                 {messages.map((m,index) => {
                   const content = <div key={m.id} className={cn("flex animate-message-in", m.role === "user" && "justify-end")}>
                     {m.role === "user" ? (
-                      <div className="selectable max-w-[85%] whitespace-pre-wrap rounded-xl rounded-br-sm border border-border bg-surface-2 px-3.5 py-2 text-[13px]">{m.content}</div>
+                      <UserBubble text={m.content} />
                     ) : m.role === "error" ? (
                       <ErrorNotice error={m.content} />
                     ) : (
                       <div className="flex max-w-[95%] gap-2.5">
                         <MothEmblem motion={m.streaming ? "generating" : "none"} className="mt-0.5 size-5 shrink-0" />
-                        <div className="min-w-0 text-[13px] leading-relaxed">
-                          {m.content ? <Markdown text={m.content} /> : <span className="text-muted">…</span>}
+                        <div className="min-w-0 text-[0.8125rem] leading-relaxed">
+                          {m.content ? <Markdown text={m.content} streaming={m.streaming} /> : <span className="shimmer-text font-medium">Thinking…</span>}
                           {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-accent" />}
                           {!m.streaming && looksBroken(m.content, m.meta?.stop_reason) && (
-                            <div role="note" className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-[11px] text-warning">
+                            <div role="note" className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-[0.6875rem] text-warning">
                               This reply looks garbled — MOTH is still learning to write.
                               {index === lastAssistant && cid !== null && <button className="cursor-pointer underline" disabled={busy} onClick={() => send(true)}>Try again</button>}
                             </div>
                           )}
-                          {m.meta?.compacted && <div className="mt-1 text-[10.5px] text-faint">Earlier messages were summarised so this long chat fits.</div>}
+                          {m.meta?.compacted && <div className="mt-1 text-[0.65625rem] text-faint">Earlier messages were summarised so this long chat fits.</div>}
                           {m.meta && (
-                            <div className="mt-1 text-[10.5px] text-faint">
+                            <div className="mt-1 text-[0.65625rem] text-faint">
                               {modelLabel(m.meta.model)} · {m.meta.tokens} tokens · {m.meta.tokens_per_sec} tok/s
                               {m.meta.stop_reason === "max_tokens" && " · stopped at token limit"}
                               {m.meta.stop_reason === "cancelled" && " · cancelled"}
@@ -354,8 +379,16 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
             )}
           </div>
           <div className="mx-auto w-full max-w-4xl shrink-0 px-3 pb-3 pt-1 sm:px-4">
-            {remembered && <p role="status" className="animate-pop mb-1 text-[11px] text-success">MOTH will remember: “{remembered}” (Settings → Memory)</p>}
+            {remembered && <p role="status" className="animate-pop mb-1 text-[0.6875rem] text-success">MOTH will remember: “{remembered}” (Settings → Memory)</p>}
+            {dropNote && <p role="status" className="mb-1 text-[0.6875rem] text-warning animate-fade-in">{dropNote}</p>}
+            {attached.length > 0 && <div className="stagger mb-1.5 flex flex-wrap gap-1.5" aria-label="Attached files">
+              {attached.map((f) => <span key={f.path} className="flex max-w-60 items-center gap-1.5 rounded-md border border-border bg-surface-2 py-0.5 pl-2 pr-1 text-[0.6875rem] animate-pop" title={f.path}>
+                <FileText className="size-3 shrink-0 text-accent" /><span className="truncate">{f.path}</span><span className="shrink-0 text-faint">{formatBytes(f.size)}{f.truncated ? " · cut" : ""}</span>
+                <button aria-label={`Remove ${f.name}`} className="rounded p-0.5 text-muted hover:bg-surface-3 hover:text-fg" onClick={() => setAttached((cur) => cur.filter((c) => c.path !== f.path))}><X className="size-3" /></button></span>)}
+            </div>}
             <div className="flex w-full items-end gap-2 rounded-lg border border-border bg-surface p-1.5 transition-shadow focus-within:border-accent/50 focus-within:shadow-glow">
+              <input ref={picker} type="file" multiple hidden onChange={(e) => { if (e.target.files?.length) readFiles(e.target.files).then(addAttachments).catch(() => {}); e.target.value = ""; }} />
+              <Button size="icon" variant="ghost" title="Attach files" aria-label="Attach files" disabled={!!noModel} onClick={() => picker.current?.click()}><Paperclip /></Button>
               <Textarea
                 ref={composer}
                 rows={1}
@@ -379,13 +412,13 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                   <Square className="text-accent" />
                 </Button>
               ) : (
-                <Button size="icon" disabled={!input.trim() || !!noModel} onClick={() => send()} title="Send">
+                <Button size="icon" disabled={(!input.trim() && !attached.length) || !!noModel} onClick={() => send()} title="Send">
                   <ArrowUp />
                 </Button>
               )}
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
@@ -405,4 +438,18 @@ export function looksBroken(text: string, stop?: string | null): boolean {
   const pairs = new Set(words.slice(1).map((w, i) => words[i] + " " + w)).size / Math.max(1, words.length - 1);
   if (/```/.test(t)) return false;  // code is judged by running it, not by this
   return letters < 0.45 || real < 0.45 || longest > 30 || (words.length > 12 && pairs < 0.4);
+}
+
+/** 2.0: a user message, with attached files shown as chips you can open. */
+function UserBubble({ text }: { text: string }) {
+  const { body, files } = splitAttachments(text);
+  return <div className="flex max-w-[85%] flex-col items-end gap-1">
+    {body && <div className="selectable whitespace-pre-wrap rounded-xl rounded-br-sm border border-border bg-surface-2 px-3.5 py-2 text-[0.8125rem]">{body}</div>}
+    {files.length > 0 && <div className="flex flex-wrap justify-end gap-1">
+      {files.map((f, i) => <details key={i} className="group max-w-full rounded-md border border-border bg-surface text-[0.6875rem]">
+        <summary className="flex cursor-pointer items-center gap-1.5 px-2 py-0.5 text-muted hover:text-fg"><FileText className="size-3 text-accent" /><span className="truncate">{f.path}</span></summary>
+        <pre className="selectable max-h-60 max-w-[36rem] overflow-auto border-t border-border p-2 font-mono text-[0.6875rem] text-fg">{f.content}</pre>
+      </details>)}
+    </div>}
+  </div>;
 }

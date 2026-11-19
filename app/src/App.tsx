@@ -9,6 +9,7 @@ import { NavRail } from "@/components/NavRail";
 import { StatusBar } from "@/components/StatusBar";
 import { WorkspaceShell } from "@/features/workspace/WorkspaceShell";
 import { ApprovalDialog } from "@/features/workspace/ApprovalDialog";
+import { ChangeReviewDialog } from "@/features/workspace/ChangeReview";
 const SettingsView = lazy(() => import("@/features/settings/SettingsView").then((m) => ({ default: m.SettingsView })));
 import { loadProjects } from "@/features/workspace/project-actions";
 import { views } from "@/views";
@@ -117,6 +118,7 @@ export default function App() {
         <StatusBar />
         <UpdateBanner />
         <ApprovalDialog />
+        <ChangeReviewDialog />
         <AccountDialog />
         <ReauthDialog />
         <Celebrations />

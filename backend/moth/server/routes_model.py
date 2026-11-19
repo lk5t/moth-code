@@ -28,6 +28,10 @@ class ChatIn(BaseModel):
     params: dict[str, Any] | None = None
 
 
+class AttachIn(BaseModel):
+    paths: list[str] = Field(default_factory=list, max_length=50)
+
+
 class RenameIn(BaseModel):
     title: str = Field(max_length=200)
 
@@ -76,6 +80,40 @@ def register(app: FastAPI, svc: Services, deps) -> None:
             params.extend([q.strip()[:200],q.strip()[:200]])
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         return svc.db.query("SELECT * FROM conversations" + where + " ORDER BY id DESC LIMIT 100", tuple(params))
+
+    @app.post("/api/attachments/read", dependencies=deps)
+    def read_attachments(body: AttachIn):
+        """2.0: text of files and folders dropped into chat (secrets and binary files are skipped)."""
+        from moth.workspace.attachments import read
+        return read(body.paths)
+
+    @app.get("/api/search/messages", dependencies=deps)
+    def search_messages(q: str = "", limit: int = Query(default=20, ge=1, le=50)):
+        """2.0 chat search: chats whose title or messages contain ``q``, with the matching text around it."""
+        needle = q.strip()[:200]
+        if len(needle) < 2:
+            return []
+        rows = svc.db.query(
+            "SELECT m.id AS message_id, m.conversation_id, m.role, m.content, c.title, c.project_id FROM messages m "
+            "JOIN conversations c ON c.id=m.conversation_id WHERE instr(lower(m.content), lower(?)) > 0 "
+            "AND m.role IN ('user','assistant') ORDER BY m.id DESC LIMIT 400", (needle,))
+        titles = svc.db.query("SELECT id AS conversation_id, title, project_id FROM conversations "
+                              "WHERE instr(lower(title), lower(?)) > 0 ORDER BY id DESC LIMIT ?", (needle, limit))
+        out, seen = [], set()
+        for t in titles:
+            seen.add(t["conversation_id"])
+            out.append({**t, "message_id": None, "snippet": "", "role": None})
+        for r in rows:
+            if r["conversation_id"] in seen or len(out) >= limit:
+                continue
+            seen.add(r["conversation_id"])
+            text = " ".join(r["content"].split())
+            i = text.lower().find(needle.lower())
+            start = max(0, i - 50)
+            snippet = ("…" if start else "") + text[start:i + len(needle) + 70] + ("…" if i + len(needle) + 70 < len(text) else "")
+            out.append({"conversation_id": r["conversation_id"], "title": r["title"], "project_id": r["project_id"],
+                        "message_id": r["message_id"], "role": r["role"], "snippet": snippet})
+        return out[:limit]
 
     @app.get("/api/conversations/{cid}/messages", dependencies=deps)
     def messages(cid: int, limit: int | None = Query(default=None, ge=1, le=200), before_id: int | None = None):

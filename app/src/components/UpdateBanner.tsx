@@ -7,10 +7,10 @@ export function UpdateBanner() {
   const u = useUpdater((s) => s);
   if (u.dismissed || (u.phase !== "ready" && u.phase !== "installing")) return null;
   return (
-    <div className="fixed right-4 top-4 z-50 flex w-[340px] items-start gap-3 rounded-lg border border-accent/40 bg-surface p-3 text-xs shadow-glow animate-rise">
+    <div className="fixed right-4 top-4 z-50 flex w-[21.25rem] items-start gap-3 rounded-lg border border-accent/40 bg-surface p-3 text-xs shadow-glow animate-rise">
       <Download className="mt-0.5 size-4 shrink-0 text-accent" />
       <div className="flex-1">
-        <div className="text-[13px] font-medium text-fg">MOTH Code {u.version} is ready</div>
+        <div className="text-[0.8125rem] font-medium text-fg">MOTH Code {u.version} is ready</div>
         <div className="mt-0.5 text-muted">
           {u.phase === "installing" ? "Installing… MOTH Code will start again in a moment." :
             "Downloaded and signature-verified. It installs when you restart or close MOTH Code; your work and settings are kept."}

@@ -24,7 +24,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode; label?: stri
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
         <MothEmblem className="size-10 opacity-70" />
         <div className="text-sm">{this.props.label ?? "This view"} hit an unexpected error</div>
-        <pre className="selectable max-h-40 max-w-xl overflow-auto rounded border border-border bg-surface p-2 text-left text-[11px] text-muted">
+        <pre className="selectable max-h-40 max-w-xl overflow-auto rounded border border-border bg-surface p-2 text-left text-[0.6875rem] text-muted">
           {this.state.error.message}
         </pre>
         <Button variant="secondary" onClick={() => this.setState({ error: null })}>Try again</Button>

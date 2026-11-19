@@ -36,7 +36,7 @@ export function AnswerFooter({ meta, answer }: { meta: AnswerMeta; answer: strin
   return (
     <div className="mt-1.5 flex flex-col gap-1.5">
       {!!meta.sources?.length && (
-        <div className="flex flex-wrap gap-1.5 text-[10.5px] text-muted">
+        <div className="flex flex-wrap gap-1.5 text-[0.65625rem] text-muted">
           Sources:{meta.sources.map((s) => (
             <span key={s.n} className="rounded bg-surface-2 px-1.5 py-0.5" title={s.source || s.title}>[{s.n}] {s.title}</span>
           ))}
@@ -47,7 +47,7 @@ export function AnswerFooter({ meta, answer }: { meta: AnswerMeta; answer: strin
           className={cn("cursor-pointer rounded p-1 hover:text-fg disabled:cursor-default", rated === 1 && "text-success")}><ThumbsUp className="size-3.5" /></button>
         <button aria-label="Bad answer" disabled={rated !== null} onClick={() => setAsking(!asking)}
           className={cn("cursor-pointer rounded p-1 hover:text-fg disabled:cursor-default", rated === -1 && "text-danger")}><ThumbsDown className="size-3.5" /></button>
-        {note && <span className="text-[10.5px] text-muted">{note}</span>}
+        {note && <span className="text-[0.65625rem] text-muted">{note}</span>}
       </div>
       {asking && (
         <div className="flex flex-col gap-1.5 rounded-md border border-border p-2 text-xs">

@@ -53,7 +53,7 @@ function finish() {
 
 function StepDot({ n, active, complete }: { n: number; active: boolean; complete: boolean }) {
   return (
-    <span className={cn("flex size-6 items-center justify-center rounded-full border text-[11px] font-medium",
+    <span className={cn("flex size-6 items-center justify-center rounded-full border text-[0.6875rem] font-medium",
       complete ? "border-accent bg-accent text-white" : active ? "border-accent text-fg" : "border-border text-faint")}>
       {complete ? "✓" : n}
     </span>

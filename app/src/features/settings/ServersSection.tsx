@@ -84,7 +84,7 @@ export function ServersSection() {
               </span>
             </div>
             <div className="mt-0.5 text-muted">Scope: {e.scope.join(", ")}{e.ends_at ? ` · ends ${new Date(e.ends_at * 1000).toLocaleString()}` : ""}</div>
-            {log?.id === e.id && <pre className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap rounded border border-border bg-bg p-2 font-mono text-[10.5px] text-fg">
+            {log?.id === e.id && <pre className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap rounded border border-border bg-bg p-2 font-mono text-[0.65625rem] text-fg">
               {log.rows.length ? log.rows.map((r) => `${timeAgo(r.at)} · ${r.where} · ${r.ok ? "ok" : "refused/failed"} · ${r.command}`).join("\n") : "Nothing logged yet."}</pre>}
           </li>;
         })}</ul> : <p className="text-xs text-muted">No engagements yet.</p>}

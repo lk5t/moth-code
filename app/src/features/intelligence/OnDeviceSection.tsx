@@ -47,7 +47,7 @@ export function OnDeviceSection() {
       <CardContent className="flex flex-col gap-3 text-xs">
         {inst ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[13px] text-fg">{modelLabel(inst)}</span>
+            <span className="text-[0.8125rem] text-fg">{modelLabel(inst)}</span>
             {inst.params && <span className="text-muted">{(inst.params / 1e6).toFixed(1)}M parameters</span>}
             {inst.official && <Badge variant="success">signed by MOTH</Badge>}
             <div className="flex-1" />
@@ -69,7 +69,7 @@ export function OnDeviceSection() {
         )}
         {inst && (
           <div className="flex items-center justify-between gap-6">
-            <div><div className="text-[13px] text-fg">Answer on this computer</div>
+            <div><div className="text-[0.8125rem] text-fg">Answer on this computer</div>
               <div className="text-muted">Chat runs here instead of on MOTH Cloud (slower on older computers, nothing is sent).</div></div>
             <Switch checked={st.answer_on_device} onCheckedChange={(v) => run(put("/api/ondevice/settings", { answer_on_device: v }))} />
           </div>

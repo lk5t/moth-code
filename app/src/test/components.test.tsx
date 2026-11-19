@@ -8,7 +8,7 @@ describe("Markdown", () => {
   it("renders code blocks and inline code", () => {
     const { container } = render(<Markdown text={"Use `add`:\n\n```python\ndef add(a, b):\n    return a + b\n```"} />);
     expect(container.querySelector("pre code")?.textContent).toBe("def add(a, b):\n    return a + b");
-    expect(screen.getByText("add").tagName).toBe("CODE");
+    expect(screen.getAllByText("add").some((n) => n.tagName === "CODE" && !n.closest("pre"))).toBe(true);
   });
   it("never injects HTML from model output", () => {
     const { container } = render(<Markdown text={'<img src=x onerror="alert(1)"><script>alert(1)</script>'} />);

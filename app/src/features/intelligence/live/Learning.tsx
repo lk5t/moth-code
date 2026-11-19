@@ -41,7 +41,7 @@ export function StageMeter({ loss, per }: { loss: number | null | undefined; per
         className={`absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-bg ${i <= st.index ? "bg-accent" : "bg-surface-3"}`}
         style={{ left: `${(i / (STAGES.length - 1)) * 100}%` }} />)}
     </div>
-    <ol className="mt-2 grid grid-cols-6 text-center text-[9.5px] leading-tight text-faint [&>li]:truncate">{STAGES.map((s, i) =>
+    <ol className="mt-2 grid grid-cols-6 text-center text-[0.59375rem] leading-tight text-faint [&>li]:truncate">{STAGES.map((s, i) =>
       <li key={s.name} className={i === st.index ? "font-medium text-fg" : i < st.index ? "text-muted" : ""}>{s.name}</li>)}</ol>
   </div>;
 }
@@ -67,9 +67,9 @@ export function WritingNow({ samples, prompt }: { samples: { step: number; text:
   return <section aria-label="What MOTH writes right now" className="rounded-lg border border-border bg-bg p-3 text-xs">
     <div className="mb-1.5 flex items-center gap-2"><span className="live-dot" /><span className="text-faint">MOTH is writing (step {last.step?.toLocaleString()})</span></div>
     {prompt && <p className="mb-1 text-muted">You: {prompt}</p>}
-    <p className="min-h-8 whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-fg">
+    <p className="min-h-8 whitespace-pre-wrap break-words font-mono text-[0.75rem] leading-relaxed text-fg">
       MOTH: <Typewriter text={last.text || "…"} /></p>
-    {earlier.length > 0 && <ul className="mt-2 space-y-0.5 border-t border-border pt-2 text-[11px] text-faint">
+    {earlier.length > 0 && <ul className="mt-2 space-y-0.5 border-t border-border pt-2 text-[0.6875rem] text-faint">
       {earlier.map((s) => <li key={s.step} className="truncate">step {s.step?.toLocaleString()}: {s.text || "…"}</li>)}</ul>}
   </section>;
 }

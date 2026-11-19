@@ -122,7 +122,7 @@ export function Explorer({ onOpenProject }: { onOpenProject: () => void }) {
       <div key={n.path}>
         <div
           className={cn(
-            "group flex h-[22px] cursor-pointer items-center gap-1 pr-2 text-[12.5px] text-muted hover:bg-surface-2 hover:text-fg",
+            "group flex h-[22px] cursor-pointer items-center gap-1 pr-2 text-[0.78125rem] text-muted hover:bg-surface-2 hover:text-fg",
             (selected === n.path || activeFile === n.path) && "bg-accent-soft text-fg",
           )}
           style={{ paddingLeft: 8 + depth * 12 }}
@@ -146,7 +146,7 @@ export function Explorer({ onOpenProject }: { onOpenProject: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-9 items-center justify-between border-b border-border pl-3 pr-1">
-        <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted" title={project.path}>
+        <span className="truncate text-[0.6875rem] font-semibold uppercase tracking-wider text-muted" title={project.path}>
           {project.name}
         </span>
         <div className="flex">
@@ -164,7 +164,7 @@ export function Explorer({ onOpenProject }: { onOpenProject: () => void }) {
           </Tip>
         </div>
       </div>
-      {error && <div className="px-3 py-2 text-[11px] text-danger">{error}</div>}
+      {error && <div className="px-3 py-2 text-[0.6875rem] text-danger">{error}</div>}
       <div className="flex-1 overflow-auto py-1">{tree.map((n) => renderNode(n, 0))}</div>
     </div>
   );

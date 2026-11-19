@@ -11,7 +11,7 @@ export function Tip({ label, children, side = "right" }: { label: string; childr
         <TooltipPrimitive.Content
           side={side}
           sideOffset={6}
-          className="z-50 rounded-md border border-border bg-surface-2 px-2 py-1 text-[11px] text-fg shadow-lg animate-fade-in"
+          className="z-50 rounded-md border border-border bg-surface-2 px-2 py-1 text-[0.6875rem] text-fg shadow-lg animate-fade-in"
         >
           {label}
         </TooltipPrimitive.Content>

@@ -73,7 +73,7 @@ export function ModelCore({ config, training, pulse, label }: { config: Any | un
   const rings = Math.min(layers, 12);
   const r0 = 62, r1 = 138;
   const desc = layers ? `${label}: ${layers} decoder layers${layers > 12 ? " (drawn as 12 groups)" : ""}, ${config?.n_heads ?? "?"} attention heads per layer, ${config?.d_model ?? "?"} dimensions.` : `${label}: architecture not reported.`;
-  return <svg viewBox="0 0 320 320" className={cn("mx-auto w-full max-w-[320px]", pulse && "animate-pulse-glow")} role="img" aria-label={desc}>
+  return <svg viewBox="0 0 320 320" className={cn("mx-auto w-full max-w-[20rem]", pulse && "animate-pulse-glow")} role="img" aria-label={desc}>
     <defs>
       <radialGradient id="moth-core" cx="50%" cy="50%" r="50%">
         <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.55" />
@@ -96,7 +96,7 @@ export function ModelCore({ config, training, pulse, label }: { config: Any | un
 }
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="min-w-0"><p className="text-[11px] text-faint">{label}</p><div className="mt-0.5 truncate text-xs text-fg">{children}</div></div>;
+  return <div className="min-w-0"><p className="text-[0.6875rem] text-faint">{label}</p><div className="mt-0.5 truncate text-xs text-fg">{children}</div></div>;
 }
 
 export function ModelTab({ progress }: { progress: Any | null }) {
@@ -144,7 +144,7 @@ export function ModelTab({ progress }: { progress: Any | null }) {
         </div>
         <div className="flex min-w-0 flex-col justify-center gap-4">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.2em] text-faint">Active model</p>
+            <p className="text-[0.6875rem] uppercase tracking-[0.2em] text-faint">Active model</p>
             <h2 className="mt-1 text-3xl font-medium tracking-tight">{name}</h2>
             <p className="mt-1 text-xs text-muted">{paramsLabel(cur.params, cur.params_verified)}</p>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
@@ -172,7 +172,7 @@ export function ModelTab({ progress }: { progress: Any | null }) {
 
     <Card aria-label="Capability benchmarks"><CardContent className="p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-sm font-medium">Capabilities</h3>
-        <span className="text-[11px] text-faint">Held-out benchmarks of {name}{rollback ? `, compared with ${modelLabel(rollback)}` : ""}</span></div>
+        <span className="text-[0.6875rem] text-faint">Held-out benchmarks of {name}{rollback ? `, compared with ${modelLabel(rollback)}` : ""}</span></div>
       {benches.length ? <ul className="stagger mt-3 grid gap-2 sm:grid-cols-2">{benches.map(([k, b]) => {
         const prev = rollback?.benchmarks?.[k];
         const change = benchmarkChange(b, prev);
@@ -224,8 +224,8 @@ export function BenchmarkHistory({ timeline }: { timeline: Any[] }) {
   };
   return <Card aria-label="Benchmark history"><CardContent className="p-4">
     <div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-sm font-medium">Benchmark history</h3>
-      <span className="text-[11px] text-faint">Held-out benchmarks of each promoted version; ▲ better, ▼ worse than the version before</span></div>
-    <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[480px] text-xs">
+      <span className="text-[0.6875rem] text-faint">Held-out benchmarks of each promoted version; ▲ better, ▼ worse than the version before</span></div>
+    <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[30rem] text-xs">
       <thead><tr className="text-left text-faint"><th className="py-1 pr-3 font-normal">Capability</th>
         {versions.map((v) => <th key={v.version} className="px-2 py-1 text-right font-normal"><div className="text-fg">{modelLabel(v)}</div><div>{date(v)}</div></th>)}</tr></thead>
       <tbody>{caps.map((k) => <tr key={k} className="border-t border-border">

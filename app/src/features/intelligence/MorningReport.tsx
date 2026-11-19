@@ -49,11 +49,11 @@ export function MorningReport() {
         </dl>
         {report.answer_now && <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
           {report.answer_before && <div className="rounded-lg border border-border bg-bg p-2.5"><p className="text-faint">Before{report.answer_before_at ? ` (${new Date(report.answer_before_at * 1000).toLocaleString()})` : ""}</p>
-            <p className="mt-1 font-mono text-[11px] text-muted">{report.answer_before}</p></div>}
+            <p className="mt-1 font-mono text-[0.6875rem] text-muted">{report.answer_before}</p></div>}
           <div className="rounded-lg border border-accent/40 bg-bg p-2.5"><p className="text-faint">Now — “{report.question}”</p>
-            <p className="mt-1 font-mono text-[11px] text-fg">{report.answer_now}</p></div>
+            <p className="mt-1 font-mono text-[0.6875rem] text-fg">{report.answer_now}</p></div>
         </div>}
-        {report.problems?.length > 0 && <p className="mt-2 text-[11px] text-warning">Needs a look: {report.problems.join(" · ")}</p>}
+        {report.problems?.length > 0 && <p className="mt-2 text-[0.6875rem] text-warning">Needs a look: {report.problems.join(" · ")}</p>}
       </div>
       <button aria-label="Close the morning report" onClick={() => setOpen(false)} className="text-faint hover:text-fg [&_svg]:size-4"><X /></button>
     </div>

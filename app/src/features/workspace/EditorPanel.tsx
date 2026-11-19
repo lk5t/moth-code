@@ -4,12 +4,14 @@ import "./monaco-setup";
 import { useApp, appStore } from "@/lib/app-state";
 import { EmptyState } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
+import { ROOT_PX, useUiSize } from "@/lib/ui-size";
 import { closeFile, saveFile, updateFile } from "./workspace-actions";
 
 export function EditorPanel() {
   const files = useApp((s) => s.openFiles);
   const active = useApp((s) => s.activeFile);
   const file = files.find((f) => f.path === active);
+  const uiSize = useUiSize();
 
   if (!files.length) {
     return (
@@ -76,7 +78,7 @@ export function EditorPanel() {
             }}
             options={{
               fontFamily: "'Cascadia Code', 'Cascadia Mono', Consolas, monospace",
-              fontSize: 13,
+              fontSize: Math.round(13 * ROOT_PX[uiSize] / 16),
               fontLigatures: true,
               minimap: { enabled: false },
               smoothScrolling: true,

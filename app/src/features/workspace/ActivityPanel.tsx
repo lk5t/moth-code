@@ -28,7 +28,7 @@ export function ActivityPanel({ all = false }: { all?: boolean }) {
           <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-accent/70" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-fg" title={i.message}>{i.message}</div>
-            <div className="text-[11px] text-faint">{i.kind} · {timeAgo(i.ts)}</div>
+            <div className="text-[0.6875rem] text-faint">{i.kind} · {timeAgo(i.ts)}</div>
           </div>
         </div>
       ))}

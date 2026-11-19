@@ -96,7 +96,7 @@ export function AiSettings() {
 
 function ComputeChoice({ title, help, checked, disabled, onChange }: { title: string; help: string; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
   return <label className={cn("flex items-start justify-between gap-3 rounded-lg border p-3 transition-colors", checked ? "border-accent/50 bg-accent-soft" : "border-border")}>
-    <span className="min-w-0"><span className="block text-xs text-fg">{title}</span><span className="mt-0.5 block text-[11px] text-muted">{help}</span></span>
+    <span className="min-w-0"><span className="block text-xs text-fg">{title}</span><span className="mt-0.5 block text-[0.6875rem] text-muted">{help}</span></span>
     <Switch aria-label={`Train with ${title}`} checked={checked} disabled={disabled} onCheckedChange={onChange} />
   </label>;
 }
@@ -110,7 +110,7 @@ function ThisComputerChoice() {
     <ComputeChoice title="This computer" help={st?.available === false ? "This build cannot train for the network." : "This PC trains between your own work; it pauses when you need it. Stop at any time."}
       checked={!!st?.enabled} disabled={!st?.available}
       onChange={(v) => { setErr(null); put("/api/participant", { enabled: v }).then(reload).catch((e) => setErr((e as Error).message)); }} />
-    {err && <p className="mt-1 text-[11px] text-danger">{err}</p>}
+    {err && <p className="mt-1 text-[0.6875rem] text-danger">{err}</p>}
   </div>;
 }
 
@@ -138,19 +138,19 @@ export function StorageManager() {
       <ul className="mt-3 space-y-1">{data.categories.map((c: Any) => <li key={c.id}><details className="rounded-md border border-border px-3 py-2">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs">
           <span className="text-fg">{c.label}</span><span className="text-muted">{formatBytes(c.bytes)}{c.removable_bytes > 0 && ` · ${formatBytes(c.removable_bytes)} removable`}</span></summary>
-        <p className="mt-1 text-[11px] text-faint">{c.explanation}</p>
-        <ul className="mt-2 space-y-0.5">{c.items.map((i: Any) => <li key={i.id} className="flex items-center gap-2 text-[11px]">
+        <p className="mt-1 text-[0.6875rem] text-faint">{c.explanation}</p>
+        <ul className="mt-2 space-y-0.5">{c.items.map((i: Any) => <li key={i.id} className="flex items-center gap-2 text-[0.6875rem]">
           <input type="checkbox" aria-label={`Remove ${i.label}`} disabled={i.protected || busy} checked={picked.includes(i.id)}
             onChange={(e) => setPicked((p) => e.target.checked ? [...p, i.id] : p.filter((x) => x !== i.id))} className="accent-[var(--color-accent)]" />
           <span className="min-w-0 flex-1 truncate text-muted" title={i.label}>{i.label}</span>
           <span className="shrink-0 text-faint">{i.protected ? `Kept: ${i.reason}` : formatBytes(i.bytes)}</span></li>)}
-          {!c.items.length && <li className="text-[11px] text-faint">Nothing stored.</li>}</ul>
+          {!c.items.length && <li className="text-[0.6875rem] text-faint">Nothing stored.</li>}</ul>
       </details></li>)}</ul>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button size="sm" variant="secondary" disabled={busy || !removable.length} onClick={() => void run(removable.map((i) => i.id))}>
           Clean up {formatBytes(data.removable_bytes)}</Button>
         {picked.length > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(picked)}>Remove {picked.length} selected</Button>}
-        <span className="text-[11px] text-faint">The deployed model, rollback versions and data in use are always kept.</span>
+        <span className="text-[0.6875rem] text-faint">The deployed model, rollback versions and data in use are always kept.</span>
       </div>
       {result && <p role="status" className="mt-2 text-xs text-muted">{result}</p>}
     </>}

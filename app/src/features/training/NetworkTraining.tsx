@@ -42,7 +42,7 @@ export function ParticipantSwitch({ compact = false }: { compact?: boolean }) {
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-[13px] text-fg"><Laptop className="size-4 text-accent" />Contribute this computer</div>
+          <div className="flex items-center gap-2 text-[0.8125rem] text-fg"><Laptop className="size-4 text-accent" />Contribute this computer</div>
           {!compact && <div className="text-xs text-muted">This computer trains parts of MOTH's experiments when it is idle enough. Stop at any time; work is checkpointed.</div>}
         </div>
         <Switch aria-label="Contribute this computer" checked={!!st.enabled} disabled={!st.available}

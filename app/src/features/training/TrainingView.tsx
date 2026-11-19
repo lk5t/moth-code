@@ -68,7 +68,7 @@ export function TrainingView({ scope = "all" }: { scope?: "all" | "data" | "trai
                   <div className="w-64 truncate text-xs">{j.title}</div>
                   <Progress value={(j.progress ?? 0) * 100} className="flex-1" />
                   <Badge variant={j.status === "running" ? "accent" : j.status === "completed" ? "success" : "danger"}>{j.status}</Badge>
-                  <span className="w-40 truncate text-[11px] text-muted" title={j.error ?? j.message}>{j.error ?? j.message}</span>
+                  <span className="w-40 truncate text-[0.6875rem] text-muted" title={j.error ?? j.message}>{j.error ?? j.message}</span>
                   {j.status === "running" && (
                     <Button size="icon-sm" variant="ghost" title="Stop" onClick={act(() => post(`/api/jobs/${j.id}/stop`))}><Square /></Button>
                   )}
@@ -118,7 +118,7 @@ function StepCard({ n, icon, title, desc, children, onNew, disabled }: { n: numb
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 [&_svg]:size-4 [&_svg]:text-accent">
-            <span className="flex size-5 items-center justify-center rounded-full border border-accent/40 text-[10px] text-accent">{n}</span>
+            <span className="flex size-5 items-center justify-center rounded-full border border-accent/40 text-[0.625rem] text-accent">{n}</span>
             {icon}{title}
           </CardTitle>
           <Button size="sm" variant="outline" onClick={onNew} disabled={disabled}><Plus /> New</Button>
@@ -134,8 +134,8 @@ function Item({ title, sub, action }: { title: string; sub: string; action?: Rea
   return (
     <div className="flex items-center justify-between gap-2 rounded-md border border-border px-2.5 py-2 transition-colors hover:border-border-strong">
       <div className="min-w-0">
-        <div className="truncate text-[13px]">{title}</div>
-        <div className="truncate text-[11px] text-muted">{sub}</div>
+        <div className="truncate text-[0.8125rem]">{title}</div>
+        <div className="truncate text-[0.6875rem] text-muted">{sub}</div>
       </div>
       {action}
     </div>
@@ -180,7 +180,7 @@ function RunDetail({ run, act }: { run: Run; act: (fn: () => Promise<unknown>) =
         <CardDescription>
           {run.config.preset} · seq {run.config.seq_len} · batch {run.config.batch_size}×{run.config.grad_accum} · lr {run.config.lr} · updated {timeAgo(run.updated_at)}
         </CardDescription>
-        {run.error && <div className="mt-1 rounded border border-danger/30 bg-danger/10 px-2 py-1 text-[11px] text-danger">{run.error}</div>}
+        {run.error && <div className="mt-1 rounded border border-danger/30 bg-danger/10 px-2 py-1 text-[0.6875rem] text-danger">{run.error}</div>}
       </CardHeader>
       <CardContent>
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -206,7 +206,7 @@ function RunDetail({ run, act }: { run: Run; act: (fn: () => Promise<unknown>) =
 
 const Stat = ({ label, value }: { label: string; value: string }) => (
   <div className="rounded-md border border-border bg-bg px-3 py-2">
-    <div className="text-[10.5px] uppercase tracking-wider text-faint">{label}</div>
+    <div className="text-[0.65625rem] uppercase tracking-wider text-faint">{label}</div>
     <div className="mt-0.5 font-mono text-sm text-fg">{value}</div>
   </div>
 );
@@ -225,7 +225,7 @@ function TokenizerDialog({ open, onClose, onError }: { open: boolean; onClose: (
   };
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[560px]">
+      <DialogContent className="w-[35rem]">
         <DialogTitle>New tokenizer</DialogTitle>
         <DialogDescription>Learns byte-level BPE merges from your selected data.</DialogDescription>
         <div className="mt-4 grid grid-cols-2 gap-3">
@@ -254,7 +254,7 @@ function DatasetDialog({ open, onClose, onError, tokenizers }: { open: boolean; 
   };
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[560px]">
+      <DialogContent className="w-[35rem]">
         <DialogTitle>New dataset</DialogTitle>
         <DialogDescription>Tokenises the selected sources and records their licenses.</DialogDescription>
         <div className="mt-4 grid grid-cols-2 gap-3">
@@ -296,7 +296,7 @@ function RunDialog({ open, onClose, onError, datasets, presets, onCreated }: { o
   };
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[560px]">
+      <DialogContent className="w-[35rem]">
         <DialogTitle>New training run</DialogTitle>
         <DialogDescription>Starts from random initialisation. You can pause at any time — progress is checkpointed and resumable.</DialogDescription>
         <div className="mt-4 grid grid-cols-2 gap-3">

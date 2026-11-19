@@ -66,7 +66,7 @@ export function LossChart({ points, height = 220 }: { points: MetricPoint[]; hei
         {val.map((p) => <circle key={p.step} cx={xs(p.step)} cy={ys(p.loss)} r="2.2" fill="#e6e6e6" />)}
         {hover && <line x1={hover.x} x2={hover.x} y1={pad.t} y2={height - pad.b} stroke="#444" />}
       </svg>
-      <div className="mt-1 flex gap-4 text-[11px] text-muted">
+      <div className="mt-1 flex gap-4 text-[0.6875rem] text-muted">
         <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 bg-accent" />train loss</span>
         <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 border-t border-dashed border-fg" />validation loss</span>
         {hover && (

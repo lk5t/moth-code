@@ -23,7 +23,7 @@ export function LossChart({ points, live }: { points: Point[]; live: boolean }) 
   const [hover, setHover] = useState<number | null>(null);
   const uid = useId().replace(/:/g, "");
   const data = useMemo(() => points.filter((p) => Number.isFinite(p.step) && Number.isFinite(p.loss)), [points]);
-  if (data.length < 2) return <div className="grid h-40 place-items-center rounded-lg border border-dashed border-border text-[11px] text-faint">
+  if (data.length < 2) return <div className="grid h-40 place-items-center rounded-lg border border-dashed border-border text-[0.6875rem] text-faint">
     The loss curve appears after the first measurements.</div>;
   const lo = Math.min(...data.map((p) => p.loss)), hi = Math.max(...data.map((p) => p.loss));
   const s0 = Math.min(...data.map((p) => p.step)), s1 = Math.max(...data.map((p) => p.step));
@@ -40,7 +40,7 @@ export function LossChart({ points, live }: { points: Point[]; live: boolean }) 
   const near = hover == null ? null : data.reduce((a, b) => (Math.abs(x(b.step) - hover) < Math.abs(x(a.step) - hover) ? b : a));
   const drop = train.length > 1 ? (train[0].loss - train[train.length - 1].loss) / train[0].loss : null;
   return <figure className="relative">
-    <figcaption className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+    <figcaption className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] text-muted">
       <span className="flex items-center gap-1"><i className="inline-block h-0.5 w-3 rounded bg-accent" /> training loss</span>
       <span className="flex items-center gap-1"><i className="inline-block h-0.5 w-3 rounded border-t border-dashed border-fg" /> validation loss</span>
       {drop != null && drop > 0 && <span className="ml-auto text-success">▼ {(drop * 100).toFixed(1)}% lower than at the start of this run</span>}
@@ -68,7 +68,7 @@ export function LossChart({ points, live }: { points: Point[]; live: boolean }) 
       {near && <g><line x1={x(near.step)} x2={x(near.step)} y1={PAD.t} y2={H - PAD.b} stroke="currentColor" strokeOpacity="0.25" />
         <circle cx={x(near.step)} cy={y(near.loss)} r="3" fill="currentColor" /></g>}
     </svg>
-    {near && <div className="pointer-events-none absolute right-2 top-6 rounded-md border border-border bg-surface-2 px-2 py-1 font-mono text-[11px] shadow-lg">
+    {near && <div className="pointer-events-none absolute right-2 top-6 rounded-md border border-border bg-surface-2 px-2 py-1 font-mono text-[0.6875rem] shadow-lg">
       step {near.step.toLocaleString()} · {near.split ?? "train"} {near.loss.toFixed(4)}</div>}
   </figure>;
 }

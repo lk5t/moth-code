@@ -60,7 +60,7 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
       <div className="flex flex-wrap items-center gap-4">
         <LivingMoth className="size-12" />
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] uppercase tracking-[0.22em] text-accent">Evolution · {stage ? STAGE[stage] ?? stage.replaceAll("_", " ") : "Loading"}</p>
+          <p className="text-[0.625rem] uppercase tracking-[0.22em] text-accent">Evolution · {stage ? STAGE[stage] ?? stage.replaceAll("_", " ") : "Loading"}</p>
           <h2 className="mt-1 text-lg font-medium">{stage === "genesis" ? "Start MOTH from zero" : running ? `${name} is evolving` : `${name} · Evolution is not running`}</h2>
           <p role="status" className="mt-1 text-xs text-muted">{doing ?? (error ? `Status unavailable: ${error}` : "Reading status…")}</p>
         </div>
@@ -79,7 +79,7 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
         <p className="mb-1 text-faint">Why MOTH changed its plan</p>
         <ul className="space-y-1">{data!.decisions.slice(-4).reverse().map((d: Any, i: number) => <li key={i} className="border-l-2 border-accent/60 pl-2 text-muted">{d.message}</li>)}</ul>
       </div>}
-      {data?.plan?.steps && <p className="text-[11px] text-faint">Current plan: {Number(data.plan.steps).toLocaleString()} steps per experiment · learning rate {Number(data.plan.lr).toExponential(1)} · batch {data.plan.batch_size}{data.autopilot ? "" : " (fixed — automatic planning is off in AI Settings)"}</p>}
+      {data?.plan?.steps && <p className="text-[0.6875rem] text-faint">Current plan: {Number(data.plan.steps).toLocaleString()} steps per experiment · learning rate {Number(data.plan.lr).toExponential(1)} · batch {data.plan.batch_size}{data.autopilot ? "" : " (fixed — automatic planning is off in AI Settings)"}</p>}
       {data?.data?.error && <p className="text-xs text-warning">Data preparation: {data.data.error}</p>}
       {notice && <p role="alert" className="text-xs text-danger">{notice}</p>}
     </CardContent>

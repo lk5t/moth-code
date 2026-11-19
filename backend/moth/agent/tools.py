@@ -58,7 +58,7 @@ class AgentContext:
     task_id: str = ""
     command_timeout: float = 600.0
 
-    def authorize(self, kind: ActionKind, target: str, detail: str = "") -> None:
+    def authorize(self, kind: ActionKind, target: str, detail: str = "", change: dict[str, Any] | None = None) -> None:
         result = self.permissions.check(kind, self.workspace, target)
         if result.decision == Decision.ALLOW:
             return
@@ -66,11 +66,25 @@ class AgentContext:
             raise PermissionDenied(f"not permitted: {result.reason}")
         self.emit({"kind": "approval_wait", "action": kind.value, "target": target})
         approved = self.approvals.request(kind.value, target, result.reason, result.risk,
-                                          {"task_id": self.task_id, "detail": detail[:2000]},
+                                          {"task_id": self.task_id, "detail": detail[:2000],
+                                           **({"change": _review(change)} if change else {})},
                                           cancel_event=self.cancel)
         self.emit({"kind": "approval_result", "action": kind.value, "target": target, "approved": approved})
         if not approved:
             raise PermissionDenied(f"the user did not approve: {kind.value} {target}")
+
+
+REVIEW_MAX = 200_000
+
+
+def _review(change: dict[str, Any]) -> dict[str, Any]:
+    """2.0: the full before/after of a file change, so the approval prompt can show a diff to Apply or Reject."""
+    out = {"path": change.get("path")}
+    for k in ("before", "after"):
+        v = change.get(k)
+        out[k] = None if v is None else v[:REVIEW_MAX]
+        out[f"{k}_truncated"] = bool(v and len(v) > REVIEW_MAX)
+    return out
 
 
 ToolFn = Callable[[AgentContext, dict[str, Any]], ToolResult]
@@ -136,13 +150,13 @@ def _search_code(ctx: AgentContext, a: dict) -> ToolResult:
 
 def _write_file(ctx: AgentContext, a: dict) -> ToolResult:
     path = a["path"]
-    ctx.authorize(ActionKind.WRITE, path, a["content"][:500])
     ops = FileOps(ctx.workspace)
     before = None
     try:
         before = ops.read(path)
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, ValueError, PermissionError):
         pass
+    ctx.authorize(ActionKind.WRITE, path, a["content"][:500], change={"path": path, "before": before, "after": a["content"]})
     res = ops.write(path, a["content"])
     return ToolResult(True, f"{'created' if res['created'] else 'updated'} {path} ({res['bytes']} bytes)",
                       change={"type": "create" if res["created"] else "modify", "path": path, "before": before,
@@ -151,8 +165,14 @@ def _write_file(ctx: AgentContext, a: dict) -> ToolResult:
 
 def _edit_file(ctx: AgentContext, a: dict) -> ToolResult:
     path = a["path"]
-    ctx.authorize(ActionKind.WRITE, path, f"replace:\n{a['old'][:300]}\nwith:\n{a['new'][:300]}")
     ops = FileOps(ctx.workspace)
+    try:
+        current = ops.read(path)
+    except (FileNotFoundError, ValueError, PermissionError):
+        current = None
+    proposed = current.replace(a["old"], a["new"], 1) if current is not None and a["old"] in current else None
+    ctx.authorize(ActionKind.WRITE, path, f"replace:\n{a['old'][:300]}\nwith:\n{a['new'][:300]}",
+                  change={"path": path, "before": current, "after": proposed} if proposed is not None else None)
     before = ops.read(path)
     try:
         ops.edit(path, a["old"], a["new"])

@@ -22,7 +22,7 @@ export function ReauthDialog() {
   };
   return (
     <Dialog open={!!resolve} onOpenChange={(o) => !o && done(null)}>
-      <DialogContent className="w-[380px]">
+      <DialogContent className="w-[23.75rem]">
         <div className="flex items-center gap-2"><ShieldCheck className="size-4 text-accent" /><DialogTitle>Confirm it's you</DialogTitle></div>
         <DialogDescription>This action needs your password again.</DialogDescription>
         <form className="mt-4 flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); done(pw); }}>

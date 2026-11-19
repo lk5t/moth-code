@@ -7,6 +7,9 @@ import { del, post } from "@/lib/backend";
 import { subscribe } from "@/lib/events";
 import { appStore, useApp } from "@/lib/app-state";
 import { Button } from "@/components/ui/button";
+import { ROOT_PX, uiSizeStore } from "@/lib/ui-size";
+
+const termFontSize = () => Math.round(12.5 * ROOT_PX[uiSizeStore.getState().size] / 16 * 2) / 2;
 import { previewStore, spotPreviewUrl } from "./PreviewPane";
 
 /**
@@ -27,7 +30,7 @@ export function TerminalPanel() {
     if (!host.current) return;
     const term = new Terminal({
       fontFamily: "'Cascadia Mono', Consolas, monospace",
-      fontSize: 12.5,
+      fontSize: termFontSize(),
       cursorBlink: true,
       convertEol: true,
       theme: {
@@ -152,7 +155,7 @@ export function TerminalPanel() {
   return (
     <div className="flex h-full flex-col bg-[#0b0b0b]">
       <div className="flex h-8 shrink-0 items-center justify-between border-b border-border px-3">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Terminal</span>
+        <span className="text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">Terminal</span>
         <div className="flex items-center gap-1">
           {project && <Button variant="ghost" size="sm" title="Select an error (or use the last output) and let MOTH explain and fix it"
             onClick={() => void fixThis()}><Wrench /> Fix this</Button>}
@@ -166,7 +169,7 @@ export function TerminalPanel() {
           </Button>
         </div>
       </div>
-      {(problem || fixNote) && <div role="status" className="animate-pop flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-3 py-1.5 text-[11px]">
+      {(problem || fixNote) && <div role="status" className="animate-pop flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-3 py-1.5 text-[0.6875rem]">
         <Sparkles className="size-3.5 shrink-0 text-warning" />
         <span className="min-w-0 flex-1 truncate">{fixNote ?? `MOTH spotted an error: ${problem}`}</span>
         {problem && !fixNote && <Button size="sm" variant="secondary" onClick={() => void fixThis(problem)}>Fix it</Button>}

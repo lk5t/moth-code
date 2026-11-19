@@ -25,7 +25,7 @@ export function NavRail() {
     };
     window.addEventListener("keydown", shortcut);return () => window.removeEventListener("keydown", shortcut);
   }, []);
-  return <nav aria-label="Main workspaces" className={cn("flex min-h-0 shrink-0 flex-col gap-2 border-r border-border bg-bg p-2 transition-[width] motion-reduce:transition-none",collapsed?"w-14":"w-14 md:w-56")}>
+  return <nav aria-label="Main workspaces" className={cn("flex min-h-0 shrink-0 flex-col gap-2 border-r border-border bg-bg p-2 transition-[width] motion-reduce:transition-none",collapsed?"w-12":"w-12 md:w-52")}>
     <div className="flex h-9 shrink-0 items-center justify-between gap-1">
       {!collapsed&&<div className="hidden min-w-0 items-center gap-2 md:flex"><LivingMoth className="size-6"/><span className="text-xs font-medium tracking-widest">MOTH</span></div>}
       <button aria-label={collapsed?"Expand sidebar":"Collapse sidebar"} aria-expanded={!collapsed} onClick={()=>appStore.setState({sidebarCollapsed:!collapsed})} className="ml-auto rounded p-2 text-muted hover:bg-surface-2 hover:text-fg focus-visible:outline focus-visible:outline-accent">{collapsed?<PanelLeftOpen className="size-4"/>:<PanelLeftClose className="size-4"/>}</button>

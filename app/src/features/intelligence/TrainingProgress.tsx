@@ -61,11 +61,11 @@ function Experiment({ experiment, report, paused, nowSec, arch }: { experiment: 
       <span className="text-muted">{experiment.backend ? `${experiment.backend}${experiment.device ? ` · ${experiment.device}` : ""}${experiment.worker_id ? ` · worker ${experiment.worker_id}` : ""}` : "Compute not assigned yet"}</span>
       <span className="ml-auto text-muted">{paused && running ? "pausing" : experiment.status}</span>
     </div>
-    {running && phase && phase !== "training" && <p className="mb-2 text-[11px] text-muted">The worker is {phase}…</p>}
+    {running && phase && phase !== "training" && <p className="mb-2 text-[0.6875rem] text-muted">The worker is {phase}…</p>}
     {pct != null ? <div role="progressbar" aria-label={`Experiment ${experiment.id} completion`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}
       className="h-1.5 overflow-hidden rounded-full bg-surface-3"><div className={`h-full bg-accent shadow-[0_0_8px_var(--color-accent)] transition-[width] duration-700 ease-out${active ? " progress-live" : ""}`} style={{ width: `${pct}%` }} /></div>
-      : <p className="text-[11px] text-faint">{running ? "Starting — waiting for the first progress report" : "Waiting for compute"}</p>}
-    {experiment.successor && <p className="mt-2 rounded-md border border-accent/40 bg-accent-soft px-2 py-1 text-[11px] text-fg">
+      : <p className="text-[0.6875rem] text-faint">{running ? "Starting — waiting for the first progress report" : "Waiting for compute"}</p>}
+    {experiment.successor && <p className="mt-2 rounded-md border border-accent/40 bg-accent-soft px-2 py-1 text-[0.6875rem] text-fg">
       Training MOTH's bigger successor: {Number(experiment.successor.params_before).toLocaleString()} → <b>{Number(experiment.successor.params_after).toLocaleString()}</b> parameters
       {experiment.successor.architecture?.max_seq_len ? ` · reads ${experiment.successor.architecture.max_seq_len.toLocaleString()} tokens at once` : ""}</p>}
     <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,3fr)]">
@@ -77,7 +77,7 @@ function Experiment({ experiment, report, paused, nowSec, arch }: { experiment: 
           <NeuralNet className="absolute inset-0 h-full w-full" layers={Number(arch?.n_layers ?? 4)} width={Number(arch?.d_model ?? 64)}
             active={active} speed={num(report.tokens_per_sec) ? report.tokens_per_sec : null}
             learned={stageProgress(report.val_loss ?? report.train_loss, experiment.loss_per)} />
-          <span className="absolute bottom-1 left-2 text-[10px] text-faint">{arch?.n_layers ?? "?"} layers · {arch?.d_model ?? "?"} wide{active ? " · learning" : ""}</span>
+          <span className="absolute bottom-1 left-2 text-[0.625rem] text-faint">{arch?.n_layers ?? "?"} layers · {arch?.d_model ?? "?"} wide{active ? " · learning" : ""}</span>
         </div>
         <StageMeter loss={report.val_loss ?? report.best_val ?? report.train_loss} per={experiment.loss_per === "token" ? "token" : "byte"} />
       </div>
@@ -93,12 +93,12 @@ function Experiment({ experiment, report, paused, nowSec, arch }: { experiment: 
       <div><dt className="text-faint">Remaining</dt><dd className="mt-0.5 font-mono">{eta != null ? `≈ ${duration(eta)}` : running ? "Estimating" : "—"}</dd></div>
       <div><dt className="text-faint">Checkpoint</dt><dd className="mt-0.5 truncate font-mono">{report.checkpoint?.name ? `step ${report.checkpoint.step}` : "None yet"}</dd></div>
     </dl>
-    {(domains.length > 0 || experiment.plan?.lr) && <p className="mt-2 text-[11px] text-muted">
+    {(domains.length > 0 || experiment.plan?.lr) && <p className="mt-2 text-[0.6875rem] text-muted">
       {domains.length > 0 && <>Data: {experiment.data?.stage ? `${experiment.data.stage} stage · ` : ""}{domains.map(([d, w]: any) => `${d} ${Math.round(w * 100)}%`).join(", ")}</>}
       {experiment.plan?.lr && <>{domains.length ? " · " : ""}learning rate {Number(experiment.plan.lr).toExponential(1)} · batch {experiment.plan.batch_size}</>}</p>}
     {num(improvement) && <p className={`mt-2 text-xs ${experiment.status === "passed" || experiment.status === "deployed" ? "text-success" : "text-muted"}`}>
       Evaluation on held-out data: {improvement >= 0 ? "+" : ""}{(improvement * 100).toFixed(2)}% — {experiment.status === "rejected" ? `kept the previous model${failedGates.length ? ` (failed: ${failedGates.join(", ")})` : ""}` : "passed every gate"}</p>}
-    {experiment.rationale && <p className="mt-1 text-[11px] text-faint">Why: {experiment.rationale}</p>}
+    {experiment.rationale && <p className="mt-1 text-[0.6875rem] text-faint">Why: {experiment.rationale}</p>}
     {(experiment.error || report.error) && <p role="status" className="mt-2 text-xs text-warning">{experiment.error || report.error}</p>}
   </section>;
 }
@@ -128,7 +128,7 @@ export function TrainingProgress({ progress, resources }: { progress: Any | null
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div><h2 className="text-sm font-medium">Live training</h2>
         <p className="mt-0.5 text-xs text-muted">{progress?.current ? modelLabel(progress.current) : "MOTH"} · {state}{training?.curriculum ? ` · ${training.curriculum} curriculum` : ""}</p></div>
-      <span className="text-[11px] text-faint">Measured by the trainer · updates every few seconds</span>
+      <span className="text-[0.6875rem] text-faint">Measured by the trainer · updates every few seconds</span>
     </div>
     <SystemStrip resources={resources} network={progress?.network ?? null} />
     {training?.cycle?.waiting_reason && <p role="status" className="text-xs text-warning">{training.cycle.waiting_reason}</p>}

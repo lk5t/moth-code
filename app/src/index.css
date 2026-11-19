@@ -31,6 +31,20 @@
   --animate-pop: pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
   --animate-message-in: message-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-breathe: breathe 2.2s ease-in-out infinite;
+  /* 2.0 motion */
+  --animate-spring: spring 380ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  --animate-slide-right: slide-right 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-slide-up: slide-up 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-shimmer: shimmer 1.8s linear infinite;
+  --animate-ping-soft: ping-soft 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+  --animate-found: found 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+
+  @keyframes spring { from { opacity: 0; transform: translateY(8px) scale(0.94) } to { opacity: 1; transform: none } }
+  @keyframes slide-right { from { opacity: 0; transform: translateX(14px) } to { opacity: 1; transform: none } }
+  @keyframes slide-up { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+  @keyframes shimmer { from { background-position: -200% 0 } to { background-position: 200% 0 } }
+  @keyframes ping-soft { 0% { transform: scale(1); opacity: 0.55 } 80%, 100% { transform: scale(2.2); opacity: 0 } }
+  @keyframes found { 0% { opacity: 0; transform: scale(0.9); box-shadow: 0 0 0 0 rgb(193 18 31 / 0.6) } 60% { opacity: 1; transform: scale(1.02); box-shadow: 0 0 0 6px rgb(193 18 31 / 0) } 100% { transform: none } }
 
   @keyframes view-in {
     from { opacity: 0; transform: translateY(10px) scale(0.995); filter: blur(3px) }
@@ -55,7 +69,7 @@
     background: var(--color-bg);
     color: var(--color-fg);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: 0.8125rem;
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
     user-select: none;
@@ -63,7 +77,7 @@
   input, textarea, [contenteditable], .selectable { user-select: text; }
   ::selection { background: rgb(193 18 31 / 0.45); }
   * { scrollbar-width: thin; scrollbar-color: #2e2e2e transparent; }
-  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
   *::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
   *::-webkit-scrollbar-thumb:hover { background: #3a3a3a; background-clip: content-box; border: 2px solid transparent; }
   :focus-visible { outline: 1px solid var(--color-accent); outline-offset: 1px; }
@@ -257,3 +271,21 @@ button:not(:disabled):active { transform: scale(0.97); }
   .lift:hover { transform: none; }
 }
 @keyframes bar-grow { from { transform: scaleY(0) } to { transform: scaleY(1) } }
+
+/* 2.0: "thinking" text shimmer */
+.shimmer-text {
+  background: linear-gradient(90deg, var(--color-muted) 0%, var(--color-fg) 45%, var(--color-accent-hover) 50%, var(--color-fg) 55%, var(--color-muted) 100%);
+  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: var(--animate-shimmer);
+}
+
+/* 2.0: red glow that breathes around something MOTH is working on */
+.working-glow { animation: pulse-glow 2.4s ease-in-out infinite; }
+
+/* Windows "show animations" off → no motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: 0.01ms !important; }
+}
+html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="off"] *::after {
+  animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: 0.01ms !important;
+}

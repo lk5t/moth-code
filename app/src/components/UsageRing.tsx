@@ -70,6 +70,6 @@ function Bar({ label, w }: { label: string; w: Window }) {
     <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-border">
       <div className={cn("h-full rounded-full", w.percent >= 90 ? "bg-danger" : "bg-accent")} style={{ width: `${Math.min(100, w.percent)}%` }} />
     </div>
-    <div className="mt-0.5 text-[10.5px] text-faint">{resetIn(w.resets_at)}</div>
+    <div className="mt-0.5 text-[0.65625rem] text-faint">{resetIn(w.resets_at)}</div>
   </div>;
 }

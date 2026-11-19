@@ -19,7 +19,7 @@ export function ModelBar() {
   const onDevice=local?.installed && local?.answer_on_device;
   const m=cloud?.current;
   return (
-    <div className="flex min-w-0 max-w-[45%] items-center gap-2 text-[11px]">
+    <div className="flex min-w-0 max-w-[45%] items-center gap-2 text-[0.6875rem]">
       <span className="min-w-0 truncate text-fg">{onDevice ? `${modelLabel(local.installed)} · on this computer` : m ? `${modelLabel(m)} · MOTH Cloud` : "No model available"}</span>
 
 

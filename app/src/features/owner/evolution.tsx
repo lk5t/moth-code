@@ -65,7 +65,7 @@ export function EvolutionPanel({ section = "all" }: { section?: "all" | "improve
       {section === "all" && <Card>
         <CardContent className="flex flex-col gap-3 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-[13px] font-medium">
+            <div className="flex items-center gap-2 text-[0.8125rem] font-medium">
               <Sparkles className="size-4 text-accent" />{headline}
               {active && <Badge variant={VARIANT[cyc.status]}>cycle #{cyc.id}</Badge>}
             </div>
@@ -102,9 +102,9 @@ export function EvolutionPanel({ section = "all" }: { section?: "all" | "improve
 function Fact({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
     <div className="rounded-lg border border-border bg-bg px-3 py-2.5">
-      <div className="text-[10.5px] uppercase tracking-wider text-faint">{label}</div>
+      <div className="text-[0.65625rem] uppercase tracking-wider text-faint">{label}</div>
       <div className="mt-0.5 font-mono text-base">{value}</div>
-      {sub && <div className="truncate text-[11px] text-muted">{sub}</div>}
+      {sub && <div className="truncate text-[0.6875rem] text-muted">{sub}</div>}
     </div>
   );
 }
@@ -162,7 +162,7 @@ function ExperimentDetail({ id }: { id: number }) {
   const t = data.metrics?.training ?? {};
   return (
     <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2">
-      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono text-[11px] md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono text-[0.6875rem] md:grid-cols-3">
         {Object.entries(data.config).filter(([k]) => !["architecture_key", "base_sha256", "dataset_sha256"].includes(k)).map(([k, v]) => (
           <span key={k}><span className="text-faint">{k}</span> {String(v)}</span>
         ))}
@@ -177,7 +177,7 @@ function ExperimentDetail({ id }: { id: number }) {
         <Button size="sm" variant="ghost" onClick={() => serverApi<Any>(`/v1/admin/evolution/experiments/${id}/log`).then((r) => setLog(r.lines))}>
           {log ? "Refresh training log" : "Show training log"}
         </Button>
-        {log && <pre className="selectable mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-surface-2 p-2 text-[10.5px] text-muted">{log.join("\n") || "(empty)"}</pre>}
+        {log && <pre className="selectable mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-surface-2 p-2 text-[0.65625rem] text-muted">{log.join("\n") || "(empty)"}</pre>}
       </div>
     </div>
   );
@@ -185,7 +185,7 @@ function ExperimentDetail({ id }: { id: number }) {
 
 function GateTable({ gates }: { gates: Any[] }) {
   return (
-    <table className="w-full text-[11px]">
+    <table className="w-full text-[0.6875rem]">
       <thead className="text-faint"><tr><th className="py-1 text-left font-normal">Check</th><th className="pl-4 text-right font-normal">Current</th><th className="pl-4 text-right font-normal">Candidate</th><th className="pl-4 text-left font-normal">Result</th></tr></thead>
       <tbody>
         {gates.map((g, i) => (

@@ -26,9 +26,10 @@ import { ConnectionsSection } from "./ConnectionsSection";
 import { ServersSection } from "./ServersSection";
 import { TwoFactorSection } from "@/features/account/TwoFactorSection";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { AppearanceSection } from "./AppearanceSection";
 
 /** Settings in a few plain groups instead of one long page (0.5.4). */
-const TABS = ["Account", "Privacy & AI", "Plan & referrals", "Code agent", "Servers & security", "Updates & about", "Advanced"] as const;
+const TABS = ["Account", "Appearance", "Privacy & AI", "Plan & referrals", "Code agent", "Servers & security", "Updates & about", "Advanced"] as const;
 type Tab = (typeof TABS)[number];
 
 interface Permissions {
@@ -42,7 +43,7 @@ export function Row({ title, desc, children }: { title: string; desc?: string; c
   return (
     <div className="flex items-center justify-between gap-6 border-b border-border py-3 last:border-0">
       <div>
-        <div className="text-[13px] text-fg">{title}</div>
+        <div className="text-[0.8125rem] text-fg">{title}</div>
         {desc && <div className="mt-0.5 text-xs text-muted">{desc}</div>}
       </div>
       <div className="shrink-0">{children}</div>
@@ -59,6 +60,10 @@ export function SettingsView() {
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useSavedSection<Tab>("settings", TABS, "Account");
+  useEffect(() => {  // 2.0: the command bar opens a tab directly
+    const open = (e: Event) => setTab((e as CustomEvent<Tab>).detail);
+    window.addEventListener("moth:settings-tab", open); return () => window.removeEventListener("moth:settings-tab", open);
+  }, []);
 
   useEffect(() => {
     get<Record<string, any>>("/api/settings").then((s) => {setPerms({ ...DEFAULT_PERMS, ...(s.permissions ?? {}) }); setLoaded(true);}).catch((e) => setError(e.message));
@@ -92,6 +97,7 @@ export function SettingsView() {
           <NativeResetPanel />
           <details className="rounded-xl border border-border p-4 text-xs"><summary className="cursor-pointer text-sm">Reversible lineage restart (keeps a verified backup of the current models)</summary><div className="mt-3"><GenesisPanel /></div></details>
         </> : <p className="text-xs text-muted">Advanced operations, including Genesis Reset, are available to the MOTH Owner only.</p>)}
+        {tab === "Appearance" && <AppearanceSection />}
         {tab === "Privacy & AI" && <><ChatRetention /><IntelligenceSection /><OnDeviceSection /></>}
         {tab === "Plan & referrals" && <><UsageSection /><ReferralsSection /></>}
         {tab === "Servers & security" && <ServersSection />}
@@ -129,7 +135,7 @@ export function SettingsView() {
               </Button>
             </Row>
             {system && (
-              <div className="mt-3 grid grid-cols-[140px_1fr] gap-y-1.5">
+              <div className="mt-3 grid grid-cols-[8.75rem_1fr] gap-y-1.5">
                 <span>Platform</span><span className="text-fg">{system.platform}</span>
                 <span>CPU threads</span><span className="text-fg">{system.cpu_count}</span>
                 <span>PyTorch</span><span className="text-fg">{system.torch ?? <Badge variant="danger">not available</Badge>}</span>

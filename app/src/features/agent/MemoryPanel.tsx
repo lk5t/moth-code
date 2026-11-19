@@ -56,7 +56,7 @@ export function MemoryPanel() {
               <Badge variant={m.kind === "error" ? "danger" : m.kind === "solution" ? "success" : "default"}>{m.kind}</Badge>
               {!!m.verified && <span title="verified"><ShieldCheck className="size-3 text-success" /></span>}
               <span className="truncate font-medium">{m.title}</span>
-              <span className="ml-auto shrink-0 text-[10px] text-faint">{timeAgo(m.updated_at)}</span>
+              <span className="ml-auto shrink-0 text-[0.625rem] text-faint">{timeAgo(m.updated_at)}</span>
               <button className="hidden cursor-pointer text-muted hover:text-danger group-hover:block" onClick={() => del(`/api/memory/${m.id}`).then(reload)}><Trash2 className="size-3" /></button>
             </div>
             <div className="selectable mt-1 line-clamp-4 whitespace-pre-wrap text-muted">{m.content}</div>

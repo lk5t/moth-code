@@ -114,8 +114,8 @@ function GitChanges() {
           <Button variant="ghost" size="icon-sm" onClick={load}><RefreshCw /></Button>
         </span>
       </div>
-      {ghNote && <div role="status" className="px-3 py-1.5 text-[11px] text-muted">{ghNote}</div>}
-      {error && <div className="px-3 py-1.5 text-[11px] text-danger">{error}</div>}
+      {ghNote && <div role="status" className="px-3 py-1.5 text-[0.6875rem] text-muted">{ghNote}</div>}
+      {error && <div className="px-3 py-1.5 text-[0.6875rem] text-danger">{error}</div>}
       <div className="flex gap-2 border-b border-border p-2">
         <Input placeholder="Commit message" value={message} onChange={(e) => setMessage(e.target.value)} />
         <Button size="default" disabled={!message.trim() || !status?.entries.length} onClick={commit}>
@@ -135,7 +135,7 @@ function GitChanges() {
           </div>
         ))}
       </div>
-      <pre className="selectable min-h-0 flex-1 overflow-auto p-3 font-mono text-[11.5px] leading-relaxed">
+      <pre className="selectable min-h-0 flex-1 overflow-auto p-3 font-mono text-[0.71875rem] leading-relaxed">
         {diff.split("\n").map((l, i) => (
           <div key={i} className={cn(l.startsWith("+") && !l.startsWith("+++") && "text-success", l.startsWith("-") && !l.startsWith("---") && "text-[#ff6b75]", l.startsWith("@@") && "text-faint")}>
             {l || " "}
@@ -143,7 +143,7 @@ function GitChanges() {
         ))}
         {!selected && log.length > 0 && (
           <div className="font-sans">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">Recent commits</div>
+            <div className="mb-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-muted">Recent commits</div>
             {log.map((c) => (
               <div key={c.hash} className="flex justify-between gap-3 py-0.5 text-xs">
                 <span className="truncate text-fg"><span className="mr-2 font-mono text-faint">{c.hash.slice(0, 7)}</span>{c.subject}</span>
@@ -177,7 +177,7 @@ function Checkpoints() {
     } catch (e) { setNote(String((e as Error).message ?? e)); }
   };
   return <section aria-label="MOTH checkpoints" className="border-b border-border px-3 py-2 text-xs">
-    <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted"><History className="size-3.5" /> MOTH's changes</div>
+    <div className="mb-1 flex items-center gap-1.5 text-[0.6875rem] font-semibold uppercase tracking-wider text-muted"><History className="size-3.5" /> MOTH's changes</div>
     {note && <p role="status" className="mb-1 text-muted">{note}</p>}
     <ul className="stagger max-h-40 space-y-1 overflow-auto">{points.slice(0, 20).map((p) => <li key={p.task_id}
       className="lift flex items-center gap-2 rounded border border-border px-2 py-1">

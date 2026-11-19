@@ -22,7 +22,7 @@ it("exposes five main sections with an active indicator and persistent navigatio
 it("supports keyboard feature search and maps every older route into the five sections", () => {
   render(<TooltipProvider><NavRail /></TooltipProvider>);
   fireEvent.keyDown(window,{key:"k",ctrlKey:true});
-  const search=screen.getByRole("combobox",{name:"Search features"});
+  const search=screen.getByRole("combobox",{name:"Search commands"});
   fireEvent.change(search,{target:{value:"Model history"}});
   fireEvent.keyDown(search,{key:"Enter"});
   expect(appStore.getState().view).toBe("intelligence");

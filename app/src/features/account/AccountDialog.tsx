@@ -78,7 +78,7 @@ export function AccountDialog() {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
-      <DialogContent className="w-[400px]">
+      <DialogContent className="w-[25rem]">
         <div className="mb-1 flex flex-col items-center gap-2 text-center">
           <MothEmblem className="size-12" glow />
           <DialogTitle className="text-base">{titles[mode]}</DialogTitle>
@@ -109,7 +109,7 @@ export function AccountDialog() {
               <div>
                 <div className="flex items-center justify-between">
                   <Label>Password</Label>
-                  {mode === "login" && <button type="button" className="cursor-pointer text-[11px] text-muted hover:text-fg" onClick={() => go("forgot")}>Forgot password?</button>}
+                  {mode === "login" && <button type="button" className="cursor-pointer text-[0.6875rem] text-muted hover:text-fg" onClick={() => go("forgot")}>Forgot password?</button>}
                 </div>
                 <Input className="mt-1" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                   autoComplete={mode === "register" ? "new-password" : "current-password"} required minLength={mode === "register" ? 10 : 1} />
@@ -156,7 +156,7 @@ export function AccountDialog() {
               )}
             </div>
             {(
-              <details className="text-[11px] text-faint" open={!server}>
+              <details className="text-[0.6875rem] text-faint" open={!server}>
                 <summary className="cursor-pointer">MOTH Cloud: {server || "not configured"} (change)</summary>
                 <Input className="mt-1 h-7 text-xs" placeholder="https://moth.example.com" value={server} onChange={(e) => setServer(e.target.value.trim())} />
               </details>

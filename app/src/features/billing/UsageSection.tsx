@@ -103,13 +103,13 @@ export function UsageSection() {
             {!summary.unlimited && p && (
               <>
                 <Progress value={pct} className="mt-3" />
-                <div className="mt-1.5 flex justify-between text-[11px] text-muted">
+                <div className="mt-1.5 flex justify-between text-[0.6875rem] text-muted">
                   <span>{formatNumber(p.used, 1)} of {formatNumber(p.allowance, 1)} tokens used</span>
                   <span className="text-fg">{formatNumber(p.remaining ?? 0, 1)} remaining</span>
                 </div>
               </>
             )}
-            <div className="mt-2 text-[11px] text-muted">
+            <div className="mt-2 text-[0.6875rem] text-muted">
               Earned credits: <span className="text-fg">{formatNumber(summary.credits, 1)}</span> tokens (used after your monthly allowance)
             </div>
           </div>
@@ -120,12 +120,12 @@ export function UsageSection() {
               const current = summary?.plan.code === pl.code;
               return (
                 <div key={pl.code} className={cn("flex flex-col gap-1 rounded-lg border border-border p-3", current && "border-accent/60 shadow-glow")}>
-                  <div className="text-[13px] font-medium">{pl.name}</div>
+                  <div className="text-[0.8125rem] font-medium">{pl.name}</div>
                   <div className="text-lg font-semibold">
                     {pl.price_cents ? `$${(pl.price_cents / 100).toFixed(2)}` : "Free"}
                     <span className="text-xs font-normal text-muted">{pl.price_cents ? " / month" : ""}</span>
                   </div>
-                  <div className="text-[11px] text-muted">{formatNumber(pl.monthly_tokens, 1)} cloud tokens / month{pl.priority > 1 ? " · priority" : ""}</div>
+                  <div className="text-[0.6875rem] text-muted">{formatNumber(pl.monthly_tokens, 1)} cloud tokens / month{pl.priority > 1 ? " · priority" : ""}</div>
                   {current ? (
                     <Badge variant="success" className="mt-1 self-start">current</Badge>
                   ) : (
@@ -154,7 +154,7 @@ export function UsageSection() {
         )}
         <details>
           <summary className="flex cursor-pointer items-center gap-1.5 text-xs text-muted"><Receipt className="size-3" />Transaction history</summary>
-          <div className="mt-2 max-h-64 space-y-1 overflow-auto text-[11px]">
+          <div className="mt-2 max-h-64 space-y-1 overflow-auto text-[0.6875rem]">
             {tx.ledger.map((l) => (
               <div key={`l${l.id}`} className="flex justify-between rounded border border-border px-2 py-1">
                 <span>{l.kind.replace(/_/g, " ")}{l.note ? ` — ${l.note}` : ""}</span>

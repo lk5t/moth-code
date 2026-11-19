@@ -247,3 +247,26 @@ def test_real_untrained_model_is_reported_as_incapable(env, tiny_pipeline):
     assert state.status == "model_incapable"
     assert "untrained-tiny" in state.error
     assert state.report["changes"] == []
+
+
+def test_write_approval_carries_before_and_after_for_review(env, tmp_path):
+    """2.0: with auto-write off, the approval prompt has the full before/after so the app can show a diff."""
+    p = env["project"]
+    env["ctx"].permissions = PermissionEngine(PermissionSettings(auto_write=False))
+    broker = env["broker"]
+    seen = []
+
+    def loop():
+        for _ in range(300):
+            pend = broker.pending()
+            if pend:
+                seen.append(pend[0])
+                broker.resolve(pend[0]["id"], False)  # Reject
+                return
+            time.sleep(0.02)
+    threading.Thread(target=loop, daemon=True).start()
+    original = (p / "README.md").read_text()
+    state, _ = run(env, [call("write_file", path="README.md", content="# new\n"), call("finish", summary="x")], verify=False)
+    change = seen[0]["context"]["change"]
+    assert change == {"path": "README.md", "before": original, "after": "# new\n", "before_truncated": False, "after_truncated": False}
+    assert (p / "README.md").read_text() == original  # rejected: nothing written

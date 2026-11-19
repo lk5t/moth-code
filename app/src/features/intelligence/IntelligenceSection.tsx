@@ -19,7 +19,7 @@ type Any = Record<string, any>;
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-6 border-b border-border py-3 last:border-0">
-      <div><div className="text-[13px] text-fg">{title}</div>{desc && <div className="mt-0.5 text-xs text-muted">{desc}</div>}</div>
+      <div><div className="text-[0.8125rem] text-fg">{title}</div>{desc && <div className="mt-0.5 text-xs text-muted">{desc}</div>}</div>
       <div className="shrink-0">{children}</div>
     </div>
   );
@@ -79,7 +79,7 @@ export function IntelligenceSection() {
 function ModelsList({ models }: { models: Any[] }) {
   return (
     <div className="border-b border-border py-3">
-      <div className="mb-2 text-[13px] text-fg">Models MOTH Cloud can use</div>
+      <div className="mb-2 text-[0.8125rem] text-fg">Models MOTH Cloud can use</div>
       <div className="flex flex-col gap-1.5">
         {models.map((m) => (
           <div key={m.id} className="flex flex-wrap items-center gap-2 text-xs">
@@ -119,7 +119,7 @@ function Knowledge({ docs, reload, enabled }: { docs: Any[]; reload: () => void;
   const search = async () => setHits((await serverApi<Any>(`/v1/knowledge/search?q=${encodeURIComponent(q)}`)).results);
   return (
     <div className="flex flex-col gap-3 py-3">
-      <div className="flex items-center gap-2 text-[13px] text-fg"><BookOpen className="size-4 text-accent" />My knowledge
+      <div className="flex items-center gap-2 text-[0.8125rem] text-fg"><BookOpen className="size-4 text-accent" />My knowledge
         {!enabled && <Badge>turned off by the Owner</Badge>}</div>
       <div className="text-xs text-muted">Notes and documents MOTH may use to answer you. Only you can see them.</div>
       <div className="flex flex-col gap-2">
@@ -186,7 +186,7 @@ export function Research() {
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
   return <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
-    <div className="flex items-center gap-2 text-[13px] text-fg"><FlaskConical className="size-4 text-accent" />Research</div>
+    <div className="flex items-center gap-2 text-[0.8125rem] text-fg"><FlaskConical className="size-4 text-accent" />Research</div>
     <div className="text-xs text-muted">MOTH gathers what your knowledge says about a question, with citations. It marks single-source statements, conflicts and gaps — it does not treat them as verified facts.</div>
     <div className="flex gap-2">
       <Input placeholder="Ask a research question…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && q.trim().length > 1 && void run()} />

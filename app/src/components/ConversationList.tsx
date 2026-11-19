@@ -48,20 +48,20 @@ export function ConversationList({ chats, searching, reload }: { chats: Chat[]; 
 
   return <section aria-label="Recent conversations">
     <div className="mb-1 flex h-6 items-center justify-between">
-      <h2 className="text-[10px] uppercase tracking-wider text-faint">{searching ? "Search results" : "Chats"}</h2>
+      <h2 className="text-[0.625rem] uppercase tracking-wider text-faint">{searching ? "Search results" : "Chats"}</h2>
       {chats.length > 0 && (selecting
-        ? <button className="flex items-center gap-1 rounded px-1 text-[11px] text-muted hover:text-fg" onClick={() => { setSelecting(false); setSelected([]); }}><X className="size-3" />Done</button>
+        ? <button className="flex items-center gap-1 rounded px-1 text-[0.6875rem] text-muted hover:text-fg" onClick={() => { setSelecting(false); setSelected([]); }}><X className="size-3" />Done</button>
         : <Popover><PopoverTrigger asChild><button aria-label="Manage chats" className="rounded p-1 text-muted hover:text-fg"><MoreHorizontal className="size-3.5" /></button></PopoverTrigger>
           <PopoverContent align="end" className="w-48 text-xs">
             <PopoverClose asChild><button className="flex w-full items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-2" onClick={() => setSelecting(true)}><CheckSquare className="size-3.5" />Select chats</button></PopoverClose>
             <PopoverClose asChild><button className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-danger hover:bg-surface-2" onClick={() => setConfirm({ kind: "all" })}><Trash2 className="size-3.5" />Clear all chats…</button></PopoverClose>
           </PopoverContent></Popover>)}
     </div>
-    {selecting && <div className="mb-1 flex items-center justify-between gap-2 rounded-md bg-surface-2 px-2 py-1 text-[11px]">
+    {selecting && <div className="mb-1 flex items-center justify-between gap-2 rounded-md bg-surface-2 px-2 py-1 text-[0.6875rem]">
       <button className="text-muted hover:text-fg" onClick={() => setSelected(selected.length === chats.length ? [] : chats.map((c) => c.id))}>{selected.length === chats.length ? "Select none" : "Select all"}</button>
       <button disabled={!selected.length || busy} className="flex items-center gap-1 text-danger disabled:opacity-40" onClick={() => setConfirm({ kind: "some", ids: selected })}><Trash2 className="size-3" />Delete {selected.length || ""}</button>
     </div>}
-    <ul className="space-y-0.5">
+    <ul className="stagger space-y-0.5">
       {chats.map((chat) => {
         const current = session.conversationId === chat.id;
         if (renaming === chat.id) return <li key={chat.id}><form onSubmit={(e) => { e.preventDefault(); void saveName(chat.id); }}>

@@ -39,14 +39,14 @@ export function ActivityNotices() {
     <PopoverTrigger aria-label={data?.unread ? `${data.unread} unread notifications` : "Notifications"}
       className="relative rounded-md p-1 text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline">
       <Bell className="size-4" />
-      {!!data?.unread && <span className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-accent px-0.5 text-center text-[9px] leading-3.5 text-white">{data.unread > 9 ? "9+" : data.unread}</span>}
+      {!!data?.unread && <span className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-accent px-0.5 text-center text-[0.5625rem] leading-3.5 text-white">{data.unread > 9 ? "9+" : data.unread}</span>}
     </PopoverTrigger>
     <PopoverContent className="w-80 p-0" align="start">
       <div className="flex items-center justify-between border-b border-border px-3 py-2"><span className="text-xs font-medium">Notifications</span>
-        <button className="text-[11px] text-accent" onClick={() => navigate("activity")}>All activity</button></div>
+        <button className="text-[0.6875rem] text-accent" onClick={() => navigate("activity")}>All activity</button></div>
       {items.length ? <ul className="max-h-80 overflow-auto">{items.map((n) => <li key={n.id} className={cn("border-b border-border px-3 py-2 text-xs last:border-0", n.unread && "bg-accent-soft")}>
         <div className="flex items-center justify-between gap-2"><span className={cn("font-medium", n.level === "error" ? "text-danger" : n.level === "warning" ? "text-warning" : "text-fg")}>{n.title}</span>
-          <time className="shrink-0 text-[10px] text-faint">{new Date(n.ts * 1000).toLocaleString()}</time></div>
+          <time className="shrink-0 text-[0.625rem] text-faint">{new Date(n.ts * 1000).toLocaleString()}</time></div>
         <p className="mt-0.5 text-muted">{n.message}</p>
       </li>)}</ul> : <p className="px-3 py-4 text-xs text-muted">{data ? "Nothing needs your attention." : "Notifications are unavailable right now."}</p>}
     </PopoverContent>

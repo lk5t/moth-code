@@ -63,7 +63,7 @@ export function ReferralsSection() {
             ["Earned", d.stats.earned_tokens],
           ] as [string, number][]).map(([k, v]) => (
             <div key={k} className={`lift rounded-md border bg-bg px-3 py-2 ${k === "Earned" && v > 0 ? "border-success/40" : "border-border"}`}>
-              <div className="text-[10.5px] uppercase tracking-wider text-faint">{k}</div>
+              <div className="text-[0.65625rem] uppercase tracking-wider text-faint">{k}</div>
               <div className="mt-0.5 font-mono text-sm">{v >= 100_000 ? formatNumber(v, 1) : <AnimatedNumber value={v} />}</div>
             </div>
           ))}
@@ -80,7 +80,7 @@ export function ReferralsSection() {
         )}
         {!!d.referred_workers?.length && (
           <div className="space-y-1 text-xs">
-            <div className="text-[10.5px] uppercase tracking-wider text-faint">Workers you referred</div>
+            <div className="text-[0.65625rem] uppercase tracking-wider text-faint">Workers you referred</div>
             {d.referred_workers.map((w, i) => (
               <div key={i} className="flex justify-between rounded border border-border px-2.5 py-1.5">
                 <span>{w.name} <span className="text-faint">· {w.compute.toUpperCase()} · {w.verified_jobs} verified jobs · {(w.trained_tokens / 1e6).toFixed(2)}M tokens · reliability {Math.round(w.reputation * 100)}%{w.last_seen ? ` · seen ${timeAgo(w.last_seen)}` : ""}</span></span>

@@ -5,6 +5,9 @@ import { useEvent } from "@/lib/events";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DiffView } from "./DiffView";
+
+interface Change { path: string; before: string | null; after: string | null; before_truncated?: boolean; after_truncated?: boolean }
 
 interface ApprovalRequest {
   id: string;
@@ -30,6 +33,25 @@ export function ApprovalDialog() {
     await post(`/api/approvals/${current.id}`, { approved }).catch(() => {});
   };
 
+  const change = current?.context?.change as Change | undefined;
+  if (current && change && change.after !== null) return (
+    <Dialog open onOpenChange={(o) => !o && answer(false)}>
+      <DialogContent className="w-[min(72rem,94vw)] max-w-none">
+        <div className="flex items-center gap-2 pr-6">
+          <ShieldAlert className="size-4 text-accent" />
+          <DialogTitle>Review MOTH's change</DialogTitle>
+          {queue.length > 1 && <span className="ml-auto text-[0.6875rem] text-muted">{queue.length - 1} more waiting</span>}
+        </div>
+        <DialogDescription>Check what changes in <span className="font-mono text-fg">{change.path}</span>, then apply it or reject it.</DialogDescription>
+        <DiffView className="mt-3" path={change.path} before={change.before} after={change.after} />
+        {(change.before_truncated || change.after_truncated) && <p className="mt-1 text-[0.6875rem] text-warning">This file is very large; only its start is shown.</p>}
+        <div className="mt-3 flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => answer(false)}>Reject</Button>
+          <Button onClick={() => answer(true)}>Apply</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
   return (
     <Dialog open={!!current} onOpenChange={(o) => !o && answer(false)}>
       {current && (
@@ -41,7 +63,7 @@ export function ApprovalDialog() {
           </div>
           <DialogDescription>{current.reason}</DialogDescription>
           <div className="mt-3 rounded-md border border-border bg-bg p-3">
-            <div className="text-[11px] uppercase tracking-wider text-faint">{current.kind}</div>
+            <div className="text-[0.6875rem] uppercase tracking-wider text-faint">{current.kind}</div>
             <pre className="selectable mt-1 whitespace-pre-wrap break-all font-mono text-xs text-fg">{current.target}</pre>
           </div>
           <div className="mt-4 flex justify-end gap-2">

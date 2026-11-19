@@ -39,7 +39,7 @@ export function SourcePicker({ value, onChange }: { value: SourceSel[]; onChange
         <label key={c.id} className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border p-2.5 hover:border-border-strong">
           <input type="checkbox" className="mt-0.5 accent-[#C1121F]" checked={has(c.spec)} onChange={() => toggle(c)} />
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-1.5 text-[13px]">
+            <div className="flex flex-wrap items-center gap-1.5 text-[0.8125rem]">
               {c.name} <Badge>{c.license}</Badge>
               {c.download && <Badge variant="warning">download</Badge>}
               {c.gated && <Badge variant="warning">accept terms first</Badge>}
@@ -76,7 +76,7 @@ export function SourcePicker({ value, onChange }: { value: SourceSel[]; onChange
           </Button>
         </div>
         {project && (
-          <button className="mt-1.5 cursor-pointer text-[11px] text-muted hover:text-fg" onClick={() => setFolder(project.path)}>
+          <button className="mt-1.5 cursor-pointer text-[0.6875rem] text-muted hover:text-fg" onClick={() => setFolder(project.path)}>
             Use open workspace ({project.name})
           </button>
         )}

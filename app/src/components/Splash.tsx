@@ -17,7 +17,7 @@ export function Splash({ status, error, onRetry }: { status: string; error?: str
       )}
       {error && (
         <div className="mt-4 flex max-w-lg flex-col items-center gap-3 animate-fade-in">
-          <pre className="selectable max-h-48 w-full overflow-auto rounded-md border border-border bg-surface p-3 text-[11px] text-muted whitespace-pre-wrap">
+          <pre className="selectable max-h-48 w-full overflow-auto rounded-md border border-border bg-surface p-3 text-[0.6875rem] text-muted whitespace-pre-wrap">
             {error}
           </pre>
           {onRetry && <Button onClick={onRetry}>Retry</Button>}

@@ -38,7 +38,7 @@ function Copyable({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
   return (
     <div className="relative">
-      <pre className="selectable overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-border bg-bg p-3 pr-24 font-mono text-[11.5px] text-fg">{text}</pre>
+      <pre className="selectable overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-border bg-bg p-3 pr-24 font-mono text-[0.71875rem] text-fg">{text}</pre>
       <Button size="sm" variant="secondary" className="absolute right-2 top-2" onClick={async () => {
         await navigator.clipboard.writeText(text).catch(() => {});
         setDone(true);
@@ -158,7 +158,7 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
                     <Copyable text={enrollment.manual_command} label="Copy" />
                   </>
                 )}
-                <div className="text-[11px] text-faint">
+                <div className="text-[0.6875rem] text-faint">
                   {expiresIn > 0 ? `Expires in ${Math.floor(expiresIn / 60)}:${String(expiresIn % 60).padStart(2, "0")} · works once` : "Expired — get a new command."}
                   {enrollment.release && ` · MOTH Worker ${enrollment.release.version}`}
                   {" · Needs Python 3.10+ (installed automatically on Windows), 2+ CPU cores, 3 GB memory, 5 GB disk."}
@@ -176,18 +176,18 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
               <div key={w.id} className={cn("rounded-lg border border-border p-3", w.status === "online" && "border-success/30")}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-[13px] font-medium">
+                    <div className="flex items-center gap-2 text-[0.8125rem] font-medium">
                       {w.name} <Badge>{w.kind === "cloud" ? "Cloud worker" : "Personal PC"}</Badge> <Badge variant={statusTone[w.status]}>{w.status}</Badge>
                       {w.referred && <Badge>referred</Badge>}
                     </div>
-                    <div className="mt-0.5 truncate text-[11px] text-muted">
+                    <div className="mt-0.5 truncate text-[0.6875rem] text-muted">
                       {w.hardware.compute === "gpu" && w.hardware.gpus?.length
                         ? "GPU · " + w.hardware.gpus.map((g) => `${g.name} (${g.memory_gb} GB)`).join(", ")
                         : `CPU · ${w.hardware.cpu_model ?? "processor"}${w.hardware.cpu_count ? ` · ${w.hardware.cpu_count} cores` : ""}${w.hardware.ram_gb ? ` · ${w.hardware.ram_gb} GB` : ""}`}
                       {w.hardware.benchmark?.gflops ? ` · ${Math.round(w.hardware.benchmark.gflops)} GFLOP/s` : ""}
                       {w.last_heartbeat_at && ` · seen ${timeAgo(w.last_heartbeat_at)}`}
                     </div>
-                    <div className="mt-0.5 text-[11px] text-faint">
+                    <div className="mt-0.5 text-[0.6875rem] text-faint">
                       {w.verified_jobs} verified jobs{w.failed_jobs ? ` · ${w.failed_jobs} failed` : ""}
                       {w.trained_tokens ? ` · ${(w.trained_tokens / 1e6).toFixed(w.trained_tokens < 1e7 ? 2 : 1)}M tokens trained` : ""}
                       {w.reputation != null && w.verified_jobs + w.failed_jobs > 0 ? ` · reliability ${Math.round(w.reputation * 100)}%` : ""}
@@ -208,7 +208,7 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
                 </div>
                 {w.status !== "revoked" && <WorkerActions id={w.id} />}
                 {w.status !== "revoked" && (
-                  <div className="mt-2 flex items-center gap-4 text-[11px] text-muted">
+                  <div className="mt-2 flex items-center gap-4 text-[0.6875rem] text-muted">
                     {w.hardware.compute === "gpu" ? (
                       <label className="flex items-center gap-2">GPU memory
                         <input type="range" min={0.1} max={0.95} step={0.05} className="w-28 accent-[#C1121F]" defaultValue={w.limits.gpu_memory_fraction ?? 0.9}
@@ -235,7 +235,7 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
             {!!data?.jobs.length && (
               <details className="mt-1">
                 <summary className="cursor-pointer text-xs text-muted">Recent jobs</summary>
-                <div className="mt-2 space-y-1 text-[11px]">
+                <div className="mt-2 space-y-1 text-[0.6875rem]">
                   {data.jobs.map((j) => (
                     <div key={j.id} className="flex justify-between rounded border border-border px-2 py-1">
                       <span>job #{j.id} · worker {j.worker_id}{j.error ? <span className="text-danger"> · {j.error.slice(0, 80)}</span> : ""}</span>
@@ -247,7 +247,7 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
             )}
           </CardContent>
         </Card>
-        <p className="text-center text-[11px] text-faint">
+        <p className="text-center text-[0.6875rem] text-faint">
           Share your referral code (Settings → Referrals) with people renting GPU servers. You earn credits only for their verified training work.
         </p>
       </div>
@@ -278,7 +278,7 @@ export function WorkerActions({ id }: { id: number }) {
     serverApi<any>(`/v1/training/workers/${id}/command`, { method: "POST", json: { action } })
       .then(setSt).catch((e) => setErr((e as Error).message));
   };
-  return <div className="mt-2 text-[11px]">
+  return <div className="mt-2 text-[0.6875rem]">
     <button className="text-accent hover:underline" onClick={() => setOpen(!open)}>{open ? "Hide actions" : "Actions…"}</button>
     {open && <div className="mt-1.5 flex flex-col gap-1.5">
       <div className="flex flex-wrap gap-1">
@@ -288,7 +288,7 @@ export function WorkerActions({ id }: { id: number }) {
       {st?.pending && <div className="text-muted">Sent “{ACTION_LABELS[st.command?.action ?? ""] ?? st.command?.action}”: waiting for the worker (it checks in every 30 s)…</div>}
       {st?.result && <div>
         <div className={st.result.ok ? "text-muted" : "text-danger"}>{ACTION_LABELS[st.result.action] ?? st.result.action}: {st.result.ok ? "done" : "failed"} · {timeAgo(st.result.at)}</div>
-        <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap rounded border border-border bg-bg p-2 font-mono text-[10.5px] text-fg">{st.result.output}</pre>
+        <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap rounded border border-border bg-bg p-2 font-mono text-[0.65625rem] text-fg">{st.result.output}</pre>
       </div>}
       {err && <div className="text-danger">{err}</div>}
     </div>}
