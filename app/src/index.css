@@ -289,3 +289,6 @@ button:not(:disabled):active { transform: scale(0.97); }
 html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="off"] *::after {
   animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: 0.01ms !important;
 }
+
+/* 2.0 speed: long chats only draw the messages on screen */
+.chat-row { content-visibility: auto; contain-intrinsic-size: auto 120px; }

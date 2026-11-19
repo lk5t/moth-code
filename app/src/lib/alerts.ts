@@ -7,6 +7,7 @@
 import { accountStore, serverApi } from "./account";
 import { createStore } from "./store";
 import { isTauri } from "./backend";
+import { LOUD, pushInbox } from "./inbox";
 
 export type Alert = { id: number; ts: number; kind: string; tone: "promoted" | "success" | "problem" | "info"; message: string };
 type AlertsState = { toasts: Alert[]; celebrate: number };
@@ -17,8 +18,10 @@ export const dismissAlert = (id: number) => alertsStore.setState((s) => ({ toast
 export const celebrate = () => alertsStore.setState((s) => ({ celebrate: s.celebrate + 1 }));
 
 const PREFS = "moth.alerts.prefs";
-export type AlertPrefs = { notifications: boolean; keepInTray: boolean; infoAlerts: boolean; sounds: boolean };
-const DEFAULT_PREFS: AlertPrefs = { notifications: true, keepInTray: true, infoAlerts: false, sounds: false };
+export type AlertPrefs = { notifications: boolean; keepInTray: boolean; infoAlerts: boolean; sounds: boolean; quiet: boolean };
+// 2.0 quiet alerts: only promotions and problems pop up; everything else waits in the notification centre
+const DEFAULT_PREFS: AlertPrefs = { notifications: true, keepInTray: true, infoAlerts: false, sounds: false, quiet: true };
+const loud = (a: Alert) => !alertPrefs().quiet || LOUD.includes(a.tone);
 export function alertPrefs(): AlertPrefs {
   try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS) || "{}") }; }
   catch { return { ...DEFAULT_PREFS }; }
@@ -57,7 +60,9 @@ export async function pollAlerts(): Promise<void> {
     if (r.status && isTauri()) {
       try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("tray_set_status", { text: r.status }); } catch { /* older shell */ }
     }
-    const fresh = after > 0 ? r.alerts.filter((a) => a.tone !== "info" || alertPrefs().infoAlerts) : [];
+    const all = after > 0 ? r.alerts : [];
+    for (const a of all) pushInbox({ id: `alert:${a.id}`, ts: a.ts, tone: a.tone, title: TITLES[a.tone], message: a.message, kind: a.kind, view: "intelligence" });
+    const fresh = all.filter((a) => (a.tone !== "info" || alertPrefs().infoAlerts) && loud(a));
     after = Math.max(after, r.latest);
     if (!fresh.length) return;
     alertsStore.setState((st) => ({
@@ -84,9 +89,24 @@ function startTaskAlerts() {
     if (e.kind !== "status" || !TASK_DONE[e.status]) return;
     const [tone, title] = TASK_DONE[e.status];
     const a: Alert = { id: Date.now(), ts: Date.now() / 1000, kind: `task.${e.status}`, tone, message: title };
-    alertsStore.setState((st) => ({ toasts: [...st.toasts, a].slice(-4) }));
-    void import("./sounds").then(({ sounds }) => sounds.chime());
-    if (typeof document !== "undefined" && document.hidden) void notify(a);
+    pushInbox({ tone, title: "Agent task", message: title, kind: a.kind, view: "workspace" });
+    const hidden = typeof document !== "undefined" && document.hidden;
+    if (loud(a) || hidden) {
+      alertsStore.setState((st) => ({ toasts: [...st.toasts, a].slice(-4) }));
+      void import("./sounds").then(({ sounds }) => sounds.chime());
+    }
+    if (hidden) void notify(a);
+  }));
+  // 2.0: finished scans go to the notification centre; serious findings also pop up
+  void import("./events").then(({ subscribe }) => subscribe("scan", (e: Record<string, any>) => {
+    if (e.kind !== "finished" || !e.scan) return;
+    const c = e.scan.counts ?? {};
+    const serious = (c.critical ?? 0) + (c.high ?? 0);
+    const tone: Alert["tone"] = e.scan.status === "error" || serious ? "problem" : "success";
+    const total = Object.values(c).reduce((n: number, v) => n + Number(v || 0), 0);
+    const message = e.scan.status === "error" ? `Scan of ${e.scan.target} could not finish` :
+      `Scan of ${e.scan.target} ${e.scan.status === "stopped" ? "stopped" : "finished"}: ${total} finding${total === 1 ? "" : "s"}${serious ? `, ${serious} serious` : ""}`;
+    pushInbox({ id: `scan:${e.scan.id}:${e.scan.finished_at ?? ""}`, tone, title: "Security scan", message, kind: "scan", view: "scans" });
   }));
 }
 

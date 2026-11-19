@@ -3,6 +3,38 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.0.0 — MOTH 2.0: a coding and security-testing assistant that acts
+
+**App**
+- **Compact by default**, with an *App size* setting (Compact, Normal, Large); Ctrl + / Ctrl − / Ctrl 0 change it anywhere. Everything, including the editor and terminal, scales together.
+- **More, smoother animations**: springy dialogs, sliding lists, hover lift and press bounce, a shimmering "Thinking…", findings that pop in. A switch turns them off, and they are always off when Windows has animations off.
+- **Ctrl+K command bar**: actions, chats (titles *and* message text, with the matching words), projects, sections and every Settings tab.
+- **Drag and drop** files or folders into chat (or use the paperclip). Text files only; keys, `.env` and credential files are never read; size limits apply. Attached files show as chips you can open.
+- **Better messages**: syntax highlighting, headings, lists and quotes, a Copy button on every code block, and **Apply** on code that names a file.
+- **Before/after review**: Apply and every agent edit (when auto-write is off) show a side-by-side diff with **Apply** and **Reject**.
+- **Notification centre** (the bell) for everyone, with **quiet alerts**: only promotions and problems pop up; finished tasks, scans and smaller news wait in the centre.
+- **Starter prompts** in an empty chat; faster long chats (off-screen messages are not drawn, finished messages no longer re-render while a reply streams).
+
+**Security testing from chat**
+- Ask "check 10.0.0.5:8080 for vulnerabilities" (or "scan 192.168.1.0/24 ports 22, 80 and 443"). MOTH shows exactly what it will scan and waits for **Yes**. Nothing is contacted before that.
+- The scan runs from **your computer**: TCP connect scan, banners, HTTP and TLS checks, known-vulnerable versions (for example Apache 2.4.49/2.4.50, regreSSHion-range OpenSSH, vsftpd 2.3.4), services that should not be exposed (Telnet, SMB, RDP, databases, Redis without a password, open Docker API), exposed `/.git` and `/.env`, directory listings, missing security headers, expired/self-signed certificates and old TLS. It only looks; nothing is changed.
+- Anything stronger (anonymous FTP login) asks for its own Yes. Live progress, a Stop button, a speed limit, one host or a small private network per scan, every step logged.
+- New **Security** page with every scan, its findings, fixes and full log; a finished scan's summary is saved into the chat so you can ask about it.
+
+**Agent**
+- **Write → run → fix**: when the project's tests fail, MOTH gets the real output and fixes the code (up to three times) before finishing.
+- Self-checks for JavaScript, shell, Go, C/C++, PHP, Ruby, Perl, Lua, TOML and YAML as well as Python and JSON (syntax only; project code is never run by the check).
+- Fixed: a fix written in the same second as the broken version could run from Python's stale cache.
+
+**MOTH itself**
+- New self-checked training data: **SQL** (every query run in SQLite), **JavaScript** (run with Node.js) and **Bash** (run on prepared files). Added automatically where generated data is already used.
+- New held-out **SQL exam**; it counts toward promotion with the other coding exams.
+- **Calculator**: arithmetic in a question is computed exactly and given to MOTH as a fact.
+- MOTH **checks the code in its answers** (syntax) and shows "✓ code checked" or the problem.
+- **Apply and Reject teach MOTH** (as feedback, when training use is allowed).
+- Workers use about **90 %** of the computer (one core always stays free; up to 90 % of GPU memory) unless you set a limit.
+- The live model keeps serving until a new one passes every check; training progress and the successor in training are kept (its context length is unchanged so it does not restart).
+
 ## 1.1.0 — Big update: faster, steadier training and a coding/security exam
 
 - **Continuous model.** A run that is not promoted is no longer thrown away: the next run keeps training the newest such candidate (same shape, verified checkpoint, validation loss at most 5 % above the live model's). It still has to pass every check against the live model.

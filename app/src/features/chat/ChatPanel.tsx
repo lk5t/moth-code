@@ -1,5 +1,5 @@
 import { navigate } from "@/lib/navigation";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MothEvent } from "@/lib/events";
 import { ArrowUp, Bug, Code2, HelpCircle, Radar, ShieldCheck, Cloud, FileText, LogIn, MessageSquarePlus, Paperclip, RefreshCw, Square, Upload, X } from "lucide-react";
 import { formatAttachments, formatBytes, onDesktopDrop, readFiles, readPaths, splitAttachments, type Attachment } from "@/lib/attachments";
@@ -390,7 +390,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
             ) : (
               <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
                 {messages.map((m,index) => {
-                  const content = <div key={m.id} className={cn("flex animate-message-in", m.role === "user" && "justify-end")}>
+                  const content = <div key={m.id} className={cn("flex animate-message-in", !m.streaming && "chat-row", m.role === "user" && "justify-end")}>
                     {m.role === "scan" && m.scan ? (
                       <div className="flex w-full gap-2.5"><MothEmblem motion={m.scan.stage === "running" ? "generating" : "none"} className="mt-0.5 size-5 shrink-0" />
                         {m.scan.stage === "confirm" || m.scan.stage === "starting"
@@ -508,7 +508,7 @@ export function looksBroken(text: string, stop?: string | null): boolean {
 }
 
 /** 2.0: a user message, with attached files shown as chips you can open. */
-function UserBubble({ text }: { text: string }) {
+const UserBubble = memo(function UserBubble({ text }: { text: string }) {
   const { body, files } = splitAttachments(text);
   return <div className="flex max-w-[85%] flex-col items-end gap-1">
     {body && <div className="selectable whitespace-pre-wrap rounded-xl rounded-br-sm border border-border bg-surface-2 px-3.5 py-2 text-[0.8125rem]">{body}</div>}
@@ -519,4 +519,4 @@ function UserBubble({ text }: { text: string }) {
       </details>)}
     </div>}
   </div>;
-}
+});

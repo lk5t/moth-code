@@ -72,7 +72,7 @@ export function Welcome() {
         <MothEmblem className="size-16 drop-shadow-[0_0_18px_rgba(193,18,31,0.45)]" />
         <div>
           <DialogTitle className="text-xl">Welcome to MOTH Code</DialogTitle>
-          <DialogDescription>Chat, work on projects and inspect MOTH’s training and evaluation. You choose when to contribute your computer.</DialogDescription>
+          <DialogDescription>Write and fix code, chat, and check the security of systems you own — with MOTH, an AI that trains itself. You choose when to contribute your computer.</DialogDescription>
         </div>
         <div className="flex w-full items-center justify-center gap-3 text-xs text-muted">
           <StepDot n={1} active={step === 1} complete={step > 1} /> Sign in

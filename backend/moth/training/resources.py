@@ -18,6 +18,18 @@ def cpu_count() -> int:
     return max(1, count)
 
 
+USE_FRACTION = 0.9  # 2.0: a contributing computer gives MOTH about 90% of its power, keeping the rest for itself
+
+
+def training_threads(limit: int | None = None) -> int:
+    """CPU threads for MOTH's training: about 90% of the cores (always at least one core left free on 2+ cores),
+    unless the owner set a limit."""
+    n = cpu_count()
+    if limit:
+        return max(1, min(n, int(limit)))
+    return max(1, min(n - 1 if n > 1 else 1, int(n * USE_FRACTION)))
+
+
 def memory_budget(total: int, available: int) -> tuple[int, int]:
     try:
         cap = Path('/sys/fs/cgroup/memory.max').read_text().strip()

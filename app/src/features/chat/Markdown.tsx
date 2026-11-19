@@ -1,4 +1,4 @@
-import { createContext, Fragment, useContext, useState, type ReactNode } from "react";
+import { createContext, Fragment, memo, useContext, useState, type ReactNode } from "react";
 import { serverApi } from "@/lib/account";
 import { Check, Copy, FileDiff } from "lucide-react";
 import { TOKEN_CLASS, codeTarget, highlight } from "@/lib/highlight";
@@ -93,7 +93,7 @@ function Blocks({ text }: { text: string }) {
 
 /** Safe renderer for MOTH's replies: fenced code (highlighted, Copy, Apply), headings, lists, quotes, inline code,
  * bold, italic and links. No HTML is ever injected. */
-export function Markdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+export const Markdown = memo(function Markdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
   const parts = text.split(/```/);
   return (
     <div className="prose-moth selectable space-y-1.5">
@@ -108,4 +108,4 @@ export function Markdown({ text, streaming = false }: { text: string; streaming?
       })}
     </div>
   );
-}
+});

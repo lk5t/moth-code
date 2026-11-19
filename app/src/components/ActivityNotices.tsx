@@ -14,7 +14,9 @@ import { cn } from "@/lib/utils";
 type Notice = { id: number; ts: number; title: string; message: string; level: string; category: string; unread: boolean };
 type Data = { items: Notice[]; unread: number };
 
-export function ActivityNotices() {
+export type { Notice as OwnerNotice };
+/** The Owner's MOTH Cloud notifications (nothing for other accounts). */
+export function useOwnerNotices() {
   const owner = useAccount((s) => s.user?.role === "owner");
   const token = useAccount((s) => s.token), server = useAccount((s) => s.serverUrl);
   const [data, setData] = useState<Data | null>(null);
@@ -29,12 +31,17 @@ export function ActivityNotices() {
     const t = setInterval(load, 30000);
     return () => clearInterval(t);
   }, [load]);
-  if (!owner || !token) return null;
   const items = data?.items ?? [];
   const markRead = () => {
     if (!items.length || !data?.unread) return;
     serverApi<Data>("/v1/admin/notifications/read", { method: "POST", json: { up_to_id: items[0].id } }).then(setData).catch(() => undefined);
   };
+  return { enabled: !!(owner && token), data, items, markRead };
+}
+
+export function ActivityNotices() {
+  const { enabled, data, items, markRead } = useOwnerNotices();
+  if (!enabled) return null;
   return <Popover onOpenChange={(open) => { if (!open) markRead(); }}>
     <PopoverTrigger aria-label={data?.unread ? `${data.unread} unread notifications` : "Notifications"}
       className="relative rounded-md p-1 text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline">
