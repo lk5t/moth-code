@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/ui/empty";
-import { formatNumber, timeAgo } from "@/lib/utils";
+import { formatNumber, timeAgo, whenVisible } from "@/lib/utils";
 import { ServerPanel, UpdatesPanel } from "./ops";
 
 type Any = Record<string, any>;
@@ -72,7 +72,7 @@ function MothNow() {
   useEffect(() => {
     let alive = true;
     const load = () => serverApi<Any>("/v1/admin/evolution/alerts?after=0").then((r) => alive && setStatus(r.status ?? null)).catch(() => {});
-    load(); const t = setInterval(load, 15_000);
+    load(); const t = setInterval(whenVisible(load), 15_000);
     return () => { alive = false; clearInterval(t); };
   }, []);
   const cur = p?.current;

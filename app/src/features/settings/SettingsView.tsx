@@ -90,7 +90,7 @@ export function SettingsView() {
           ))}
         </TabsList>
         <TabsContent value={tab} className="flex flex-col gap-3">
-        {tab === "Account" && <><div className="flex gap-2"><Button variant="secondary" onClick={reopenTour}>Take the tour</Button><Button variant="secondary" onClick={reopenWelcome}>Show the quick introduction</Button></div><AccountSection /><TwoFactorSection /><ConnectionsSection /><ConnectionSection /></>}
+        {tab === "Account" && <><AccountSection /><TwoFactorSection /><ConnectionsSection /><ConnectionSection /></>}
         {tab === "Advanced" && (owner ? <>
           <p className="text-xs text-muted">Rarely needed, irreversible operations for the Owner. Everyday settings are in the other tabs.</p>
           <DiagnosticsPanel />
@@ -132,6 +132,10 @@ export function SettingsView() {
               <Button variant="secondary" size="sm" onClick={() => restartBackend().then(() => location.reload())}>
                 <RotateCcw /> Restart backend
               </Button>
+            </Row>
+            <Row title="New here, or need a refresher?" desc="A short walk through the app, or the first-launch introduction again.">
+              <div className="flex gap-2"><Button variant="secondary" size="sm" onClick={reopenTour}>Take the tour</Button>
+                <Button variant="ghost" size="sm" onClick={reopenWelcome}>Quick introduction</Button></div>
             </Row>
             {system && (
               <div className="mt-3 grid grid-cols-[8.75rem_1fr] gap-y-1.5">

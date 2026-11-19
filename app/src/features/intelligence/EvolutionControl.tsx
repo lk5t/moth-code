@@ -73,13 +73,13 @@ export function EvolutionControl({ progress }: { progress: Any | null }) {
       {stage === "genesis" && owner && <p className="text-xs text-muted">Start Evolution creates a small, untrained model (99,648 parameters), selects trusted, licensed training data — coding first — prepares it and trains continuously within your resource budget. It starts knowing nothing; every improvement is measured on data it never trained on before it is kept.</p>}
       {running && data?.next_cycle_at && data.next_cycle_at * 1000 > Date.now() && !["training", "evaluating", "planning", "deploying", "monitoring", "waiting_for_compute"].includes(stage) && <p className="text-xs text-faint">The last round failed; retrying {when(data.next_cycle_at)}.</p>}
       {data && <CommandStrip data={data} />}
-      {data?.intelligence && <IntelligenceCheck intel={data.intelligence} />}
+      {data?.intelligence && <IntelligenceCheck intel={data.intelligence} name={data.versions?.active === data.intelligence.version ? data.versions?.active_name : undefined} />}
       {steps.length > 0 && <ul className="space-y-1 rounded-lg border border-border bg-bg p-3 text-xs">{steps.map((s) => <li key={s} className="flex gap-2"><Sparkles className="mt-0.5 size-3 shrink-0 text-accent" />{s}</li>)}</ul>}
       {(data?.decisions?.length ?? 0) > 0 && <div className="text-xs">
         <p className="mb-1 text-faint">Why MOTH changed its plan</p>
         <ul className="space-y-1">{data!.decisions.slice(-4).reverse().map((d: Any, i: number) => <li key={i} className="border-l-2 border-accent/60 pl-2 text-muted">{d.message}</li>)}</ul>
       </div>}
-      {data?.plan?.steps && <p className="text-[0.6875rem] text-faint">Current plan: {Number(data.plan.steps).toLocaleString()} steps per experiment · learning rate {Number(data.plan.lr).toExponential(1)} · batch {data.plan.batch_size}{data.autopilot ? "" : " (fixed — automatic planning is off in AI Settings)"}</p>}
+      {data?.plan?.steps && <p className="text-[0.6875rem] text-faint">Default plan for new experiments: {Number(data.plan.steps).toLocaleString()} steps · learning rate {Number(data.plan.lr).toExponential(1)} · batch {data.plan.batch_size}{data.autopilot ? "" : " (fixed — automatic planning is off in AI Settings)"}</p>}
       {data?.data?.error && <p className="text-xs text-warning">Data preparation: {data.data.error}</p>}
       {notice && <p role="alert" className="text-xs text-danger">{notice}</p>}
     </CardContent>
@@ -142,14 +142,14 @@ const ATTEMPT: Record<string, string> = {
 };
 
 /** Capability-based growth: what limits MOTH now, measured capabilities, real size, growth outcomes. */
-function IntelligenceCheck({ intel }: { intel: Any }) {
+function IntelligenceCheck({ intel, name }: { intel: Any; name?: string }) {
   const a: Any | null = intel.assessment ?? null;
   const caps: Any[] = a?.capabilities ?? [];
   const est: Any | null = a?.action === "grow" ? a?.estimate ?? null : null;
   return <section aria-label="Intelligence check" className="space-y-2 rounded-lg border border-border bg-bg px-3 py-2 text-xs">
     <div className="flex flex-wrap items-baseline justify-between gap-2">
       <p className="font-medium text-fg">Intelligence check</p>
-      <p className="text-faint">Model v{intel.version}: {paramsLabel(intel.params, intel.params_verified)}</p>
+      <p className="text-faint">{name ? `${name} (v${intel.version})` : `Model v${intel.version}`} · {paramsLabel(intel.params, intel.params_verified)}</p>
     </div>
     {a ? <>
       {a.investigating && <p className="text-muted">{a.investigating}</p>}

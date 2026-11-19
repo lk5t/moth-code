@@ -9,7 +9,7 @@ import { Bell } from "lucide-react";
 import { serverApi, useAccount } from "@/lib/account";
 import { navigate } from "@/lib/navigation";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
+import { cn, whenVisible } from "@/lib/utils";
 
 type Notice = { id: number; ts: number; title: string; message: string; level: string; category: string; unread: boolean };
 type Data = { items: Notice[]; unread: number };
@@ -28,7 +28,7 @@ export function useOwnerNotices() {
     setData(null);
     if (!owner || !token) return;
     load();
-    const t = setInterval(load, 30000);
+    const t = setInterval(whenVisible(load), 30000);
     return () => clearInterval(t);
   }, [load]);
   const items = data?.items ?? [];

@@ -8,14 +8,16 @@ import { GenesisSetup } from "./GenesisSetup";
 import { modelLabel } from "@/lib/model-label";
 import { useSavedSection } from "@/lib/use-saved-section";
 import { useEffect, useState } from "react";
-import { Brain, Database, History, SlidersHorizontal, ChevronDown, Orbit } from "lucide-react";
+import { Brain, Database, History, SlidersHorizontal, ChevronDown, Orbit, LogIn } from "lucide-react";
+import { openAccountDialog } from "@/features/account/AccountDialog";
 import { serverApi, useAccount } from "@/lib/account";
 import { useApp, appStore, aiTab, type AiTab } from "@/lib/app-state";
 import { CloudActivity } from "@/features/activity/CloudActivity";
 import { ActivityPanel } from "@/features/workspace/ActivityPanel";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, whenVisible } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { IntelligenceView } from "./IntelligenceView";
 import { GrowthDiagnostics } from "./GrowthDiagnostics";
@@ -67,10 +69,11 @@ export function IntelligenceHub() {
       if(document.hidden) return;
       if (owner) serverApi<Any>("/v1/admin/evolution/resources").then((data) => { if (alive) setResources(data); }).catch(() => { if (alive) setResources(null); });
     };
-    load(); const timer = setInterval(load, owner ? 5000 : 20000);
+    load(); const timer = setInterval(whenVisible(load), owner ? 5000 : 20000);
     return () => { alive = false; clearInterval(timer); };
   }, [sessionToken, owner, tab]);
-  if (!signedIn) return <EmptyState title={network ? "Sign in to Network" : "Sign in to MOTH AI"}>MOTH's live training, compute, data and model history appear here.</EmptyState>;
+  if (!signedIn) return <EmptyState tip={false} title={network ? "Sign in to Network" : "Sign in to MOTH AI"}
+    action={<Button size="sm" onClick={() => openAccountDialog("login")}><LogIn /> Sign in</Button>}>MOTH's live training, compute, data and model history appear here.</EmptyState>;
   return <div className="h-full overflow-auto">
     <div className="mx-auto flex max-w-6xl flex-col gap-3 p-3 sm:p-4 lg:p-5">
       <header className="flex flex-wrap items-end justify-between gap-3"><div>

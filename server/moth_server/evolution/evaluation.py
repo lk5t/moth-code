@@ -190,10 +190,19 @@ def group_changes(suites: list[dict], base: dict, cand: dict) -> dict[str, dict[
             continue
         bv, cv = float(b["value"]), float(c["value"])
         change = (cv - bv) if c.get("higher_is_better") else ((bv - cv) / bv if bv else 0.0)
-        g = out.setdefault(group, {"changes": {}, "mean": 0.0})
+        g = out.setdefault(group, {"changes": {}, "mean": 0.0, "noise": {}})
         g["changes"][key] = round(change, 4)
+        # 2.2: an accuracy on n items moves by chance; 3 standard errors of the base's rate is "noise", so a
+        # small exam (e.g. a young model guessing on the security exam) cannot block a better model on its own
+        if c.get("higher_is_better"):
+            n = max(1, int(c.get("n") or b.get("n") or 1))
+            p_ = min(max(bv, 0.0), 1.0)
+            g["noise"][key] = round(3 * (p_ * (1 - p_) / n) ** 0.5, 4)
+        else:
+            g["noise"][key] = 0.0
     for g in out.values():
         g["mean"] = round(sum(g["changes"].values()) / len(g["changes"]), 4)
+        g["noise_mean"] = round(sum(g["noise"].values()) / len(g["noise"]), 4)
     return out
 
 
@@ -406,7 +415,7 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
     improvement = overall if overall is not None else improvement
     if groups:  # a whole skill (conversation, coding, security) may not collapse, whatever improves elsewhere
         tol = float(g.get("group_tolerance", GROUP_TOLERANCE))
-        worse = {k: v["mean"] for k, v in groups.items() if v["mean"] < -tol}
+        worse = {k: v["mean"] for k, v in groups.items() if v["mean"] < -max(tol, v.get("noise_mean", 0.0))}
         gates.append({"gate": "balanced_capabilities", "passed": not worse, "groups": groups,
                       "trade_off": not worse and any(v["mean"] < 0 for v in groups.values()),
                       "detail": "; ".join(f"{k}: mean change {v['mean']:+.1%}" for k, v in groups.items())
@@ -417,6 +426,12 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
     # it is held to absolute limits instead: fast enough to chat with, and fitting comfortably in memory.
     # Same-size candidates keep the relative limits.
     resized = bool(growth) or bool(rebirth)
+    # 2.2: a candidate with exactly the base's architecture does the same work per token, so a difference in
+    # measured speed or memory is only measurement noise: MOTH Cloud trains continuously, and the base was often
+    # benchmarked while the server was idle but the candidate while training was running. Those gates are kept
+    # as information for same-shape candidates instead of rejecting genuinely better models over noise.
+    same_shape = (not resized and (candidate["info"].get("config") or {}) == (base["info"].get("config") or {})
+                  and bool(candidate["info"].get("config")))
     if bp.get("tokens_per_second") and cp.get("tokens_per_second") is not None:
         ratio = cp["tokens_per_second"] / bp["tokens_per_second"]
         floor = float(g.get("min_tokens_per_second", MIN_TOKENS_PER_SECOND))
@@ -426,9 +441,11 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
                           "detail": f"bigger model: generates {float(cp['tokens_per_second']):.0f} tokens/s "
                                     f"(needs ≥ {floor:.0f} to chat smoothly; {ratio:.0%} of the smaller model's)"})
         else:
-            gates.append({"gate": "speed", "passed": ratio >= 1 - float(g["max_speed_regression"]),
+            gates.append({"gate": "speed", "passed": same_shape or ratio >= 1 - float(g["max_speed_regression"]),
+                          "informational": same_shape,
                           "candidate": cp["tokens_per_second"], "baseline": bp["tokens_per_second"],
-                          "detail": f"generation speed {ratio:.0%} of the base model's"})
+                          "detail": f"generation speed {ratio:.0%} of the base model's"
+                                    + (" (same architecture: the difference is measurement noise)" if same_shape else "")})
     if bp.get("peak_memory_bytes") and cp.get("peak_memory_bytes"):
         ratio = cp["peak_memory_bytes"] / bp["peak_memory_bytes"]
         if resized:
@@ -438,9 +455,11 @@ def gate(ctx: Ctx, candidate: dict, base: dict, target_dataset: dict, settings: 
                           "detail": f"bigger model: peak memory {cp['peak_memory_bytes'] / 2**20:,.0f} MB "
                                     f"(limit {limit / 2**20:,.0f} MB, half of this server's memory)"})
         else:
-            gates.append({"gate": "memory", "passed": ratio <= 1 + float(g["max_memory_growth"]),
+            gates.append({"gate": "memory", "passed": same_shape or ratio <= 1 + float(g["max_memory_growth"]),
+                          "informational": same_shape,
                           "candidate": cp["peak_memory_bytes"], "baseline": bp["peak_memory_bytes"],
-                          "detail": f"peak memory {ratio:.0%} of the base model's"})
+                          "detail": f"peak memory {ratio:.0%} of the base model's"
+                                    + (" (same architecture: the difference is measurement noise)" if same_shape else "")})
     trade_offs = [x.get("name") or x["gate"] for x in gates if x.get("trade_off")]
     passed = all(x["passed"] for x in gates)
     return {"passed": passed, "gates": gates, "primary_improvement": improvement, "trade_offs": trade_offs,

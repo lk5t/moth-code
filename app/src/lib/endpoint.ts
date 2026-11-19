@@ -21,7 +21,6 @@ const OFFICIAL: Record<MothEnv, string> = {
 };
 
 const SERVER_KEY = "moth.serverUrl"; // the user's chosen MOTH Cloud address (also used by v0.2)
-const DEV_MODE_KEY = "moth.dev.mode";
 
 function read(key: string): string | null {
   try {
@@ -43,13 +42,8 @@ function write(key: string, value: string | null) {
 export const officialServer = (): string => OFFICIAL[MOTH_ENV].replace(/\/+$/, "");
 export const userServer = (): string | null => read(SERVER_KEY);
 export const setUserServer = (url: string | null) => write(SERVER_KEY, url);
-export const developerMode = (): boolean => MOTH_ENV !== "production" || read(DEV_MODE_KEY) === "1";
-export const setDeveloperMode = (on: boolean) => write(DEV_MODE_KEY, on ? "1" : null);
-
 /** The address in use: the user's choice, else the built-in default. */
 export function resolveServer(): string {
   return userServer() || officialServer() || "";
 }
 
-/** True when this build has a built-in default address. */
-export const hasOfficialServer = (): boolean => !!officialServer();

@@ -583,6 +583,8 @@ def command_center(ctx: Ctx, cyc: dict | None, st: dict, data: dict) -> dict:
         bottleneck = "Training waits for data preparation to finish."
     elif mem.get("percent") and mem["percent"] > 90:
         bottleneck = f"MOTH Cloud's memory is {mem['percent']:.0f}% used; training slows down or waits to protect answering."
+    else:
+        bottleneck = rejection_streak(ctx)
     return {"objective": objective, "workers": ws, "server": server, "queued_jobs": queued,
             "parallel": len(running), "versions": {"active": (dep or {}).get("version"), "previous": prev_v,
                                                     "active_name": _public_name(ctx, (dep or {}).get("version")),
@@ -611,3 +613,30 @@ def _cloud_worker_status(ctx: Ctx) -> dict:
         return CW.status(ctx)
     except Exception as e:  # noqa: BLE001
         return {"state": "error", "detail": str(e)[:300], "at": None}
+
+
+def rejection_streak(ctx: Ctx, at_least: int = 5) -> str | None:
+    """2.2: when the most recent candidates were all rejected, say which checks blocked them most often, so a
+    stuck model (e.g. trained candidates far better than the serving one, rejected over one check) is visible."""
+    import collections
+
+    from sqlalchemy import select
+
+    from moth_server.db import evolution_experiments as T
+
+    rows = ctx.db.all(select(T.c.status, T.c.error).where(T.c.status.in_(("passed", "rejected")))
+                      .order_by(T.c.id.desc()).limit(12))
+    streak = []
+    for r in rows:
+        if r["status"] != "rejected":
+            break
+        streak.append(r)
+    if len(streak) < at_least:
+        return None
+    counts: collections.Counter[str] = collections.Counter()
+    for r in streak:
+        err = (r.get("error") or "").removeprefix("failed: ")
+        counts.update(g.strip() for g in err.split(",") if g.strip() and not err.startswith("stopped early"))
+    top = ", ".join(f"{g.replace('_', ' ')} ({n}×)" for g, n in counts.most_common(3))
+    return (f"The last {len(streak)}{'+' if len(streak) == len(rows) else ''} candidates were not promoted"
+            + (f"; most often blocked by: {top}." if top else "."))

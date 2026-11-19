@@ -61,7 +61,7 @@ it("reports the intelligence check, real size and growth outcomes exactly as the
   expect(await screen.findByText("Current architecture may be limiting progress. Testing a larger candidate.")).toBeInTheDocument();
   expect(screen.getByText("Arithmetic remains limited. Evaluating possible causes.")).toBeInTheDocument();
   expect(screen.getByText("Replies: Replies are readable text that ends on its own.")).toBeInTheDocument();
-  expect(screen.getByText("Model v12: 5,184,768 parameters · counted from the saved weights")).toBeInTheDocument();
+  expect(screen.getByText("Model v12 · 5,184,768 parameters · counted from the saved weights")).toBeInTheDocument();
   expect(screen.getByText(/2\.0% \/ target 20\.0% · not improving/)).toBeInTheDocument();
   expect(screen.getByText(/loss 2\.123 · improving/)).toBeInTheDocument();
   expect(screen.getByText(/fits this server · fits 1 MOTH worker\(s\) · training time not measured yet/)).toBeInTheDocument();

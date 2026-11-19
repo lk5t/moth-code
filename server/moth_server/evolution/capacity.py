@@ -222,6 +222,11 @@ def estimate(ctx: Ctx, base: dict, cfg_model, option: dict, settings: dict) -> d
             "training_seconds": seconds, "params_after": option["params"], "ratio": option["ratio"]}
 
 
+def _tpp(v: float) -> str:
+    """2.2: tokens per parameter readable at any size ("0.0" hid a model that had seen 0.4 tokens/param)."""
+    return "0" if v <= 0 else f"{v:.1f}" if v >= 1 else f"{v:.2g}"
+
+
 def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
     """What limits MOTH now, and what to do about it (see the module docstring)."""
     from moth.model.config import MothConfig
@@ -304,10 +309,10 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
           f"{float(c['min_tokens_per_param']):g} is the usual minimum before a model of this size is saturated)")
     if params and tpp < float(c["foundation_tokens_per_param"]):
         return decide("foundation_training", "MOTH has seen very little text for its size. Running longer foundation training.",
-                      f"only {tpp:.1f} tokens per parameter so far" + (f"; {names(focus)} cannot be judged yet" if focus else ""))
+                      f"only {_tpp(tpp)} tokens per parameter so far" + (f"; {names(focus)} cannot be judged yet" if focus else ""))
     if params and tpp < float(c["min_tokens_per_param"]):
         return decide("continue_training", "More training on the current architecture comes first.",
-                      f"{tpp:.1f} tokens per parameter is below {float(c['min_tokens_per_param']):g}: a larger model "
+                      f"{_tpp(tpp)} tokens per parameter is below {float(c['min_tokens_per_param']):g}: a larger model "
                       "would be even less trained")
     # 3. generation / format: replies that never end
     inst = next((r for r in caps if r["capability"] == "instruction"), None)

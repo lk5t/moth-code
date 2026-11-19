@@ -496,9 +496,9 @@ def _explore(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, tilted: dict
         cfg["strategy"] = "weakness" if mix is tilted else "balanced"
         cfg["exploration"] = i + 1
         before = len(out["experiments"])
-        _add(ctx, out, cfg, src, f"exploration #{i + 1}: every earlier configuration on this model was tried, so "
-             f"MOTH tries lr {lr:.2e} (×{f:g} of the best known), {steps} steps, the "
-             f"{'weakness-tilted' if mix is tilted else 'balanced'} curriculum and a fresh data sample", limit)
+        _add(ctx, out, cfg, src, f"exploration #{i + 1}: every planned setting was already tried on this model, so MOTH tries "
+             f"a learning rate {f:g}× the best one so far ({lr:.1e}), {steps:,} steps, the "
+             f"{'weakness-focused' if mix is tilted else 'balanced'} data mix and a fresh data sample", limit)
         if len(out["experiments"]) > before:
             ctx.db.set_config(key, i + 1)
     if not n:  # the first time this model runs out of ideas: more data is the strongest new lever

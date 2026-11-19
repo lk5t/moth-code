@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty";
-import { formatNumber, timeAgo } from "@/lib/utils";
+import { formatNumber, timeAgo, whenVisible } from "@/lib/utils";
 import { modelsExtraSections } from "./sections";
 
 interface ModelInfo {
@@ -57,7 +57,7 @@ function usePublishJobs() {
   const active = Object.values(jobs).some((j) => ["validating", "packaging", "uploading", "processing", "evaluating"].includes(j.stage));
   useEffect(() => {
     load();
-    const t = setInterval(load, active ? 1000 : 10000);
+    const t = setInterval(whenVisible(load), active ? 1000 : 10000);
     return () => clearInterval(t);
   }, [active]);
   return { jobs, load };

@@ -3,6 +3,46 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.2.0 — Better models get through, clearer training views, tidier app
+
+**MOTH can finally move past its first model**
+- Trained candidates far better than the serving model (held-out loss about 1.5 against 5.6) kept being rejected over measurement noise. Two checks are fixed:
+  - **Speed and memory.** These were compared against a base benchmarked while MOTH Cloud was idle, while the candidate was benchmarked during training. A candidate with exactly the same architecture does the same work per token, so these numbers are now shown as information instead of blocking.
+  - **Small exams.** On a small multiple-choice exam (such as the security exam a young model can only guess at), a drop within chance (three standard errors) no longer counts as a skill getting worse.
+- **Worker results are kept.** A whole worker run on a small model can honestly move the byte embedding more than 10× its starting size. That was refused as "update too large (relative norm 11.5 > 10.0)", so Worker #13's work was thrown away. Finished runs are now checked for shapes and finite values; the promotion rule decides whether the result is good. Shared training rounds allow up to 100× (was 10×) and must still lower held-out loss.
+- **Stuck promotions are visible.** When the last five or more candidates were all rejected, Evolution's "Holding back progress" line names the checks that blocked them most often.
+
+**Training views**
+- **MOTH timeline, redrawn:**
+  - Readable version labels (at most about 8) and five gridlines.
+  - A far-off point, such as the untrained seed, no longer flattens every other version into a straight line. It is drawn at the edge with its value.
+  - Promoted versions, candidates that were not kept and the serving version look different.
+  - Hovering a point shows its value.
+  - One "Show" menu replaces the 11 buttons.
+- **Evolution card:**
+  - The Intelligence check names the model the same way as everywhere else ("MOTH 0.0.1 (v150)").
+  - The plan line says it is the default for new experiments, so it no longer seems to contradict an exploration's own settings.
+  - Exploration objectives are written in plain words.
+  - Tokens per parameter below 1 are no longer rounded to "0.0".
+
+**App**
+- **Home:** "Clone from GitHub" sits with New chat and Open project. Repeated activity lines collapse into one with a count ("×5").
+- **Sign-in screens** (Network, MOTH AI) have a Sign in button instead of an unrelated tip. The chat's Sign in and Retry buttons line up with the text.
+- **Settings:** the tour and the quick introduction moved from the top of Account to About, under "New here, or need a refresher?".
+- **Project chat toolbar:** the conversation picker no longer collapses to an arrow, and the model label no longer truncates to "signed …".
+- **Less background work:** panels that refresh on a timer (owner dashboard, Network, models, usage ring, notices, cloud status) pause while the window is hidden or in the tray. Alerts still arrive.
+
+**Clean-up**
+- Removed:
+  - Test-run output committed by mistake (`server/w/`, 70 files).
+  - A stale copy of the worker build (`worker/build/`).
+  - The unused "Servers & security" settings page and its test.
+  - Unused developer-mode helpers.
+  - An unused front-end package (`@tauri-apps/plugin-updater`; updates use the Rust plugin directly).
+  - A finished 1.0 planning note.
+- `.gitignore` now covers these build and test outputs.
+- Server tests stop the training processes they start. Training runs in its own session on purpose so it survives a server restart, so finished tests had left them using whole CPUs for the rest of the suite.
+
 ## 2.1.2 — Clear worker status
 
 - "Workers online" counted MOTH Cloud's own built-in worker, so it showed "1" even when none of your computers was connected. It now counts only your workers ("none of N connected" when they are all offline; "+ MOTH Cloud" when the built-in one is helping).

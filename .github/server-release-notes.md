@@ -4,16 +4,16 @@ The MOTH Cloud server for self-managing operation: one-time installation (no sud
 signed updates, verified backups, health checks with automatic rollback, the fixed model publishing
 workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
-This release (1.0.0) adds faster compiled training, a learned data-quality filter, proportional replay (never forget), a chat-heavy finish for every run, chat compaction, chat memory and project links, agent plan approval, self-check, checkpoints and "Fix this", GitHub connection routes, two-factor sign-in, a daily usage API, contributor (compute) rewards, paid-plan offline mode, faster update rollout and an Owner "Back up now". 0.10.1 trains successors with a chat warm-up and a chat-heavy finish (mixture schedule). 0.10.0 fixes the speed and memory gates that rejected every bigger model (bigger candidates now need ≥ 15 tokens/s and at most half the server's memory), sizes successors from measured speed, gives them a 1024-token context and a new BPE tokenizer (compared fairly in bits per byte), trains them on MOTH Cloud and the workers together in shared rounds, cleans up chat replies (min-p, repetition controls, loop stop, clean endings), adds the morning report and desktop alerts APIs, a live writing sample from the trainer, and re-tuned referral rewards with a welcome bonus. 0.9.2 added right-sized successors: when the model is far smaller than the measured compute can train in a day, MOTH trains a properly sized model from scratch (same tokenizer and curriculum) and promotes it only through the usual gates. 0.9.1 makes data preparation 2.65× faster with identical safety filtering (vectorised near-duplicate and benchmark-overlap hashing, faster credential scrubbing). 0.9.0 makes MOTH autonomous: about 90 GB of new, pinned, openly licensed training sources that the library adds and grows by itself shard by shard as MOTH needs more data (within half the free disk); an hourly self-quiz whose checked answers and corrections become training data; a self-repair supervisor with an Owner diagnostics page; resumable worker jobs (verified progress snapshots); worker phases in the live view; and honest health states. 0.8.3 lets training runs finish (early stopping only on rising held-out loss), lets MOTH Cloud and the workers train the same experiment with conversation data (shared rounds carry the loss mask), re-enrolls MOTH Cloud's built-in worker when its registration was lost, stops placing experiments on workers whose computers are already busy (an idle MOTH Cloud takes over after 3 minutes), and restores a serving model after a restart or a failed load (same model line only, never across a Genesis Reset). 0.8.2 takes an experiment back from a worker that makes no training progress for 2 minutes (10 before its first step) and places it again. 0.8.1 makes Evolution explore instead of stalling once every planned configuration was tried, waits 5 minutes before re-planning when nothing can be planned, and measures experiment elapsed time on MOTH Cloud. From 0.8.0 (COGNITIVE EVOLUTION):
+What's new in 2.2:
 
-- Conversation and coding curricula (verified generated data), held-out multi-turn and executed coding
-  benchmarks, a 50/40/10 conversation/coding/other starting focus and a balanced-capabilities promotion
-  gate. Installations already using generated data adopt the new sources once.
-- Knowledge 2.0 metadata (new table, no schema migration) and the Research Engine (`POST /v1/research`).
-- Measured serving performance per deployed model; a CPU thread setting is kept only when ≥ 10 %
-  faster with identical output.
-- Still from 0.7.x: MOTH Cloud's built-in worker, data preparation on workers, immediate worker updates,
-  one active + one rollback model, Owner-only notifications.
+- **Promotion no longer rejects better models over noise.**
+  - A same-architecture candidate's speed and memory are recorded as information, not blocking (the base was often benchmarked while the server was idle and the candidate during training).
+  - On small accuracy exams, a drop within three standard errors does not count as a skill getting worse.
+- **Worker results on small models are kept.** Whole-run results allow relative updates up to 1000×; shared rounds allow up to 100× (was 10×). Shapes and finite values are always checked, and rounds must still lower held-out loss.
+- **A rejection streak is reported.** The autopilot's bottleneck names the checks that blocked the last five or more candidates.
+- Plain-language exploration objectives, and readable tokens-per-parameter values.
+
+The full list is in [CHANGELOG.md](https://github.com/lk5t/moth-code/blob/__REF__/CHANGELOG.md).
 
 The existing evolution, distributed workers, growth, held-out promotion gates, staged rollout, Genesis
 Reset safeguards, signed update agent and automatic rollback are kept. Genesis Reset never runs during an upgrade.

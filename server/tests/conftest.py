@@ -18,6 +18,27 @@ def _close_database_pools():
     yield
     Database.dispose_all()
 
+
+@pytest.fixture(autouse=True)
+def _stop_leftover_training(tmp_path):
+    """2.2: local training runs in its own session on purpose (it survives a server restart), so a finished
+    test would otherwise leave its training process using a whole CPU for the rest of the suite."""
+    yield
+    import os
+    import signal
+
+    me = str(tmp_path)
+    for d in Path("/proc").glob("[0-9]*"):
+        try:
+            cmd = (d / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+        except OSError:
+            continue
+        if me in cmd and "moth." in cmd:
+            try:
+                os.killpg(int(d.name), signal.SIGTERM)
+            except OSError:
+                pass
+
 PASSWORD = "correct horse battery"
 
 

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { get } from "./backend";
 import { useEvent } from "./events";
+import { whenVisible } from "@/lib/utils";
 
 export interface CloudStatus {
   signed_in: boolean;
@@ -18,7 +19,7 @@ export function useCloudStatus(pollMs = 60000) {
   const load = () => get<CloudStatus>("/api/cloud/status").then(setStatus).catch(() => setStatus(null));
   useEffect(() => {
     load();
-    const t = setInterval(load, pollMs);
+    const t = setInterval(whenVisible(load), pollMs);
     return () => clearInterval(t);
   }, []);
   useEvent("account", () => load());

@@ -58,48 +58,86 @@ function Change({ cur, prev }: { cur: Any; prev?: Any }) {
 
 const EVENT: Record<string, string> = { "models.deployed": "Deployed", "models.rollback": "Rolled back", "evolution.rollback": "Rolled back automatically" };
 
-/** One benchmark across model versions (measured points only). */
-function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric: string; onSelect?: (v: Any) => void }) {
-  const pts = versions.map((v, i) => ({ i, v, b: v.benchmarks[metric] })).filter((p) => p.b);
-  const W = 640, H = 180, pad = { l: 44, r: 16, t: 14, b: 30 };
+const promoted = (v: Any) => !!(v.deployed || v.stable || v.deployed_at);
+const axisValue = (metric: string, v: number, higher: boolean) => metric === "parameters" ? formatNumber(Math.round(v))
+  : metric === "training_steps" ? formatNumber(Math.round(v)) : higher ? `${(v * 100).toFixed(0)}%` : v.toFixed(2);
+const pointValue = (metric: string, b: Any) => metric === "parameters" || metric === "training_steps" ? Math.round(b.value).toLocaleString() : fmt(b);
+
+/** 2.2: one measurement across model versions. Readable labels (at most ~8), five gridlines, a scale that is
+ * not flattened by one far-off point (such as the untrained seed), promoted versions set apart from candidates
+ * that were not kept, and a hover/focus readout. Points are measurements; nothing is interpolated. */
+export function TimelineChart({ versions, metric, onSelect }: { versions: Any[]; metric: string; onSelect?: (v: Any) => void }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const pts = versions.map((v) => ({ v, b: v.benchmarks?.[metric] })).filter((p) => p.b && Number.isFinite(p.b.value));
+  const W = 720, H = 230, pad = { l: 52, r: 18, t: 16, b: 34 };
   if (pts.length === 0) return <div className="py-6 text-center text-xs text-muted">Not measured yet.</div>;
   if (pts.length === 1) {  // one measurement is a fact, not a trend: state it instead of drawing an invented axis
     const only = pts[0];
-    return <div className="py-4 text-center text-xs text-muted">{modelLabel(only.v)}: <span className="font-mono text-fg">{metric === "parameters" ? Math.round(only.b.value).toLocaleString() : fmt(only.b)}</span> {metric === "parameters" ? "parameters" : (LABEL[metric] ?? metric).toLowerCase()}. A chart appears once a second version has been measured.</div>;
+    return <div className="py-4 text-center text-xs text-muted">{modelLabel(only.v)}: <span className="font-mono text-fg">{pointValue(metric, only.b)}</span> {metric === "parameters" ? "parameters" : (LABEL[metric] ?? metric).toLowerCase()}. A chart appears once a second version has been measured.</div>;
   }
-  const vals = pts.map((p) => p.b.value);
-  let lo = Math.min(...vals), hi = Math.max(...vals);
-  if (hi - lo < 1e-6) { const m = Math.max(0.05, Math.abs(hi) * 0.1); hi += m; lo -= m; }  // one value: centre it
-  const n = Math.max(1, versions.length - 1);
-  const x = (i: number) => pad.l + (i / n) * (W - pad.l - pad.r);
-  const y = (v: number) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
-  const d = pts.map((p, k) => `${k ? "L" : "M"}${x(p.i).toFixed(1)},${y(p.b.value).toFixed(1)}`).join("");
+  const vals = pts.map((p) => p.b.value as number);
+  const sorted = [...vals].sort((a, b) => a - b);
+  const q = (f: number) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(f * (sorted.length - 1))))];
+  const iqr = q(0.75) - q(0.25);
+  // a point far outside the rest (e.g. the untrained seed's loss) is drawn at the edge with its value instead of
+  // squashing every other version into a flat line
+  const fence = iqr > 0 ? [q(0.25) - 4 * iqr, q(0.75) + 4 * iqr] : [-Infinity, Infinity];
+  const inside = vals.filter((v) => v >= fence[0] && v <= fence[1]);
+  let lo = Math.min(...(inside.length >= 2 ? inside : vals)), hi = Math.max(...(inside.length >= 2 ? inside : vals));
+  if (hi - lo < 1e-9) { const m = Math.max(0.05, Math.abs(hi) * 0.1); hi += m; lo -= m; }
+  const span = hi - lo; lo -= span * 0.08; hi += span * 0.08;
+  const clipHi = vals.some((v) => v > hi), clipLo = vals.some((v) => v < lo);
+  const n = Math.max(1, pts.length - 1);
+  const x = (k: number) => pad.l + (k / n) * (W - pad.l - pad.r);
+  const y = (v: number) => pad.t + (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * (H - pad.t - pad.b);
+  const d = pts.map((p, k) => `${k ? "L" : "M"}${x(k).toFixed(1)},${y(p.b.value).toFixed(1)}`).join("");
+  const every = Math.max(1, Math.ceil(pts.length / 8));
+  const higher = !!pts[0].b.higher_is_better;
+  const h = hover != null ? pts[hover] : null;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={`${LABEL[metric] ?? metric} across model versions`}>
-      {[0, 0.5, 1].map((f) => {
-        const v = lo + f * (hi - lo);
-        return (
-          <g key={f}>
-            <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} className="stroke-border" strokeWidth={1} />
-            <text x={pad.l - 6} y={y(v) + 3} textAnchor="end" className="fill-[var(--color-faint,#888)] text-[0.625rem]">
-              {metric === "parameters" ? formatNumber(Math.round(v)) : metric === "training_steps" ? v.toFixed(0)
-                : pts[0].b.higher_is_better ? `${(v * 100).toFixed(0)}%` : v.toFixed(2)}
-            </text>
-          </g>
-        );
-      })}
-      <path d={d} fill="none" className="stroke-accent" strokeWidth={2} />
-      {pts.map((p) => (
-        <g key={p.i} role="button" tabIndex={0} aria-label={`Inspect ${modelLabel(p.v)} ${LABEL[metric] ?? metric}`}
-          onClick={() => onSelect?.(p.v)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.v); } }} className="cursor-pointer">
-          <title>{`${p.v.model_version ?? p.v.name}: ${fmt(p.b)}`}</title>
-          <circle cx={x(p.i)} cy={y(p.b.value)} r={3.5} className="fill-accent" />
-          <text x={x(p.i)} y={H - 10} textAnchor="middle" className="fill-[var(--color-muted,#999)] text-[0.625rem]">
-            {p.v.model_version ? `MOTH ${p.v.model_version}` : `v${p.v.version}`}
-          </text>
-        </g>
-      ))}
-    </svg>
+    <div className="relative">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full select-none" role="img" aria-label={`${LABEL[metric] ?? metric} across model versions`}
+        onMouseLeave={() => setHover(null)}>
+        {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+          const v = lo + f * (hi - lo);
+          return <g key={f}>
+            <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} className="stroke-border" strokeWidth={1} strokeDasharray={f === 0 ? undefined : "2 4"} />
+            <text x={pad.l - 8} y={y(v) + 3} textAnchor="end" className="fill-[var(--color-faint,#888)] text-[0.625rem] tabular-nums">{axisValue(metric, v, higher)}</text>
+          </g>;
+        })}
+        {clipHi && <text x={pad.l - 8} y={pad.t - 4} textAnchor="end" className="fill-[var(--color-faint,#888)] text-[0.5625rem]">↑ off scale</text>}
+        {clipLo && <text x={pad.l - 8} y={H - pad.b + 12} textAnchor="end" className="fill-[var(--color-faint,#888)] text-[0.5625rem]">↓ off scale</text>}
+        <path d={d} fill="none" className="stroke-accent/60" strokeWidth={1.5} strokeLinejoin="round" />
+        {h && <line x1={x(hover!)} x2={x(hover!)} y1={pad.t} y2={H - pad.b} className="stroke-border" strokeWidth={1} />}
+        {pts.map((p, k) => {
+          const off = p.b.value > hi || p.b.value < lo, kept = promoted(p.v);
+          return <g key={p.v.version} role="button" tabIndex={0} aria-label={`${modelLabel(p.v)} (v${p.v.version}): ${pointValue(metric, p.b)}${kept ? "" : ", not promoted"}`}
+            onMouseEnter={() => setHover(k)} onFocus={() => setHover(k)} onBlur={() => setHover(null)}
+            onClick={() => onSelect?.(p.v)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(p.v); } }}
+            className="cursor-pointer outline-none">
+            <rect x={x(k) - (W - pad.l - pad.r) / n / 2} y={pad.t} width={(W - pad.l - pad.r) / n} height={H - pad.t - pad.b} fill="transparent" />
+            {p.v.deployed && <circle cx={x(k)} cy={y(p.b.value)} r={7.5} className="fill-none stroke-accent" strokeWidth={1.5} />}
+            <circle cx={x(k)} cy={y(p.b.value)} r={hover === k ? 5 : kept ? 4 : 3}
+              className={kept ? "fill-accent" : "fill-bg stroke-[var(--color-faint,#888)]"} strokeWidth={kept ? 0 : 1.5} />
+            {off && <text x={x(k) + 8} y={y(p.b.value) + (p.b.value > hi ? 10 : -4)} className="fill-[var(--color-muted,#999)] text-[0.5625rem] tabular-nums">{pointValue(metric, p.b)}</text>}
+            {(k % every === 0 || k === pts.length - 1) && (k === pts.length - 1 || pts.length - 1 - k >= every / 2) &&
+              <text x={x(k)} y={H - 12} textAnchor="middle" className="fill-[var(--color-muted,#999)] text-[0.625rem] tabular-nums">v{p.v.version}</text>}
+          </g>;
+        })}
+      </svg>
+      {h && <div className="pointer-events-none absolute top-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-[0.6875rem] shadow-lg"
+        style={{ left: `${Math.min(78, Math.max(2, (x(hover!) / W) * 100 - 8))}%` }}>
+        <div className="font-medium text-fg">{modelLabel(h.v)} <span className="text-faint">v{h.v.version}</span></div>
+        <div className="tabular-nums text-muted">{LABEL[metric] ?? metric}: <span className="text-fg">{pointValue(metric, h.b)}</span></div>
+        <div className="text-faint">{h.v.deployed ? "serving now" : promoted(h.v) ? "was promoted" : "candidate · not promoted"}</div>
+      </div>}
+      <div className="mt-1 flex flex-wrap items-center gap-4 text-[0.6875rem] text-faint">
+        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-accent" />promoted</span>
+        <span className="flex items-center gap-1.5"><span className="size-2 rounded-full border border-faint" />candidate, not promoted</span>
+        <span className="flex items-center gap-1.5"><span className="size-3 rounded-full border border-accent" />serving now</span>
+        <span className="ml-auto">{higher ? "higher is better" : metric === "parameters" || metric === "training_steps" ? "" : "lower is better"}</span>
+      </div>
+    </div>
   );
 }
 
@@ -121,8 +159,8 @@ export function IntelligenceView({ embedded = false, focus = "all" }: { embedded
   }), [p]);
   const metrics = useMemo(() => Array.from(new Set(chartVersions.flatMap((v) => Object.keys(v.benchmarks)))).sort(), [chartVersions]);
   const shown = metrics.includes(metric) ? metric : metrics[0] ?? metric;  // never chart a measurement this lineage does not have
-  if (!signedIn) return <EmptyState title="Sign in to see MOTH's progress">The dashboard shows MOTH Cloud's measurements.</EmptyState>;
-  if (err) return <EmptyState title="Progress is not available">{err}</EmptyState>;
+  if (!signedIn) return <EmptyState tip={false} title="Sign in to see MOTH's progress">The dashboard shows MOTH Cloud's measurements.</EmptyState>;
+  if (err) return <EmptyState tip={false} title="Progress is not available">{err}</EmptyState>;
   if (!p) return null;
   const cur = p.current;
   const prev = cur ? versions.find((v) => v.version === cur.parent) : null;
@@ -188,21 +226,19 @@ export function IntelligenceView({ embedded = false, focus = "all" }: { embedded
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-xs">
             {metrics.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {metrics.map((m) => (
-                  <button key={m} aria-pressed={shown === m} onClick={() => setMetric(m)}
-                    className={cn("cursor-pointer rounded-md border border-border px-2 py-0.5", shown === m ? "bg-surface-2 text-fg" : "text-muted hover:text-fg")}>
-                    {LABEL[m] ?? m}
-                  </button>
-                ))}
-              </div>
+              <label className="flex items-center gap-2 text-muted">Show
+                <select aria-label="Measurement" value={shown} onChange={(e) => setMetric(e.target.value)}
+                  className="h-7 rounded-md border border-border bg-bg px-2 text-xs text-fg outline-none focus-visible:border-accent">
+                  {metrics.map((m) => <option key={m} value={m}>{LABEL[m] ?? m}</option>)}
+                </select>
+              </label>
             )}
             <TimelineChart versions={chartVersions} metric={shown} onSelect={setSelection} />
             {selection && <div role="status" className="rounded-lg border border-border bg-bg p-3">
               <div className="font-medium">{modelLabel(selection)}</div>
               <div className="mt-1 text-muted">{paramsLabel(selection.params, selection.params_verified)} · {when(selection.created_at)}
                 {selection.lineage_totals && ` · ${formatNumber(selection.lineage_totals.tokens)} recorded training tokens`}</div>
-              <div className="mt-1 text-muted">{selection.benchmarks[metric] ? `${LABEL[metric] ?? metric}: ${fmt(selection.benchmarks[metric])}` : "This metric was not measured for this version."}</div>
+              <div className="mt-1 text-muted">{selection.benchmarks[shown] ? `${LABEL[shown] ?? shown}: ${pointValue(shown, selection.benchmarks[shown])}` : "This metric was not measured for this version."}</div>
             </div>}
             <ol className="flex flex-col gap-2">
               {[...versions].reverse().map((v) => (

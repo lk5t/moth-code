@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { whenVisible } from "@/lib/utils";
 
 interface OnDeviceState {
   downloading: boolean;
@@ -29,7 +30,7 @@ export function OnDeviceSection() {
   }, []);
   useEffect(() => {
     if (!st?.downloading) return;
-    const t = setInterval(load, 1500);
+    const t = setInterval(whenVisible(load), 1500);
     return () => clearInterval(t);
   }, [st?.downloading]);
   if (!st) return null;

@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/ui/empty";
-import { formatNumber, timeAgo } from "@/lib/utils";
+import { formatNumber, timeAgo, whenVisible } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 type Any = Record<string, any>;
@@ -34,7 +34,7 @@ export function usePoll<T>(path: string, ms = 15000) {
   const load = () => serverApi<T>(path).then((d) => { setData(d); setError(null); }).catch((e) => setError(e.message));
   useEffect(() => {
     load();
-    const t = setInterval(load, ms);
+    const t = setInterval(whenVisible(load), ms);
     return () => clearInterval(t);
   }, [path]);
   return { data, error, load };

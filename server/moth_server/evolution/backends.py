@@ -32,7 +32,11 @@ from moth_server.db import now, training_jobs
 from moth_server.evolution import datasets as DS
 from moth_server.evolution import memory as MEM
 
-EVOLUTION_MAX_RELATIVE_NORM = 10.0
+# 2.2: a whole experiment (thousands of steps) on a small model legitimately moves small tensors such as the
+# byte embedding far more than 10x their starting size; refusing that threw away honest worker results
+# ("embed.weight: update too large (relative norm 11.5 > 10.0)"). Results are still checked for shapes and
+# finite values, and the evaluation gates decide whether a result is any good.
+RESULT_MAX_RELATIVE_NORM = 1000.0
 
 
 def runs_root(ctx: Ctx) -> Path:
@@ -487,7 +491,7 @@ def accept_snapshot(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) -> dict
     except Exception as e:  # noqa: BLE001
         return {"accepted": False, "reasons": [f"unreadable snapshot: {e}"]}
     state = torch.load(job_files(ctx, spec)[0], map_location="cpu", weights_only=True)
-    report = validate_delta({k: v.float() for k, v in state.items()}, delta, max_relative_norm=EVOLUTION_MAX_RELATIVE_NORM)
+    report = validate_delta({k: v.float() for k, v in state.items()}, delta, max_relative_norm=RESULT_MAX_RELATIVE_NORM)
     if not report.ok:
         return {"accepted": False, "reasons": report.reasons}
     atomic_torch_save({"delta": delta, "step": step, "tokens": tokens, "job_id": job_row["id"],
@@ -570,7 +574,7 @@ def accept_worker_result(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) ->
         # norm bound, while applying accepted deltas to the real, function-preserving zero weights.
         norm_reference = {k: torch.full_like(w, 0.02) if k.endswith(ZERO_INIT) and not torch.count_nonzero(w)
                           else w for k, w in base_f.items()}
-    report = validate_delta(norm_reference, delta, max_relative_norm=EVOLUTION_MAX_RELATIVE_NORM)
+    report = validate_delta(norm_reference, delta, max_relative_norm=RESULT_MAX_RELATIVE_NORM)
     if not report.ok:
         return {"accepted": False, "reasons": report.reasons}
     new = apply_delta(base_f, delta)

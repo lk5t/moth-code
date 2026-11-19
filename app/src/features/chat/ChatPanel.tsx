@@ -343,7 +343,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
         )}
         {mode === "chat" && (
           <Select
-            className="h-7 min-w-0 max-w-56 flex-1 text-xs"
+            className="h-7 min-w-[7.5rem] max-w-56 flex-1 text-xs"
             aria-label="Conversation" disabled={busy} title={busy ? "Stop or wait for the current reply before changing conversations" : "Conversation history"}
             value={cid ?? ""}
             onChange={(e) => {
@@ -356,14 +356,14 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
             {conversations?.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
           </Select>
         )}
-        {mode === "chat" && <input aria-label="Search conversations" placeholder="Search history" value={search} onChange={(event)=>setSearch(event.target.value)} className="h-7 w-28 min-w-0 rounded border border-border bg-bg px-2 text-xs sm:w-40" />}
+        {mode === "chat" && <input aria-label="Search conversations" placeholder="Search history" value={search} onChange={(event)=>setSearch(event.target.value)} className="h-7 w-24 min-w-0 shrink rounded border border-border bg-bg px-2 text-xs focus:w-40 transition-[width] xl:w-40" />}
         <div className="flex-1" />
         {mode === "chat" && (
           <Button variant="ghost" size="icon-sm" title={busy ? "Stop or wait for the current reply" : "New conversation"} disabled={busy} aria-label="New conversation" onClick={() => { setCid(null); setMessages([]); }}>
             <MessageSquarePlus />
           </Button>
         )}
-        {!general && <span className="flex min-w-0 items-center gap-1 text-[0.6875rem] text-faint" title={cloud?.model?.name}>
+        {!general && <span className="hidden min-w-0 items-center gap-1 text-[0.6875rem] text-faint 2xl:flex" title={cloud?.model?.name}>
           <Cloud className="size-3" />
           <span className="truncate">{currentLabel}</span>
         </span>}
@@ -388,14 +388,14 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                 {signedOut ? (
                   <div className="max-w-sm text-xs leading-relaxed text-muted">
                     MOTH runs in MOTH Cloud. Sign in to chat with the official MOTH model and use the coding agent.
-                    <div className="mt-3 flex justify-center"><Button size="sm" onClick={() => openAccountDialog("login")}><LogIn /> Sign in</Button></div>
+                    <div className="mt-3 flex"><Button size="sm" onClick={() => openAccountDialog("login")}><LogIn /> Sign in</Button></div>
                   </div>
                 ) : noModel ? (
                   <div className="max-w-sm text-xs leading-relaxed text-muted">
                     {cloud?.reachable === false
                       ? "Can't reach MOTH Cloud right now. Your editor, terminal and Git keep working; MOTH will be back when the connection returns."
                       : cloud?.error ?? "MOTH Cloud inference is not available yet."}
-                    <div className="mt-3 flex justify-center gap-2"><Button size="sm" variant="secondary" onClick={() => reloadCloud()}><RefreshCw /> Retry</Button>
+                    <div className="mt-3 flex gap-2"><Button size="sm" variant="secondary" onClick={() => reloadCloud()}><RefreshCw /> Retry</Button>
                       {(cloud?.reason === "no_model_deployed" || cloud?.reason === "training_first_model") && <Button size="sm" variant="ghost" onClick={() => navigate("overview")}>Open AI</Button>}</div>
                   </div>
                 ) : (

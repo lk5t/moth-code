@@ -32,3 +32,8 @@ export function languageFromPath(path: string): string {
   };
   return map[ext] ?? "plaintext";
 }
+
+/** 2.2: wrap a polling callback so it does nothing while the window is hidden (minimised or in the tray). */
+export function whenVisible<T extends unknown[]>(fn: (...args: T) => unknown): (...args: T) => void {
+  return (...args: T) => { if (typeof document === "undefined" || !document.hidden) void fn(...args); };
+}

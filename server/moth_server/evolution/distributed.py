@@ -86,6 +86,7 @@ OUTER_LR = 0.7        # 1.1 DiLoCo outer learning rate and Nesterov momentum (Do
 OUTER_MOMENTUM = 0.9
 MIN_LOCAL_STEPS = 20
 SUCCESSOR_MAX_RELATIVE_NORM = 1000.0   # 0.10.0: a successor is averaged often, so the participants stay in step
+ROUND_MAX_RELATIVE_NORM = 100.0        # 2.2: was 10; small models moved their embedding further in one round
 
 
 def model_config(exp: dict, base: dict) -> dict:
@@ -299,7 +300,7 @@ def accept_shard(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) -> dict:
 
     from moth.community.validation import deserialize_state, tensor_bytes_sha256, validate_delta
 
-    from moth_server.evolution.backends import EVOLUTION_MAX_RELATIVE_NORM, run_dir
+    from moth_server.evolution.backends import run_dir
 
     spec = json.loads(job_row["spec"])
     exp = MEM.experiment(ctx, int(spec["evolution_experiment"]))
@@ -327,7 +328,10 @@ def accept_shard(ctx: Ctx, job_row: dict, meta: dict, payload: bytes) -> dict:
     # residual output projections), so a fast GPU's honest update can be many times their size. Its updates
     # are held to a far looser size limit; every round is still accepted only if it lowers the loss on
     # held-out text (advance), and non-finite updates are always refused.
-    limit = SUCCESSOR_MAX_RELATIVE_NORM if (exp.get("config") or {}).get("rebirth") else EVOLUTION_MAX_RELATIVE_NORM
+    # 2.2: a round of an exploration with a raised learning rate on a small model can also honestly exceed 10x
+    # (embedding and output head); such rounds still have to lower held-out loss in advance() to be kept.
+    cfg = exp.get("config") or {}
+    limit = SUCCESSOR_MAX_RELATIVE_NORM if cfg.get("rebirth") else ROUND_MAX_RELATIVE_NORM
     report = validate_delta(base, delta, max_relative_norm=limit)
     if not report.ok:
         return {"accepted": False, "reasons": report.reasons}

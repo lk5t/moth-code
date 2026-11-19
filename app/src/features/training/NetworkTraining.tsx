@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, whenVisible } from "@/lib/utils";
 import { secure } from "@/features/owner/ops";
 
 type Any = Record<string, any>;
@@ -28,7 +28,7 @@ function usePoll<T>(fn: () => Promise<T>, ms: number): [T | null, () => void, st
   const load = () => fn().then((v) => { setD(v); setError(null); }).catch((e) => setError(e.message));
   useEffect(() => {
     load();
-    const t = setInterval(load, ms);
+    const t = setInterval(whenVisible(load), ms);
     return () => clearInterval(t);
   }, []);
   return [d, load, error];

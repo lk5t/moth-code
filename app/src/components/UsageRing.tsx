@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { serverApi, useAccount } from "@/lib/account";
 import { navigate } from "@/lib/navigation";
-import { cn } from "@/lib/utils";
+import { cn, whenVisible } from "@/lib/utils";
 
 type Window = { percent: number; resets_at: number | null };
 export type Limits = { plan: string; unlimited: boolean; session: Window; weekly: Window };
@@ -28,7 +28,7 @@ export function UsageRing({ refreshKey }: { refreshKey?: unknown }) {
     let alive = true;
     const load = () => serverApi<Limits>("/v1/billing/limits", { retries: 0 }).then((l) => alive && setLim(l)).catch(() => {});
     void load();
-    const t = setInterval(load, 60_000);
+    const t = setInterval(whenVisible(load), 60_000);
     return () => { alive = false; clearInterval(t); };
   }, [user?.id, refreshKey]);
   useEffect(() => {

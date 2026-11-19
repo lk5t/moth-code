@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input, Label } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty";
 import { openAccountDialog } from "@/features/account/AccountDialog";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn, timeAgo, whenVisible } from "@/lib/utils";
 
 interface Worker {
   id: number;
@@ -63,7 +63,7 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
   useEffect(() => {
     if (!user) return;
     load();
-    const t = setInterval(() => { load(); tick((n) => n + 1); }, 15000);
+    const t = setInterval(whenVisible(() => { load(); tick((n) => n + 1); }), 15000);
     return () => clearInterval(t);
   }, [user?.id]);
 
@@ -270,7 +270,7 @@ export function WorkerActions({ id }: { id: number }) {
   useEffect(() => {
     if (!open) return;
     void load();
-    const t = setInterval(load, 3000);
+    const t = setInterval(whenVisible(load), 3000);
     return () => clearInterval(t);
   }, [open, id]);
   const run = (action: string) => {

@@ -3,7 +3,7 @@
  * and a live activity feed. Everything shown is measured; nothing is decorative guesswork.
  */
 import { useEffect, useState } from "react";
-import { Brain, FolderGit2, FolderOpen, MessageSquare, Plus, Sparkles, Zap } from "lucide-react";
+import { Brain, FolderGit2, FolderOpen, GitBranch, MessageSquare, Plus, Sparkles, Zap } from "lucide-react";
 import { useAccount } from "@/lib/account";
 import { useCloudProgress } from "@/lib/cloud-progress";
 import { useApp, appStore } from "@/lib/app-state";
@@ -40,6 +40,7 @@ export function HomeView() {
   const { data: chats } = useResource<{ id: number; title: string; updated_at?: number }[]>("/api/conversations?scope=general", [], []);
   const { data: activity } = useResource<{ id: number; ts: number; kind: string; message: string }[]>("/api/activity", ["files", "activity"], []);
   const [now, setNow] = useState(() => new Date());
+  const [cloning, setCloning] = useState(false);
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 60_000); return () => clearInterval(t); }, []);
 
   const training = p?.training;
@@ -61,11 +62,12 @@ export function HomeView() {
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => requestChat(null)}><Plus /> New chat</Button>
             <Button variant="secondary" onClick={() => void pickProject()}><FolderOpen /> Open project</Button>
+            <Button variant="secondary" aria-expanded={cloning} onClick={() => setCloning((v) => !v)}><GitBranch /> Clone from GitHub</Button>
           </div>
         </div>
       </header>
 
-      <CloneGitHub />
+      {cloning && <CloneGitHub onClose={() => setCloning(false)} />}
 
       <section aria-label="Today" className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile icon={<Zap />} label="Tokens learned (this run)" value={typeof m.tokens_seen === "number" ? m.tokens_seen : null} live={!!running} />
@@ -102,8 +104,8 @@ export function HomeView() {
         </section>
         <section aria-label="Activity" className="rounded-xl border border-border bg-surface p-3">
           <h2 className="mb-2 flex items-center gap-1.5 text-xs font-medium"><span className="live-dot" /> Activity</h2>
-          {activity?.length ? <ol className="stagger max-h-64 space-y-1.5 overflow-auto">{activity.slice(0, 12).map((a) =>
-            <li key={a.id} className="animate-message-in text-xs"><span className="text-fg">{a.message}</span> <span className="text-faint">· {timeAgo(a.ts)}</span></li>)}</ol>
+          {activity?.length ? <ol className="stagger max-h-64 space-y-1.5 overflow-auto">{collapseRepeats(activity).slice(0, 12).map((a) =>
+            <li key={a.id} className="animate-message-in text-xs"><span className="text-fg">{a.message}</span>{a.times > 1 && <span className="text-faint"> ×{a.times}</span>} <span className="text-faint">· {timeAgo(a.ts)}</span></li>)}</ol>
             : <Friendly text="Quiet for now. Tasks, file changes and MOTH's news appear here as they happen." />}
         </section>
       </div>
@@ -113,4 +115,15 @@ export function HomeView() {
 
 function Friendly({ text }: { text: string }) {
   return <div className="flex items-center gap-2 py-2 text-xs text-muted"><LivingMoth className="size-6 shrink-0 opacity-80" />{text}</div>;
+}
+
+/** 2.2: "Opened workspace demo-proj" five times in a row reads as one line with a count. */
+export function collapseRepeats<T extends { message: string }>(items: T[]): (T & { times: number })[] {
+  const out: (T & { times: number })[] = [];
+  for (const it of items) {
+    const last = out[out.length - 1];
+    if (last && last.message === it.message) last.times += 1;
+    else out.push({ ...it, times: 1 });
+  }
+  return out;
 }
