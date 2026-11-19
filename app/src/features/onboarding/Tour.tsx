@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { createStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/lib/navigation";
+import { useAccount } from "@/lib/account";
 
 const KEY = "moth.tour.done";
 function done(): boolean { try { return localStorage.getItem(KEY) === "1"; } catch { return true; } }
@@ -24,8 +25,9 @@ export const STEPS = [
 
 export function Tour() {
   const open = tourStore.useStore((s) => s.open);
+  const signedIn = useAccount((s) => !!s.user);  // shown after the first sign-in, never over the sign-in itself
   const [i, setI] = useState(0);
-  if (!open) return null;
+  if (!open || !signedIn) return null;
   const step = STEPS[i], Icon = step.icon, last = i === STEPS.length - 1;
   return <Dialog open onOpenChange={(o) => { if (!o) finish(); }}>
     <DialogContent className="w-[26rem]">

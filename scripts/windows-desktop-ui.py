@@ -37,9 +37,25 @@ class WindowsUI:
         self.window.wait('exists', timeout=timeout)
         self.root = _StableRoot(self.window.wrapper_object())
 
+    def dismiss_tour(self):
+        """2.1: the guided tour opens once after the first sign-in (Skip / Next). Close it like a user would."""
+        try:
+            buttons = {c.element_info.name: c for c in self.root.descendants(control_type='Button') if c.is_visible() and c.is_enabled()}
+        except Exception:
+            return False
+        if 'Skip' in buttons and ('Next' in buttons or 'Start' in buttons):
+            try:
+                buttons['Skip'].invoke()
+                return True
+            except Exception:
+                return False
+        return False
+
     def find(self, name, types=None, timeout=60, prefix=False, contains=False):
         deadline = time.monotonic() + timeout
         while True:
+            if name not in ('Skip', 'Next', 'Start', 'Back'):
+                self.dismiss_tour()
             for c in self.root.descendants():
                 try:
                     info = c.element_info

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-vi.mock("@/lib/account", () => ({ serverApi: vi.fn(), accountStore: { getState: () => ({ token: null }), subscribe: () => () => {} }, useAccount: () => null }));
+vi.mock("@/lib/account", () => ({ serverApi: vi.fn(), accountStore: { getState: () => ({ token: null }), subscribe: () => () => {} }, useAccount: (fn: (s: any) => unknown) => fn({ user: { id: 1 } }) }));
 import { STEPS, Tour, reopenTour } from "@/features/onboarding/Tour";
 import { applyPrefs, current } from "@/lib/prefs-sync";
 import { uiSizeStore, setUiSize } from "@/lib/ui-size";
