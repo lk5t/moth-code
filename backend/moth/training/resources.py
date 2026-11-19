@@ -45,7 +45,7 @@ def memory_budget(total: int, available: int) -> tuple[int, int]:
                     if line.startswith('inactive_file '):
                         used = max(0, used - int(line.split()[1]))
                         break
-            except (OSError, ValueError, IndexError):
+            except Exception:  # noqa: BLE001 — memory.stat is optional (older kernels, some containers)
                 pass
             available = min(available, max(0, int(cap) - used))
     except (OSError, ValueError):

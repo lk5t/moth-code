@@ -64,8 +64,10 @@ def detect() -> dict[str, Any]:
     except Exception:  # noqa: BLE001 - torch missing or broken driver
         pass
     ram_gb = None
+    posix = False
     try:
         ram_gb = round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2**30, 1)
+        posix = True
     except (ValueError, OSError, AttributeError):
         measured = _windows_memory()
         ram_gb = round(measured[0] / 2**30, 1) if measured else None
@@ -74,9 +76,11 @@ def detect() -> dict[str, Any]:
     if ram_gb is not None:
         # 2.2.4: MemAvailable (free + reclaimable file cache), not free pages alone: on a server full of datasets
         # free pages are near zero, so the worker looked 97 % full and was refused 0.6 GB experiments
-        from moth.training.autotune import _available_ram
+        available = None
+        if posix:
+            from moth.training.autotune import _available_ram
 
-        available = _available_ram()
+            available = _available_ram()
         if available is None:
             measured = _windows_memory()
             available = measured[1] if measured else 0  # unknown is not fully available RAM
