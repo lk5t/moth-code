@@ -160,9 +160,16 @@ def run(package: Path, suites: list[dict[str, Any]]) -> dict[str, Any]:
                 r = run_suite(model, tok, s)
             else:
                 raise EvalError(f"unknown suite kind {s['kind']!r}")
-            r["ok"] = math.isfinite(float(r["value"]))
+            # 2.2.2: a suite that cannot run here (e.g. the JavaScript exam without Node.js) reports ok=False and no
+            # value; it is "not measurable", not a crash of the whole benchmark ("evaluation failed: KeyError: 'value'")
+            value = r.get("value")
+            r["ok"] = r.get("ok", True) is not False and isinstance(value, (int, float)) and math.isfinite(float(value))
+            if not r["ok"] and not r.get("error"):
+                r["error"] = "no score"
         except EvalError as e:
             r = {"ok": False, "error": str(e)}
+        except Exception as e:  # noqa: BLE001 — one broken suite must not fail every other measurement
+            r = {"ok": False, "error": f"{type(e).__name__}: {e}"}
         out["suites"][s["id"]] = {**r, "kind": s["kind"], "capability": s.get("capability"), "name": s.get("name", s["id"])}
     for p in ("def ", "import "):
         _, stats = _complete(model, tok, p, 32)

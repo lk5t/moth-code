@@ -36,3 +36,26 @@ def test_consistency_requires_both_reference_answers(tmp_path,monkeypatch):
     assert bench.tasks_suite(None,None,path)['value']==0
     replies=iter(['4','4'])
     assert bench.tasks_suite(None,None,path)['value']==1
+
+
+def test_a_suite_that_cannot_run_is_not_measurable_instead_of_failing_everything(monkeypatch, tmp_path):
+    """2.2.2: the JavaScript exam without Node.js returned no value and failed every evaluation."""
+    from moth.model import benchmark as BM
+    from moth.model import capabilities, registry
+
+    monkeypatch.setattr(registry, "load_model", lambda *a, **k: (None, None, {"sha256": "x", "params": 1}))
+    calls = {"codegen_js": {"ok": False, "error": "Node.js is not installed on this computer"},
+             "security": {"metric": "accuracy", "value": 0.25, "n": 20, "higher_is_better": True}}
+
+    def run_suite(model, tok, spec):
+        if spec["capability"] == "boom":
+            raise KeyError("value")
+        return dict(calls[spec["capability"]])
+
+    monkeypatch.setattr(capabilities, "run_suite", run_suite)
+    monkeypatch.setattr(BM, "_complete", lambda *a, **k: (None, type("S", (), {"generated_tokens": 0})()))
+    out = BM.run(tmp_path, [{"id": c, "kind": "capability", "capability": c} for c in ("codegen_js", "security", "boom")])
+    s = out["suites"]
+    assert s["codegen_js"]["ok"] is False and "Node.js" in s["codegen_js"]["error"]
+    assert s["security"]["ok"] is True and s["security"]["value"] == 0.25
+    assert s["boom"]["ok"] is False and "KeyError" in s["boom"]["error"]

@@ -3,6 +3,10 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.2.2 — Candidates are evaluated again
+
+- Every candidate failed with "evaluation failed: KeyError: 'value'", so none could be judged or promoted. The cause: the JavaScript exam needs Node.js, which MOTH Cloud does not have. It returned "Node.js is not installed" without a score, and the benchmark crashed on the missing score, failing the whole evaluation. A suite that cannot run is now "not measurable", and one suite's error no longer fails the others.
+
 ## 2.2.1 — MOTH grows again
 
 - MOTH had stopped growing its parameters. Its gradual growth steps were rejected along with every other candidate (the measurement-noise problem fixed in 2.2.0). After two rejections at one size, that size was blocked forever, and the sizing always chose that same size, so MOTH fell back to "train more first" indefinitely.
