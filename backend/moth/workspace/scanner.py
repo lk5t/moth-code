@@ -33,6 +33,7 @@ BUILD_MARKERS = {
 TEST_COMMANDS = {
     "npm": "npm test", "python": "python -m pytest", "cargo": "cargo test", "go": "go test ./...",
     "maven": "mvn test", "gradle": "gradle test", "dotnet": "dotnet test", "make": "make test",
+    "ruby": "bundle exec rake test", "php": "vendor/bin/phpunit",
 }
 BUILD_COMMANDS = {
     "npm": "npm run build", "cargo": "cargo build", "go": "go build ./...", "maven": "mvn package",

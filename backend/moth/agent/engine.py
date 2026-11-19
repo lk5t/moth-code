@@ -37,6 +37,7 @@ class EngineConfig:
     plan: bool = True
     approve_plan: bool = False   # 1.0 plan first: stop after planning until the user approves the plan
     self_checks: int = 2         # 1.0: times MOTH is sent back to fix its own broken files before finishing
+    fix_rounds: int = 3          # 2.0: times failing tests are fed back for MOTH to fix before finishing
 
 
 @dataclass
@@ -111,6 +112,8 @@ class AgentEngine:
 
         invalid = 0
         checks = 0
+        fixes = 0
+        verification: dict[str, Any] | None = None
         finished_summary: str | None = None
         while len(state.steps) < self.cfg.max_steps:
             if ctx.cancel.is_set():
@@ -145,6 +148,20 @@ class AgentEngine:
                     self._emit(state, "self_check", step=step)
                     self.on_update(state)
                     continue
+                # 2.0 write → run → fix: run the project's tests; if they fail, hand MOTH the output and keep going
+                verification = self._verify(state)
+                if verification and verification.get("ran") and not verification["passed"] and fixes < self.cfg.fix_rounds:
+                    fixes += 1
+                    step = {"i": len(state.steps) + 1, "thought": f"Tests failed — fix attempt {fixes} of {self.cfg.fix_rounds}",
+                            "tool": "run_tests", "args": {"command": verification["command"]}, "ok": False, "ts": time.time(),
+                            "result": f"The tests failed (exit code {verification.get('exit_code')}). Read the output, fix the "
+                                      f"code, then finish again:\n{verification['output_tail'][-2500:]}"}
+                    state.steps.append(step)
+                    verification = None
+                    self._emit(state, "test_fix", step=step, attempt=fixes)
+                    self._emit(state, "tool_result", step=step)
+                    self.on_update(state)
+                    continue
                 finished_summary = str(action.args.get("summary", "")).strip() or "(no summary given)"
                 break
             if action.tool == "give_up":
@@ -165,32 +182,16 @@ class AgentEngine:
         else:
             state.error = f"Stopped after the step limit ({self.cfg.max_steps}) without MOTH finishing the task."
             return self._finish(state, "incomplete", None)
-        self._finish(state, "completed", finished_summary)
+        self._finish(state, "completed", finished_summary, verification)
 
     def _self_check(self, state: TaskState) -> list[str]:
-        """1.0: files MOTH changed must at least parse (Python compiles, JSON loads); never runs project code."""
-        import ast
+        """Files MOTH changed must at least parse, in their own language (2.0: Python, JavaScript, shell, Go, C/C++,
+        PHP, Ruby, JSON, TOML, YAML…). Only syntax is checked; the project's code is never run here."""
+        from moth.agent.checkers import check_file
 
-        problems = []
         root = self.ctx.workspace.root
-        for path in sorted({c.get("path") for c in state.changes if c.get("type") in ("create", "modify") and c.get("path")}):
-            p = root / path
-            if not p.is_file():
-                continue
-            try:
-                text = p.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            try:
-                if path.endswith(".py"):
-                    ast.parse(text, filename=path)
-                elif path.endswith(".json"):
-                    json.loads(text)
-            except SyntaxError as e:
-                problems.append(f"{path}:{e.lineno}: {e.msg}")
-            except ValueError as e:
-                problems.append(f"{path}: invalid JSON ({e})")
-        return problems
+        paths = sorted({c.get("path") for c in state.changes if c.get("type") in ("create", "modify") and c.get("path")})
+        return [p for p in (check_file(root, path) for path in paths) if p]
 
     def _investigate_failure(self, result: ToolResult) -> ToolResult:
         """Attach related past errors/solutions from memory, and remember this failure."""
@@ -210,15 +211,34 @@ class AgentEngine:
         cmd = scan_project(self.ctx.workspace.root).test_command
         if not cmd:
             return {"ran": False, "reason": "no test command detected for this project"}
+        self._drop_stale_bytecode(state)
         self._emit(state, "verifying", command=cmd)
         res = execute_tool(self.ctx, "run_command", {"command": cmd})
         return {"ran": True, "command": cmd, "passed": res.ok, "exit_code": res.data.get("exit_code"),
                 "output_tail": res.output[-3000:]}
 
-    def _finish(self, state: TaskState, status: str, summary: str | None) -> None:
-        verification = None
+    def _drop_stale_bytecode(self, state: TaskState) -> None:
+        """A fix written in the same second as the broken version, with the same size, would otherwise run from
+        Python's stale cache (.pyc files are checked by whole-second modification time and size)."""
+        root = self.ctx.workspace.root
+        for c in state.changes:
+            path = c.get("path") or ""
+            if not path.endswith(".py"):
+                continue
+            src = root / path
+            cache = src.parent / "__pycache__"
+            if cache.is_dir():
+                for pyc in cache.glob(f"{src.stem}.*.pyc"):
+                    try:
+                        pyc.unlink()
+                    except OSError:
+                        pass
+
+    def _finish(self, state: TaskState, status: str, summary: str | None,
+                verification: dict[str, Any] | None = None) -> None:
         if status == "completed":
-            verification = self._verify(state)
+            if verification is None:
+                verification = self._verify(state)
             if verification and verification.get("ran") and not verification["passed"]:
                 status = "needs_review"
         state.report = {

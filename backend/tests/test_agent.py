@@ -108,8 +108,41 @@ def test_failed_verification_needs_review(env):
     p = env["project"]
     (p / "tests").mkdir()
     (p / "tests" / "test_fail.py").write_text("def test_x():\n    assert False\n")
-    state, _ = run(env, [call("write_file", path="x.py", content="x = 1\n"), call("finish", summary="done")])
+    state, llm = run(env, [call("write_file", path="x.py", content="x = 1\n")] + [call("finish", summary="done")] * 4)
     assert state.status == "needs_review" and state.report["verification"]["passed"] is False
+    # 2.0: failing tests were handed back to MOTH three times, with the real output, before giving up
+    fixes = [s for s in state.steps if s["tool"] == "run_tests"]
+    assert len(fixes) == 3 and "assert False" in fixes[0]["result"]
+    assert "The tests failed" in llm.prompts[-1][-1].content
+
+
+def test_failing_tests_are_fixed_in_the_loop(env):
+    """2.0 write → run → fix: the tests fail, MOTH reads the output, fixes the code, and the task completes."""
+    p = env["project"]
+    (p / "test_calc.py").write_text("from calc import double\n\ndef test_double():\n    assert double(4) == 8\n")
+    state, _ = run(env, [call("write_file", path="calc.py", content="def double(x):\n    return x + 2\n"),
+                         call("finish", summary="first try"),
+                         call("write_file", path="calc.py", content="def double(x):\n    return x * 2\n"),
+                         call("finish", summary="fixed")])
+    assert [s["tool"] for s in state.steps] == ["write_file", "run_tests", "write_file"], state.steps
+    assert state.status == "completed" and state.report["verification"]["passed"], state.report
+
+
+def test_self_check_covers_other_languages(env, tmp_path):
+    import shutil
+    from moth.agent.checkers import check_file
+    (tmp_path / "ok.js").write_text("function f(a) { return a * 2 }\n")
+    (tmp_path / "bad.js").write_text("function f(a) { return a * \n")
+    (tmp_path / "bad.sh").write_text("if true; then echo hi\n")
+    (tmp_path / "bad.toml").write_text("a = \n")
+    (tmp_path / "bad.go").write_text("package main\nfunc main( {\n")
+    assert check_file(tmp_path, "bad.toml")
+    if shutil.which("node"):
+        assert check_file(tmp_path, "ok.js") is None and "bad.js" in check_file(tmp_path, "bad.js")
+    if shutil.which("bash"):
+        assert check_file(tmp_path, "bad.sh")
+    if shutil.which("gofmt"):
+        assert check_file(tmp_path, "bad.go")
 
 
 def test_repeated_invalid_output_reports_model_limitation(env):

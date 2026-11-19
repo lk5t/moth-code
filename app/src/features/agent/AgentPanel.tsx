@@ -73,6 +73,7 @@ export function AgentPanel() {
     if (e.kind === "tool_call") setLive({ phase: `Running ${e.tool}…`, output: "" });
     if (e.kind === "command_output") setLive((l) => ({ ...l, output: (l.output + e.data).slice(-8000) }));
     if (e.kind === "verifying") setLive({ phase: `Verifying with ${e.command}…`, output: "" });
+    if (e.kind === "test_fix") setLive({ phase: `Tests failed — MOTH is fixing it (attempt ${e.attempt})…`, output: "" });
     if (e.kind === "approval_wait") setLive({ phase: `Waiting for your approval: ${e.action} ${e.target}`, output: "" });
     if (e.kind === "invalid_output") setLive((l) => ({ ...l, phase: `MOTH produced an unusable action (${e.count}): ${e.error}` }));
     if (["status", "plan", "tool_result"].includes(e.kind)) load(selected!);
