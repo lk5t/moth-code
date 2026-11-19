@@ -3,6 +3,12 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.2.1 — MOTH grows again
+
+- MOTH had stopped growing its parameters. Its gradual growth steps were rejected along with every other candidate (the measurement-noise problem fixed in 2.2.0). After two rejections at one size, that size was blocked forever, and the sizing always chose that same size, so MOTH fell back to "train more first" indefinitely.
+  - Only failures on the same base model within the last two days count now. A new base model, or two days, lifts the block.
+  - While a size is blocked, MOTH tries a smaller step (at least 1.8×) instead of not growing at all.
+
 ## 2.2.0 — Better models get through, clearer training views, tidier app
 
 **MOTH can finally move past its first model**

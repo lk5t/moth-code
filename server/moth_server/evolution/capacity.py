@@ -266,8 +266,18 @@ def assess(ctx: Ctx, base: dict, settings: dict) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 — sizing only refines the plan (the reason is kept)
         rs = None
         cause("sizing_unavailable", None, f"{type(exc).__name__}: {exc}"[:300])
+    blocked = rebirth_blocked(ctx, rs["params_after"], base.get("version")) if rs else None
+    if rs and blocked and "did not beat" in blocked:
+        # 2.2: try a smaller step instead of giving up on growth (e.g. 2× when 3× did not pass twice)
+        try:
+            smaller = right_size(ctx, base, {**settings, "growth": {**(settings.get("growth") or {}),
+                                                                    "max_params": rs["params_after"] - 1}})
+        except Exception:  # noqa: BLE001
+            smaller = None
+        if smaller and not rebirth_blocked(ctx, smaller["params_after"], base.get("version")):
+            cause("smaller_step", True, f"{blocked}; trying a smaller step ({smaller['params_after']:,} parameters)")
+            rs, blocked = smaller, None
     if rs:
-        blocked = rebirth_blocked(ctx, rs["params_after"])
         cause("too_small", True, f"{params:,} parameters, while the measured compute can train about "
               f"{rs['optimal_params']:,} properly in a day")
         from moth_server.intelligence import library
@@ -505,15 +515,27 @@ def successor_running(ctx: Ctx) -> bool:
                for e in MEM.experiments(ctx, limit=200))
 
 
-def rebirth_blocked(ctx: Ctx, params_after: int) -> str | None:
-    """A successor of this size is not tried again while one is running or soon after one was rejected."""
+RETRY_GROWTH_AFTER_S = 48 * 3600  # 2.2: a size that failed twice is tried again after two days
+
+
+def rebirth_blocked(ctx: Ctx, params_after: int, base_version: int | None = None) -> str | None:
+    """A successor of this size is not tried again while one is running or soon after one was rejected.
+
+    2.2: the block used to be permanent. Every candidate was being rejected over measurement noise, so the
+    gradual growth steps were rejected twice and MOTH never grew again ("not upgrading its own params"). Now only
+    failures on the same base model within the last two days count; a new base model or time lifts it."""
+    import time
+
     recent = [e for e in MEM.experiments(ctx, limit=200) if (e.get("config") or {}).get("rebirth")]
-    same = [e for e in recent if int(e["config"]["rebirth"].get("params_after") or 0) == params_after]
     if any(e["status"] in ("planned", "waiting", "running", "paused", "trained", "evaluating") for e in recent):
         return "a right-sized successor is already being trained"
-    failed = [e for e in same if e["status"] in ("rejected", "failed")]
+    cutoff = time.time() - RETRY_GROWTH_AFTER_S
+    failed = [e for e in recent if int(e["config"]["rebirth"].get("params_after") or 0) == params_after
+              and e["status"] in ("rejected", "failed")
+              and (base_version is None or e.get("base_version") == base_version)
+              and float(e.get("finished_at") or e.get("created_at") or 0) >= cutoff]
     if len(failed) >= 2:
-        return f"two successors of this size ({params_after:,} parameters) did not beat the current model"
+        return f"two successors of this size ({params_after:,} parameters) did not beat the current model recently"
     return None
 
 

@@ -82,3 +82,24 @@ def test_a_rejection_streak_is_reported_with_its_blocking_checks():
     rows = [{"status": "rejected", "error": "failed: speed" + (", memory" if i % 2 else "")} for i in range(6)]
     msg = AP.rejection_streak(ctx(rows + [{"status": "passed", "error": None}]))
     assert msg.startswith("The last 6 candidates were not promoted") and "speed (6×)" in msg and "memory (3×)" in msg
+
+
+def test_a_failed_growth_size_is_retried_on_a_new_base_or_after_two_days(monkeypatch):
+    import time
+
+    from moth_server.evolution import capacity as CAP
+
+    now = time.time()
+
+    def exp(status, base, at):
+        return {"status": status, "base_version": base, "finished_at": at, "config": {"rebirth": {"params_after": 270_000}}}
+
+    rows = [exp("rejected", 150, now - 3600), exp("rejected", 150, now - 7200)]
+    monkeypatch.setattr(CAP.MEM, "experiments", lambda ctx, limit=200: rows)
+    assert "did not beat" in CAP.rebirth_blocked(None, 270_000, 150)
+    assert CAP.rebirth_blocked(None, 270_000, 151) is None        # a new base model may try again
+    assert CAP.rebirth_blocked(None, 300_000, 150) is None        # another size may be tried now
+    rows[:] = [exp("rejected", 150, now - 3 * 86400), exp("rejected", 150, now - 3 * 86400)]
+    assert CAP.rebirth_blocked(None, 270_000, 150) is None        # two days later it is tried again
+    rows.append({"status": "running", "base_version": 150, "config": {"rebirth": {"params_after": 270_000}}})
+    assert "already being trained" in CAP.rebirth_blocked(None, 270_000, 150)

@@ -6,6 +6,8 @@ workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
 What's new in 2.2:
 
+- **2.2.1: MOTH grows again.** A growth size rejected twice was blocked forever, so parameters stopped growing. Now only failures on the same base within two days count, and a smaller step is tried meanwhile.
+
 - **Promotion no longer rejects better models over noise.**
   - A same-architecture candidate's speed and memory are recorded as information, not blocking (the base was often benchmarked while the server was idle and the candidate during training).
   - On small accuracy exams, a drop within three standard errors does not count as a skill getting worse.
