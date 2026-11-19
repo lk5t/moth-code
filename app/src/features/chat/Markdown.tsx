@@ -1,4 +1,5 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useState, type ReactNode } from "react";
+import { serverApi } from "@/lib/account";
 import { Check, Copy, FileDiff } from "lucide-react";
 import { TOKEN_CLASS, codeTarget, highlight } from "@/lib/highlight";
 import { useApp } from "@/lib/app-state";
@@ -14,8 +15,18 @@ export function CopyText({text,label="Copy code"}:{text:string;label?:string}) {
     {done ? <Check className="size-3 animate-pop" /> : <Copy className="size-3" />}{done ? "Copied" : label}</button>{result && !done && <span role="status" className="text-[0.625rem] text-muted">{result}</span>}</span>;
 }
 
+/** 2.0: the answer a code block belongs to, so Apply/Reject can teach MOTH (feedback learning). */
+export const AnswerContext = createContext<{ prompt?: string; answer?: string; model?: string; via?: string } | null>(null);
+
+function learnFrom(answer: { prompt?: string; answer?: string; model?: string; via?: string } | null, applied: boolean) {
+  if (!answer || answer.via !== "cloud") return;
+  void serverApi("/v1/feedback", { method: "POST", json: { rating: applied ? 1 : -1, category: applied ? "" : "other",
+    comment: applied ? "applied the code to the project" : "rejected the code change", prompt: answer.prompt, response: answer.answer, model: answer.model } }).catch(() => {});
+}
+
 function CodeBlock({ label, code, streaming }: { label: string; code: string; streaming?: boolean }) {
   const project = useApp((s) => s.project);
+  const answer = useContext(AnswerContext);
   const [error, setError] = useState<string | null>(null);
   const lang = label.trim().split(/\s+/)[0];
   const target = codeTarget(label, code);
@@ -26,7 +37,7 @@ function CodeBlock({ label, code, streaming }: { label: string; code: string; st
       {target && <span className="truncate font-mono text-[0.625rem] text-muted">{target}</span>}
       <span className="ml-auto flex items-center gap-1.5">
         {target && project && !streaming && <button type="button" className="inline-flex items-center gap-1 rounded border border-accent/40 px-1.5 py-0.5 text-[0.6875rem] text-fg transition-colors hover:bg-accent-soft"
-          title={`See the change to ${target}, then apply or reject it`} onClick={() => { setError(null); proposeChange(target, code).catch((e) => setError((e as Error).message)); }}><FileDiff className="size-3 text-accent" />Apply</button>}
+          title={`See the change to ${target}, then apply or reject it`} onClick={() => { setError(null); proposeChange(target, code, (applied) => learnFrom(answer, applied)).catch((e) => setError((e as Error).message)); }}><FileDiff className="size-3 text-accent" />Apply</button>}
         <CopyText text={code} />
       </span>
     </div>

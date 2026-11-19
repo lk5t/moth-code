@@ -169,7 +169,13 @@ SOURCES: list[dict[str, Any]] = [
           ("code_explain", "Verified code explanations", "code", 8_000,
            "What a function does, its inputs and a worked example computed by running it."),
           ("test_writing", "Verified test writing", "code", 8_000,
-           "Tests for a function; every assertion is executed against it before use."))],
+           "Tests for a function; every assertion is executed against it before use."),
+          ("sql", "Verified SQL", "code", 10_000,
+           "Questions about a small table; each query runs in SQLite and must match the answer computed separately."),
+          ("javascript", "Verified JavaScript", "code", 8_000,
+           "JavaScript functions with random parameters; Node.js runs each against its tests before use."),
+          ("shell", "Verified Bash", "code", 5_000,
+           "Bash one-liners for file tasks; each runs on prepared files and must print the expected output."))],
 ]
 
 # 0.9.0: large licensed sources (tens of GB in total), pinned file by file. A ``sharded`` source is used one

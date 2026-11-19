@@ -333,6 +333,13 @@ def register(app: FastAPI, svc: Services, deps) -> None:
                         "sources": extra.get("sources") or [], "capability": extra.get("capability"),
                         "model_version": extra.get("model_version"), "provider": extra.get("provider"),
                         "prompt": body.message, "regenerated": body.regenerate, "context_sources": [c['path'] for c in context]}
+                try:  # 2.0: MOTH checks the code in its own answer (syntax only; nothing is run)
+                    from moth.agent.checkers import check_answer
+                    checks = check_answer(text)
+                    if checks:
+                        meta["code_checks"] = checks
+                except Exception:  # noqa: BLE001 - a check never breaks an answer
+                    pass
                 saved_message = svc.db.execute("INSERT INTO messages(conversation_id, role, content, meta, ts) VALUES (?,?,?,?,?)",
                                (cid, "assistant", text, json.dumps(meta), time.time())).lastrowid
                 svc.bus.publish("chat", {"conversation_id": cid, "message_key": msg_key, "kind": "done",

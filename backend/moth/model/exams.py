@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 from pathlib import Path
@@ -94,6 +95,56 @@ SECURITY_EXAM: list[tuple[str, list[str], int]] = [
     ("What is the purpose of patch management?",
      ["Fixing known vulnerabilities by applying updates", "Designing logos", "Writing contracts", "Cleaning keyboards"], 0),
 ]
+
+
+# 2.0: (schema DDL, rows, question, expected result rows). The model writes the query; it counts only if SQLite
+# returns exactly the expected rows. None of these tables or questions appear in the training data.
+SQL_TABLE = ("CREATE TABLE books (title TEXT, author TEXT, year INTEGER, pages INTEGER)",
+             [("Dune", "Herbert", 1965, 412), ("Emma", "Austen", 1815, 474), ("Ulysses", "Joyce", 1922, 730),
+              ("Persuasion", "Austen", 1817, 249), ("Neuromancer", "Gibson", 1984, 271), ("Beloved", "Morrison", 1987, 324)])
+SQL_TASKS: list[tuple[str, list[tuple]]] = [
+    ("List the titles of all books, in alphabetical order.", [("Beloved",), ("Dune",), ("Emma",), ("Neuromancer",), ("Persuasion",), ("Ulysses",)]),
+    ("How many books are there?", [(6,)]),
+    ("List the titles of the books by Austen, in alphabetical order.", [("Emma",), ("Persuasion",)]),
+    ("Which book has the most pages? Return its title.", [("Ulysses",)]),
+    ("List the titles of books published after 1950, oldest first.", [("Dune",), ("Neuromancer",), ("Beloved",)]),
+    ("How many books does each author have? Return author and count, sorted by author.",
+     [("Austen", 2), ("Gibson", 1), ("Herbert", 1), ("Joyce", 1), ("Morrison", 1)]),
+    ("What is the total number of pages of all books?", [(2460,)]),
+    ("List the titles of books with fewer than 300 pages, in alphabetical order.", [("Neuromancer",), ("Persuasion",)]),
+]
+
+
+def sql_items() -> list[dict[str, Any]]:
+    schema = "books(title, author, year, pages)"
+    return [{"prompt": f"I have a SQLite table {schema}. {q} Write the SQL query.", "want": want} for q, want in SQL_TASKS]
+
+
+def run_sql(query: str, want: list[tuple]) -> bool:
+    query = query.strip().rstrip(";").strip()
+    if not query or not query.lower().startswith(("select", "with")) or ";" in query:
+        return False  # read-only, single statement
+    db = sqlite3.connect(":memory:")
+    try:
+        db.execute(SQL_TABLE[0])
+        db.executemany("INSERT INTO books VALUES (?,?,?,?)", SQL_TABLE[1])
+        got = db.execute(query).fetchmany(50)
+    except sqlite3.Error:
+        return False
+    finally:
+        db.close()
+    return [tuple(r) for r in got] == [tuple(r) for r in want]
+
+
+def sql_suite(model, tok, max_new: int = 120) -> dict[str, Any]:
+    from moth.model.capabilities import _chat, _extract_code
+
+    items = sql_items()
+    passed = 0
+    for it in items:
+        out, _ = _chat(model, tok, it["prompt"], max_new)
+        passed += run_sql(_extract_code(out) or out, it["want"])
+    return {"metric": "tests_passed", "value": passed / len(items), "n": len(items), "higher_is_better": True}
 
 
 def _node() -> str | None:

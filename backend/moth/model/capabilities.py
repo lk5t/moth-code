@@ -337,6 +337,9 @@ def run_suite(model, tok, spec: dict[str, Any]) -> dict[str, Any]:
     if cap == "codegen_js":  # 1.1
         from moth.model.exams import js_suite
         return js_suite(model, tok)
+    if cap == "codegen_sql":  # 2.0
+        from moth.model.exams import sql_suite
+        return sql_suite(model, tok)
     if cap == "security":  # 1.1
         from moth.model.exams import security_suite
         return security_suite(model, tok)

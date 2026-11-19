@@ -24,7 +24,7 @@ import re
 from typing import Any, Callable, Iterator
 
 KINDS = ("arithmetic", "instructions", "python", "reasoning", "language", "dialogue", "debugging", "code_explain",
-         "test_writing")
+         "test_writing", "sql", "javascript", "shell")
 WORDS = ["moth", "river", "garden", "rocket", "pencil", "planet", "violin", "lantern", "harbor", "meadow",
          "crystal", "falcon", "thunder", "pepper", "window", "summer", "orbit", "maple", "anchor", "copper"]
 SAFE_BUILTINS = {"len": len, "range": range, "sum": sum, "min": min, "max": max, "sorted": sorted, "abs": abs,
@@ -241,6 +241,11 @@ def generate(kind: str, n: int, seed: int = 0, source_id: str | None = None) -> 
         from moth.datafactory import coding
 
         yield from coding.generate(kind, n, seed, source_id)
+        return
+    if kind in ("sql", "javascript", "shell"):  # 2.0: other languages, each example run before use (multilang.py)
+        from moth.datafactory import multilang
+
+        yield from multilang.generate(kind, n, seed, source_id)
         return
     if kind not in GENERATORS:
         raise ValueError(f"unknown synthetic kind {kind!r}")

@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { MothEmblem } from "@/components/MothEmblem";
 import { cn } from "@/lib/utils";
-import { Markdown, CopyText } from "./Markdown";
+import { AnswerContext, Markdown, CopyText } from "./Markdown";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { AgentPanel } from "@/features/agent/AgentPanel";
 import { sounds } from "@/lib/sounds";
@@ -30,7 +30,7 @@ interface ChatMessage {
   role: "user" | "assistant" | "error" | "scan";
   scan?: { stage: "confirm" | "starting" | "running" | "cancelled" | "refused"; text: string; plan?: ScanPlan; refused?: string; id?: string };
   content: string;
-  meta?: ({ scan_id?: string; model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string; compacted?: boolean } & AnswerMeta) | null;
+  meta?: ({ scan_id?: string; code_checks?: { language: string; ok: boolean; problem: string | null }[]; via?: string; prompt?: string; model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string; compacted?: boolean } & AnswerMeta) | null;
   streaming?: boolean;
 }
 
@@ -412,7 +412,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                       <div className="flex max-w-[95%] gap-2.5">
                         <MothEmblem motion={m.streaming ? "generating" : "none"} className="mt-0.5 size-5 shrink-0" />
                         <div className="min-w-0 text-[0.8125rem] leading-relaxed">
-                          {m.content ? <Markdown text={m.content} streaming={m.streaming} /> : <span className="shimmer-text font-medium">Thinking…</span>}
+                          {m.content ? <AnswerContext.Provider value={{ prompt: m.meta?.prompt, answer: m.content, model: m.meta?.model, via: m.meta?.via }}><Markdown text={m.content} streaming={m.streaming} /></AnswerContext.Provider> : <span className="shimmer-text font-medium">Thinking…</span>}
                           {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-accent" />}
                           {!m.streaming && looksBroken(m.content, m.meta?.stop_reason) && (
                             <div role="note" className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-[0.6875rem] text-warning">
@@ -420,6 +420,9 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                               {index === lastAssistant && cid !== null && <button className="cursor-pointer underline" disabled={busy} onClick={() => send(true)}>Try again</button>}
                             </div>
                           )}
+                          {!!m.meta?.code_checks?.length && <div className="mt-1.5 flex flex-wrap gap-1.5 animate-fade-in">{m.meta.code_checks.map((c, ci) =>
+                            <span key={ci} title={c.problem ?? "The code parses; it was not run."} className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-px text-[0.625rem]", c.ok ? "border-success/30 text-success" : "border-warning/40 bg-warning/10 text-warning")}>
+                              {c.ok ? "✓" : "!"} {c.language} {c.ok ? "code checked" : `has a problem: ${c.problem}`}</span>)}</div>}
                           {m.meta?.compacted && <div className="mt-1 text-[0.65625rem] text-faint">Earlier messages were summarised so this long chat fits.</div>}
                           {m.meta && (
                             <div className="mt-1 text-[0.65625rem] text-faint">

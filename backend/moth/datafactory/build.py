@@ -100,7 +100,8 @@ def build(cache: Path, out: Path, config: dict[str, Any] | None = None,
             # repeats are removed by the deduplicator), up to 2 million examples per generator (100,000
             # where every example is executed)
             cap = cfg["max_chars"].get(src["id"])
-            most = 100_000 if src.get("kind") in ("python", "debugging", "code_explain", "test_writing") else 2_000_000
+            most = 100_000 if src.get("kind") in ("python", "debugging", "code_explain", "test_writing", "sql", "javascript",
+                                                  "shell") else 2_000_000
             n = max(int(src.get("count", 1000)), min(most, int(cap or 0) // 200))  # executed kinds: fewer
             yield from parse.train_records({**src, "count": n}, {"path": ""}, Path("."))
             return

@@ -202,23 +202,31 @@ GENERATED_V080 = ("synthetic-reasoning", "synthetic-language", "synthetic-dialog
                   "synthetic-code_explain", "synthetic-test_writing")
 
 
+GENERATED_V200 = ("synthetic-sql", "synthetic-javascript", "synthetic-shell")
+
+
 def adopt_generated_sources(ctx: Ctx) -> list[str]:
     """0.8.0, once: when Evolution already trains on MOTH's own verified generated data, add the new
     generated sources too (conversation and coding curricula; CC0, nothing is downloaded). The next
     automatic preparation then builds them (the approved list is part of its signature). Installations
-    that never approved generated data are left as they are."""
-    flag = "discovery_generated_v080"
-    if ctx.db.get_config(flag, None):
-        return []
-    p = policy(ctx)
-    added = []
-    if p["enabled"] and any(s.startswith("synthetic-") for s in p["approved_sources"]):
-        added = [s for s in GENERATED_V080 if s not in p["approved_sources"]]
-        if added:
-            update(ctx, {"approved_sources": list(dict.fromkeys(p["approved_sources"] + added))})
-            from moth_server.evolution import memory as MEM
+    that never approved generated data are left as they are.
 
-            MEM.event(ctx, "data.selected", "Added MOTH's verified conversation and coding curricula to the training "
-                      "data: " + ", ".join(added) + ". They are prepared automatically.", sources=added)
-    ctx.db.set_config(flag, {"done": True, "added": added})
-    return added
+    2.0, once more: the self-checked SQL, JavaScript and Bash examples join the same way."""
+    out: list[str] = []
+    for flag, sources, what in (("discovery_generated_v080", GENERATED_V080, "conversation and coding curricula"),
+                                ("discovery_generated_v200", GENERATED_V200, "SQL, JavaScript and Bash examples")):
+        if ctx.db.get_config(flag, None):
+            continue
+        p = policy(ctx)
+        added = []
+        if p["enabled"] and any(s.startswith("synthetic-") for s in p["approved_sources"]):
+            added = [s for s in sources if s not in p["approved_sources"]]
+            if added:
+                update(ctx, {"approved_sources": list(dict.fromkeys(p["approved_sources"] + added))})
+                from moth_server.evolution import memory as MEM
+
+                MEM.event(ctx, "data.selected", f"Added MOTH's verified {what} to the training data: "
+                          + ", ".join(added) + ". They are prepared automatically.", sources=added)
+        ctx.db.set_config(flag, {"done": True, "added": added})
+        out += added
+    return out

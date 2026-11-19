@@ -149,6 +149,9 @@ def builtin_suites() -> list[dict[str, Any]]:
     out.append({"id": "capability:codegen_js:builtin", "kind": "capability", "capability": "codegen_js",
                 "name": "JavaScript (executed, held out)",
                 "sha": _sha("capability/v1:codegen_js:" + json.dumps(exams.js_items(), sort_keys=True))})
+    out.append({"id": "capability:codegen_sql:builtin", "kind": "capability", "capability": "codegen_sql",
+                "name": "SQL (executed, held out)",
+                "sha": _sha("capability/v1:codegen_sql:" + json.dumps([exams.SQL_TABLE, exams.SQL_TASKS], sort_keys=True))})
     out.append({"id": "capability:security:builtin", "kind": "capability", "capability": "security",
                 "name": "Security exam (held out)", "sha": _sha("capability/v1:security:" + json.dumps(exams.SECURITY_EXAM))})
     return out
@@ -156,7 +159,7 @@ def builtin_suites() -> list[dict[str, Any]]:
 
 # 0.8.0: capability groups that must stay balanced (conversation and coding are the priorities)
 GROUPS = {"conversation": ("dialogue", "instruction", "holdout_conversation"),
-          "coding": ("codegen", "debugging", "code", "holdout_code", "codegen_js"),
+          "coding": ("codegen", "debugging", "code", "holdout_code", "codegen_js", "codegen_sql"),
           "security": ("security",)}
 
 

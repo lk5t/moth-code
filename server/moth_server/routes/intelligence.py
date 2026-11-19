@@ -156,6 +156,12 @@ def chat(body: ChatIn, request: Request, auth: Auth = Depends(current_auth), ctx
         extra, sources = K.context_for(ctx, auth.uid, body.message)
         if extra:
             system = f"{system}\n\n{extra}"
+    # 2.0 tools: exact arithmetic instead of a guess
+    from moth.inference.tools import calculate
+
+    calc = calculate(body.message)
+    if calc:
+        system = f"{system}\n\nCalculator (exact, already computed): {calc[0]} = {calc[1]}. Use this value."
     messages = [Message("system", system)] + [Message(m["role"], m["content"]) for m in history] + \
         [Message("user", body.message)]
     params = GenerationParams.from_dict({**policy.generation_defaults, **(body.params or {})})

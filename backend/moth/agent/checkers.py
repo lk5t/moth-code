@@ -78,3 +78,39 @@ def check_file(root: Path, rel: str) -> str | None:
 def available() -> dict[str, bool]:
     """Which external checkers this computer has (shown in the agent's report)."""
     return {t: shutil.which(t) is not None for t in sorted({v[0] for v in EXTERNAL.values()})}
+
+
+FENCE = __import__("re").compile(r"```([\w+#.-]*)[^\n]*\n(.*?)```", __import__("re").S)
+LANG_SUFFIX = {"python": ".py", "py": ".py", "javascript": ".js", "js": ".js", "node": ".js", "bash": ".sh", "sh": ".sh",
+               "shell": ".sh", "go": ".go", "golang": ".go", "c": ".c", "cpp": ".cpp", "c++": ".cpp", "php": ".php",
+               "ruby": ".rb", "rb": ".rb", "json": ".json", "toml": ".toml", "yaml": ".yaml", "yml": ".yaml", "lua": ".lua"}
+
+
+def check_answer(text: str, limit: int = 6) -> list[dict]:
+    """2.0: MOTH checks the code in its own answer: each fenced block in a known language is syntax-checked
+    (never run). Returns one entry per checked block: language, ok, and the problem when there is one."""
+    import tempfile
+
+    out: list[dict] = []
+    for lang, code in FENCE.findall(text or "")[:limit]:
+        suffix = LANG_SUFFIX.get(lang.lower())
+        if not suffix or not code.strip():
+            continue
+        if suffix == ".sh" and code.lstrip().startswith("$ "):
+            continue  # a terminal transcript, not a script
+        with tempfile.TemporaryDirectory(prefix="moth-answer-") as d:
+            name = "answer" + suffix
+            Path(d, name).write_text(code, encoding="utf-8")
+            problem = check_file(Path(d), name)
+            if problem:
+                problem = problem.replace(str(Path(d, name)), "code")
+                if problem.startswith(f"{name}:"):
+                    problem = problem[len(name) + 1:]
+                problem = problem.replace(name, "code").strip()
+                problem = problem[5:].strip() if problem.startswith("code:") else problem
+                keep = [ln.strip() for ln in problem.splitlines()
+                        if ln.strip() and not ln.lstrip().startswith("at ") and not ln.startswith("Node.js v")]
+                problem = " · ".join(keep[:3])[:300]
+                problem = __import__("re").sub(r"^(\d+)\s*(?::|·)\s*", r"line \1: ", problem)
+        out.append({"language": lang.lower(), "ok": problem is None, "problem": problem})
+    return out
