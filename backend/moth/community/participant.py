@@ -114,15 +114,23 @@ class Participant:
             self.set_setting("participant", cfg)
         if cfg.get("server") != server or not cfg.get("worker_token"):
             cfg = self._enroll(server, acct["token"])
-        with self.http_factory(server) as http:
-            response = http.post(f"/v1/training/workers/{cfg['worker_id']}/resume",
-                                 headers={"Authorization": f"Bearer {acct['token']}"})
-            if response.status_code != 200:
-                raise ParticipantError(f"Could not authorize this device (HTTP {response.status_code}).")
+        response = self._resume(server, acct["token"], cfg)
+        if response.status_code in (404, 409):
+            # 2.2: the saved registration was revoked or removed on MOTH Cloud (e.g. "Remove" in Network, or
+            # a reset): enroll this computer again instead of failing with "HTTP 409" every time
+            self.log("this computer's saved worker registration is no longer valid; enrolling it again")
+            cfg = self._enroll(server, acct["token"])
+            response = self._resume(server, acct["token"], cfg)
+        if response.status_code != 200:
+            raise ParticipantError(f"Could not authorize this device (HTTP {response.status_code}).")
         self.set_setting("participant", {**cfg, **identity, "enabled": True})
         self.authorized_session = (server, acct["token"])
         self.start()
         return self.status()
+
+    def _resume(self, server: str, token: str, cfg: dict[str, Any]):
+        with self.http_factory(server) as http:
+            return http.post(f"/v1/training/workers/{cfg['worker_id']}/resume", headers={"Authorization": f"Bearer {token}"})
 
     def start(self) -> None:
         if self.thread and self.thread.is_alive():

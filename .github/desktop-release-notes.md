@@ -5,6 +5,7 @@
 ### What's new in 2.2
 
 - **MOTH can move past its first model.** Better candidates are no longer rejected over measurement noise (speed and memory of a same-size model, chance-level drops on small exams). Workers' finished runs on small models are kept instead of refused as "update too large".
+- **The "This computer" switch works again.** It no longer fails with "Could not authorize this device (HTTP 409)" after its registration was removed; it enrolls again.
 - **A readable MOTH timeline:** clear version labels, a scale that one far-off point no longer flattens, promoted and not-promoted versions set apart, and values on hover.
 - **Clearer Evolution card.** It says why candidates are not being promoted, uses consistent model names and has plain-language plans.
 - **Tidier app.** Home actions are together, sign-in screens have a Sign in button, the tour lives in Settings → About, the project chat toolbar is readable, and panels pause their refreshes while the window is hidden.

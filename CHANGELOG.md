@@ -26,6 +26,7 @@ current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOL
   - Tokens per parameter below 1 are no longer rounded to "0.0".
 
 **App**
+- **"This computer" switch fixed.** It failed with "Could not authorize this device (HTTP 409)" when this computer's saved worker registration had been revoked or removed on MOTH Cloud (for example with Remove in Network, or by a reset). The app now enrolls the computer again and switches on.
 - **Home:** "Clone from GitHub" sits with New chat and Open project. Repeated activity lines collapse into one with a count ("×5").
 - **Sign-in screens** (Network, MOTH AI) have a Sign in button instead of an unrelated tip. The chat's Sign in and Retry buttons line up with the text.
 - **Settings:** the tour and the quick introduction moved from the top of Account to About, under "New here, or need a refresher?".
