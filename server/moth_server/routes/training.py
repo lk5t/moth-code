@@ -112,6 +112,16 @@ def install_command(ctx: Ctx, release: dict, token: str) -> str:
 
 
 def windows_command(ctx: Ctx, release: dict, token: str) -> str:
+    """2.3: one line that works when pasted into Command Prompt *or* PowerShell: Windows starts PowerShell
+    itself (with script running allowed for that process only) and runs ``windows_script`` (shown to the user
+    as "what this runs"), so pasting it into the wrong window or a locked-down policy no longer fails."""
+    import base64
+
+    encoded = base64.b64encode(windows_script(ctx, release, token).encode("utf-16-le")).decode()
+    return f"powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}"
+
+
+def windows_script(ctx: Ctx, release: dict, token: str) -> str:
     """Windows 10/11 PowerShell: the same verified download, then install.ps1 (no administrator needed)."""
     def q(v: str) -> str:
         return "'" + v.replace("'", "''") + "'"
@@ -144,6 +154,7 @@ def new_enrollment(body: EnrollmentIn, auth: Auth = Depends(current_auth), ctx: 
         "release": release,
         "command": install_command(ctx, release, token) if release else None,
         "windows_command": windows_command(ctx, release, token) if release else None,
+        "windows_script": windows_script(ctx, release, token) if release else None,
         "manual_command": f"moth-worker enroll --server {public_url(ctx)} --token {token}",
         "note": None if release else "No MOTH Worker release is published on this server yet; install from source "
                                      "(see docs/WORKER.md) and run the manual command.",

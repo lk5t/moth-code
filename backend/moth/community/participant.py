@@ -14,6 +14,8 @@ MOTH Code updates itself.
 
 from __future__ import annotations
 
+import functools
+
 import hashlib
 import threading
 import time
@@ -67,7 +69,7 @@ class Participant:
                 self.thread.is_alive()), "worker_id": cfg.get("worker_id"), "server": cfg.get("server"),
                 "job": r.current_job if r else None, "progress": r.progress if r else None,
                 "paused_by_owner": bool(r and r.paused), "completed_jobs": self.completed, "error": self.error,
-                "log": list(self.log_lines)[-15:]}
+                "log": list(self.log_lines)[-15:], **_gpu_hint()}
 
     def _enroll(self, server: str, token: str) -> dict[str, Any]:
         """One-time enrollment of this computer with the signed-in account."""
@@ -198,3 +200,22 @@ class Participant:
             self.runner.stop_event.set()
         if self.thread:
             self.thread.join(timeout=wait)
+
+
+@functools.lru_cache(maxsize=1)
+def _gpu_hint() -> dict[str, Any]:
+    """2.3: the app ships with CPU-only PyTorch, so "This computer" trains on the CPU. When an NVIDIA card is
+    present, say so: the installed MOTH Worker (Network → Add another computer) uses the GPU instead."""
+    try:
+        import torch
+
+        cuda = bool(torch.cuda.is_available())
+    except Exception:  # noqa: BLE001
+        cuda = False
+    try:
+        from moth_worker.hardware import _nvidia_smi
+
+        gpus, _ = _nvidia_smi()
+    except Exception:  # noqa: BLE001
+        gpus = []
+    return {"gpu_usable": cuda, "nvidia_gpu": gpus[0]["name"] if gpus else None}

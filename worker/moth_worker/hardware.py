@@ -23,8 +23,20 @@ from pathlib import Path
 from typing import Any
 
 
-def _nvidia_smi() -> tuple[list[dict[str, Any]], str | None]:
+def _nvidia_smi_exe() -> str | None:
+    """nvidia-smi on PATH, or (2.3) where Windows drivers put it when a service's PATH does not include it."""
     exe = shutil.which("nvidia-smi")
+    if exe or sys.platform != "win32":
+        return exe
+    for p in (Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "nvidia-smi.exe",
+              Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "NVIDIA Corporation" / "NVSMI" / "nvidia-smi.exe"):
+        if p.is_file():
+            return str(p)
+    return None
+
+
+def _nvidia_smi() -> tuple[list[dict[str, Any]], str | None]:
+    exe = _nvidia_smi_exe()
     if not exe:
         return [], None
     try:
@@ -139,7 +151,11 @@ def requirement_problem(hw: dict[str, Any], min_vram_gb: float = 8.0, allow_cpu:
     return None
 
 
-def compute_kind(hw: dict[str, Any], min_vram_gb: float = 8.0) -> str:
+MIN_GPU_GB = 3.5  # 2.3: was 8 GB, which made a 4–6 GB card (RTX 3050 laptop/6 GB, 1650, 2060) train on the CPU;
+#                  each job still checks that the model fits the card's free memory
+
+
+def compute_kind(hw: dict[str, Any], min_vram_gb: float = MIN_GPU_GB) -> str:
     """"gpu" when a CUDA GPU with enough memory is usable, else "cpu"."""
     usable = [g for g in hw.get("gpus") or [] if (g.get("memory_gb") or 0) >= min_vram_gb]
     return "gpu" if usable and hw.get("torch_cuda") else "cpu"

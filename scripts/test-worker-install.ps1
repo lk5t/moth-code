@@ -30,14 +30,16 @@ try {
   $auth = @{ Authorization = "Bearer $($login.token)" }
   $e = Invoke-RestMethod -Method Post "$Base/v1/training/enrollments" -Headers $auth -ContentType "application/json" -Body '{"name":"ci-windows"}'
   if (-not $e.windows_command) { throw "the server did not return a Windows command" }
-  Write-Host "Windows command: $($e.windows_command -replace 'me_[^'']+', 'me_<redacted>')"
+  # 2.3: the copied line is "powershell ... -EncodedCommand <base64>" (the token is inside); show the readable script
+  Write-Host "Windows script: $($e.windows_script -replace 'me_[^'']+', 'me_<redacted>')"
 
   Write-Host "== run the command exactly as a user would (PowerShell, no administrator steps, CPU-only)"
   $userCwd = Get-Location
   # Windows PowerShell 5.1 (powershell.exe), the shell most users have, with the caller's "Stop" preference
   # exactly as the command sets it: 1.0.1 failed there on the torch probe while pwsh 7 passed.
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $e.windows_command
-  if ($LASTEXITCODE -ne 0) { throw "the Windows command failed in Windows PowerShell 5.1 (exit $LASTEXITCODE)" }
+  # 2.3: pasted into Command Prompt, as a user did; the line itself starts Windows PowerShell 5.1
+  cmd.exe /c $e.windows_command
+  if ($LASTEXITCODE -ne 0) { throw "the Windows command failed when run from Command Prompt (exit $LASTEXITCODE)" }
   Set-Location $userCwd
   $wHome = Join-Path $env:LOCALAPPDATA "MOTH\worker"
   $mw = Join-Path $wHome "venv\Scripts\moth-worker.exe"

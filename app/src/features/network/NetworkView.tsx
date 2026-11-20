@@ -30,7 +30,7 @@ interface Worker {
 }
 interface Job { id: number; status: string; worker_id: number; progress: number | null; error: string | null; updated_at: number }
 interface Listing { workers: Worker[]; jobs: Job[]; network: { configured: boolean; round: number | null; checkpoint_version: number | null } }
-interface Enrollment { token: string; expires_at: number; command: string | null; windows_command: string | null; manual_command: string; note: string | null; release: { version: string; sha256: string } | null }
+interface Enrollment { token: string; expires_at: number; command: string | null; windows_command: string | null; windows_script?: string | null; manual_command: string; note: string | null; release: { version: string; sha256: string } | null }
 
 const statusTone: Record<string, "success" | "warning" | "danger" | "default"> = { online: "success", paused: "warning", offline: "default", revoked: "danger" };
 
@@ -146,11 +146,16 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
                     <div className="flex gap-1 text-xs">
                       {(["unix", "windows"] as const).map((o) => (
                         <Button key={o} size="sm" variant={os === o ? "secondary" : "ghost"} onClick={() => setOs(o)}>
-                          {o === "unix" ? "Linux / macOS (terminal)" : "Windows (PowerShell)"}
+                          {o === "unix" ? "Linux / macOS (terminal)" : "Windows (Command Prompt or PowerShell)"}
                         </Button>
                       ))}
                     </div>
                     <Copyable text={(os === "windows" ? enrollment.windows_command : enrollment.command) ?? enrollment.command} label="Copy" />
+                    {os === "windows" && enrollment.windows_script && <details className="text-xs">
+                      <summary className="cursor-pointer text-muted hover:text-fg">What this runs</summary>
+                      <p className="mt-1 text-faint">The line starts Windows PowerShell and runs this script: it downloads the worker, checks its SHA-256 and installs it for your user account (no administrator needed).</p>
+                      <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded border border-border bg-bg p-2 font-mono text-[0.6875rem] text-muted">{enrollment.windows_script.replaceAll("; ", ";\n")}</pre>
+                    </details>}
                   </>
                 ) : (
                   <>

@@ -258,25 +258,37 @@ def _create_round_jobs(ctx: Ctx, exp: dict, base: dict, st: dict, need_bytes: in
             jobs[str(i)] = jid
 
 
-def steps_for(conn, spec: dict, hw: dict) -> int:
-    """Local steps for a participant: proportional to its measured speed relative to the online median
-    (within 0.25×–4× of the round's base), so slow CPUs do not hold up a round."""
+MAX_SPEED_SHARE = 25.0  # 2.3: a GPU is 30–100× a CPU; a 4× cap left it waiting for the CPUs every round
+MIN_SPEED_SHARE = 0.1
+
+
+def steps_for(conn, spec: dict, hw: dict, measured: dict | None = None, worker_id: int | None = None) -> int:
+    """Local steps for a participant: proportional to its speed relative to the online median, so a round's
+    participants finish at about the same time (the averaging is weighted by tokens trained).
+
+    2.3: measured training throughput (tokens/s of real jobs) is used when this computer and the others have
+    one; it reflects GPUs, which the CPU benchmark does not. The share may range 0.1×–25× of the base."""
     base = int(spec["train"]["steps"])
-    mine = float((hw.get("benchmark") or {}).get("gflops") or 0)
-    if mine <= 0:
-        return base
     t = now()
-    speeds = []
-    for w in conn.execute(select(workers.c.hardware).where(workers.c.revoked_at.is_(None),
-                                                           workers.c.last_heartbeat_at >= t - ONLINE_SECONDS)):
-        g = (json.loads(w[0] or "{}").get("benchmark") or {}).get("gflops")
-        if g:
-            speeds.append(float(g))
-    if not speeds:
-        return base
-    speeds.sort()
-    median = speeds[len(speeds) // 2]
-    return max(1, min(base * 4, int(round(base * max(0.25, min(4.0, mine / median))))))
+    online = [(r[0], json.loads(r[1] or "{}")) for r in conn.execute(
+        select(workers.c.id, workers.c.hardware).where(workers.c.revoked_at.is_(None),
+                                                       workers.c.last_heartbeat_at >= t - ONLINE_SECONDS))]
+    measured = measured or {}
+    mine_m = float(measured.get(f"worker:{worker_id}") or 0) if worker_id is not None else 0.0
+    others_m = sorted(float(measured.get(f"worker:{i}") or 0) for i, _ in online)
+    others_m = [v for v in others_m if v > 0]
+    if mine_m > 0 and len(others_m) >= 2:
+        median = others_m[len(others_m) // 2]
+        share = mine_m / median
+    else:
+        mine = float((hw.get("benchmark") or {}).get("gflops") or 0)
+        speeds = sorted(float((h.get("benchmark") or {}).get("gflops") or 0) for _, h in online)
+        speeds = [g for g in speeds if g > 0]
+        if mine <= 0 or not speeds:
+            return base
+        share = mine / speeds[len(speeds) // 2]
+    share = max(MIN_SPEED_SHARE, min(MAX_SPEED_SHARE, share))
+    return max(1, int(round(base * share)))
 
 
 def job_files(ctx: Ctx, spec: dict) -> tuple[Path, Path]:

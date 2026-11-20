@@ -35,7 +35,8 @@ def test_relayed_worker_bundle_is_served_with_one_command_installs(client, setti
     e = client.post("/v1/training/enrollments", json={}, headers=H(user)).json()
     assert e["release"]["version"] == "0.5.7" and e["release"]["sha256"] == sha
     assert sha in e["command"] and "install.sh --server https://moth.test --token" in e["command"]
-    assert sha.upper() in e["windows_command"] and "install.ps1" in e["windows_command"]
+    assert sha.upper() in e["windows_script"] and "install.ps1" in e["windows_script"]
+    assert e["windows_command"].startswith("powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ")
     r = client.get("/downloads/worker/moth-worker-0.5.7.tar.gz")
     assert r.status_code == 200 and hashlib.sha256(r.content).hexdigest() == sha
     assert client.get("/downloads/worker/moth-worker-0.0.1.tar.gz").status_code == 404

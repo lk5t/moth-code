@@ -420,7 +420,12 @@ def create_worker_job(ctx: Ctx, exp: dict, need_bytes: int = 0, worker_ids: list
             # and only workers that apply it may claim the job
             **({"mask_sha256": mask_sha, "min_worker_version": MASK_WORKER_VERSION} if mask_sha else {}),
             # assignment: only workers with enough memory get it; a GPU worker is preferred briefly
-            "requirements": {"memory_bytes": int(need_bytes)}, "prefer_gpu": True}
+            "requirements": {"memory_bytes": int(need_bytes)}, "prefer_gpu": True,
+            # 2.3: back from sleep or a restart: the computer that had this experiment gets it first
+            **({"returning_worker": (exp.get("resources") or {})["returning_worker"],
+                "returning_until": (exp.get("resources") or {}).get("returning_until")}
+               if (exp.get("resources") or {}).get("returning_worker")
+               and float((exp.get("resources") or {}).get("returning_until") or 0) > now() else {})}
     with ctx.db.tx() as c:
         res = c.execute(training_jobs.insert().values(**next_job_values(ctx,c), kind="evolve_train", status="queued", spec=json.dumps(spec),
                                                       attempts=0, max_attempts=int(exp["max_attempts"]),

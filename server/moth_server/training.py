@@ -27,6 +27,7 @@ from moth_server.security import new_token, token_hash
 
 ENROLL_TTL = 15 * 60
 LEASE_SECONDS = 10 * 60
+RECLAIM_SECONDS = 10 * 60  # 2.3: how long a requeued job waits for the computer that had it
 OFFLINE_AFTER = 3 * 60
 MAX_QUEUED = 8
 WORKER_TOKEN_PREFIX = "mw_"
@@ -190,9 +191,14 @@ def requeue_expired(ctx: Ctx) -> int:
         for j in c.execute(select(training_jobs).where(training_jobs.c.status == "leased",
                                                        training_jobs.c.lease_expires_at < t)).mappings().all():
             final = j["attempts"] >= j["max_attempts"]
+            spec = json.loads(j["spec"] or "{}")
+            if not final and j["kind"] in ("evolve_train", "dist_shard") and j["worker_id"]:
+                # 2.3: a computer that slept or restarted gets its job back first when it returns soon
+                spec.update(returning_worker=j["worker_id"], returning_until=t + RECLAIM_SECONDS)
             c.execute(training_jobs.update().where(training_jobs.c.id == j["id"]).values(
                 status="failed" if final else "queued", worker_id=None if not final else j["worker_id"],
-                lease_expires_at=None, error="lease expired (worker stopped responding)", updated_at=t))
+                spec=json.dumps(spec), lease_expires_at=None,
+                error="lease expired (worker stopped responding)", updated_at=t))
             n += 1
         c.execute(workers.update().where(workers.c.status == "online", workers.c.last_heartbeat_at < t - OFFLINE_AFTER)
                   .values(status="offline"))
@@ -322,6 +328,8 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
                 spec = json.loads(cand["spec"])
                 if spec.get("worker_ids") is not None and worker['id'] not in spec['worker_ids']:
                     continue
+                if spec.get("returning_worker") not in (None, worker["id"]) and t < float(spec.get("returning_until") or 0):
+                    continue  # 2.3: held briefly for the computer that had it (back from sleep or a restart)
                 if spec.get("min_worker_version") and not version_at_least(worker.get("version"), spec["min_worker_version"]):
                     continue  # e.g. a job with a loss mask: older workers would ignore it
                 if not fits(hw, spec, json.loads(worker['limits'] or '{}')):
@@ -343,7 +351,7 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
                 # participants finish at about the same time (the averaging is weighted by tokens trained)
                 from moth_server.evolution.distributed import steps_for
 
-                spec["train"] = {**spec["train"], "steps": steps_for(c, spec, hw)}
+                spec["train"] = {**spec["train"], "steps": steps_for(c, spec, hw, ctx.db.get_config("compute_throughput", {}) or {}, worker["id"])}
             if job["kind"] == "train_round" and ("job_id" not in spec or spec.get("round") != coord.config["round"]):
                 spec = {**coord.next_job(f"worker-{worker['id']}").to_dict(), "round": coord.config["round"]}
             res = c.execute(training_jobs.update().where(training_jobs.c.id == job["id"],

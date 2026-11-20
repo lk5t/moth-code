@@ -20,7 +20,7 @@ from moth_worker.client import ServerError, WorkerClient
 from moth_worker.hardware import measured_device, compute_kind, detect
 
 CHECKPOINT_EVERY = 25
-SNAPSHOT_SECONDS = 600.0  # 0.9.0: how often an evolution job sends its progress to MOTH Cloud
+SNAPSHOT_SECONDS = 300.0  # how often an evolution job sends its progress to MOTH Cloud (2.3: 5 min, was 10)
 
 
 class Stop(Exception):

@@ -107,7 +107,9 @@ function ThisComputerChoice() {
   const reload = () => get<Any>("/api/participant").then(setSt).catch(() => setSt({ available: false }));
   useEffect(() => { reload(); }, []);
   return <div>
-    <ComputeChoice title="This computer" help={st?.available === false ? "This build cannot train for the network." : "This PC trains between your own work; it pauses when you need it. Stop at any time."}
+    <ComputeChoice title="This computer" help={st?.available === false ? "This build cannot train for the network." : st?.nvidia_gpu && !st?.gpu_usable
+      ? `This PC trains on its CPU between your own work. To use your ${st.nvidia_gpu}, install the MOTH Worker from Network → Add another computer (much faster).`
+      : "This PC trains between your own work; it pauses when you need it. Stop at any time."}
       checked={!!st?.enabled} disabled={!st?.available}
       onChange={(v) => { setErr(null); put("/api/participant", { enabled: v }).then(reload).catch((e) => setErr((e as Error).message)); }} />
     {err && <p className="mt-1 text-[0.6875rem] text-danger">{err}</p>}

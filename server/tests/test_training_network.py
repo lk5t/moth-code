@@ -59,8 +59,13 @@ def test_install_command_pins_release_checksum(client, settings, tmp_path):
     assert f"echo '{sha}  moth-worker-0.2.0.tar.gz' | sha256sum -c -" in e["command"]  # Linux
     assert f"echo '{sha}  moth-worker-0.2.0.tar.gz' | shasum -a 256 -c -" in e["command"]  # macOS
     assert e["token"] in e["command"] and "curl -fsSLO https://moth.test/downloads/worker/" in e["command"]
-    assert sha.upper() in e["windows_command"] and e["token"] in e["windows_command"]  # Windows
-    assert "Get-FileHash" in e["windows_command"] and "install.ps1" in e["windows_command"]
+    assert sha.upper() in e["windows_script"] and e["token"] in e["windows_script"]  # Windows
+    assert "Get-FileHash" in e["windows_script"] and "install.ps1" in e["windows_script"]
+    # 2.3: the copied line works in Command Prompt and PowerShell alike and runs exactly windows_script
+    import base64
+    head, _, b64 = e["windows_command"].rpartition(" ")
+    assert head == "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand"
+    assert base64.b64decode(b64).decode("utf-16-le") == e["windows_script"]
     assert client.get("/downloads/worker/moth-worker-0.2.0.tar.gz").content == b"release-bytes"
     assert client.get("/downloads/worker/other.tar.gz").status_code == 404
 

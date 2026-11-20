@@ -6,6 +6,8 @@ workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
 What's new in 2.2:
 
+- **2.2.6:** Windows workers use GPUs with 4–6 GB (was 8 GB minimum) and find nvidia-smi; the install command works in Command Prompt and PowerShell; shared rounds give each computer steps by measured speed (up to 25×); a fast GPU is kept for the growth step; a worker back from sleep resumes from its last progress.
+
 - **2.2.5:** with no chats in the last day, a new model's monitoring ends after three passed health checks instead of 30 minutes.
 
 - **2.2.4:** workers on Linux count reclaimable file cache as free memory (they looked 97 % full and were refused experiments), and growth attempts that crashed in evaluation no longer block their size.

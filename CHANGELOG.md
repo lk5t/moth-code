@@ -3,6 +3,22 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.2.6 — GPUs do the heavy lifting; Windows workers fixed
+
+**Windows workers**
+- **GPUs with 4–6 GB are used.** A GPU counted only with at least 8 GB of memory, so a 3050 (laptop or 6 GB), 1650 or 2060 quietly trained on the CPU. The minimum is now 3.5 GB; each job still checks that the model fits.
+- **nvidia-smi is found even when a background service's PATH lacks it** (System32 and the NVIDIA folder are checked), so the GPU is detected.
+- **The install command works in Command Prompt *and* PowerShell.** It starts Windows PowerShell itself, with scripts allowed for that one process, so pasting it into the wrong window or a locked-down script policy no longer fails. Network shows what it runs. The Windows install test now runs it from Command Prompt.
+
+**Faster training with a GPU**
+- **Speed-matched shared rounds.** When computers train one experiment together, each gets steps in proportion to its *measured* training speed, from 0.1× to 25× the base (was 0.25×–4× from a CPU benchmark), so a GPU no longer waits for CPUs every round.
+- **A fast GPU is kept for the growth step.** While a bigger model is being trained, a GPU at least 5× faster than MOTH Cloud is not given a smaller parallel experiment; it joins the growth step instead.
+
+**Sleep, restarts and lost connections**
+- **Saved progress is used.** When a worker stops responding (sleep, restart, network), its experiment continues from the last progress it sent instead of starting again.
+- **Held for the returning computer.** The experiment is held for that computer for 10 minutes, so it usually picks it straight back up.
+- **Progress is sent every 5 minutes** (was 10).
+
 ## 2.2.5 — No 30-minute wait when nobody is chatting
 
 - A new model is first served to 20 % of chats and watched for 30 minutes, then rolled out to everyone or rolled back. With no users there is nothing to watch, so the wait only delayed MOTH. When nobody has chatted in the last day, monitoring now ends once three health checks have passed (about a minute and a half). With real users the full 30-minute staged rollout applies as before.

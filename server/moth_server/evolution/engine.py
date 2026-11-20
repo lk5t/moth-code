@@ -560,6 +560,38 @@ def _cloud_idle(ctx: Ctx, settings: dict) -> bool:
         e["backend"] == "local" and e["status"] in ("running", "paused") for e in MEM.experiments(ctx, limit=50))
 
 
+def _resume_after_lapse(ctx: Ctx, cyc: dict, exp: dict, j: dict) -> bool:
+    """2.3: a worker's lease lapsed (its computer slept, restarted or lost the network). Its job went back to
+    the queue from step 0; continue from the progress it last sent instead, and hold the new job briefly for
+    that same computer (it usually comes back within minutes)."""
+    from moth_server.db import training_jobs
+    from moth_server.training import RECLAIM_SECONDS
+
+    spec = json.loads(j["spec"] or "{}")
+    with ctx.db.tx() as c:
+        n = c.execute(training_jobs.update().where(training_jobs.c.id == j["id"], training_jobs.c.status == "queued")
+                      .values(status="cancelled", updated_at=now(),
+                              error="replaced: continues from the progress the worker sent")).rowcount
+    if not n:
+        return False
+    try:
+        resumed = B.resume_from_snapshot(ctx, exp, spec)
+    except Exception:  # noqa: BLE001 — without valid progress the experiment simply starts again
+        resumed = None
+    res = {k: v for k, v in (exp.get("resources") or {}).items()
+           if k not in ("leased_at", "leased_by", "last_progress", "last_progress_at")}
+    if spec.get("returning_worker"):
+        res.update(returning_worker=spec["returning_worker"], returning_until=now() + RECLAIM_SECONDS)
+    MEM.update_experiment(ctx, exp["id"], status="waiting", backend=None, job_id=None, worker_id=None, error=None,
+                          resources=res)
+    MEM.event(ctx, "experiment.resumed", f"Experiment #{exp['id']}: worker {spec.get('returning_worker') or j.get('worker_id')} "
+              "stopped responding (sleep, restart or network)"
+              + (f"; it continues from step {resumed['step']:,} for the remaining {resumed['remaining']:,} steps, "
+                 "held for that computer for a few minutes" if resumed else "; it starts again"),
+              cycle_id=cyc["id"], experiment_id=exp["id"])
+    return True
+
+
 def _take_back_stalled(ctx: Ctx, cyc: dict, exp: dict, j: dict, res: dict, settings: dict) -> bool:
     """0.8.1: a worker that keeps its lease (it still sends heartbeats, e.g. while paused because its
     computer is busy) but makes no progress would hold the experiment — and so the whole cycle — forever.
@@ -619,6 +651,10 @@ def _free_slots(ctx: Ctx, settings: dict, running: list[dict], exp: dict) -> dic
         be["workers"] = False  # every participant is busy with the sharded experiment
     elif be.get("workers"):
         free = C.available_workers(ctx, _need_bytes(ctx, exp), settings.get("worker_ids"))
+        if not (exp.get("config") or {}).get("rebirth") and _growth_pending(ctx, exp):
+            # 2.3: a fast GPU belongs to the cycle's growth step (the most important, longest run), which joins
+            # it in shared rounds; a smaller parallel experiment must not take it first
+            free = [w for w in free if not (w["gpu"] and w["ratio"] >= FAST_WORKER_RATIO)]
         if not free:
             be["workers"] = False
         elif any(e["backend"] == "local" for e in running) and not any(w["ratio"] >= C.MIN_PARALLEL for w in free):
@@ -628,6 +664,18 @@ def _free_slots(ctx: Ctx, settings: dict, running: list[dict], exp: dict) -> dic
     if not (be.get("local_cpu") or be.get("local_gpu") or be.get("workers")):
         return None
     return {"settings": {**settings, "backends": be}}
+
+
+FAST_WORKER_RATIO = 5.0  # 2.3: a worker this many times faster than MOTH Cloud's CPU is kept for the growth step
+
+
+def _growth_pending(ctx: Ctx, exp: dict) -> bool:
+    """Is a growth step (successor) of the same cycle still to be trained?"""
+    if exp.get("cycle_id") is None:
+        return False
+    return any((e.get("config") or {}).get("rebirth") and e["id"] != exp.get("id")
+               and e["status"] in ("planned", "waiting", "running", "paused")
+               for e in MEM.experiments(ctx, exp["cycle_id"]))
 
 
 def _waiting(ctx: Ctx, cyc: dict, exp: dict, reasons: list[str], status: str = "waiting") -> None:
@@ -772,6 +820,9 @@ def _advance_running(ctx: Ctx, cyc: dict, exp: dict, settings: dict) -> None:
                                   finished_at=now(), attempts=j["attempts"])
             MEM.event(ctx, "experiment.failed", f"Experiment #{exp['id']}: the worker job failed: {j['error']}",
                       level="error", cycle_id=cyc["id"], experiment_id=exp["id"])
+        elif j["status"] == "queued" and str(j.get("error") or "").startswith("lease expired") \
+                and (B.run_dir(ctx, exp) / "snapshot.pt").exists() and _resume_after_lapse(ctx, cyc, exp, j):
+            return
         elif j["status"] == "queued" and now() - float(j["updated_at"] or now()) > REASSIGN_SECONDS \
                 and _reassign_to_cloud(ctx, cyc, exp, j, settings):
             return
