@@ -4,7 +4,11 @@ The MOTH Cloud server for self-managing operation: one-time installation (no sud
 signed updates, verified backups, health checks with automatic rollback, the fixed model publishing
 workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
-What's new in 2.2:
+What's new in 2.3:
+
+- **Everyday conversation data:** about 45 % of the conversation training data is now greetings, small talk and short coding answers (it was mostly memory drills, which taught MOTH to recite facts). It is rebuilt on the next data preparation.
+
+Earlier in 2.2:
 
 - **2.2.6:** Windows workers use GPUs with 4–6 GB (was 8 GB minimum) and find nvidia-smi; the install command works in Command Prompt and PowerShell; shared rounds give each computer steps by measured speed (up to 25×); a fast GPU is kept for the growth step; a worker back from sleep resumes from its last progress.
 

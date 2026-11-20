@@ -47,8 +47,10 @@ export function ConversationList({ chats, searching, reload }: { chats: Chat[]; 
   const toggle = (id: number) => setSelected((ids) => ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
 
   return <section aria-label="Recent conversations">
-    <div className="mb-1 flex h-6 items-center justify-between">
-      <h2 className="text-[0.625rem] uppercase tracking-wider text-faint">{searching ? "Search results" : "Chats"}</h2>
+    {/* 2.3: the sidebar's "Chats" heading sits above; this row only holds "Search results" and the manage menu,
+        pulled up onto that heading's line */}
+    <div className={searching ? "mb-1 flex h-6 items-center justify-between px-2" : "-mt-7 mb-1 ml-auto flex h-6 w-8 items-center justify-end"}>
+      {searching && <h2 className="text-[0.6875rem] text-muted">Search results</h2>}
       {chats.length > 0 && (selecting
         ? <button className="flex items-center gap-1 rounded px-1 text-[0.6875rem] text-muted hover:text-fg" onClick={() => { setSelecting(false); setSelected([]); }}><X className="size-3" />Done</button>
         : <Popover><PopoverTrigger asChild><button aria-label="Manage chats" className="rounded p-1 text-muted hover:text-fg"><MoreHorizontal className="size-3.5" /></button></PopoverTrigger>
@@ -73,7 +75,7 @@ export function ConversationList({ chats, searching, reload }: { chats: Chat[]; 
             ? <button role="checkbox" aria-checked={selected.includes(chat.id)} aria-label={`Select ${chat.title}`} onClick={() => toggle(chat.id)} className="flex h-8 min-w-0 flex-1 items-center gap-2 px-2 text-left text-muted hover:text-fg">
                 {selected.includes(chat.id) ? <CheckSquare className="size-3.5 shrink-0 text-accent" /> : <Square className="size-3.5 shrink-0" />}<span className="truncate">{chat.title}</span></button>
             : <button disabled={session.busy} aria-current={current ? "true" : undefined} onClick={() => requestChat(chat.id, chat.title)} title={chat.title}
-                className="flex h-8 min-w-0 flex-1 items-center gap-2 px-2 text-left text-muted hover:text-fg aria-[current=true]:text-fg disabled:opacity-50"><MessageSquare className="size-3 shrink-0" /><span className="truncate">{chat.title}</span></button>}
+                className="flex h-7 min-w-0 flex-1 items-center gap-2 px-2 text-left text-muted hover:text-fg aria-[current=true]:text-fg disabled:opacity-50"><MessageSquare className="size-3 shrink-0" /><span className="truncate">{chat.title}</span></button>}
           {!selecting && <Popover><PopoverTrigger asChild><button aria-label={`Options for ${chat.title}`} className="mr-1 rounded p-1 text-faint opacity-0 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 aria-expanded:opacity-100"><MoreHorizontal className="size-3.5" /></button></PopoverTrigger>
             <PopoverContent align="start" className="w-40 text-xs">
               <PopoverClose asChild><button className="flex w-full items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-2" onClick={() => { setRenaming(chat.id); setName(chat.title); }}><Pencil className="size-3.5" />Rename</button></PopoverClose>

@@ -175,7 +175,7 @@ def ensure_data(ctx: Ctx, wait: bool = False) -> dict:
 
         sig = hashlib.sha256(json.dumps({"sources": approved, "pins": library.pins(ctx),
                                          "self_training": self_training.generation(ctx),
-                                        "factory_policy": 2, "policy": p, "tokenizer": str(library._lineage_tokenizer(ctx))},
+                                        "factory_policy": 3, "policy": p, "tokenizer": str(library._lineage_tokenizer(ctx))},  # 2.3: 3 = new conversation data
                                        sort_keys=True).encode()).hexdigest()
         if st.get('signature') == sig:
             if st.get('build'):

@@ -123,11 +123,13 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     appStore.setState({chatSession:{conversationId:cid,title,busy}});
   },[general,cid,busy,conversations,chatRequest?.title]);
   useEffect(()=>{
-    if(!general||!chatRequest||busy)return;
+    if(!chatRequest||busy)return;
+    // 2.3: a chat picked in the sidebar opens in the full-page Chat, or (project chats) in that project's panel
+    if(general ? chatRequest.projectId!=null : chatRequest.projectId==null||chatRequest.projectId!==project?.id)return;
     if(chatRequest.conversationId===cid && cid!==null)return;
     if(input.trim()&&!confirm('Change conversation and discard the unsent message? Cancel to keep your draft.'))return;
     setCid(chatRequest.conversationId);setMessages([]);setInput('');
-  },[general,chatRequest?.sequence]);
+  },[general,chatRequest?.sequence,project?.id]);
   useLayoutEffect(() => {
     const field = composer.current;
     if (!field) return;
@@ -436,8 +438,8 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                     ) : m.role === "error" ? (
                       <ErrorNotice error={m.content} />
                     ) : (
-                      <div className="flex max-w-[95%] gap-2.5">
-                        <MothEmblem motion={m.streaming ? "generating" : "none"} className="mt-0.5 size-5 shrink-0" />
+                      <div className="flex w-full min-w-0 flex-col gap-1">
+                        <div className="flex items-center gap-1.5 text-[0.6875rem] text-muted"><MothEmblem motion={m.streaming ? "generating" : "none"} className="size-3.5 shrink-0" />MOTH</div>
                         <div className="min-w-0 text-[0.8125rem] leading-relaxed">
                           {m.content ? <AnswerContext.Provider value={{ prompt: m.meta?.prompt, answer: m.content, model: m.meta?.model, via: m.meta?.via }}><Markdown text={m.content} streaming={m.streaming} /></AnswerContext.Provider> : <span className="shimmer-text font-medium">Thinking…</span>}
                           {m.streaming && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-accent" />}
@@ -480,18 +482,17 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                 <FileText className="size-3 shrink-0 text-accent" /><span className="truncate">{f.path}</span><span className="shrink-0 text-faint">{formatBytes(f.size)}{f.truncated ? " · cut" : ""}</span>
                 <button aria-label={`Remove ${f.name}`} className="rounded p-0.5 text-muted hover:bg-surface-3 hover:text-fg" onClick={() => setAttached((cur) => cur.filter((c) => c.path !== f.path))}><X className="size-3" /></button></span>)}
             </div>}
-            <div className="flex w-full items-end gap-2 rounded-lg border border-border bg-surface p-1.5 transition-shadow focus-within:border-accent/50 focus-within:shadow-glow">
+            <div className="w-full rounded-xl border border-border bg-surface transition-shadow focus-within:border-accent/50 focus-within:shadow-glow">
               <input ref={picker} type="file" multiple hidden onChange={(e) => { if (e.target.files?.length) readFiles(e.target.files).then(addAttachments).catch(() => {}); e.target.value = ""; }} />
-              <Button size="icon" variant="ghost" title="Attach files" aria-label="Attach files" disabled={!!noModel} onClick={() => picker.current?.click()}><Paperclip /></Button>
               <Textarea
                 ref={composer}
                 rows={1}
                 value={input}
                 aria-label="Message MOTH"
-                placeholder={signedOut ? "Sign in to chat with MOTH" : noModel ? (cloud?.reachable === false ? "MOTH Cloud can't be reached" : "MOTH can't answer yet") : "Message MOTH"}
+                placeholder={signedOut ? "Sign in to chat with MOTH" : noModel ? (cloud?.reachable === false ? "MOTH Cloud can't be reached" : "MOTH can't answer yet") : general ? "Message MOTH…" : `Ask MOTH about ${project?.name ?? "this project"}…`}
                 title="Enter to send · Shift+Enter for a new line"
                 disabled={!!noModel}
-                className="max-h-40 min-h-8 border-0 bg-transparent px-2 py-1.5 focus:shadow-none"
+                className="max-h-48 min-h-11 border-0 bg-transparent px-3.5 pb-1 pt-3 text-[0.8125rem] focus:shadow-none"
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
@@ -500,16 +501,26 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                   }
                 }}
               />
-              <UsageRing refreshKey={busy} />
-              {busy ? (
-                <Button size="icon" variant="secondary" title="Stop" onClick={() => cid !== null && post(`/api/chat/${cid}/cancel`)}>
-                  <Square className="text-accent" />
-                </Button>
-              ) : (
-                <Button size="icon" disabled={(!input.trim() && !attached.length) || !!noModel} onClick={() => send()} title="Send">
-                  <ArrowUp />
-                </Button>
-              )}
+              <div className="flex items-center gap-1 px-2 pb-2">
+                <Button size="icon-sm" variant="ghost" title="Attach files" aria-label="Attach files" disabled={!!noModel} onClick={() => picker.current?.click()}><Paperclip /></Button>
+                <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+                <span className="truncate rounded px-1.5 py-0.5 text-[0.6875rem] text-muted" title="The model answering">{currentLabel}</span>
+                <div className="flex-1" />
+                <UsageRing refreshKey={busy} />
+                {busy ? (
+                  <Button size="sm" variant="secondary" title="Stop" onClick={() => cid !== null && post(`/api/chat/${cid}/cancel`)}>
+                    <Square className="text-accent" />Stop
+                  </Button>
+                ) : (
+                  <Button size="sm" disabled={(!input.trim() && !attached.length) || !!noModel} onClick={() => send()} title="Send (Enter)">
+                    <ArrowUp />Send
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="mt-1 flex justify-end px-1 text-[0.625rem] text-faint">
+              <span className="flex items-center gap-1.5"><span className={cn("size-1.5 rounded-full", noModel ? "bg-warning" : "bg-success")} />
+                {noModel ? (cloud?.reachable === false ? "MOTH Cloud offline" : signedOut ? "Signed out" : "Model not available") : usingLocal ? "Answering on this computer" : "Connected to MOTH Cloud"}</span>
             </div>
           </div>
         </div>
@@ -538,7 +549,8 @@ export function looksBroken(text: string, stop?: string | null): boolean {
 const UserBubble = memo(function UserBubble({ text }: { text: string }) {
   const { body, files } = splitAttachments(text);
   return <div className="flex max-w-[85%] flex-col items-end gap-1">
-    {body && <div className="selectable whitespace-pre-wrap rounded-xl rounded-br-sm border border-border bg-surface-2 px-3.5 py-2 text-[0.8125rem]">{body}</div>}
+    {body && <div className="flex items-baseline gap-2.5"><span className="shrink-0 text-[0.6875rem] text-faint">You</span>
+      <div className="selectable whitespace-pre-wrap rounded-lg bg-surface-2/70 px-3 py-1.5 text-[0.8125rem] text-fg">{body}</div></div>}
     {files.length > 0 && <div className="flex flex-wrap justify-end gap-1">
       {files.map((f, i) => <details key={i} className="group max-w-full rounded-md border border-border bg-surface text-[0.6875rem]">
         <summary className="flex cursor-pointer items-center gap-1.5 px-2 py-0.5 text-muted hover:text-fg"><FileText className="size-3 text-accent" /><span className="truncate">{f.path}</span></summary>

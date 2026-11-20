@@ -14,20 +14,22 @@ afterEach(()=>{cleanup();vi.clearAllMocks();});
 it('searches existing history, opens recent projects and requests an existing chat',async()=>{
  render(<TooltipProvider><NavRail/></TooltipProvider>);
  fireEvent.click(await screen.findByRole('button',{name:'An earlier conversation'}));
- expect(appStore.getState().chatRequest).toEqual({sequence:1,conversationId:7,title:'An earlier conversation'});
+ expect(appStore.getState().chatRequest).toEqual({sequence:1,conversationId:7,title:'An earlier conversation',projectId:null});
  expect(appStore.getState().view).toBe('chat');
+ fireEvent.click(screen.getByRole('button',{name:'Search chats'}));
  fireEvent.change(screen.getByRole('textbox',{name:'Search conversations'}),{target:{value:'earlier'}});
  await waitFor(()=>expect(mock.get).toHaveBeenCalledWith('/api/conversations?scope=general&q=earlier'));
- fireEvent.click(screen.getByRole('button',{name:'Example project'}));
+ fireEvent.click(screen.getByRole('button',{name:'Close search'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Example project'}));
  await waitFor(()=>expect(mock.open).toHaveBeenCalledWith('/authorized/example'));
 });
 it('persists collapse and blocks new-conversation requests during a reply',async()=>{
  render(<TooltipProvider><NavRail/></TooltipProvider>);
  fireEvent.click(screen.getByRole('button',{name:'Collapse sidebar'}));
  expect(JSON.parse(localStorage.getItem('moth.navigation')!).sidebarCollapsed).toBe(true);
- expect(screen.queryByRole('textbox',{name:'Search conversations'})).toBeNull();
+ expect(screen.queryByRole('button',{name:'Search chats'})).toBeNull();
  fireEvent.click(screen.getByRole('button',{name:'Expand sidebar'}));
- expect(screen.getByRole('textbox',{name:'Search conversations'})).toBeInTheDocument();
+ expect(screen.getByRole('button',{name:'Search chats'})).toBeInTheDocument();
  act(()=>appStore.setState({chatSession:{conversationId:7,title:'Reply in progress',busy:true}}));
  expect(screen.getByRole('button',{name:'New Chat'})).toBeDisabled();requestChat(null);
  expect(appStore.getState().chatRequest).toBeNull();

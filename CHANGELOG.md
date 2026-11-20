@@ -3,6 +3,24 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.3.0 — A new look, and MOTH learns everyday conversation
+
+**A cleaner, more compact app**
+- **New sidebar:**
+  - New chat, Search chats and Chat at the top.
+  - **Projects as folders** that open to show their own chats. A **+** starts a new chat in a project.
+  - **Chats** (outside projects) below.
+  - The other sections as small icons at the bottom, with your account, notifications and Settings.
+  - It still collapses to an icon rail.
+- **Messages:** your messages sit on the right with a small "You" label. MOTH's replies are plain, full-width text under a "MOTH" label instead of bubbles.
+- **Message box:** one card, with the text on top and attach, the answering model and **Send** / **Stop** below. A small status line underneath shows "Connected to MOTH Cloud", "Answering on this computer" or why MOTH can't answer.
+- **GPU hint:** "This computer" says when your PC has an NVIDIA GPU. The app trains on the CPU (its built-in PyTorch is CPU-only), so the hint suggests installing the MOTH Worker from Network to use the GPU.
+
+**Better conversation data**
+- MOTH answered "Hello! How are you today?" with "You said you love soup." Its conversation data was mostly memory drills (names, favourite foods, shopping lists) with only four fixed greetings, so it learned to repeat facts.
+- The data is now about 45 % everyday conversation: greetings, small talk, thanks, "what can you do?" and goodbyes in many wordings, plus short coding answers. Replies that recite facts the user never gave are rejected.
+- MOTH Cloud rebuilds its training data with it on the next preparation.
+
 ## 2.2.6 — GPUs do the heavy lifting; Windows workers fixed
 
 **Windows workers**

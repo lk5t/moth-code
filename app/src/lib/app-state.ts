@@ -56,7 +56,7 @@ export interface AppState {
   workspaceMode: "code" | "chat";
   intelligenceTab: IntelligenceTab;
   sidebarCollapsed: boolean;
-  chatRequest: {sequence:number; conversationId:number|null;title?:string}|null;
+  chatRequest: {sequence:number; conversationId:number|null;title?:string;projectId?:number|null}|null;
   chatSession: {conversationId:number|null; title:string; busy:boolean};
   workspaceLayout?: Record<string, number>;
 }

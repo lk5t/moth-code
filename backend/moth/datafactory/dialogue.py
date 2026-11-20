@@ -52,6 +52,7 @@ AMBIGUOUS = [("Can you fix it?", "fix"), ("Make it better.", "improve"), ("Why d
              ("Change that to the other one.", "change")]
 ORD = ["first", "second", "third", "fourth"]
 KINDS = ("remember", "correction", "list_recall", "follow_up", "clarify", "unknown", "greeting", "format")
+TRAIN_KINDS = KINDS + ("chitchat",) * 4 + ("help",) * 3  # 2.3: weighted towards everyday conversation
 
 
 def _u(t: str) -> dict:
@@ -134,7 +135,67 @@ def _format(rng, v):
         [f"{n}."]
 
 
-GEN = {"remember": _remember, "correction": _correction, "list_recall": _list_recall, "follow_up": _follow_up,
+# 2.3: everyday conversation in many wordings. Memory drills (remember / correction / list recall) dominated
+# the conversation data, so the model learned that a reply repeats a fact ("Hello! How are you today?" →
+# "You said you love soup."). Small talk and short helpful answers now make up a large share of it.
+SMALL_TALK = [
+    (["Hello!", "Hi there!", "Hey!", "Hello, MOTH.", "Hi MOTH!", "Good morning!", "Good evening!", "Hey, how's it going?"],
+     ["Hello! How can I help you today?", "Hi! What would you like to work on?", "Hey! What can I do for you?",
+      "Hello! Ask me anything, or tell me what you're building."]),
+    (["How are you?", "How are you today?", "Hello! How are you today?", "How's your day going?", "How are things?",
+      "Are you doing okay?"],
+     ["I'm doing well, thanks for asking! How can I help you today?", "All good here, thanks. What are you working on?",
+      "I'm great, thank you. What would you like to do?"]),
+    (["Thanks!", "Thank you so much.", "Thanks for your help!", "That worked, thanks.", "Cheers!", "Perfect, thank you."],
+     ["You're welcome! Let me know if you need anything else.", "Glad I could help!", "Anytime. Happy coding!",
+      "You're welcome. Good luck with your project!"]),
+    (["Who are you?", "What are you?", "What's your name?", "Tell me about yourself."],
+     ["I'm MOTH, an AI that helps with code and questions. I'm still learning, so I keep my answers short.",
+      "My name is MOTH. I help you write and fix code, and I can answer questions."]),
+    (["What can you do?", "How can you help me?", "What are you good at?"],
+     ["I can help you write and fix code, explain errors, and answer questions. What do you need?",
+      "I help with coding: writing functions, finding bugs and explaining code. Try me!"]),
+    (["Bye!", "Goodbye.", "See you later!", "I have to go now.", "Good night!"],
+     ["Goodbye! Come back any time.", "See you later! Good luck with your work.", "Bye! Have a great day."]),
+    (["Can you help me?", "I need some help.", "Are you there?", "Can I ask you something?"],
+     ["Of course! What do you need help with?", "Yes, I'm here. What would you like to ask?",
+      "Sure, go ahead and ask."]),
+]
+HELP = [
+    ("How do I reverse a list in Python?", "Use slicing: `items[::-1]` returns a reversed copy, or call `items.reverse()` to reverse it in place."),
+    ("How do I get the length of a string in Python?", "Use `len()`: `len(\"hello\")` is 5."),
+    ("How do I read a file in Python?", "Open it with `with open(\"file.txt\") as f:` and call `f.read()`. The `with` block closes the file for you."),
+    ("What does a for loop do?", "A for loop repeats a block of code once for each item in a sequence, for example every number in a list."),
+    ("What is a function?", "A function is a named block of code that does one job. You call it by name, and it can take inputs and return a result."),
+    ("How do I print in JavaScript?", "Use `console.log(\"text\")`. It prints to the browser console or the terminal in Node.js."),
+    ("What is a variable?", "A variable is a name that stores a value, like `count = 3`. You can read it or change it later."),
+    ("How do I make a list in Python?", "Put items in square brackets: `fruits = [\"apple\", \"pear\"]`."),
+    ("What is a bug?", "A bug is a mistake in code that makes the program behave wrongly. Fixing it is called debugging."),
+    ("How do I comment in Python?", "Start the line with `#`. Everything after it on that line is ignored by Python."),
+    ("What is an if statement?", "An if statement runs code only when a condition is true, for example `if x > 0:`."),
+    ("How do I install a Python package?", "Run `pip install package-name` in your terminal."),
+]
+
+
+def _chitchat(rng, v):
+    first, second = rng.sample(range(len(SMALL_TALK)), 2)
+    asks, replies = SMALL_TALK[first]
+    msgs = [_u(rng.choice(asks)), _a(rng.choice(replies))]
+    if rng.random() < 0.35:  # a second, different small-talk turn in the same chat
+        asks2, replies2 = SMALL_TALK[second]
+        msgs += [_u(rng.choice(asks2)), _a(rng.choice(replies2))]
+    return msgs, []
+
+
+def _help(rng, v):
+    q, a = rng.choice(HELP)
+    msgs = [_u(q), _a(a)]
+    if rng.random() < 0.3:
+        msgs = [_u(rng.choice(SMALL_TALK[0][0])), _a(rng.choice(SMALL_TALK[0][1]))] + msgs
+    return msgs, []
+
+
+GEN = {"chitchat": _chitchat, "help": _help, "remember": _remember, "correction": _correction, "list_recall": _list_recall, "follow_up": _follow_up,
        "clarify": _clarify, "unknown": _unknown, "greeting": _greeting, "format": _format}
 
 
@@ -164,6 +225,9 @@ def check(kind: str, msgs: list[dict], expect: list[str]) -> bool:
         return final.rstrip().endswith("?")
     if kind == "unknown":
         return "don't know" in final
+    if kind in ("chitchat", "help"):
+        # a reply must not recite a fact the user never gave ("You said you love soup.")
+        return not re.search(r"\b(You said|Your name is|You live in|Your favourite)\b", final)
     if kind == "format":
         lines = final.splitlines()
         n = int(re.search(r"List (\d+)", msgs[0]["content"]).group(1))
@@ -178,7 +242,8 @@ def conversations(n: int, seed: int = 0, split: str = "train") -> Iterator[dict[
     made = tries = 0
     while made < n and tries < n * 5:
         tries += 1
-        kind = KINDS[tries % len(KINDS)] if split == "eval" else rng.choice(KINDS)
+        # 2.3: training is about 45 % everyday conversation and short help; the benchmark keeps its fixed skills
+        kind = KINDS[tries % len(KINDS)] if split == "eval" else rng.choice(TRAIN_KINDS)
         msgs, expect = GEN[kind](rng, values)
         if not check(kind, msgs, expect):
             continue

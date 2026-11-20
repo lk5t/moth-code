@@ -14,7 +14,7 @@ class _Stats(GenerationStats):
 
 def test_dialogues_are_checked_and_eval_values_never_appear_in_training():
     train = list(dialogue.conversations(3000, 1))
-    assert {c["kind"] for c in train} == set(dialogue.KINDS)
+    assert {c["kind"] for c in train} == set(dialogue.TRAIN_KINDS)  # 2.3: plus everyday chat and short help
     assert all(dialogue.check(c["kind"], c["messages"], c["expect"]) for c in train)
     assert all(clean.conversation_issue(c["messages"]) is None for c in train)
     train_text = " ".join(m["content"] for c in train for m in c["messages"])
@@ -72,3 +72,15 @@ def test_coding_suite_executes_tests(monkeypatch):
     monkeypatch.setattr(C, "_chat", lambda m, t, prompt, mx: (prompt.split("```python\n")[1].split("```")[0], _Stats()))
     r = C.coding_suite(None, None, "debugging")
     assert r["value"] == 0.0 and r["valid_python"] == 1.0
+
+
+def test_everyday_conversation_never_recites_facts_the_user_never_gave():
+    """2.3: "Hello! How are you today?" must not be answered with "You said you love soup."."""
+    from moth.datafactory import dialogue
+
+    convs = [c for c in dialogue.conversations(600, seed=3) if c["kind"] in ("chitchat", "help")]
+    assert len(convs) > 150
+    assert not any(m["role"] == "assistant" and ("You said" in m["content"] or "Your name is" in m["content"])
+                   for c in convs for m in c["messages"])
+    assert dialogue.check("chitchat", [{"role": "user", "content": "Hello!"},
+                                       {"role": "assistant", "content": "You said you love soup."}], []) is False
