@@ -191,7 +191,7 @@ def test_coherence_is_measured_once_per_model_and_a_broken_tokenizer_blocks_grow
     w["state"]["history"] = {"math": acc(0.02, 0.02, 0.02)}
     d = CAP.assess(w["ctx"], w["base"](), w["settings"])
     coh = d["coherence"]
-    assert coh["tokenizer_ok"] and coh["tokens_per_char"] > 0 and len(coh["samples"]) == 3  # measured on the real model
+    assert coh["tokenizer_ok"] and coh["tokens_per_char"] > 0 and len(coh["samples"]) == 4  # every prompt, measured on the real model (2.3.1: all four kept)
     assert any(c["cause"] == "decoding" for c in d["causes"])
     calls = []
     monkeypatch.setattr("moth.model.coherence.diagnose", lambda *a, **k: calls.append(1))
