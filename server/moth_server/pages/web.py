@@ -70,3 +70,45 @@ def reset_submit(request: Request, token: str = Form(...), password: str = Form(
     except HTTPException as e:
         return page("Reset password", f'<h1>Could not reset</h1><p class="err">{html.escape(str(e.detail))}</p>')
     return page("Password updated", '<h1 class="ok">Password updated</h1><p>Sign in to MOTH Code with your new password.</p>')
+
+
+@router.get("/status")
+def status_page(ctx: Ctx = Depends(get_ctx)):
+    """2.4: MOTH at a glance, made for a phone: what is serving, whether it is learning, how many computers help.
+    Public on purpose and limited to that: no names, no accounts, no data. Refreshes itself every 30 seconds."""
+    import time as _t
+
+    from sqlalchemy import select as _select
+
+    from moth_server import __version__, models as M
+    from moth_server.db import workers as W
+    from moth_server.evolution import memory as MEM, settings as ES
+
+    cur = M.deployed(ctx)
+    info = (cur or {}).get("info") or {}
+    cyc = next(iter(MEM.cycles(ctx, 1)), None)
+    s = ES.get(ctx)
+    t = _t.time()
+    online = sum(1 for w in ctx.db.all(_select(W.c.last_heartbeat_at, W.c.revoked_at, W.c.hardware))
+                 if w["revoked_at"] is None and (w["last_heartbeat_at"] or 0) >= t - 180)
+    running = bool(cyc and cyc["status"] in ("training", "evaluating", "deploying", "monitoring", "planning", "preparing"))
+    state = "Paused" if s.get("paused") else "Learning now" if running else "Resting" if s.get("enabled") else "Off"
+    last = next((r for r in M.list_releases(ctx) if r.get("deployed_at")), None)
+
+    def ago(ts):
+        if not ts:
+            return "never"
+        m = int((t - ts) // 60)
+        return f"{m} min ago" if m < 120 else f"{m // 60} h ago" if m < 2880 else f"{m // 1440} days ago"
+    name = html.escape(str(info.get("display_name") or (f"MOTH {info.get('model_version')}" if info.get("model_version") else "No model yet")))
+    params = info.get("params")
+    rows = [("Model", name), ("Size", f"{params:,} parameters" if isinstance(params, int) else "—"),
+            ("Training", f'<span class="{"ok" if running else ""}">{state}</span>' + (f" · {html.escape(cyc['status'].replace('_', ' '))}" if cyc and running else "")),
+            ("Computers helping", str(online)), ("Last upgrade", ago((last or {}).get("deployed_at"))), ("MOTH Cloud", html.escape(__version__))]
+    body = "<h1>MOTH status</h1><table style='width:100%;font-size:14px;border-collapse:collapse'>" + "".join(
+        f"<tr><td style='color:#9a9a9a;padding:6px 0'>{k}</td><td style='text-align:right;padding:6px 0'>{v}</td></tr>" for k, v in rows) + \
+        "</table><p style='font-size:12px'>Updates every 30 seconds.</p>"
+    r = page("Status", body)
+    r.headers["Refresh"] = "30"
+    r.headers["Cache-Control"] = "no-store"
+    return r

@@ -835,3 +835,96 @@ def week_summary(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)
             "promoted": promoted, "experiments": outcomes,
             "your_computers": {"count": len(mine), "jobs": mine_jobs, "hours": round(mine_seconds / 3600, 1)},
             "examples": examples}
+
+
+# ---- 2.4: leaderboard — whose computers trained MOTH most this week -------------------------------------
+@router.get("/v1/intelligence/leaderboard")
+def leaderboard(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """Usernames and measured training time of the last 7 days (finished experiments and verified jobs).
+    MOTH Cloud's own worker is not a person and is left out."""
+    from sqlalchemy import func, select as _select
+
+    from moth_server.db import evolution_experiments as EX, training_jobs as TJ, users as U, workers as W
+
+    since = time.time() - 7 * 86400
+    owners = {w["id"]: w["user_id"] for w in ctx.db.all(_select(W.c.id, W.c.user_id, W.c.hardware))
+              if json.loads(w["hardware"] or "{}").get("worker_kind") != "cloud"}
+    secs: dict[int, float] = {}
+    jobs: dict[int, int] = {}
+    if owners:
+        for r in ctx.db.all(_select(EX.c.worker_id, func.coalesce(func.sum(EX.c.compute_seconds), 0.0).label("s"))
+                            .where(EX.c.finished_at >= since, EX.c.worker_id.in_(list(owners))).group_by(EX.c.worker_id)):
+            secs[owners[r["worker_id"]]] = secs.get(owners[r["worker_id"]], 0.0) + float(r["s"] or 0)
+        for r in ctx.db.all(_select(TJ.c.worker_id, func.count().label("n"))
+                            .where(TJ.c.status == "completed", TJ.c.updated_at >= since, TJ.c.worker_id.in_(list(owners)))
+                            .group_by(TJ.c.worker_id)):
+            jobs[owners[r["worker_id"]]] = jobs.get(owners[r["worker_id"]], 0) + int(r["n"])
+    people = set(secs) | set(jobs)
+    names = {u["id"]: u["username"] for u in ctx.db.all(_select(U.c.id, U.c.username).where(U.c.id.in_(list(people))))} if people else {}
+    ranked = sorted(people, key=lambda uid: (-jobs.get(uid, 0), -secs.get(uid, 0.0)))
+    rows = [{"rank": i + 1, "username": names.get(uid, "someone"), "jobs": jobs.get(uid, 0),
+             "hours": round(secs.get(uid, 0.0) / 3600, 1), "you": uid == auth.uid} for i, uid in enumerate(ranked)]
+    mine = next((r for r in rows if r["you"]), None)
+    return {"since": since, "top": rows[:10], "you": mine}
+
+
+# ---- 2.4: "Report a problem" — the app sends its recent logs to the Owner ---------------------------------
+class ProblemIn(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    app_version: str | None = Field(default=None, max_length=40)
+    details: dict = Field(default_factory=dict)  # logs and status the app gathered (size-checked below)
+
+
+REPORTS_KEPT = 200
+
+
+def _reports_dir(ctx: Ctx):
+    from pathlib import Path
+
+    d = Path(ctx.settings.data_dir) / "problem-reports"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+@router.post("/v1/problem-reports", status_code=201)
+def report_problem(body: ProblemIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    from moth_server.ratelimit import RateLimited
+
+    try:
+        ctx.limiter.hit(f"problem-report:{auth.uid}", 10, 3600)
+    except RateLimited:
+        raise HTTPException(429, "Too many reports in the last hour; please try again later.") from None
+    details = json.dumps(body.details, default=str)
+    if len(details) > 400_000:
+        raise HTTPException(413, "The report is too large.")
+    rid = f"{int(time.time())}-{auth.uid}-{uuid.uuid4().hex[:6]}"
+    (_reports_dir(ctx) / f"{rid}.json").write_text(json.dumps({
+        "id": rid, "at": time.time(), "user_id": auth.uid, "username": auth.user.get("username"),
+        "message": body.message, "app_version": body.app_version, "details": json.loads(details)}))
+    for old in sorted(_reports_dir(ctx).glob("*.json"))[:-REPORTS_KEPT]:
+        old.unlink(missing_ok=True)
+    return {"id": rid}
+
+
+@router.get("/v1/admin/problem-reports")
+def list_problem_reports(auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    out = []
+    for f in sorted(_reports_dir(ctx).glob("*.json"), reverse=True)[:100]:
+        try:
+            r = json.loads(f.read_text())
+        except (OSError, ValueError):
+            continue
+        out.append({k: r.get(k) for k in ("id", "at", "username", "message", "app_version")})
+    return out
+
+
+@router.get("/v1/admin/problem-reports/{rid}")
+def get_problem_report(rid: str, auth: Auth = Depends(require_owner), ctx: Ctx = Depends(get_ctx)):
+    import re
+
+    if not re.fullmatch(r"\d+-\d+-[0-9a-f]{6}", rid):
+        raise HTTPException(404, "Unknown report.")
+    f = _reports_dir(ctx) / f"{rid}.json"
+    if not f.exists():
+        raise HTTPException(404, "Unknown report.")
+    return json.loads(f.read_text())

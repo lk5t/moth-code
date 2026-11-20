@@ -18,8 +18,8 @@ interface Worker {
   paused: boolean;
   hardware: { gpus?: { name: string; memory_gb: number }[]; cuda?: string; os?: string; compute?: "cpu" | "gpu";
     cpu_model?: string; cpu_count?: number; ram_gb?: number; benchmark?: { gflops?: number } | null;
-    utilization?: { cpu?: number | null; memory?: number | null; gpu?: number | null; gpu_memory?: number | null; gpu_temp_c?: number | null } | null };
-  limits: { gpu_memory_fraction?: number; duty_cycle?: number; cpu_threads?: number; active_from?: number; active_until?: number };
+    utilization?: { cpu?: number | null; memory?: number | null; gpu?: number | null; gpu_memory?: number | null; gpu_temp_c?: number | null; paused_for_fullscreen?: boolean } | null };
+  limits: { gpu_memory_fraction?: number; duty_cycle?: number; cpu_threads?: number; active_from?: number; active_until?: number; pause_fullscreen?: boolean };
   trained_tokens?: number;
   reputation?: number;
   version: string | null;
@@ -236,6 +236,10 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
                       {Math.round((w.limits.duty_cycle ?? 1) * 100)}%
                     </label>
                     <TrainingHours w={w} save={(json) => act(() => serverApi(`/v1/training/workers/${w.id}/limits`, { method: "PUT", json }))()} />
+                    <label className="flex items-center gap-1.5" title="Windows: training pauses while a game, video or presentation is full screen, so nothing stutters">
+                      <input type="checkbox" checked={w.limits.pause_fullscreen !== false}
+                        onChange={(e) => act(() => serverApi(`/v1/training/workers/${w.id}/limits`, { method: "PUT", json: { pause_fullscreen: e.target.checked } }))()} />
+                      Pause while gaming</label>
                   </div>
                 )}
               </div>
@@ -315,8 +319,9 @@ export function WorkerHealth({ w }: { w: Worker }) {
     typeof u.memory === "number" && u.memory >= 0.95 && "the computer is almost out of memory",
     w.failed_jobs >= 3 && w.failed_jobs > w.verified_jobs && "most of its jobs failed; Actions… → Show recent logs says why",
     w.hardware.compute === "cpu" && (w.hardware.gpus?.length ?? 0) > 0 && "it has a GPU but trains on the CPU (update the NVIDIA driver, then reinstall the worker)"].filter(Boolean);
-  if (!parts.length && !warn.length) return null;
+  if (!parts.length && !warn.length && !u.paused_for_fullscreen) return null;
   return <div className="mt-0.5 text-[0.6875rem]">
+    {u.paused_for_fullscreen && <span className="block text-accent">Paused: a game or full-screen app is running. Training continues when it closes.</span>}
     {parts.length > 0 && <span className="text-muted">Now: {parts.join(" · ")}</span>}
     {warn.map((m) => <span key={String(m)} className="block text-warning">⚠ {m}</span>)}
   </div>;

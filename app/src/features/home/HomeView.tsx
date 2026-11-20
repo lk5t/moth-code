@@ -20,6 +20,7 @@ import { pickProject, openProjectPath } from "@/features/workspace/project-actio
 import { StageMeter } from "@/features/intelligence/live/Learning";
 import { CloneGitHub } from "./CloneGitHub";
 import { SideBySide } from "@/features/intelligence/SideBySide";
+import { BenchmarkTrend, Leaderboard } from "./HomeExtras";
 
 type Any = Record<string, any>;
 
@@ -90,6 +91,7 @@ export function HomeView() {
       </section>}
 
       <WeekAndExamples />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"><BenchmarkTrend /><Leaderboard /></div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <section aria-label="Recent projects" className="rounded-xl border border-border bg-surface p-3">

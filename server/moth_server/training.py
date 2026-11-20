@@ -132,8 +132,11 @@ def _clean_hw(hw: dict[str, Any]) -> dict[str, Any]:
             "machine_id": s(hw.get("machine_id"), 64),
             "client": s(hw.get("client"), 24),  # "moth-code" when MOTH Code contributes its own computer
             # current load as the worker's OS reports it (0..1; None = not reported), shown in AI → Evolution
-            "utilization": {k: (min(1.0, max(0.0, num(u.get(k)))) if num(u.get(k)) is not None else None)
-                            for k in ("cpu", "memory")} if isinstance(u := hw.get("utilization"), dict) else None,
+            "utilization": {**{k: (min(1.0, max(0.0, num(u.get(k)))) if num(u.get(k)) is not None else None)
+                               for k in ("cpu", "memory", "gpu", "gpu_memory")},  # 2.3.2: GPU load and memory too
+                            "gpu_temp_c": min(150.0, max(0.0, num(u.get("gpu_temp_c")))) if num(u.get("gpu_temp_c")) is not None else None,
+                            "paused_for_fullscreen": bool(u.get("paused_for_fullscreen"))}  # 2.4
+            if isinstance(u := hw.get("utilization"), dict) else None,
             "benchmark": {"device": s(bench.get("device"), 8), "gflops": num(bench.get("gflops"))} if bench else None}
 
 

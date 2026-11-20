@@ -2,6 +2,13 @@
 
 ## MOTH Code __VERSION__ for Windows
 
+### What's new in 2.4
+
+- **Saved prompts**, **chat tabs**, **Run** on code blocks (temporary folder, 15-second limit, you confirm first) and project files in Ctrl+K.
+- Home shows **top helpers this week** and **test scores across versions**.
+- **Report a problem** from Settings → Updates & about.
+- Network: **Pause while gaming** per computer.
+
 ### What's new in 2.3
 
 - **2.3.2:** AI → **Shared training** shows a shared run as an animated picture in plain words. Attach folders, screenshots/photos (or paste them) and GitHub links. Edit or branch from any message, rate any answer, and pick a theme and accent colour.

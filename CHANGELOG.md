@@ -3,6 +3,28 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.4.0 — Saved prompts, chat tabs, Run code, and MOTH on your phone
+
+**Chat**
+- **Saved prompts:** the bookmark next to the paperclip keeps your common requests (four useful ones to start). Use one in a click, or save what you typed. They follow your account.
+- **Chat tabs:** the chats you open stay as tabs above the conversation (up to 8). Close a tab with ×; **+** starts a new chat.
+- **Run on code blocks:** Python, JavaScript, Bash, PowerShell, Ruby, PHP, Lua and Perl code in an answer can be run on your computer. It runs in an empty temporary folder for up to 15 seconds, and the output shows under the code. You're asked first, and shell code that looks destructive or contacts the network gets a second warning.
+- **Ctrl+K finds files** in the open project, as well as chats, projects, actions and settings.
+
+**Home**
+- **Top helpers this week:** a leaderboard of whose computers trained MOTH most (MOTH Cloud's own worker is not counted).
+- **Test scores across versions:** a small line per skill (coding, maths, conversation…) showing how it changed from version to version.
+
+**Network and workers**
+- **Pause while gaming:** on Windows, a worker pauses while a game, video or presentation is full screen, and carries on when it closes. It's on by default and can be switched off per computer in Network. Network shows when it's paused for this.
+- **Fixed:** GPU load, GPU memory and temperature from workers now reach Network. MOTH Cloud was keeping only CPU and memory, so the 2.3.1 health line never showed the GPU.
+
+**Phone status page**
+- Open **https://mothcloud.ddns.net/status** on your phone. It shows the model, its size, whether MOTH is learning, how many computers are helping and when it last upgraded, and refreshes every 30 seconds. It shows no names or data.
+
+**Report a problem**
+- Settings → Updates & about → **Report a problem** (or Ctrl+K). It sends your description with this app's version, recent logs and training status (no chats or files). As Owner you see the reports, with their details, below it.
+
 ## 2.3.2 — Training no longer gets stuck waiting for a computer
 
 **Fixed: shared training could stop for good**

@@ -27,6 +27,23 @@ class Stop(Exception):
     pass
 
 
+
+def fullscreen_app_running() -> bool:
+    """2.4: is a full-screen game, video or presentation in front (Windows)? Training pauses so it never makes a
+    game stutter, and continues when it closes. Uses Windows' own notification state (no screen reading)."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+
+        state = ctypes.c_int(0)
+        if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) != 0:  # type: ignore[attr-defined]
+            return False
+        # 2 busy (full-screen app), 3 Direct3D full-screen game, 4 presentation mode
+        return state.value in (2, 3, 4)
+    except Exception:  # noqa: BLE001 — never stop training because the check failed
+        return False
+
 def utilization(hw: dict[str, Any]) -> dict[str, float | None]:
     """Current load as the OS reports it (shown in AI → Evolution); unknown values stay None."""
     import os
@@ -110,6 +127,7 @@ class WorkerRunner:
         self.progress: float | None = None
         self.training_metrics: dict | None = None
         self.paused = False
+        self.gaming = False  # 2.4: a full-screen game or app is running (Windows); training waits
         self.cancelled_job: int | None = None
         self.revoked = False
         self.limits: dict[str, Any] = {}
@@ -178,7 +196,7 @@ class WorkerRunner:
 
         info: dict[str, Any] = {"worker_version": __version__, "python": platform.python_version(),
                                 "system": f"{platform.system()} {platform.release()}", "device": self.device,
-                                "paused": self.paused, "current_job": self.current_job}
+                                "paused": self.paused, "paused_for_fullscreen": self.gaming, "current_job": self.current_job}
         try:
             import torch
             info["torch"] = torch.__version__
@@ -205,7 +223,7 @@ class WorkerRunner:
                 self.device, self.bench = measured_device(self.state_dir, hw)
         # Advertise the selected supported backend, not merely an installed graphics card.
         return {**hw, "compute": "gpu" if self.device == "cuda" else "cpu", "benchmark": self.bench,
-                "utilization": utilization(hw)}
+                "utilization": {**utilization(hw), "paused_for_fullscreen": self.gaming}}
 
     # ---- heartbeat -----------------------------------------------------------------------
     def beat(self) -> None:
@@ -218,7 +236,9 @@ class WorkerRunner:
             else:
                 self.clean_reset_cache(generation)
         from moth.training.resources import pressure, pressure_reason
-        self.paused, self.revoked, self.limits = bool(resp["paused"] or pressure_reason(pressure())), resp["revoked"], resp.get("limits") or {}
+        self.limits = resp.get("limits") or {}
+        self.gaming = bool(self.limits.get("pause_fullscreen", True)) and fullscreen_app_running()
+        self.paused, self.revoked = bool(resp["paused"] or pressure_reason(pressure()) or self.gaming), resp["revoked"]
         if resp.get("job_cancelled"):
             self.cancelled_job = self.current_job
         if resp.get("command"):

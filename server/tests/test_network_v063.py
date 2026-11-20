@@ -153,7 +153,7 @@ def test_cloud_and_worker_train_masked_conversation_data_together(client, owner,
     st = client.get("/v1/admin/evolution/autopilot", headers=H(owner["token"])).json()
     me = next(x for x in st["workers"] if x["id"] == w["worker_id"])
     assert me["contribution"]["runs"] == 1 and me["contribution"]["tokens"] > 0
-    assert me["utilization"] == {"cpu": 0.25, "memory": 0.25} and me["speed"]["basis"] == "measured"
+    assert {k: me["utilization"][k] for k in ("cpu", "memory")} == {"cpu": 0.25, "memory": 0.25} and me["speed"]["basis"] == "measured"
     assert st["server"]["name"] == "MOTH Cloud (this server)" and st["server"]["contribution"]["runs"] >= 1
     print(f"cloud {loc['compute_seconds']:.1f}s + worker {wrk['compute_seconds']:.1f}s in parallel; cycle "
           f"trained in {time.time() - t0:.1f}s")

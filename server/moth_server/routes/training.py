@@ -43,6 +43,7 @@ class LimitsIn(BaseModel):
     active_until: int | None = Field(default=None, ge=0, le=24)
     utc_offset_minutes: int | None = Field(default=None, ge=-14 * 60, le=14 * 60)
     always: bool | None = None  # true clears the schedule
+    pause_fullscreen: bool | None = None  # 2.4: pause while a full-screen game or app runs (Windows; default on)
 
 
 class WorkerEnrollIn(BaseModel):

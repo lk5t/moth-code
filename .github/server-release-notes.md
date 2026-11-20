@@ -4,6 +4,10 @@ The MOTH Cloud server for self-managing operation: one-time installation (no sud
 signed updates, verified backups, health checks with automatic rollback, the fixed model publishing
 workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
+What's new in 2.4:
+
+- Phone status page at /status; weekly leaderboard; problem reports from the app (Owner can read them); account-synced themes and saved prompts; worker GPU readings and the full-screen pause now reach Network; workers pause while a game is full screen (Windows).
+
 What's new in 2.3:
 
 - **2.3.2:** shared training no longer gets stuck: a part with no progress for 20 minutes goes to the next free computer, a round continues without a part nobody takes, and a part is resized for the computer that takes it.

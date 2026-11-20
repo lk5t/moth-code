@@ -61,6 +61,7 @@ export function FeatureSearch({ compact = false }: { compact?: boolean } = {}) {
       { id: "open-project", group: "Actions", label: "Open a project folder", description: "Pick a folder to code in", run: () => void pickProject().catch(() => {}) },
       { id: "scan", group: "Actions", label: "Scan a server for vulnerabilities", description: "Type the address in chat; MOTH asks for your Yes first", run: () => { requestChat(null); } },
       { id: "stop-scans", group: "Actions", label: "Stop all scans", run: () => void stopAllScans().catch(() => {}) },
+      { id: "report", group: "Actions", label: "Report a problem", description: "Send what went wrong with this app's recent logs", run: () => openSettingsTab("Updates & about") },
       { id: "sidebar", group: "Actions", label: "Show or hide the sidebar", run: () => appStore.setState((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })) },
       ...UI_SIZES.map((s) => ({ id: `size-${s}`, group: "Actions" as const, label: `App size: ${UI_SIZE_LABEL[s]}`, description: "Make the whole app smaller or bigger",
         keys: s === "compact" ? "Ctrl 0" : undefined, run: () => setUiSize(s) })),
