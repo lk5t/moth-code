@@ -4,6 +4,7 @@
 
 ### What's new in 2.4
 
+- **2.4.1: Do it on my PC.** MOTH can work across your whole computer and the web: files anywhere, commands, web pages and its own browser window. It asks before every change, command, new site and anything it types, and never touches passwords or key files. The window is also smaller (1180 × 740).
 - **Saved prompts**, **chat tabs**, **Run** on code blocks (temporary folder, 15-second limit, you confirm first) and project files in Ctrl+K.
 - Home shows **top helpers this week** and **test scores across versions**.
 - **Report a problem** from Settings → Updates & about.

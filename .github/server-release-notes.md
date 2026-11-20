@@ -6,6 +6,7 @@ workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
 What's new in 2.4:
 
+- **2.4.1:** server unchanged apart from the version (the desktop app gains "Do it on my PC").
 - Phone status page at /status; weekly leaderboard; problem reports from the app (Owner can read them); account-synced themes and saved prompts; worker GPU readings and the full-screen pause now reach Network; workers pause while a game is full screen (Windows).
 
 What's new in 2.3:

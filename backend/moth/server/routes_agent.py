@@ -65,6 +65,19 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         except LookupError:
             raise NotFound("task not found") from None
 
+    def _is_computer(project_id: int) -> bool:
+        from pathlib import Path
+        return Path(svc.project(project_id)["path"]).resolve() == Path.home().resolve()
+
+    @app.post("/api/computer", dependencies=deps)
+    def computer():
+        """2.4.1: "This computer" — the agent works from your home folder and can reach the rest of the PC and the
+        web with its pc_*/web/browser tools. Every write and command asks first."""
+        from pathlib import Path
+        row = svc.add_project(str(Path.home()))
+        svc.db.execute("UPDATE projects SET name=? WHERE id=?", ("This computer", row["id"]))
+        return {**row, "name": "This computer", "computer": True}
+
     def _start(project_id: int, goal: str, cfg: EngineConfig, task_id: str | None = None):
         if not goal.strip():
             raise HTTPException(422, "describe the task")
@@ -80,7 +93,11 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         except CloudUnavailable as e:
             raise HTTPException(503, str(e)) from None
         try:
-            tid = manager.start(project_id, svc.workspace(project_id), goal, llm, svc.permission_engine(),
+            perms = svc.permission_engine()
+            if _is_computer(project_id):  # 2.4.1: the whole home folder: every write and command asks
+                from moth.security.permissions import PermissionEngine, PermissionSettings
+                perms = PermissionEngine(PermissionSettings(auto_write=False, auto_execute=False, auto_git_commit=False))
+            tid = manager.start(project_id, svc.workspace(project_id), goal, llm, perms,
                                 "", cfg, task_id=task_id, memory=svc.extras["project_intelligence"].memory(),
                                 index=svc.extras["project_intelligence"].index())
         except RuntimeError as e:

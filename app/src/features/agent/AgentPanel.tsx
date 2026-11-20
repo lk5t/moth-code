@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, P
 import { ApiError, get, post, put } from "@/lib/backend";
 import { openAccountDialog } from "@/features/account/AccountDialog";
 import { useEvent } from "@/lib/events";
-import { useApp } from "@/lib/app-state";
+import { useApp, type Project } from "@/lib/app-state";
 import { useResource } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,8 +34,13 @@ const label: Record<string, string> = { model_incapable: "beyond current model",
   plan_ready: "plan ready — approve to start" };
 const RESUMABLE = ["interrupted", "cancelled", "incomplete", "model_incapable", "failed", "needs_review"];  // plan_ready uses "Approve"
 
-export function AgentPanel() {
-  const project = useApp((s) => s.project);
+/** ``computer``: 2.4.1 "Do it on my PC" — the agent works across the whole computer and the web (every write,
+ * command and new site asks first), instead of inside one opened project. */
+export function AgentPanel({ computer = false }: { computer?: boolean } = {}) {
+  const opened = useApp((s) => s.project);
+  const [pc, setPc] = useState<Project | null>(null);
+  useEffect(() => { if (computer) post<Project>("/api/computer").then(setPc).catch(() => setPc(null)); }, [computer]);
+  const project = computer ? pc : opened;
   const { data: tasks, reload } = useResource<TaskRow[]>(project ? `/api/tasks?project_id=${project.id}` : null, [], []);
   const [selected, setSelected] = useState<string | null>(null);
   const [task, setTask] = useState<Task | null>(null);
@@ -133,7 +138,8 @@ export function AgentPanel() {
         {!task ? (
           <div className="flex flex-col items-start gap-3 pt-5 text-left">
             <MothEmblem motion="idle" className="size-10" />
-            <div className="text-sm">Give MOTH a task in {project.name}</div>
+            <div className="text-sm">{computer ? "Give MOTH a task on this computer" : `Give MOTH a task in ${project.name}`}</div>
+            {computer && <p className="max-w-md text-xs text-muted">MOTH can look through your folders, change files, run commands and use the web or its own browser window. It asks you before every change, every command and every new website, and never touches passwords or key files.</p>}
             <div className="max-w-sm text-xs leading-relaxed text-muted">
               MOTH plans, reads and edits files, runs commands and tests, and reports exactly what it did. Destructive or
               external actions always ask first. If the current model cannot do the task, MOTH says so.

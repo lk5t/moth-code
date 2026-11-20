@@ -87,13 +87,22 @@ class AgentEngine:
     def _run(self, state: TaskState) -> None:
         ctx = self.ctx
         self._set(state, "running")
-        summary = scan_project(ctx.workspace.root)
-        project_text = summary.describe()
-        ctx.memory.upsert(ctx.project_id, "architecture", "Project overview", project_text)
-        index_stats = ctx.index.update(ctx.project_id, ctx.workspace.root)
-        self._emit(state, "context", indexed=index_stats)
-        memories = ctx.memory.search(ctx.project_id, state.goal)
-        snippets = ctx.index.search(ctx.project_id, state.goal, limit=4)
+        if _whole_computer(ctx.workspace.root):
+            # 2.4.1: "This computer" is the home folder: never scan or index all of it; the agent looks around
+            # with pc_list / pc_read when it needs to (each folder asks first)
+            project_text = ("You are working on the user's whole computer (home folder: " + str(ctx.workspace.root) +
+                            "). Use pc_list, pc_read, pc_write, pc_run for files and commands anywhere, and web_read or "
+                            "browser_* for the web. Every write, command and new site asks the user first.")
+            self._emit(state, "context", indexed={"files": 0, "skipped": "whole computer"})
+            memories, snippets = ctx.memory.search(ctx.project_id, state.goal), []
+        else:
+            summary = scan_project(ctx.workspace.root)
+            project_text = summary.describe()
+            ctx.memory.upsert(ctx.project_id, "architecture", "Project overview", project_text)
+            index_stats = ctx.index.update(ctx.project_id, ctx.workspace.root)
+            self._emit(state, "context", indexed=index_stats)
+            memories = ctx.memory.search(ctx.project_id, state.goal)
+            snippets = ctx.index.search(ctx.project_id, state.goal, limit=4)
 
         if self.cfg.plan and not state.plan and not state.steps:
             self._emit(state, "planning")
@@ -208,6 +217,8 @@ class AgentEngine:
     def _verify(self, state: TaskState) -> dict[str, Any] | None:
         if not self.cfg.verify or not any(c["type"] != "commit" for c in state.changes):
             return None
+        if _whole_computer(self.ctx.workspace.root):
+            return {"ran": False, "reason": "no test command for the whole computer"}
         cmd = scan_project(self.ctx.workspace.root).test_command
         if not cmd:
             return {"ran": False, "reason": "no test command detected for this project"}
@@ -257,6 +268,14 @@ class AgentEngine:
                                 f"{summary}\nChanged: {', '.join(c.get('path', '') for c in state.changes)}",
                                 verified=True)
         self._set(state, status)
+
+
+def _whole_computer(root) -> bool:
+    from pathlib import Path
+    try:
+        return Path(root).resolve() == Path.home().resolve()
+    except OSError:
+        return False
 
 
 def report_text(report: dict[str, Any]) -> str:

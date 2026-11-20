@@ -57,6 +57,7 @@ class AgentContext:
     emit: Callable[[dict[str, Any]], None]
     task_id: str = ""
     command_timeout: float = 600.0
+    grants: set = field(default_factory=set)  # 2.4.1: folders and sites the user allowed during this task
 
     def authorize(self, kind: ActionKind, target: str, detail: str = "", change: dict[str, Any] | None = None) -> None:
         result = self.permissions.check(kind, self.workspace, target)
@@ -121,6 +122,9 @@ class Tool:
 
 # ---- implementations ---------------------------------------------------------------
 def _list_files(ctx: AgentContext, a: dict) -> ToolResult:
+    from moth.agent.engine import _whole_computer
+    if _whole_computer(ctx.workspace.root):  # 2.4.1: never walk the whole home folder
+        return _pc.pc_list(ctx, {"path": str(ctx.workspace.root / a.get("path", ""))})
     prefix = a.get("path", "").strip("/").replace("\\", "/")
     entries = [e for e in file_tree(ctx.workspace.root) if not prefix or e["path"].startswith(prefix)]
     lines = [e["path"] + ("/" if e["dir"] else "") for e in entries[:400]]
@@ -141,6 +145,9 @@ def _read_file(ctx: AgentContext, a: dict) -> ToolResult:
 
 
 def _search_code(ctx: AgentContext, a: dict) -> ToolResult:
+    from moth.agent.engine import _whole_computer
+    if _whole_computer(ctx.workspace.root):
+        return ToolResult(False, "search_code works inside a project; on the whole computer use pc_list and pc_read")
     ctx.index.update(ctx.project_id, ctx.workspace.root)
     hits = ctx.index.search(ctx.project_id, a["query"], limit=int(a.get("limit", 6)))
     if not hits:
@@ -297,6 +304,12 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
 ]}
 
 
+# 2.4.1: the whole computer and the web, each step with the user's OK (moth.agent.pc_tools)
+from moth.agent import pc_tools as _pc  # noqa: E402
+
+TOOLS.update({t.name: t for t in _pc.tools()})
+
+
 def execute_tool(ctx: AgentContext, name: str, args: Any) -> ToolResult:
     tool = TOOLS.get(name)
     if tool is None:
@@ -310,5 +323,7 @@ def execute_tool(ctx: AgentContext, name: str, args: Any) -> ToolResult:
         return ToolResult(False, f"not permitted: {e}", data={"denied": True})
     except servers.ServerError as e:
         return ToolResult(False, str(e))
+    except _pc.Refused as e:
+        return ToolResult(False, f"refused: {e}")
     except (ToolError, GitError, FileNotFoundError, IsADirectoryError, ValueError, PermissionError, OSError) as e:
         return ToolResult(False, f"{type(e).__name__}: {e}")

@@ -3,6 +3,22 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.4.1 — MOTH works on your whole PC, in a smaller window
+
+**"Do it on my PC"**
+- Chat has a new switch: **Chat** or **Do it on my PC**. In the second mode MOTH works across your whole computer instead of one opened project:
+  - **Files anywhere:** it can look in your folders (it asks once per folder) and create or change files. You see each change and approve it first.
+  - **Commands anywhere:** it asks before every command and shows the folder it runs in.
+  - **The web:** it can read web pages and open pages in your own browser. It asks once per site.
+  - **Its own browser:** a separate Edge or Chrome window with its own profile (it never sees your logins or cookies). MOTH can open pages, read them, click links and buttons, and type into fields. It asks before visiting a new site and before typing anything, and it never types into password fields.
+  - It never reads or changes files that look like keys, passwords or `.env` files.
+  - It doesn't scan or index your whole home folder; it looks only where it needs to.
+- These tools are available in project tasks too.
+- MOTH is still a small model and is learning to use tools. It will get better at multi-step tasks as it grows.
+
+**A smaller window**
+- The app opens at 1180 × 740 instead of 1440 × 900, and can be made as small as 640 × 440.
+
 ## 2.4.0 — Saved prompts, chat tabs, Run code, and MOTH on your phone
 
 **Chat**

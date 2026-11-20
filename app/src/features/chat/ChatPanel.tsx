@@ -362,6 +362,15 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
 
   return (
     <div className="flex h-full flex-col">
+      {general && <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2">
+        <div className="flex rounded-md border border-border p-0.5" role="tablist" aria-label="Chat or act on this computer">
+          {(["chat", "agent"] as const).map((m) => (
+            <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
+              title={m === "agent" ? "MOTH works on your files, apps and the web, asking before every change" : "Talk with MOTH"}
+              className={cn("cursor-pointer rounded px-2.5 py-0.5 text-[0.6875rem] font-medium text-muted transition-colors", mode === m && "bg-accent text-white shadow-glow")}>
+              {m === "chat" ? "Chat" : "Do it on my PC"}</button>))}
+        </div>
+      </div>}
       {!general && <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2">
         {!general && (
           <div className="flex rounded-md border border-border p-0.5">
@@ -408,7 +417,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
       </div>}
 
       {mode === "agent" ? (
-        <AgentPanel />
+        <AgentPanel computer={general} />
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col"
           onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
