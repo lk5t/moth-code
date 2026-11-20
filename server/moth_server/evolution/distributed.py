@@ -391,9 +391,10 @@ def advance(ctx: Ctx, exp: dict, settings: dict) -> dict[str, Any]:
     pending = [i for i in ids if i not in done and i not in failed and i not in skipped]
     progress = {"round": r, "rounds": st["rounds"], "done": len(done), "shards": st["shards"]}
     if pending:
-        before = json.dumps(st.get("watch"), sort_keys=True)
+        snap = lambda: json.dumps([st.get("watch"), st.get("leased_since")], sort_keys=True)  # noqa: E731
+        before = snap()
         taken = _take_back_stuck(ctx, exp, st, r, ids, rows, pending, len(done))
-        if taken or json.dumps(st.get("watch"), sort_keys=True) != before:
+        if taken or snap() != before:
             _save(ctx, exp, st)  # the progress clock must survive between checks
         return {"state": "running", **progress}
     if failed and len(done) < int((settings.get("distributed") or {}).get("min_participants", 2)):
@@ -492,7 +493,7 @@ def _take_back_stuck(ctx: Ctx, exp: dict, st: dict, r: int, ids: dict, rows: dic
                   "finished parts", level="warning", cycle_id=exp["cycle_id"], experiment_id=exp["id"])
         return True
     if not stuck:
-        return False
+        return _hand_to_faster(ctx, exp, st, r, ids, rows, pending)
     with ctx.db.tx() as c:
         for i, j in stuck:
             c.execute(training_jobs.update().where(training_jobs.c.id == j["id"], training_jobs.c.status == "leased")
@@ -507,6 +508,64 @@ def _take_back_stuck(ctx: Ctx, exp: dict, st: dict, r: int, ids: dict, rows: dic
               + f" made no progress for {SHARD_STALL_SECONDS // 60} minutes (asleep, paused or busy); "
               "its part was taken back and goes to the next free computer", level="warning",
               cycle_id=exp["cycle_id"], experiment_id=exp["id"])
+    return True
+
+
+STEAL_MIN_SECONDS = 120  # 2.4.2: never judge a part's pace before it has run this long
+STEAL_MARGIN = 1.5  # the idle computer must be expected to finish at least this much sooner
+
+
+def _hand_to_faster(ctx: Ctx, exp: dict, st: dict, r: int, ids: dict, rows: dict, pending: list[int]) -> bool:
+    """2.4.2: a computer that finished its part sits idle while a slower one is still well behind (seen: a GPU
+    idle while MOTH Cloud's busy CPU trained at 38%, slower than its measured speed). When an idle participant would
+    train that part from the start clearly sooner than the slow one will finish it, the part moves to it."""
+    t = now()
+    since = st.setdefault("leased_since", {})
+    measured = ctx.db.get_config("compute_throughput", {}) or {}
+    with ctx.db.tx() as c:
+        busy = {row[0] for row in c.execute(select(training_jobs.c.worker_id).where(training_jobs.c.status == "leased"))}
+        people = [w for w in participants(ctx, int((exp["resources"] or {}).get("need_bytes") or 0), st.get("worker_ids"))
+                  if w["id"] not in busy]
+        for i in pending:
+            j = rows.get(ids[i])
+            if not j or j["status"] != "leased" or not j.get("worker_id"):
+                continue
+            key = str(j["id"])
+            since.setdefault(key, t)
+            ran, p = t - since[key], float(j.get("progress") or 0.0)
+            if ran < STEAL_MIN_SECONDS or p < 0.05 or p >= 0.95:
+                continue
+            remaining = ran * (1 - p) / p
+            spec = json.loads(j["spec"] or "{}")
+            tokens_per_step = int(spec["train"].get("batch_size") or 1) * int(spec["train"].get("seq_len") or 1)
+            slow = float(measured.get(f"worker:{j['worker_id']}") or 0)
+            best = None
+            for w in people:
+                fast = float(measured.get(f"worker:{w['id']}") or 0)
+                if fast <= max(slow, 1.0) * STEAL_MARGIN:
+                    continue
+                steps = steps_for(c, {**spec, "train": {**spec["train"], "steps": int(spec["train"].get("base_steps") or spec["train"]["steps"])}},
+                                  w["hw"], measured, w["id"])
+                fresh = steps * tokens_per_step / fast
+                if remaining > STEAL_MARGIN * fresh + 60 and (best is None or fresh < best[1]):
+                    best = (w, fresh)
+            if not best:
+                continue
+            w, fresh = best
+            c.execute(training_jobs.update().where(training_jobs.c.id == j["id"], training_jobs.c.status == "leased")
+                      .values(status="cancelled", lease_expires_at=None, updated_at=t,
+                              error=f"handed to faster idle worker {w['id']}"))
+            since.pop(key, None)
+            st.get("watch", {}).pop(key, None)
+            break
+        else:
+            return False
+    from moth_server import models as M
+    _create_round_jobs(ctx, exp, M.release(ctx, exp["base_version"]), {**st, "worker_ids": [w["id"]]},
+                       int((exp["resources"] or {}).get("need_bytes") or 0), only=[i])
+    MEM.event(ctx, "distributed.handed_over", f"Experiment #{exp['id']}: round {r + 1}: worker {j['worker_id']} was at "
+              f"{p:.0%} and needed about {remaining / 60:.0f} more minutes; idle worker {w['id']} ({w['name']}) trains that "
+              f"part from the start in about {fresh / 60:.0f} minutes", cycle_id=exp["cycle_id"], experiment_id=exp["id"])
     return True
 
 

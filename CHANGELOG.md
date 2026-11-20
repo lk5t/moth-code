@@ -3,6 +3,12 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.4.2 — A fast computer no longer waits for a slow one
+
+- In shared training, a computer that has finished its part used to sit idle while a slower one was still well behind. Seen in production: your GPU waited while MOTH Cloud's busy CPU was 38% through its part.
+- Now, when an idle computer would train the slow part from the start clearly sooner (at least 1.5× sooner), the part moves to it. The slow computer is freed and the round finishes sooner.
+- Activity notes when this happens.
+
 ## 2.4.1 — MOTH works on your whole PC, in a smaller window
 
 **"Do it on my PC"**

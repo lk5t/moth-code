@@ -424,3 +424,52 @@ def test_a_round_goes_on_when_nobody_takes_a_part(client, owner, tmp_path, monke
     st = exp["resources"]["distributed"]
     assert st["round"] == 1 and st["history"][0]["participants"] == 1
     assert any(e["kind"] == "distributed.skipped" for e in MEM.events(ctx, limit=50))
+
+
+def test_an_idle_faster_computer_takes_over_a_slow_part(client, owner, tmp_path, monkeypatch):
+    """2.4.2 (seen in production): a GPU finished its part and sat idle while MOTH Cloud's busy CPU was at 38% of its
+    own. When an idle participant would train that part from the start clearly sooner, the part moves to it."""
+    from sqlalchemy import select
+
+    from moth_server.db import training_jobs, workers
+    from moth_server.evolution import distributed as D
+    from moth_worker.client import WorkerClient
+    from moth_worker.runner import WorkerRunner
+
+    ctx, base_v = _world(client, owner, tmp_path, monkeypatch)
+    S.update(ctx, {"backends": {"local_cpu": False, "local_gpu": False, "workers": True},
+                   "training": {"steps": 20, "lr": 3e-3}, "distributed": {"min_participants": 2, "rounds": 2}})
+    o = H(owner["token"])
+    runners = []
+    for name in ("slow-cpu", "fast-gpu"):
+        e = client.post("/v1/training/enrollments", json={"name": name}, headers=o).json()
+        w = client.post("/v1/worker/enroll", json={"token": e["token"], "version": "0.5.3", "hardware": {
+            "gpus": [], "cpu_count": 4, "ram_gb": 16.0, "compute": "cpu", "machine_id": name}}).json()
+        r = WorkerRunner(WorkerClient("http://t", w["worker_token"], http=client), tmp_path / name,
+                         log=lambda m: None, heartbeat_seconds=3600, update_check_seconds=None)
+        r.beat()
+        runners.append((w, r))
+    for _ in range(4):
+        EN.tick(ctx)
+    (slow, _), (fast, rf) = runners
+    ctx.db.set_config("compute_throughput", {f"worker:{slow['worker_id']}": 1000.0, f"worker:{fast['worker_id']}": 50000.0})
+    held = client.post("/v1/worker/jobs/claim", headers=H(slow["worker_token"])).json()
+    assert rf.run_job(client.post("/v1/worker/jobs/claim", headers=H(fast["worker_token"])).json())["accepted"]
+    clock = [time.time()]
+    monkeypatch.setattr(D, "now", lambda: clock[0])
+    for minutes, progress in ((0, 0.05), (5, 0.10), (10, 0.15)):  # the slow part crawls: about an hour to go
+        clock[0] += minutes * 60
+        client.post("/v1/worker/heartbeat", headers=H(slow["worker_token"]), json={"job_id": held["id"], "progress": progress})
+        client.post("/v1/worker/heartbeat", headers=H(fast["worker_token"]), json={})
+        with ctx.db.tx() as c:  # the heartbeats happened "now" on the test's moved clock
+            c.execute(workers.update().values(last_heartbeat_at=clock[0]))
+        EN.tick(ctx)
+    assert ctx.db.one(select(training_jobs).where(training_jobs.c.id == held["id"]))["status"] == "cancelled"
+    assert client.post("/v1/worker/jobs/claim", headers=H(slow["worker_token"])).status_code == 204  # not back to the slow one
+    again = client.post("/v1/worker/jobs/claim", headers=H(fast["worker_token"])).json()
+    assert again["spec"]["dist"] == held["spec"]["dist"]
+    assert rf.run_job(again)["accepted"]
+    EN.tick(ctx)
+    exp = next(e for e in MEM.experiments(ctx) if e["backend"] == "distributed")
+    assert exp["resources"]["distributed"]["round"] == 1
+    assert any(e["kind"] == "distributed.handed_over" for e in MEM.events(ctx, limit=50))
