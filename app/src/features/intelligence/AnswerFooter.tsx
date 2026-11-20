@@ -1,4 +1,4 @@
-/** Under a MOTH Cloud answer: cited sources and a quick rating (feedback learning). */
+/** Under every answer: cited sources (MOTH Cloud) and a quick rating (feedback learning; 2.4: on-device answers too). */
 import { useState } from "react";
 import { ThumbsDown, ThumbsUp } from "lucide-react";
 import { serverApi } from "@/lib/account";
@@ -15,27 +15,27 @@ export interface AnswerMeta {
 const PROBLEMS: [string, string][] = [["wrong", "Wrong"], ["unhelpful", "Not helpful"], ["code_error", "Code doesn't work"],
   ["reasoning_error", "Bad reasoning"], ["unsafe", "Unsafe"], ["other", "Other"]];
 
-export function AnswerFooter({ meta, answer }: { meta: AnswerMeta; answer: string }) {
+export function AnswerFooter({ meta, answer, prompt }: { meta: AnswerMeta; answer: string; prompt?: string }) {
   const [rated, setRated] = useState<1 | -1 | null>(null);
   const [asking, setAsking] = useState(false);
   const [correction, setCorrection] = useState("");
   const [note, setNote] = useState<string | null>(null);
-  if (meta.via !== "cloud") return null;
   const send = async (rating: 1 | -1, category = "") => {
     try {
       const r = await serverApi<{ stored_conversation: boolean }>("/v1/feedback", {
-        method: "POST", json: { rating, category, correction, prompt: meta.prompt, response: answer, model: meta.model },
+        method: "POST", json: { rating, category, correction, prompt: meta.prompt ?? prompt, response: answer, model: meta.model },
       });
       setRated(rating);
       setAsking(false);
       setNote(r.stored_conversation ? "Thanks — this helps MOTH learn." : "Thanks. Only the rating was saved (training use is off in Settings).");
     } catch (e) {
-      setNote((e as Error).message);
+      const msg = (e as Error).message;
+      setNote(/401|sign in|not signed/i.test(msg) ? "Sign in to MOTH Cloud to rate answers." : msg);
     }
   };
   return (
     <div className="mt-1.5 flex flex-col gap-1.5">
-      {!!meta.sources?.length && (
+      {meta.via === "cloud" && !!meta.sources?.length && (
         <div className="flex flex-wrap gap-1.5 text-[0.65625rem] text-muted">
           Sources:{meta.sources.map((s) => (
             <span key={s.n} className="rounded bg-surface-2 px-1.5 py-0.5" title={s.source || s.title}>[{s.n}] {s.title}</span>

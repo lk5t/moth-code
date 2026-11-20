@@ -57,7 +57,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown; raw?: boolean } = {}): Promise<T> {
   const b = backend();
   const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
   if (b.token) headers.Authorization = `Bearer ${b.token}`;
@@ -66,7 +66,8 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(init.json);
   }
-  const res = await fetch(b.url + path, { ...init, headers, body });
+  const { raw: _raw, json: _json, ...rest } = init;
+  const res = await fetch(b.url + path, { ...rest, headers, body });
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -78,10 +79,11 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     throw new ApiError(res.status, detail);
   }
   if (res.status === 204) return undefined as T;
+  if (init.raw) return (await res.blob()) as T;  // 2.4: images kept by the backend
   return (await res.json()) as T;
 }
 
 export const get = <T,>(path: string) => api<T>(path);
-export const post = <T,>(path: string, json?: unknown) => api<T>(path, { method: "POST", json: json ?? {} });
+export const post = <T,>(path: string, json?: unknown, headers?: Record<string, string>) => api<T>(path, { method: "POST", json: json ?? {}, headers });
 export const put = <T,>(path: string, json: unknown) => api<T>(path, { method: "PUT", json });
 export const del = <T,>(path: string) => api<T>(path, { method: "DELETE" });

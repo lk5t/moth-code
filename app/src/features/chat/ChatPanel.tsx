@@ -1,8 +1,9 @@
 import { navigate } from "@/lib/navigation";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MothEvent } from "@/lib/events";
-import { ArrowUp, Bug, Code2, HelpCircle, Radar, ShieldCheck, Cloud, FileText, LogIn, MessageSquarePlus, Paperclip, RefreshCw, Square, Upload, X } from "lucide-react";
-import { formatAttachments, formatBytes, onDesktopDrop, readFiles, readPaths, splitAttachments, type Attachment } from "@/lib/attachments";
+import { ArrowUp, Bug, Code2, HelpCircle, Radar, ShieldCheck, Cloud, Copy, FileText, GitBranch, Pencil, LogIn, MessageSquarePlus, RefreshCw, Square, Upload, X } from "lucide-react";
+import { formatAttachments, formatBytes, imageUrl, onDesktopDrop, splitAttachments, type Attachment } from "@/lib/attachments";
+import { AttachMenu, ingestFiles, ingestPaths } from "./AttachMenu";
 import { useCloudStatus } from "@/lib/cloud";
 import { openAccountDialog } from "@/features/account/AccountDialog";
 import { get, post } from "@/lib/backend";
@@ -77,15 +78,42 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
   const [attached, setAttached] = useState<Attachment[]>([]);
   const [dragging, setDragging] = useState(false);
   const [dropNote, setDropNote] = useState<string | null>(null);
-  const picker = useRef<HTMLInputElement>(null);
   const addAttachments = (r: { files: Attachment[]; skipped: { path: string; reason: string }[] }) => {
     setAttached((cur) => [...cur.filter((c) => !r.files.some((f) => f.path === c.path)), ...r.files].slice(0, 30));
     setDropNote(r.skipped.length ? `Skipped ${r.skipped.length}: ${r.skipped.slice(0, 3).map((x) => `${x.path} (${x.reason})`).join(", ")}${r.skipped.length > 3 ? "…" : ""}` : null);
   };
+  // 2.4: editing your message (it and the replies after it are replaced) and branching a chat
+  const [editing, setEditing] = useState<number | null>(null);
+  const realId = async (m: ChatMessage): Promise<number | null> => {
+    if (typeof m.id === "number") return m.id;
+    if (cidRef.current === null) return null;
+    const hist = (await get<ChatMessage[]>(`/api/conversations/${cidRef.current}/messages`)).filter((x) => x.role === "user" || x.role === "assistant");
+    const mine = messagesRef.current.filter((x) => x.role === "user" || x.role === "assistant");
+    const i = mine.findIndex((x) => x.id === m.id);
+    return i >= 0 && hist[i]?.role === m.role ? Number(hist[i].id) : null;
+  };
+  const startEdit = async (m: ChatMessage) => {
+    const id = await realId(m).catch(() => null);
+    if (id === null) { setDropNote("Wait for the reply to finish, then edit."); return; }
+    const { body, files } = splitAttachments(m.content);
+    setEditing(id); setInput(body);
+    setAttached(files.map((f) => ({ path: f.path, name: f.path.split(/[\\/]/).pop() || f.path, size: f.content.length, content: f.content,
+      truncated: false, kind: f.kind, image_id: f.image_id })));
+    setTimeout(() => composer.current?.focus(), 0);
+  };
+  const branch = async (m: ChatMessage) => {
+    try {
+      const id = await realId(m);
+      if (id === null || cidRef.current === null) throw new Error("Wait for the reply to finish, then branch.");
+      const r = await post<{ conversation_id: number; title: string; project_id: number | null }>(`/api/conversations/${cidRef.current}/branch`, { message_id: id });
+      reloadConversations();
+      appStore.setState((st) => ({ chatRequest: { sequence: (st.chatRequest?.sequence ?? 0) + 1, conversationId: r.conversation_id, title: r.title, projectId: r.project_id } }));
+    } catch (e) { setDropNote((e as Error).message); }
+  };
   useEffect(() => {
     let off = () => {};
     let alive = true;
-    onDesktopDrop({ over: setDragging, drop: (paths) => { readPaths(paths).then(addAttachments).catch((e) => setDropNote(String(e.message ?? e))); } })
+    onDesktopDrop({ over: setDragging, drop: (paths) => { ingestPaths(paths).then(addAttachments).catch((e) => setDropNote(String(e.message ?? e))); } })
       .then((u) => { if (alive) off = u; else u(); }).catch(() => {});
     return () => { alive = false; off(); };
   }, []);
@@ -274,6 +302,13 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
         return;
       }
     }
+    if (!regenerate && editing !== null && cid !== null) {  // 2.4: the edited message replaces the old one and what followed it
+      try { await post(`/api/conversations/${cid}/truncate`, { message_id: editing }); }
+      catch (e) { setDropNote((e as Error).message); return; }
+      const at = messages.findIndex((x) => x.id === editing);
+      setMessages((m) => (at >= 0 ? m.slice(0, at) : m));
+      setEditing(null);
+    }
     if(!regenerate) {setInput("");setAttached([]);setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: text }]);}
     sounds.click();
     followTail.current=true;setBusy(true);
@@ -377,7 +412,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
         <div className="relative flex min-h-0 flex-1 flex-col"
           onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
           onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
-          onDrop={(e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); setDragging(false); readFiles(e.dataTransfer.files).then(addAttachments).catch(() => {}); }}>
+          onDrop={(e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); setDragging(false); ingestFiles(e.dataTransfer.files).then(addAttachments).catch((err) => setDropNote(String(err.message ?? err))); }}>
           {dragging && <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-accent/70 bg-bg/80 text-sm text-fg backdrop-blur-sm animate-fade-in">
             <Upload className="size-6 animate-bounce text-accent" />Drop files or folders to share them with MOTH
             <span className="text-[0.6875rem] text-muted">Text files only · keys and .env files are never read</span></div>}
@@ -434,7 +469,14 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                           <details className="text-[0.6875rem] text-muted"><summary className="cursor-pointer hover:text-fg">Full write-up</summary><div className="mt-1 text-[0.8125rem] text-fg"><Markdown text={m.content} /></div></details></div>
                       </div>
                     ) : m.role === "user" ? (
-                      <UserBubble text={m.content} />
+                      <div className="group/msg flex max-w-[85%] flex-col items-end gap-0.5">
+                        <UserBubble text={m.content} />
+                        {!busy && <div className="flex gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/msg:opacity-100">
+                          <MsgAction label="Edit" onClick={() => void startEdit(m)}><Pencil /></MsgAction>
+                          <MsgAction label="Branch from here" onClick={() => void branch(m)}><GitBranch /></MsgAction>
+                          <MsgAction label="Copy" onClick={() => void navigator.clipboard.writeText(splitAttachments(m.content).body)}><Copy /></MsgAction>
+                        </div>}
+                      </div>
                     ) : m.role === "error" ? (
                       <ErrorNotice error={m.content} />
                     ) : (
@@ -463,8 +505,10 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                           {!m.streaming && <div className="mt-2 flex flex-wrap gap-2"><CopyText text={m.content} label="Copy answer" />
                             {index === lastAssistant && !messages.slice(index+1).some((message)=>message.role === "user") && cid !== null &&
                               <Button size="sm" variant="ghost" disabled={busy} onClick={()=>send(true)}>Regenerate</Button>}
+                            {cid !== null && <Button size="sm" variant="ghost" disabled={busy} title="A new chat with everything up to this answer" onClick={() => void branch(m)}><GitBranch />Branch</Button>}
                           </div>}
-                          {m.meta && !m.streaming && <AnswerFooter meta={m.meta} answer={m.content} />}
+                          {!m.streaming && m.content && <AnswerFooter meta={m.meta ?? {}} answer={m.content}
+                            prompt={m.meta?.prompt ?? splitAttachments([...messages.slice(0, index)].reverse().find((x) => x.role === "user")?.content ?? "").body} />}
                         </div>
                       </div>
                     )}
@@ -477,13 +521,15 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
           <div className="mx-auto w-full max-w-4xl shrink-0 px-3 pb-3 pt-1 sm:px-4">
             {remembered && <p role="status" className="animate-pop mb-1 text-[0.6875rem] text-success">MOTH will remember: “{remembered}” (Settings → Memory)</p>}
             {dropNote && <p role="status" className="mb-1 text-[0.6875rem] text-warning animate-fade-in">{dropNote}</p>}
+            {editing !== null && <p role="status" className="mb-1 flex items-center gap-2 text-[0.6875rem] text-accent">Editing your message: sending replaces it and the replies after it.
+              <button className="text-muted underline hover:text-fg" onClick={() => { setEditing(null); setInput(""); setAttached([]); }}>Cancel</button></p>}
             {attached.length > 0 && <div className="stagger mb-1.5 flex flex-wrap gap-1.5" aria-label="Attached files">
               {attached.map((f) => <span key={f.path} className="flex max-w-60 items-center gap-1.5 rounded-md border border-border bg-surface-2 py-0.5 pl-2 pr-1 text-[0.6875rem] animate-pop" title={f.path}>
-                <FileText className="size-3 shrink-0 text-accent" /><span className="truncate">{f.path}</span><span className="shrink-0 text-faint">{formatBytes(f.size)}{f.truncated ? " · cut" : ""}</span>
+                {f.kind === "image" && f.image_id ? <Thumb id={f.image_id} className="size-5" /> : <FileText className="size-3 shrink-0 text-accent" />}<span className="truncate">{f.path}</span>
+                <span className="shrink-0 text-faint">{f.kind === "image" ? (f.content.trim() ? "text read" : "no text found") : `${formatBytes(f.size)}${f.truncated ? " · cut" : ""}`}</span>
                 <button aria-label={`Remove ${f.name}`} className="rounded p-0.5 text-muted hover:bg-surface-3 hover:text-fg" onClick={() => setAttached((cur) => cur.filter((c) => c.path !== f.path))}><X className="size-3" /></button></span>)}
             </div>}
             <div className="w-full rounded-xl border border-border bg-surface transition-shadow focus-within:border-accent/50 focus-within:shadow-glow">
-              <input ref={picker} type="file" multiple hidden onChange={(e) => { if (e.target.files?.length) readFiles(e.target.files).then(addAttachments).catch(() => {}); e.target.value = ""; }} />
               <Textarea
                 ref={composer}
                 rows={1}
@@ -494,6 +540,13 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                 disabled={!!noModel}
                 className="max-h-48 min-h-11 border-0 bg-transparent px-3.5 pb-1 pt-3 text-[0.8125rem] focus:shadow-none"
                 onChange={(e) => setInput(e.target.value)}
+                onPaste={(e) => {  // 2.4: a pasted screenshot is attached (its text is read for MOTH)
+                  const imgs = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+                  if (!imgs.length) return;
+                  e.preventDefault();
+                  setDropNote("Reading the text in the image…");
+                  ingestFiles(imgs).then((r) => { addAttachments(r); setDropNote(null); }).catch((err) => setDropNote(String(err.message ?? err)));
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -502,7 +555,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                 }}
               />
               <div className="flex items-center gap-1 px-2 pb-2">
-                <Button size="icon-sm" variant="ghost" title="Attach files" aria-label="Attach files" disabled={!!noModel} onClick={() => picker.current?.click()}><Paperclip /></Button>
+                <AttachMenu disabled={!!noModel} onAdd={addAttachments} onError={setDropNote} />
                 <span className="mx-1 h-4 w-px bg-border" aria-hidden />
                 <span className="truncate rounded px-1.5 py-0.5 text-[0.6875rem] text-muted" title="The model answering">{currentLabel}</span>
                 <div className="flex-1" />
@@ -552,10 +605,31 @@ const UserBubble = memo(function UserBubble({ text }: { text: string }) {
     {body && <div className="flex items-baseline gap-2.5"><span className="shrink-0 text-[0.6875rem] text-faint">You</span>
       <div className="selectable whitespace-pre-wrap rounded-lg bg-surface-2/70 px-3 py-1.5 text-[0.8125rem] text-fg">{body}</div></div>}
     {files.length > 0 && <div className="flex flex-wrap justify-end gap-1">
-      {files.map((f, i) => <details key={i} className="group max-w-full rounded-md border border-border bg-surface text-[0.6875rem]">
+      {files.map((f, i) => f.kind === "image" ? <details key={i} className="group max-w-full rounded-md border border-border bg-surface text-[0.6875rem]">
+        <summary className="flex cursor-pointer items-center gap-1.5 p-1 text-muted hover:text-fg">{f.image_id && <Thumb id={f.image_id} className="size-16" />}<span className="truncate px-1">{f.path}</span></summary>
+        <div className="border-t border-border p-2">{f.image_id && <Thumb id={f.image_id} className="max-h-80 w-auto max-w-[36rem]" />}
+          <div className="mt-1.5 text-faint">Text MOTH read from it:</div><pre className="selectable max-h-40 max-w-[36rem] overflow-auto whitespace-pre-wrap font-mono text-fg">{f.content}</pre></div>
+      </details> : <details key={i} className="group max-w-full rounded-md border border-border bg-surface text-[0.6875rem]">
         <summary className="flex cursor-pointer items-center gap-1.5 px-2 py-0.5 text-muted hover:text-fg"><FileText className="size-3 text-accent" /><span className="truncate">{f.path}</span></summary>
         <pre className="selectable max-h-60 max-w-[36rem] overflow-auto border-t border-border p-2 font-mono text-[0.6875rem] text-fg">{f.content}</pre>
       </details>)}
     </div>}
   </div>;
 });
+
+
+/** 2.4: an image kept on this computer (loaded with the backend's token). */
+function Thumb({ id, className }: { id: string; className?: string }) {
+  const [src, setSrc] = useState<string | null>(null), [gone, setGone] = useState(false);
+  useEffect(() => {
+    let url: string | null = null, alive = true;
+    imageUrl(id).then((u) => { url = u; if (alive) setSrc(u); else URL.revokeObjectURL(u); }).catch(() => alive && setGone(true));
+    return () => { alive = false; if (url) URL.revokeObjectURL(url); };
+  }, [id]);
+  if (gone) return <span className={cn("flex items-center justify-center rounded bg-surface-2 text-[0.5625rem] text-faint", className)} title="This image is no longer on this computer">?</span>;
+  return src ? <img src={src} alt="" className={cn("rounded object-cover", className)} /> : <span className={cn("animate-pulse rounded bg-surface-2", className)} />;
+}
+
+function MsgAction({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return <button aria-label={label} title={label} onClick={onClick} className="rounded p-1 text-faint hover:bg-surface-2 hover:text-fg [&_svg]:size-3">{children}</button>;
+}

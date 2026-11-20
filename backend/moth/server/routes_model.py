@@ -10,7 +10,7 @@ import time
 import uuid
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from moth.model.chat_format import Message
@@ -30,6 +30,19 @@ class ChatIn(BaseModel):
 
 class AttachIn(BaseModel):
     paths: list[str] = Field(default_factory=list, max_length=50)
+
+
+class ImageIn(BaseModel):  # 2.4
+    name: str = Field(default="image.png", max_length=200)
+    data_base64: str = Field(max_length=17_000_000)
+
+
+class LinkIn(BaseModel):  # 2.4
+    url: str = Field(max_length=2000)
+
+
+class MessageRefIn(BaseModel):  # 2.4
+    message_id: int
 
 
 class RenameIn(BaseModel):
@@ -86,6 +99,92 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         """2.0: text of files and folders dropped into chat (secrets and binary files are skipped)."""
         from moth.workspace.attachments import read
         return read(body.paths)
+
+    # ---- 2.4: screenshots and photos, GitHub links -----------------------------------------------------
+    def _images():
+        return svc.paths.home / "attachments" / "images"
+
+    @app.post("/api/attachments/image", dependencies=deps)
+    def attach_image(body: ImageIn):
+        """An image pasted, dropped or picked in chat: kept on this computer, with the text read from it."""
+        import base64
+        import binascii
+
+        from moth.workspace.chat_attach import AttachError, save_image
+        raw = body.data_base64.split(",", 1)[1] if body.data_base64.startswith("data:") else body.data_base64
+        try:
+            data = base64.b64decode(raw, validate=True)
+            return save_image(_images(), body.name, data)
+        except binascii.Error:
+            raise HTTPException(422, "The image could not be decoded.") from None
+        except AttachError as e:
+            raise HTTPException(422, str(e)) from None
+
+    @app.post("/api/attachments/image-path", dependencies=deps)
+    def attach_image_path(body: AttachIn):
+        """Images dropped onto the desktop window arrive as paths (the user chose to share them)."""
+        from pathlib import Path
+
+        from moth.workspace.chat_attach import MAX_IMAGE_BYTES, AttachError, save_image
+        out, skipped = [], []
+        for raw in body.paths[:10]:
+            p = Path(raw).expanduser()
+            try:
+                if not p.is_file() or p.stat().st_size > MAX_IMAGE_BYTES:
+                    raise AttachError("not found" if not p.is_file() else "larger than 12 MB")
+                out.append(save_image(_images(), p.name, p.read_bytes()))
+            except (OSError, AttachError) as e:
+                skipped.append({"path": raw, "reason": str(e)})
+        return {"images": out, "skipped": skipped}
+
+    @app.get("/api/attachments/image/{image_id}", dependencies=deps)
+    def get_image(image_id: str):
+        from fastapi.responses import FileResponse
+
+        from moth.workspace.chat_attach import IMAGE_TYPES, AttachError, image_path
+        try:
+            p = image_path(_images(), image_id)
+        except AttachError as e:
+            raise NotFound(str(e)) from None
+        return FileResponse(p, media_type=IMAGE_TYPES[p.suffix[1:]], headers={"Cache-Control": "private, max-age=86400"})
+
+    @app.post("/api/attachments/link", dependencies=deps)
+    def attach_link(body: LinkIn, x_github_token: str = Header(default="")):
+        """A GitHub repository, folder or file link: its text files, read in memory (nothing runs)."""
+        from moth.workspace.chat_attach import AttachError, fetch_github
+        try:
+            return fetch_github(body.url, x_github_token)
+        except AttachError as e:
+            raise HTTPException(422, str(e)) from None
+
+    # ---- 2.4: edit a message, branch a chat --------------------------------------------------------------
+    @app.post("/api/conversations/{cid}/truncate", dependencies=deps)
+    def truncate_conversation(cid: int, body: MessageRefIn):
+        """Editing a message: it and everything after it are removed; the edited text is then sent as new."""
+        m = svc.db.one("SELECT id, role FROM messages WHERE id=? AND conversation_id=?", (body.message_id, cid))
+        if not m:
+            raise NotFound("That message is no longer in this chat")
+        if m["role"] != "user":
+            raise HTTPException(422, "Only your own messages can be edited")
+        n = svc.db.execute("DELETE FROM messages WHERE conversation_id=? AND id>=?", (cid, body.message_id)).rowcount
+        svc.bus.publish("conversations", {"changed": cid})
+        return {"ok": True, "removed": n}
+
+    @app.post("/api/conversations/{cid}/branch", dependencies=deps)
+    def branch_conversation(cid: int, body: MessageRefIn):
+        """A new chat with this chat's messages up to and including ``message_id``; the original is unchanged."""
+        conv = svc.db.one("SELECT * FROM conversations WHERE id=?", (cid,))
+        if not conv:
+            raise NotFound("This conversation no longer exists")
+        if not svc.db.one("SELECT id FROM messages WHERE id=? AND conversation_id=?", (body.message_id, cid)):
+            raise NotFound("That message is no longer in this chat")
+        title = ("Branch of " + conv["title"])[:120]
+        new = svc.db.execute("INSERT INTO conversations (project_id, title, created_at) VALUES (?,?,?)",
+                             (conv["project_id"], title, time.time())).lastrowid
+        svc.db.execute("INSERT INTO messages (conversation_id, role, content, meta, ts) SELECT ?, role, content, meta, ts "
+                       "FROM messages WHERE conversation_id=? AND id<=? ORDER BY id", (new, cid, body.message_id))
+        svc.bus.publish("conversations", {"created": new})
+        return {"conversation_id": new, "title": title, "project_id": conv["project_id"]}
 
     @app.get("/api/search/messages", dependencies=deps)
     def search_messages(q: str = "", limit: int = Query(default=20, ge=1, le=50)):

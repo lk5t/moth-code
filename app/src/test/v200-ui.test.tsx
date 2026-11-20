@@ -46,7 +46,14 @@ describe("2.0 dropped files", () => {
     const text = formatAttachments("look at these", files);
     const out = splitAttachments(text);
     expect(out.body).toBe("look at these");
-    expect(out.files).toEqual([{ path: "src/a.py", content: "print(1)" }, { path: "README.md", content: "```js\nx\n```" }]);
+    expect(out.files).toEqual([{ path: "src/a.py", content: "print(1)", kind: "file" }, { path: "README.md", content: "```js\nx\n```", kind: "file" }]);
+  });
+  it("2.4: an image travels as the text read from it, with its id for the preview", () => {
+    const img = { kind: "image" as const, image_id: "ab".repeat(16) + ".png", path: "shot.png", name: "shot.png", size: 5, content: "KeyError: 'value'", truncated: false };
+    const out = splitAttachments(formatAttachments("why this error?", [img, { ...img, image_id: "cd".repeat(16) + ".png", name: "blank.png", path: "blank.png", content: "", note: "no engine" }]));
+    expect(out.body).toBe("why this error?");
+    expect(out.files[0]).toEqual({ path: "shot.png", content: "KeyError: 'value'", kind: "image", image_id: "ab".repeat(16) + ".png" });
+    expect(out.files[1].content).toContain("no text could be read from it: no engine");
   });
   it("leaves ordinary messages alone", () => {
     expect(splitAttachments("hello ```code```")).toEqual({ body: "hello ```code```", files: [] });
