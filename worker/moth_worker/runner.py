@@ -36,10 +36,55 @@ def utilization(hw: dict[str, Any]) -> dict[str, float | None]:
         cpu = round(min(1.0, os.getloadavg()[0] / max(1, int(hw.get("cpu_count") or os.cpu_count() or 1))), 3)
     except (AttributeError, OSError):  # Windows has no load average
         pass
+    if cpu is None:
+        cpu = _windows_cpu()
     mem = None
     if hw.get("ram_gb") and hw.get("ram_available_gb") is not None:
         mem = round(max(0.0, 1 - float(hw["ram_available_gb"]) / float(hw["ram_gb"])), 3)
-    return {"cpu": cpu, "memory": mem}
+    return {"cpu": cpu, "memory": mem, **_gpu_status()}
+
+
+_cpu_times: list[tuple[int, int]] = []
+
+
+def _windows_cpu() -> float | None:
+    """2.3: Windows has no load average; CPU use since the previous heartbeat from GetSystemTimes."""
+    import sys
+
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+
+        idle, kernel, user = (ctypes.c_ulonglong() for _ in range(3))
+        if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):  # type: ignore[attr-defined]
+            return None
+        now = (int(idle.value), int(kernel.value) + int(user.value))  # kernel time includes idle time
+        prev = _cpu_times[-1] if _cpu_times else None
+        _cpu_times[:] = [now]
+        if not prev or now[1] <= prev[1]:
+            return None
+        return round(max(0.0, min(1.0, 1 - (now[0] - prev[0]) / (now[1] - prev[1]))), 3)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _gpu_status() -> dict[str, float | None]:
+    """2.3: GPU use, memory use and temperature (nvidia-smi), shown in Network; empty without an NVIDIA GPU."""
+    import subprocess
+
+    from moth_worker.hardware import _nvidia_smi_exe
+
+    exe = _nvidia_smi_exe()
+    if not exe:
+        return {}
+    try:
+        out = subprocess.run([exe, "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu",
+                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=10).stdout
+        util, used, total, temp = (float(x) for x in out.strip().splitlines()[0].split(","))
+        return {"gpu": round(util / 100, 3), "gpu_memory": round(used / total, 3) if total else None, "gpu_temp_c": temp}
+    except Exception:  # noqa: BLE001 — a reading we cannot take stays unknown
+        return {}
 
 
 class WorkerRunner:

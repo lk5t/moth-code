@@ -604,6 +604,21 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                                "context_retention": v.get("context_retention")}
                            for k, v in reps.items()},
             "performance": (info.get("serving") or {}).get("performance")})
+    # 2.3: why each version was or was not promoted, and its side-by-side replies (from its experiment)
+    by_version = {}
+    if versions:
+        for row in ctx.db.all(_select(evolution_experiments.c.candidate_version, evolution_experiments.c.status,
+                                      evolution_experiments.c.error, evolution_experiments.c.metrics)
+                              .where(evolution_experiments.c.candidate_version.in_([v["version"] for v in versions]))):
+            met = _json.loads(row["metrics"] or "{}") if isinstance(row["metrics"], str) else (row["metrics"] or {})
+            failed = [g.get("name") or g["gate"] for g in met.get("gates") or [] if not g.get("passed")]
+            by_version[row["candidate_version"]] = {
+                "outcome": row["status"], "decision": met.get("decision") or row["error"],
+                "failed": failed[:6], "trade_offs": (met.get("trade_offs") or [])[:6],
+                "improvement": met.get("primary_improvement"), "compare": met.get("compare")}
+    for v in versions:
+        if v["version"] in by_version:
+            v["promotion"] = by_version[v["version"]]
     dev = next((v for v in reversed(versions) if v["has_dev_checkpoint"]), None)
     lineage_versions = {v['version'] for v in versions}
     cyc = next((c for c in MEM.cycles(ctx, 100) if c['base_version'] in lineage_versions), None)
@@ -766,3 +781,47 @@ def _base_vocab(ctx: Ctx, e: dict) -> int:
         return int((M.release(ctx, e["base_version"])["info"].get("config") or {}).get("vocab_size") or 0)
     except Exception:  # noqa: BLE001 — a missing release only loses the label
         return 0
+
+
+# ---- 2.3.1: Home summary — this week's progress, example answers and your computers' share ----------------
+@router.get("/v1/intelligence/summary")
+def week_summary(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
+    """What MOTH did in the last 7 days, in plain numbers, for every signed-in user. Measurements only."""
+    from sqlalchemy import func, select as _select
+
+    from moth_server.db import evolution_experiments as EX, training_jobs as TJ, workers as W
+
+    t = time.time()
+    since = t - 7 * 86400
+    rels = _M.list_releases(ctx)
+    current = next((r for r in rels if r["status"] == "deployed"), None)
+    promoted = [{"version": r["version"], "model_version": r["info"].get("model_version"),
+                 "params": r["info"].get("params"), "at": r["deployed_at"]}
+                for r in rels if (r.get("deployed_at") or 0) >= since]
+    outcomes: dict[str, int] = {}
+    for row in ctx.db.all(_select(EX.c.status, func.count().label("n")).where(EX.c.finished_at >= since).group_by(EX.c.status)):
+        outcomes[row["status"]] = int(row["n"])
+    mine = [w["id"] for w in ctx.db.all(_select(W.c.id).where(W.c.user_id == auth.uid, W.c.revoked_at.is_(None)))]
+    mine_seconds = mine_jobs = 0
+    if mine:
+        r = ctx.db.one(_select(func.coalesce(func.sum(EX.c.compute_seconds), 0.0).label("s"))
+                       .where(EX.c.worker_id.in_(mine), EX.c.finished_at >= since))
+        mine_seconds = float((r or {}).get("s") or 0)
+        r = ctx.db.one(_select(func.count().label("n")).where(TJ.c.worker_id.in_(mine), TJ.c.status == "completed",
+                                                             TJ.c.updated_at >= since))
+        mine_jobs = int((r or {}).get("n") or 0)
+    examples = None
+    if current:
+        row = ctx.db.one(_select(EX.c.metrics).where(EX.c.candidate_version == current["version"])
+                         .order_by(EX.c.id.desc()).limit(1))
+        if row:
+            met = json.loads(row["metrics"] or "{}") if isinstance(row["metrics"], str) else (row["metrics"] or {})
+            examples = met.get("compare")
+    first = min((r for r in rels if (r.get("deployed_at") or 0) >= since), key=lambda r: r["version"], default=None)
+    return {"since": since,
+            "current": {"version": current["version"], "model_version": current["info"].get("model_version"),
+                        "params": current["info"].get("params")} if current else None,
+            "params_at_start": (first or {}).get("info", {}).get("params") if first else None,
+            "promoted": promoted, "experiments": outcomes,
+            "your_computers": {"count": len(mine), "jobs": mine_jobs, "hours": round(mine_seconds / 3600, 1)},
+            "examples": examples}

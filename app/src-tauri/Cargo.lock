@@ -2209,7 +2209,7 @@ dependencies = [
 
 [[package]]
 name = "moth-code"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "getrandom 0.3.4",
  "keyring",

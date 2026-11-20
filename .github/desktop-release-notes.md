@@ -4,6 +4,7 @@
 
 ### What's new in 2.3
 
+- **2.3.1:** Home shows this week's progress, how MOTH answers now (before and after its last upgrade) and a one-click **Train on this PC**. Network shows each computer's health and lets you set its training hours. The AI timeline says why each version was or was not promoted.
 - **A new, compact look:**
   - The sidebar has New chat, Search chats, **Projects as folders with their chats inside**, then Chats, and your account at the bottom.
   - Your messages sit on the right; MOTH's replies are plain text.

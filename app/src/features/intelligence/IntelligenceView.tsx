@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty";
 import { cn, formatNumber } from "@/lib/utils";
 import { paramsLabel } from "@/lib/params";
+import { SideBySide } from "./SideBySide";
+export { SideBySide };
 
 type Any = Record<string, any>;
 
@@ -59,6 +61,8 @@ function Change({ cur, prev }: { cur: Any; prev?: Any }) {
 const EVENT: Record<string, string> = { "models.deployed": "Deployed", "models.rollback": "Rolled back", "evolution.rollback": "Rolled back automatically" };
 
 const promoted = (v: Any) => !!(v.deployed || v.stable || v.deployed_at);
+
+/** 2.3: the same prompts answered by the model it was compared with ("before") and by this version. */
 const axisValue = (metric: string, v: number, higher: boolean) => metric === "parameters" ? formatNumber(Math.round(v))
   : metric === "training_steps" ? formatNumber(Math.round(v)) : higher ? `${(v * 100).toFixed(0)}%` : v.toFixed(2);
 const pointValue = (metric: string, b: Any) => metric === "parameters" || metric === "training_steps" ? Math.round(b.value).toLocaleString() : fmt(b);
@@ -130,6 +134,8 @@ export function TimelineChart({ versions, metric, onSelect }: { versions: Any[];
         <div className="font-medium text-fg">{modelLabel(h.v)} <span className="text-faint">v{h.v.version}</span></div>
         <div className="tabular-nums text-muted">{LABEL[metric] ?? metric}: <span className="text-fg">{pointValue(metric, h.b)}</span></div>
         <div className="text-faint">{h.v.deployed ? "serving now" : promoted(h.v) ? "was promoted" : "candidate · not promoted"}</div>
+        {!promoted(h.v) && h.v.promotion?.failed?.length > 0 && <div className="max-w-56 text-warning">Blocked by: {h.v.promotion.failed.join(", ")}</div>}
+        {promoted(h.v) && h.v.promotion?.trade_offs?.length > 0 && <div className="max-w-56 text-faint">Small trade-offs: {h.v.promotion.trade_offs.join(", ")}</div>}
       </div>}
       <div className="mt-1 flex flex-wrap items-center gap-4 text-[0.6875rem] text-faint">
         <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-accent" />promoted</span>
@@ -239,6 +245,8 @@ export function IntelligenceView({ embedded = false, focus = "all" }: { embedded
               <div className="mt-1 text-muted">{paramsLabel(selection.params, selection.params_verified)} · {when(selection.created_at)}
                 {selection.lineage_totals && ` · ${formatNumber(selection.lineage_totals.tokens)} recorded training tokens`}</div>
               <div className="mt-1 text-muted">{selection.benchmarks[shown] ? `${LABEL[shown] ?? shown}: ${pointValue(shown, selection.benchmarks[shown])}` : "This metric was not measured for this version."}</div>
+              {selection.promotion?.decision && <div className={cn("mt-1", promoted(selection) ? "text-success" : "text-warning")}>{selection.promotion.decision}</div>}
+              {(selection.promotion?.compare?.length ?? 0) > 0 && <SideBySide rows={selection.promotion.compare} />}
             </div>}
             <ol className="flex flex-col gap-2">
               {[...versions].reverse().map((v) => (

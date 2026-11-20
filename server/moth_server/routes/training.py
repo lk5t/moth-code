@@ -38,6 +38,11 @@ class LimitsIn(BaseModel):
     duty_cycle: float | None = Field(default=None, ge=0.1, le=1.0)
     max_hours_per_day: float | None = Field(default=None, ge=0.5, le=24)
     cpu_threads: int | None = Field(default=None, ge=1, le=256)  # CPU workers: threads used for training
+    # 2.3: train only between these local hours (e.g. 22 → 8 overnight); both None = any time
+    active_from: int | None = Field(default=None, ge=0, le=23)
+    active_until: int | None = Field(default=None, ge=0, le=24)
+    utc_offset_minutes: int | None = Field(default=None, ge=-14 * 60, le=14 * 60)
+    always: bool | None = None  # true clears the schedule
 
 
 class WorkerEnrollIn(BaseModel):
@@ -126,10 +131,16 @@ def windows_script(ctx: Ctx, release: dict, token: str) -> str:
     def q(v: str) -> str:
         return "'" + v.replace("'", "''") + "'"
     d = release["file"].removesuffix(".tar.gz")
-    return ("$ErrorActionPreference='Stop'; $d=Join-Path $env:TEMP ('moth-worker-'+[guid]::NewGuid()); "
+    # 2.3.1: run from Command Prompt opened inside PowerShell 7, Windows PowerShell inherits PowerShell 7's module
+    # path and cannot load its own cmdlets (Get-FileHash "is not recognized"): use the system module path, and
+    # hash with .NET directly
+    return ("$ErrorActionPreference='Stop'; $m=[Environment]::GetEnvironmentVariable('PSModulePath','Machine'); "
+            "if ($m) { $env:PSModulePath=$m }; $d=Join-Path $env:TEMP ('moth-worker-'+[guid]::NewGuid()); "
             "New-Item -ItemType Directory $d | Out-Null; Set-Location $d; "
             f"Invoke-WebRequest -UseBasicParsing {q(release['url'])} -OutFile {q(release['file'])}; "
-            f"if ((Get-FileHash {q(release['file'])} -Algorithm SHA256).Hash -ne {q(release['sha256'].upper())}) "
+            f"$h=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash("
+            f"[IO.File]::ReadAllBytes((Join-Path $d {q(release['file'])})))).Replace('-',''); "
+            f"if ($h -ne {q(release['sha256'].upper())}) "
             "{ throw 'The MOTH Worker download failed verification. Nothing was installed.' }; "
             f"tar -xzf {q(release['file'])}; "
             f"& (Join-Path $d {q(d + '/install.ps1')}) -Server {q(public_url(ctx))} -Token {q(token)}")
@@ -232,6 +243,9 @@ def set_limits(wid: int, body: LimitsIn, auth: Auth = Depends(current_auth), ctx
     if w["user_id"] != auth.uid:
         raise HTTPException(403, "Only the enrolled account may change device resource limits")
     limits = {**json.loads(w["limits"] or "{}"), **body.model_dump(exclude_none=True)}
+    if limits.pop("always", None):
+        for k in ("active_from", "active_until"):
+            limits.pop(k, None)
     with ctx.db.tx() as c:
         c.execute(workers.update().where(workers.c.id == wid).values(limits=json.dumps(limits)))
     return T.public_worker(ctx.db.one(select(workers).where(workers.c.id == wid)))

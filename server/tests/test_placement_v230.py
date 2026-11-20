@@ -76,3 +76,38 @@ def test_a_lapsed_job_is_held_for_the_computer_that_had_it(client, owner):
     spec = json.loads(row["spec"])
     assert row["status"] == "queued" and spec["returning_worker"] == 201
     assert spec["returning_until"] > time.time() + T.RECLAIM_SECONDS - 5
+
+
+def test_training_hours_including_overnight():
+    from moth_server.training import in_schedule
+
+    h = lambda hour: hour * 3600  # noqa: E731 — UTC midnight-based day
+    assert in_schedule({})
+    night = {"active_from": 22, "active_until": 8}
+    assert in_schedule(night, h(23)) and in_schedule(night, h(3)) and not in_schedule(night, h(12))
+    day = {"active_from": 9, "active_until": 17, "utc_offset_minutes": 60}  # UTC+1
+    assert in_schedule(day, h(8)) and not in_schedule(day, h(16))  # 09:00 and 17:00 local
+
+
+def test_week_summary_counts_this_users_computers(client, owner):
+    ctx = client.app.state.ctx
+    from moth_server.db import evolution_experiments as EX
+    t = time.time()
+    with ctx.db.tx() as c:
+        _worker(c, 201, 60)
+        for i, (st, secs) in enumerate([("completed", 3600.0), ("rejected", 1800.0)]):
+            c.execute(insert(EX).values(id=900 + i, cycle_id=1, status=st, config="{}", config_hash=f"h{i}", dataset_id=1,
+                                        base_version=1, base_sha256="x", worker_id=201, compute_seconds=secs,
+                                        created_at=t, updated_at=t, finished_at=t))
+    r = client.get("/v1/intelligence/summary", headers={"Authorization": f"Bearer {owner['token']}"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["experiments"] == {"completed": 1, "rejected": 1}
+    assert body["your_computers"] == {"count": 1, "jobs": 0, "hours": 1.5}
+    assert body["promoted"] == [] and body["examples"] is None
+
+
+def test_a_backup_is_requested_before_promotion(client, owner):
+    ctx = client.app.state.ctx
+    EN._backup_before_promotion(ctx, 7)
+    assert ctx.db.get_config("agent_control", {})["backup_requested_at"]

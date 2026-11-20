@@ -3,8 +3,9 @@
  * and a live activity feed. Everything shown is measured; nothing is decorative guesswork.
  */
 import { useEffect, useState } from "react";
-import { Brain, FolderGit2, FolderOpen, GitBranch, MessageSquare, Plus, Sparkles, Zap } from "lucide-react";
-import { useAccount } from "@/lib/account";
+import { Brain, CalendarDays, Cpu, FolderGit2, FolderOpen, GitBranch, MessageSquare, Plus, Sparkles, Zap } from "lucide-react";
+import { serverApi, useAccount } from "@/lib/account";
+import { get, put } from "@/lib/backend";
 import { useCloudProgress } from "@/lib/cloud-progress";
 import { useApp, appStore } from "@/lib/app-state";
 import { navigate } from "@/lib/navigation";
@@ -18,6 +19,7 @@ import { requestChat } from "@/components/SidebarCollections";
 import { pickProject, openProjectPath } from "@/features/workspace/project-actions";
 import { StageMeter } from "@/features/intelligence/live/Learning";
 import { CloneGitHub } from "./CloneGitHub";
+import { SideBySide } from "@/features/intelligence/SideBySide";
 
 type Any = Record<string, any>;
 
@@ -87,6 +89,8 @@ export function HomeView() {
         </button>
       </section>}
 
+      <WeekAndExamples />
+
       <div className="grid gap-4 lg:grid-cols-3">
         <section aria-label="Recent projects" className="rounded-xl border border-border bg-surface p-3">
           <h2 className="mb-2 flex items-center gap-1.5 text-xs font-medium"><FolderGit2 className="size-3.5 text-accent" /> Recent projects</h2>
@@ -110,6 +114,55 @@ export function HomeView() {
         </section>
       </div>
     </div>
+  </div>;
+}
+
+const fromCloud = (url: string) => serverApi<Any>(url);
+const short = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n);
+
+/** 2.3.1: this week in plain numbers, MOTH's own answers (before and after its last promotion) and one click
+ * to let this PC help train. */
+function WeekAndExamples() {
+  const server = useAccount((s) => s.serverUrl), token = useAccount((s) => s.token);
+  const { data: w } = useResource<Any>(token ? "/v1/intelligence/summary" : null, [], undefined, server + "\0" + token, fromCloud);
+  const { data: pc, reload: reloadPc } = useResource<Any>("/api/participant", [], undefined, "", get);
+  const [joined, setJoined] = useState<string | null>(null);
+  if (!w) return null;
+  const promoted: Any[] = w.promoted ?? [], ex: Any = w.experiments ?? {};
+  const tried = Object.values(ex).reduce((a: number, b) => a + (b as number), 0);
+  const grown = w.params_at_start && w.current?.params && w.current.params > w.params_at_start;
+  const mine = w.your_computers ?? {};
+  const join = async () => {
+    setJoined(null);
+    try { await put("/api/participant", { enabled: true }); setJoined("This PC now helps train MOTH between your own work."); void reloadPc(); }
+    catch (e) { setJoined((e as Error).message); }
+  };
+  return <div className="grid gap-4 lg:grid-cols-3">
+    <section aria-label="This week" className="rounded-xl border border-border bg-surface p-3 text-xs">
+      <h2 className="mb-2 flex items-center gap-1.5 font-medium"><CalendarDays className="size-3.5 text-accent" /> This week</h2>
+      <ul className="space-y-1 text-muted">
+        <li><span className="text-fg">{tried}</span> training runs finished, <span className="text-fg">{promoted.length}</span> made MOTH better and went live</li>
+        {grown && <li>Grew from <span className="text-fg">{short(w.params_at_start)}</span> to <span className="text-fg">{short(w.current.params)}</span> parameters</li>}
+        {w.current && <li>Now serving <span className="text-fg">MOTH {w.current.model_version ?? `v${w.current.version}`}</span></li>}
+        <li>{mine.count ? <>Your {mine.count === 1 ? "computer" : `${mine.count} computers`} trained for <span className="text-fg">{mine.hours} h</span> ({mine.jobs} jobs)</>
+          : "None of your computers trained this week."}</li>
+      </ul>
+    </section>
+    <section aria-label="MOTH's answers" className="rounded-xl border border-border bg-surface p-3 text-xs lg:col-span-2">
+      <h2 className="mb-1 flex items-center gap-1.5 font-medium"><Sparkles className="size-3.5 text-accent" /> How MOTH answers now</h2>
+      {w.examples?.length ? <><p className="text-faint">The same questions, before and after its last upgrade. MOTH is still young: expect rough answers.</p>
+        <SideBySide rows={w.examples.slice(0, 3)} /></>
+        : <Friendly text="Example answers appear here after MOTH's next upgrade." />}
+    </section>
+    {pc?.available && !pc?.enabled && <section aria-label="Train on this PC" className="flex flex-wrap items-center gap-3 rounded-xl border border-accent/40 bg-accent-soft p-3 text-xs lg:col-span-3">
+      <Cpu className="size-4 text-accent" />
+      <span className="min-w-0 flex-1"><span className="block text-fg">Help MOTH learn on this PC</span>
+        <span className="text-muted">{pc.nvidia_gpu && !pc.gpu_usable ? `Trains on the CPU between your own work. For your ${pc.nvidia_gpu}, install the MOTH Worker from Network (much faster).`
+          : "It trains between your own work and pauses when you need the computer. Stop at any time in Network."}</span>
+        {joined && <span className="mt-1 block text-fg">{joined}</span>}</span>
+      <Button size="sm" onClick={() => void join()}>Train on this PC</Button>
+      {pc.nvidia_gpu && !pc.gpu_usable && <Button size="sm" variant="secondary" onClick={() => navigate("network")}>Use my GPU</Button>}
+    </section>}
   </div>;
 }
 

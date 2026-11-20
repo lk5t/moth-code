@@ -561,6 +561,6 @@ def coherence_for(ctx: Ctx, base: dict) -> dict | None:
                "decoding_helps": d["decoding_helps"], "cause": d["cause"], "explanation": d["explanation"],
                "greedy_repetition": d["greedy"]["repetition"], "served_repetition": d["served"]["repetition"],
                "served_garbage": d["served"]["garbage"], "served_unended": d["served"]["unended"],
-               "samples": [{"prompt": x["prompt"], "reply": x["reply"]} for x in d["served"]["samples"][:3]]}
+               "samples": [{"prompt": x["prompt"], "reply": x["reply"]} for x in d["served"]["samples"][:5]]}
     ctx.db.set_config(key, summary)
     return summary

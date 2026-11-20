@@ -60,7 +60,7 @@ def test_install_command_pins_release_checksum(client, settings, tmp_path):
     assert f"echo '{sha}  moth-worker-0.2.0.tar.gz' | shasum -a 256 -c -" in e["command"]  # macOS
     assert e["token"] in e["command"] and "curl -fsSLO https://moth.test/downloads/worker/" in e["command"]
     assert sha.upper() in e["windows_script"] and e["token"] in e["windows_script"]  # Windows
-    assert "Get-FileHash" in e["windows_script"] and "install.ps1" in e["windows_script"]
+    assert "SHA256" in e["windows_script"] and "install.ps1" in e["windows_script"]
     # 2.3: the copied line works in Command Prompt and PowerShell alike and runs exactly windows_script
     import base64
     head, _, b64 = e["windows_command"].rpartition(" ")

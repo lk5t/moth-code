@@ -17,8 +17,9 @@ interface Worker {
   status: "online" | "offline" | "paused" | "revoked";
   paused: boolean;
   hardware: { gpus?: { name: string; memory_gb: number }[]; cuda?: string; os?: string; compute?: "cpu" | "gpu";
-    cpu_model?: string; cpu_count?: number; ram_gb?: number; benchmark?: { gflops?: number } | null };
-  limits: { gpu_memory_fraction?: number; duty_cycle?: number; cpu_threads?: number };
+    cpu_model?: string; cpu_count?: number; ram_gb?: number; benchmark?: { gflops?: number } | null;
+    utilization?: { cpu?: number | null; memory?: number | null; gpu?: number | null; gpu_memory?: number | null; gpu_temp_c?: number | null } | null };
+  limits: { gpu_memory_fraction?: number; duty_cycle?: number; cpu_threads?: number; active_from?: number; active_until?: number };
   trained_tokens?: number;
   reputation?: number;
   version: string | null;
@@ -192,6 +193,7 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
                       {w.hardware.benchmark?.gflops ? ` · ${Math.round(w.hardware.benchmark.gflops)} GFLOP/s` : ""}
                       {w.last_heartbeat_at && ` · seen ${timeAgo(w.last_heartbeat_at)}`}
                     </div>
+                    {w.status === "online" && <WorkerHealth w={w} />}
                     <div className="mt-0.5 text-[0.6875rem] text-faint">
                       {w.verified_jobs} verified jobs{w.failed_jobs ? ` · ${w.failed_jobs} failed` : ""}
                       {w.trained_tokens ? ` · ${(w.trained_tokens / 1e6).toFixed(w.trained_tokens < 1e7 ? 2 : 1)}M tokens trained` : ""}
@@ -213,7 +215,7 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
                 </div>
                 {w.status !== "revoked" && <WorkerActions id={w.id} />}
                 {w.status !== "revoked" && (
-                  <div className="mt-2 flex items-center gap-4 text-[0.6875rem] text-muted">
+                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[0.6875rem] text-muted">
                     {w.hardware.compute === "gpu" ? (
                       <label className="flex items-center gap-2">GPU memory
                         <input type="range" min={0.1} max={0.95} step={0.05} className="w-28 accent-[#C1121F]" defaultValue={w.limits.gpu_memory_fraction ?? 0.9}
@@ -233,6 +235,7 @@ export function NetworkView({ embedded = false }: { embedded?: boolean } = {}) {
                         onMouseUp={(e) => act(() => serverApi(`/v1/training/workers/${w.id}/limits`, { method: "PUT", json: { duty_cycle: Number((e.target as HTMLInputElement).value) } }))()} />
                       {Math.round((w.limits.duty_cycle ?? 1) * 100)}%
                     </label>
+                    <TrainingHours w={w} save={(json) => act(() => serverApi(`/v1/training/workers/${w.id}/limits`, { method: "PUT", json }))()} />
                   </div>
                 )}
               </div>
@@ -299,3 +302,45 @@ export function WorkerActions({ id }: { id: number }) {
     </div>}
   </div>;
 }
+
+const pct = (v?: number | null) => (typeof v === "number" ? `${Math.round(v * 100)}%` : null);
+
+/** 2.3: live health of an online worker (what its last heartbeat reported) with plain warnings. */
+export function WorkerHealth({ w }: { w: Worker }) {
+  const u = w.hardware.utilization ?? {};
+  const parts = [pct(u.cpu) && `CPU ${pct(u.cpu)}`, pct(u.memory) && `memory ${pct(u.memory)}`,
+    pct(u.gpu) && `GPU ${pct(u.gpu)}`, pct(u.gpu_memory) && `GPU memory ${pct(u.gpu_memory)}`,
+    typeof u.gpu_temp_c === "number" && `${Math.round(u.gpu_temp_c)} °C`].filter(Boolean);
+  const warn = [typeof u.gpu_temp_c === "number" && u.gpu_temp_c >= 85 && "the GPU is running hot; check its cooling",
+    typeof u.memory === "number" && u.memory >= 0.95 && "the computer is almost out of memory",
+    w.failed_jobs >= 3 && w.failed_jobs > w.verified_jobs && "most of its jobs failed; Actions… → Show recent logs says why",
+    w.hardware.compute === "cpu" && (w.hardware.gpus?.length ?? 0) > 0 && "it has a GPU but trains on the CPU (update the NVIDIA driver, then reinstall the worker)"].filter(Boolean);
+  if (!parts.length && !warn.length) return null;
+  return <div className="mt-0.5 text-[0.6875rem]">
+    {parts.length > 0 && <span className="text-muted">Now: {parts.join(" · ")}</span>}
+    {warn.map((m) => <span key={String(m)} className="block text-warning">⚠ {m}</span>)}
+  </div>;
+}
+
+const HOURS = Array.from({ length: 24 }, (_, h) => h);
+const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
+
+/** 2.3: "train only between …" in this computer's local time (e.g. overnight); "Any time" clears it. */
+function TrainingHours({ w, save }: { w: Worker; save: (json: Record<string, unknown>) => void }) {
+  const on = w.limits.active_from != null && w.limits.active_until != null;
+  const offset = -new Date().getTimezoneOffset();
+  const set = (from: number, until: number) => save({ active_from: from, active_until: until, utc_offset_minutes: offset });
+  return <label className="flex items-center gap-1.5">Hours
+    <select aria-label="Training hours" value={on ? "custom" : "any"} className="h-6 rounded border border-border bg-bg px-1"
+      onChange={(e) => e.target.value === "any" ? save({ always: true }) : set(22, 8)}>
+      <option value="any">Any time</option><option value="custom">Only between…</option></select>
+    {on && <>
+      <select aria-label="From" value={w.limits.active_from} className="h-6 rounded border border-border bg-bg px-1" onChange={(e) => set(Number(e.target.value), w.limits.active_until!)}>
+        {HOURS.map((h) => <option key={h} value={h}>{hh(h)}</option>)}</select>
+      and
+      <select aria-label="Until" value={w.limits.active_until} className="h-6 rounded border border-border bg-bg px-1" onChange={(e) => set(w.limits.active_from!, Number(e.target.value))}>
+        {HOURS.map((h) => <option key={h} value={h}>{hh(h)}</option>)}</select>
+    </>}
+  </label>;
+}
+

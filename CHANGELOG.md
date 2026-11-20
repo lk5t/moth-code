@@ -3,6 +3,29 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.3.1 — See what MOTH is doing, and why
+
+**Home (everyone)**
+- **This week:** training runs finished, how many made MOTH better and went live, growth in parameters, and how long your own computers trained.
+- **How MOTH answers now:** the same questions answered before and after its last upgrade.
+- **Train on this PC:** one click lets this computer help train MOTH between your own work. With an NVIDIA GPU, **Use my GPU** opens Network to install the MOTH Worker.
+
+**Promotions**
+- Each new version is now checked **side by side** with the current model on the same prompts, and the replies are stored.
+- The timeline shows **why a version was or was not promoted** ("Blocked by: …" or "Small trade-offs: …") and its side-by-side replies.
+- **A verified backup is requested before every promotion** (MOTH Cloud's agent runs it within minutes, while the staged rollout still serves the previous version).
+
+**Workers**
+- **Health in Network:** CPU, memory, GPU load, GPU memory and temperature for each computer, now also on Windows. Warnings for a hot GPU, full memory, mostly failed jobs, or a GPU that sits unused while it trains on the CPU.
+- **Training hours:** each computer can train any time or only between chosen hours (overnight windows work). Outside them it takes no new work.
+
+**Alerts**
+- A desktop alert when training stalls (no progress for an hour), alongside the existing promoted and worker-offline alerts.
+
+**Fixes (2.3.0 did not ship because of these)**
+- **Windows install from Command Prompt:** when Command Prompt was opened from PowerShell 7, the command stopped with "Get-FileHash is not recognized". It now uses the system module path and checks the download's SHA-256 with .NET directly.
+- **Shared rounds no longer stall on a lost shard:** only whole experiments wait 10 minutes for the computer that slept. A shard of a shared round goes straight to another computer.
+
 ## 2.3.0 — A new look, and MOTH learns everyday conversation
 
 **A cleaner, more compact app**

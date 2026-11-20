@@ -192,8 +192,9 @@ def requeue_expired(ctx: Ctx) -> int:
                                                        training_jobs.c.lease_expires_at < t)).mappings().all():
             final = j["attempts"] >= j["max_attempts"]
             spec = json.loads(j["spec"] or "{}")
-            if not final and j["kind"] in ("evolve_train", "dist_shard") and j["worker_id"]:
-                # 2.3: a computer that slept or restarted gets its job back first when it returns soon
+            if not final and j["kind"] == "evolve_train" and j["worker_id"]:
+                # 2.3: a computer that slept or restarted gets its experiment back first when it returns soon
+                # (not distributed shards: they are short and a whole round waits for them)
                 spec.update(returning_worker=j["worker_id"], returning_until=t + RECLAIM_SECONDS)
             c.execute(training_jobs.update().where(training_jobs.c.id == j["id"]).values(
                 status="failed" if final else "queued", worker_id=None if not final else j["worker_id"],
@@ -256,6 +257,19 @@ def job_shareable(ctx: Ctx, job: dict) -> bool:
     return True
 
 
+def in_schedule(limits: dict, at: float | None = None) -> bool:
+    """2.3: is ``at`` (now) inside the worker's training hours, in the owner's local time? No hours = always."""
+    a, b = limits.get("active_from"), limits.get("active_until")
+    if a is None or b is None:
+        return True
+    import time as _t
+
+    local = (at if at is not None else _t.time()) + int(limits.get("utc_offset_minutes") or 0) * 60
+    hour = int(local // 3600) % 24
+    a, b = int(a), int(b) % 24
+    return a <= hour < b if a < b else (hour >= a or hour < b) if a != b else True
+
+
 def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
     """Give the worker a job its hardware can run. CPU and GPU workers are both production workers:
     a job is offered only if its memory requirement fits the worker (GPU memory, else RAM); jobs that
@@ -267,6 +281,8 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
     if not worker_allowed(ctx, worker) or worker["paused"] or (ctx.db.get_config('genesis_state', {}) or {}).get('status') in ('preparing', 'prepared'):
         return None
     hw = json.loads(worker["hardware"] or "{}")
+    if not in_schedule(json.loads(worker.get("limits") or "{}")):
+        return None  # 2.3: outside the owner's training hours for this computer
     requeue_expired(ctx)
     ensure_jobs(ctx)
     coord = coordinator(ctx)

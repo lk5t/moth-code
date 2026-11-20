@@ -192,6 +192,29 @@ def _check_cycle(ctx: Ctx) -> dict | None:
                    "woke the Evolution engine", True)
 
 
+STALL_SECONDS = 3600  # 2.3: no training news for an hour while Evolution runs → tell the Owner
+
+
+def _check_stall(ctx: Ctx) -> dict | None:
+    """2.3: an alert (desktop notification) when Evolution is on but nothing happened for an hour."""
+    from moth_server.evolution import memory as MEM, settings as S
+
+    st = S.get(ctx)
+    if not st.get("enabled") or st.get("paused"):
+        return None
+    latest = (MEM.events(ctx, 1) or [None])[0]
+    quiet = time.time() - float((latest or {}).get("ts") or time.time())
+    if quiet < STALL_SECONDS:
+        return None
+    if time.time() - float(ctx.db.get_config("stall_alert_at", 0) or 0) < STALL_SECONDS:
+        return None
+    ctx.db.set_config("stall_alert_at", time.time())
+    MEM.event(ctx, "training.stalled", f"MOTH's training has been quiet for {quiet / 3600:.0f} hour(s): no experiment "
+              "made progress. Self-repair is checking it; Settings → Advanced → Diagnostics has the details.",
+              level="warning")
+    return None
+
+
 def _check_build(ctx: Ctx) -> dict | None:
     from sqlalchemy import select
 
@@ -227,7 +250,7 @@ def _check_node(ctx: Ctx) -> dict | None:
 CHECKS: list[tuple[str, Callable[[Ctx], dict | None]]] = [
     ("evolution", _check_evolution), ("pipeline", _check_pipeline), ("serving", _check_serving),
     ("cloud_worker", _check_cloud_worker), ("disk", _check_disk), ("cycle", _check_cycle), ("build", _check_build),
-    ("node", _check_node)]
+    ("node", _check_node), ("stall", _check_stall)]
 
 
 def run_checks(ctx: Ctx) -> list[dict]:

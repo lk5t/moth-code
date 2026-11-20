@@ -749,7 +749,8 @@ def morning_report(since: float | None = None, auth: Auth = Depends(require_owne
 ALERT_KINDS = {"deploy.done": "promoted", "deploy.rollback": "problem", "deploy.failed": "problem",
                "supervisor.attention": "problem", "engine.error": "problem", "cycle.completed": "info",
                "experiment.passed": "success", "data.prepared": "info", "data.successor_tokenizer": "info",
-               "worker.disconnected": "problem", "worker.connected": "info"}
+               "worker.disconnected": "problem", "worker.connected": "info",
+               "training.stalled": "problem"}  # 2.3
 
 
 @router.get("/alerts")

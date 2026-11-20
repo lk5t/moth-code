@@ -1039,6 +1039,22 @@ def _pause_running(ctx: Ctx, cyc: dict, reason: str) -> None:
                       cycle_id=cyc["id"], experiment_id=e["id"])
 
 
+def _side_by_side(ctx: Ctx, base: dict, cand: dict) -> list[dict] | None:
+    """2.3: the same prompts answered by the serving model and by the candidate, so the Owner sees whether it
+    actually writes better, not only that its scores moved. Measured once per weights file (cached)."""
+    from moth_server.evolution.capacity import coherence_for
+
+    try:
+        before, after = coherence_for(ctx, base), coherence_for(ctx, cand)
+    except Exception:  # noqa: BLE001 — the comparison is information, never a gate
+        return None
+    if not before or not after:
+        return None
+    old = {x["prompt"]: x["reply"] for x in before.get("samples") or []}
+    return [{"prompt": x["prompt"], "before": old.get(x["prompt"], ""), "after": x["reply"]}
+            for x in after.get("samples") or []]
+
+
 def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
     from moth_server import models as M
 
@@ -1065,8 +1081,8 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
                       cycle_id=cyc["id"], experiment_id=e["id"])
             continue
         metrics = {**(e["metrics"] or {}), "gates": verdict["gates"], "primary_improvement": verdict["primary_improvement"],
-                   "trade_offs": verdict.get("trade_offs") or [],
-                   "performance": verdict["performance"]}
+                   "trade_offs": verdict.get("trade_offs") or [], "decision": verdict.get("decision"),
+                   "performance": verdict["performance"], "compare": _side_by_side(ctx, base, cand)}
         failed = [g["gate"] for g in verdict["gates"] if not g["passed"]]
         MEM.update_experiment(ctx, e["id"], status="passed" if verdict["passed"] else "rejected", metrics=metrics,
                               finished_at=now(), error=None if verdict["passed"] else "failed: " + ", ".join(failed))
@@ -1118,6 +1134,19 @@ def _evaluating(ctx: Ctx, cyc: dict, settings: dict) -> None:
         _schedule_next(ctx, failed=False)
         return
     MEM.update_cycle(ctx, cyc["id"], status="deploying", candidate_version=best["candidate_version"])
+    _backup_before_promotion(ctx, best["candidate_version"])
+
+
+def _backup_before_promotion(ctx: Ctx, version: int) -> None:
+    """2.3.1: ask the MOTH Cloud agent for a verified backup before a new version goes live (it runs on the
+    agent's next check, within minutes, while the staged rollout still serves the previous version too)."""
+    try:
+        c = ctx.db.get_config("agent_control", {}) or {}
+        c["backup_requested_at"] = c["check_now_at"] = now()
+        ctx.db.set_config("agent_control", c)
+        MEM.event(ctx, "backup.requested", f"Backup requested before v{version} goes live")
+    except Exception:  # a backup request must never stop a promotion
+        pass
 
 
 SOUP_MAX = 3
