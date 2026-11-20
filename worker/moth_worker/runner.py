@@ -30,17 +30,40 @@ class Stop(Exception):
 
 def fullscreen_app_running() -> bool:
     """2.4: is a full-screen game, video or presentation in front (Windows)? Training pauses so it never makes a
-    game stutter, and continues when it closes. Uses Windows' own notification state (no screen reading)."""
+    game stutter, and continues when it closes.
+
+    2.4.1: it looks at the window actually in front — visible, covering its whole monitor, and not the desktop or
+    the taskbar. Windows' "busy" notification state alone also reads busy for a worker running as a background task
+    with no screen, which paused such workers for good. With no foreground window (a background task, a locked
+    screen) nothing is full screen, so training continues. Nothing on screen is read or captured."""
     if os.name != "nt":
         return False
     try:
         import ctypes
+        from ctypes import wintypes
 
-        state = ctypes.c_int(0)
-        if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) != 0:  # type: ignore[attr-defined]
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd or not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
             return False
-        # 2 busy (full-screen app), 3 Direct3D full-screen game, 4 presentation mode
-        return state.value in (2, 3, 4)
+        cls = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(hwnd, cls, 64)
+        if cls.value in ("Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Windows.UI.Core.CoreWindow"):
+            return False  # the desktop, the taskbar, the Start menu
+        rect = wintypes.RECT()
+        if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            return False
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+        mon = user32.MonitorFromWindow(hwnd, 2)  # MONITOR_DEFAULTTONEAREST
+        info = MONITORINFO()
+        info.cbSize = ctypes.sizeof(MONITORINFO)
+        if not mon or not user32.GetMonitorInfoW(mon, ctypes.byref(info)):
+            return False
+        m = info.rcMonitor
+        return rect.left <= m.left and rect.top <= m.top and rect.right >= m.right and rect.bottom >= m.bottom
     except Exception:  # noqa: BLE001 — never stop training because the check failed
         return False
 

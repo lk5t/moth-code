@@ -16,7 +16,7 @@ current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOL
 - **Test scores across versions:** a small line per skill (coding, maths, conversation…) showing how it changed from version to version.
 
 **Network and workers**
-- **Pause while gaming:** on Windows, a worker pauses while a game, video or presentation is full screen, and carries on when it closes. It's on by default and can be switched off per computer in Network. Network shows when it's paused for this.
+- **Pause while gaming:** on Windows, a worker pauses while a game, video or presentation is full screen, and carries on when it closes. It's on by default and can be switched off per computer in Network. Network shows when it's paused for this. It checks whether the window in front covers the whole screen; a worker running in the background with no screen never pauses.
 - **Fixed:** GPU load, GPU memory and temperature from workers now reach Network. MOTH Cloud was keeping only CPU and memory, so the 2.3.1 health line never showed the GPU.
 
 **Phone status page**
