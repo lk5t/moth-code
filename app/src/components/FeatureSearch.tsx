@@ -1,7 +1,7 @@
 /** 2.0 command bar (Ctrl/⌘ K): actions, chats (titles and message text), projects, sections and settings. */
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Command, FolderGit2, MessageSquare, Search, Settings, Sparkles, Zap } from "lucide-react";
+import { Command, FileCode2, FolderGit2, MessageSquare, Search, Settings, Sparkles, Zap } from "lucide-react";
 import { WORKSPACES, navigate } from "@/lib/navigation";
 import { useAccount } from "@/lib/account";
 import { appStore, openIntelligence, useApp } from "@/lib/app-state";
@@ -13,11 +13,11 @@ import { requestChat } from "./SidebarCollections";
 import { stopAllScans } from "@/lib/scans";
 import { openProjectPath, pickProject } from "@/features/workspace/project-actions";
 
-export type CommandGroup = "Actions" | "Chats" | "Projects" | "Go to" | "Settings";
+export type CommandGroup = "Actions" | "Chats" | "Files" | "Projects" | "Go to" | "Settings";
 export interface CommandItem { id: string; group: CommandGroup; label: string; description?: string; keys?: string; run: () => void }
 interface MessageHit { conversation_id: number; title: string; snippet: string; project_id: number | null }
 
-const ICON = { Actions: Zap, Chats: MessageSquare, Projects: FolderGit2, "Go to": Sparkles, Settings } as const;
+const ICON = { Actions: Zap, Chats: MessageSquare, Files: FileCode2, Projects: FolderGit2, "Go to": Sparkles, Settings } as const;
 export const SETTINGS_TABS = ["Account", "Appearance", "Privacy & AI", "Plan & referrals", "Code agent", "Updates & about", "Advanced"];
 
 /** Open a Settings tab, also when Settings is already showing. */
@@ -44,6 +44,12 @@ export function score(item: Pick<CommandItem, "label" | "description" | "group">
 export function FeatureSearch({ compact = false }: { compact?: boolean } = {}) {
   const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [active, setActive] = useState(0);
   const [hits, setHits] = useState<MessageHit[]>([]);
+  const project = useApp((s) => s.project);
+  const [files, setFiles] = useState<string[]>([]);  // 2.4: files of the open project
+  useEffect(() => {
+    if (!open || !project) { setFiles([]); return; }
+    get<{ path: string; dir: boolean }[]>(`/api/projects/${project.id}/tree`).then((t) => setFiles(t.filter((e) => !e.dir).map((e) => e.path))).catch(() => setFiles([]));
+  }, [open, project?.id]);
   const owner = useAccount((s) => s.user?.role === "owner");
   const projects = useApp((s) => s.projects);
   const input = useRef<HTMLInputElement>(null);
@@ -85,9 +91,16 @@ export function FeatureSearch({ compact = false }: { compact?: boolean } = {}) {
     const ranked = items.map((it) => ({ it, s: score(it, query) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).map((x) => x.it);
     const chats: CommandItem[] = hits.map((h) => ({ id: `chat-${h.conversation_id}`, group: "Chats", label: h.title, description: h.snippet || undefined,
       run: () => requestChat(h.conversation_id, h.title) }));
-    const all = query.trim() ? [...ranked.slice(0, 3), ...chats, ...ranked.slice(3)] : ranked;
+    const q = query.trim().toLowerCase();
+    const fileHits: CommandItem[] = q.length < 2 ? [] : files
+      .map((f) => ({ f, name: f.split("/").pop()!.toLowerCase() }))
+      .filter(({ f, name }) => name.includes(q) || f.toLowerCase().includes(q))
+      .sort((a, b) => Number(b.name.startsWith(q)) - Number(a.name.startsWith(q)) || a.f.length - b.f.length).slice(0, 8)
+      .map(({ f }) => ({ id: `file-${f}`, group: "Files" as const, label: f.split("/").pop()!, description: f,
+        run: () => { appStore.setState({ view: "workspace" }); void import("@/features/workspace/workspace-actions").then((m) => m.openFile(f)); } }));
+    const all = query.trim() ? [...ranked.slice(0, 3), ...fileHits, ...chats, ...ranked.slice(3)] : ranked;
     return all.slice(0, 40);
-  }, [items, hits, query]);
+  }, [items, hits, query, files]);
 
   useEffect(() => {
     const shortcut = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setQuery(""); setActive(0); setOpen((v) => !v); } };
@@ -112,7 +125,7 @@ export function FeatureSearch({ compact = false }: { compact?: boolean } = {}) {
       <div className="flex items-center gap-2 border-b border-border px-3">
         <Command className="size-4 text-accent" />
         <input ref={input} aria-label="Search commands" role="combobox" aria-expanded="true" aria-controls="cmd-results" aria-activedescendant={results.length ? `cmd-${active}` : undefined}
-          placeholder="Search chats, projects, actions, settings…" value={query} className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-faint"
+          placeholder="Search chats, files, projects, actions, settings…" value={query} className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-faint"
           onChange={(e) => { setQuery(e.target.value); setActive(0); }}
           onKeyDown={(e) => {
             if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + results.length) % Math.max(1, results.length)); }

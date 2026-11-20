@@ -4,6 +4,7 @@ import type { MothEvent } from "@/lib/events";
 import { ArrowUp, Bug, Code2, HelpCircle, Radar, ShieldCheck, Cloud, Copy, FileText, GitBranch, Pencil, LogIn, MessageSquarePlus, RefreshCw, Square, Upload, X } from "lucide-react";
 import { formatAttachments, formatBytes, imageUrl, onDesktopDrop, splitAttachments, type Attachment } from "@/lib/attachments";
 import { AttachMenu, ingestFiles, ingestPaths } from "./AttachMenu";
+import { SavedPrompts } from "./SavedPrompts";
 import { useCloudStatus } from "@/lib/cloud";
 import { openAccountDialog } from "@/features/account/AccountDialog";
 import { get, post } from "@/lib/backend";
@@ -556,6 +557,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
               />
               <div className="flex items-center gap-1 px-2 pb-2">
                 <AttachMenu disabled={!!noModel} onAdd={addAttachments} onError={setDropNote} />
+                <SavedPrompts current={input} disabled={!!noModel} onPick={(t) => { setInput(t); setTimeout(() => composer.current?.focus(), 0); }} />
                 <span className="mx-1 h-4 w-px bg-border" aria-hidden />
                 <span className="truncate rounded px-1.5 py-0.5 text-[0.6875rem] text-muted" title="The model answering">{currentLabel}</span>
                 <div className="flex-1" />

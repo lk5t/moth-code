@@ -8,6 +8,7 @@ import { get, put } from "@/lib/backend";
 import { openIntelligence, useApp } from "@/lib/app-state";
 import { Switch } from "@/components/ui/switch";
 import { ChatPanel } from "./ChatPanel";
+import { ChatTabs } from "./ChatTabs";
 import { modelLabel } from "@/lib/model-label";
 
 type Any = Record<string, any>;
@@ -52,6 +53,7 @@ export function ChatView() {
   };
   return (
     <div className="flex h-full flex-col">
+      <ChatTabs />
       {project && <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1 text-xs text-muted">
         <FolderOpen className="size-3.5" /><span className="min-w-0 truncate">Context from {project.name}</span>
         <Switch aria-label="Attach approved project context" checked={share} onCheckedChange={attach} />

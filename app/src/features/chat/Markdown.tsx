@@ -1,6 +1,7 @@
 import { createContext, Fragment, memo, useContext, useState, type ReactNode } from "react";
 import { serverApi } from "@/lib/account";
-import { Check, Copy, FileDiff } from "lucide-react";
+import { Check, Copy, FileDiff, Loader2, Play } from "lucide-react";
+import { post } from "@/lib/backend";
 import { TOKEN_CLASS, codeTarget, highlight } from "@/lib/highlight";
 import { useApp } from "@/lib/app-state";
 import { proposeChange } from "@/features/workspace/ChangeReview";
@@ -24,8 +25,34 @@ function learnFrom(answer: { prompt?: string; answer?: string; model?: string; v
     comment: applied ? "applied the code to the project" : "rejected the code change", prompt: answer.prompt, response: answer.answer, model: answer.model } }).catch(() => {});
 }
 
+const RUNNABLE = /^(python3?|py|javascript|js|node|typescript|ts|bash|sh|shell|zsh|powershell|ps1|pwsh|ruby|rb|php|lua|perl)$/i;
+type RunResult = { ok: boolean; error?: string; needs_confirmation?: string; stdout?: string; stderr?: string; exit_code?: number | null; timed_out?: boolean; seconds?: number };
+
+/** 2.4: run a code block on this computer (a temporary folder, 15-second limit) and show its output. */
+function RunOutput({ r }: { r: RunResult }) {
+  if (r.error) return <div role="alert" className="border-t border-border px-2.5 py-1.5 text-[0.6875rem] text-danger">{r.error}</div>;
+  return <div className="border-t border-border bg-bg/60 px-2.5 py-1.5 font-mono text-[0.6875rem]">
+    <div className={cn("mb-1 font-sans", r.ok ? "text-success" : "text-warning")}>{r.timed_out ? "Stopped after 15 seconds" : r.ok ? `Ran in ${r.seconds}s` : `Exited with code ${r.exit_code}`}</div>
+    {r.stdout && <pre className="selectable !m-0 max-h-60 overflow-auto whitespace-pre-wrap !border-0 !bg-transparent !p-0 text-fg">{r.stdout}</pre>}
+    {r.stderr && <pre className="selectable !m-0 max-h-40 overflow-auto whitespace-pre-wrap !border-0 !bg-transparent !p-0 text-[#ff8a92]">{r.stderr}</pre>}
+    {!r.stdout && !r.stderr && <span className="font-sans text-faint">No output.</span>}
+  </div>;
+}
+
 function CodeBlock({ label, code, streaming }: { label: string; code: string; streaming?: boolean }) {
   const project = useApp((s) => s.project);
+  const [run, setRun] = useState<RunResult | null>(null), [running, setRunning] = useState(false);
+  const runIt = async (confirmed = false) => {
+    if (!confirmed && !confirm("Run this code on this computer? It runs in an empty temporary folder for up to 15 seconds.")) return;
+    setRunning(true);
+    try {
+      const r = await post<RunResult>("/api/run-code", { language: label.trim().split(/\s+/)[0], code, confirmed });
+      if (r.needs_confirmation && !confirmed) {
+        if (confirm(`This looks risky: ${r.needs_confirmation}\n\nRun it anyway?`)) { setRunning(false); return runIt(true); }
+        setRun({ ok: false, error: "Not run." });
+      } else setRun(r);
+    } catch (e) { setRun({ ok: false, error: (e as Error).message }); } finally { setRunning(false); }
+  };
   const answer = useContext(AnswerContext);
   const [error, setError] = useState<string | null>(null);
   const lang = label.trim().split(/\s+/)[0];
@@ -38,11 +65,15 @@ function CodeBlock({ label, code, streaming }: { label: string; code: string; st
       <span className="ml-auto flex items-center gap-1.5">
         {target && project && !streaming && <button type="button" className="inline-flex items-center gap-1 rounded border border-accent/40 px-1.5 py-0.5 text-[0.6875rem] text-fg transition-colors hover:bg-accent-soft"
           title={`See the change to ${target}, then apply or reject it`} onClick={() => { setError(null); proposeChange(target, code, (applied) => learnFrom(answer, applied)).catch((e) => setError((e as Error).message)); }}><FileDiff className="size-3 text-accent" />Apply</button>}
+        {RUNNABLE.test(lang) && !streaming && <button type="button" disabled={running} title="Run this code on this computer"
+          className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[0.6875rem] text-muted hover:border-border-strong hover:text-fg disabled:opacity-60"
+          onClick={() => void runIt()}>{running ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3 text-accent" />}Run</button>}
         <CopyText text={code} />
       </span>
     </div>
     {error && <div role="alert" className="border-b border-border px-2.5 py-1 text-[0.6875rem] text-danger">{error}</div>}
     <pre className="!m-0 !rounded-none !border-0"><code>{tokens.map((t, i) => t.k === "plain" ? <Fragment key={i}>{t.v}</Fragment> : <span key={i} className={TOKEN_CLASS[t.k]}>{t.v}</span>)}</code></pre>
+    {run && <RunOutput r={run} />}
   </div>;
 }
 

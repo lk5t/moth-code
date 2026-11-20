@@ -45,6 +45,12 @@ class MessageRefIn(BaseModel):  # 2.4
     message_id: int
 
 
+class RunCodeIn(BaseModel):  # 2.4
+    language: str = Field(max_length=40)
+    code: str = Field(max_length=100_000)
+    confirmed: bool = False
+
+
 class RenameIn(BaseModel):
     title: str = Field(max_length=200)
 
@@ -156,6 +162,17 @@ def register(app: FastAPI, svc: Services, deps) -> None:
             return fetch_github(body.url, x_github_token)
         except AttachError as e:
             raise HTTPException(422, str(e)) from None
+
+    # ---- 2.4: run a code block from chat (the user's click, on their computer, in a temporary folder) ----
+    @app.get("/api/run-code/languages", dependencies=deps)
+    def run_languages():
+        from moth.agent.run_snippet import available
+        return available()
+
+    @app.post("/api/run-code", dependencies=deps)
+    def run_code(body: RunCodeIn):
+        from moth.agent.run_snippet import run
+        return run(body.language, body.code, body.confirmed)
 
     # ---- 2.4: edit a message, branch a chat --------------------------------------------------------------
     @app.post("/api/conversations/{cid}/truncate", dependencies=deps)

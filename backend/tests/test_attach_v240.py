@@ -121,3 +121,33 @@ def test_dropped_image_paths(paths, tmp_path, monkeypatch):
         r = c.post("/api/attachments/image-path", headers=H(), json={"paths": [str(tmp_path / "s.png"), str(tmp_path / "gone.png")]}).json()
     assert [i["name"] for i in r["images"]] == ["s.png"] and r["images"][0]["note"] == "no engine"
     assert r["skipped"][0]["reason"] == "not found"
+
+
+def test_run_code_from_chat(paths):
+    from moth.agent import run_snippet as R
+    with client(paths) as c:
+        r = c.post("/api/run-code", headers=H(), json={"language": "python", "code": "import os\nprint(sum(range(5)), os.getcwd() != '')"}).json()
+        assert r["ok"] and r["stdout"].strip() == "10 True" and r["exit_code"] == 0
+        bad = c.post("/api/run-code", headers=H(), json={"language": "python", "code": "raise SystemExit('boom')"}).json()
+        assert not bad["ok"] and "boom" in bad["stderr"]
+        assert "not supported" in c.post("/api/run-code", headers=H(), json={"language": "cobol", "code": "x"}).json()["error"]
+        assert c.get("/api/run-code/languages", headers=H()).json()["python"] is True
+    assert R.risk("bash", "ls\nrm -rf /tmp/x") and R.risk("bash", "echo hi") is None and R.risk("python", "import shutil") is None
+
+
+def test_run_code_has_a_time_limit(monkeypatch):
+    from moth.agent import run_snippet as R
+    monkeypatch.setattr(R, "TIMEOUT_S", 1)
+    r = R.run("python", "import time\nprint('start', flush=True)\ntime.sleep(5)")
+    assert r["timed_out"] and not r["ok"]
+
+
+def test_destructive_shell_code_needs_a_confirmation():
+    import shutil
+
+    from moth.agent import run_snippet as R
+    if not shutil.which("bash"):
+        return
+    r = R.run("bash", "rm -rf ./nothing-here")
+    assert r["needs_confirmation"] and "destructive" in r["needs_confirmation"]
+    assert R.run("bash", "rm -rf ./nothing-here", confirmed=True)["ok"]
