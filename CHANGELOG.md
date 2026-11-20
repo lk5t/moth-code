@@ -3,6 +3,23 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.3.2 — Training no longer gets stuck waiting for a computer
+
+**Fixed: shared training could stop for good**
+- When several computers train MOTH together, each round waits for every computer's part. If a computer took its part and then went to sleep, was paused or got busy (while still checking in), or if nobody picked a part up again after its computer left, the round waited forever. Experiment #65 sat at round 1 with one part done and the other queued at 90%.
+- A part with no progress for 20 minutes is now taken back and given to the next free computer (MOTH Cloud included).
+- If nobody takes a part for 20 minutes while the round's other parts are done, the round continues with the finished parts. They are combined and checked as usual.
+- A part handed to a different computer is resized for it. A GPU's large share handed to MOTH Cloud's CPU used to take that CPU many hours.
+
+**New: AI → Shared training**
+- A new tab that shows a shared run as a picture: MOTH in the middle and each computer's part around it, animated while it trains.
+- Each part is described in plain words ("done", "training · 40%", "waiting for a computer"), along with whether the last round made MOTH better and who has helped. Network links to it.
+
+**Also in this version (from the 2.4 work)**
+- **Attach a folder, a screenshot or photo, or a GitHub link** from the paperclip, or paste a screenshot straight into the message box. MOTH reads text, not pictures: the text in an image is read on your computer (Windows' built-in text recognition) and sent with your message, and the image shows in the chat.
+- **Edit** your message (it and the replies after it are replaced), **Branch** a chat from any message, and rate any answer with 👍/👎, including answers from this computer.
+- **Themes:** Dark, Midnight, Graphite and Light, plus six accent colours (Settings → Appearance). They follow your account to your other computers.
+
 ## 2.3.1 — See what MOTH is doing, and why
 
 **Home (everyone)**

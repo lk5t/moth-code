@@ -4,9 +4,11 @@ import App from "./App";
 import "./index.css";
 import { startUiSizeShortcuts } from "./lib/ui-size";
 import { applyMotion } from "./lib/motion";
+import { applyTheme } from "./lib/theme";
 
 startUiSizeShortcuts();
 applyMotion();
+applyTheme();
 
 window.addEventListener("contextmenu", (e) => {
   // Keep the native context menu only where it is useful (text inputs, editor).

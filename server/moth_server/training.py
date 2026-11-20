@@ -362,12 +362,17 @@ def claim_job(ctx: Ctx, worker: dict, allow_cpu: bool) -> dict | None:
             if not job:
                 return None
             spec = json.loads(job["spec"])
-            if job["kind"] == "dist_shard" and job["attempts"] == 0:
+            if job["kind"] == "dist_shard" and (job["attempts"] == 0 or spec["train"].get("base_steps")):
                 # workload follows hardware: faster participants train more steps of their shard, so a round's
-                # participants finish at about the same time (the averaging is weighted by tokens trained)
+                # participants finish at about the same time (the averaging is weighted by tokens trained).
+                # 2.3.2: sized again for whoever takes it — a GPU's 25× share given to MOTH Cloud's CPU after the
+                # GPU left took that CPU many hours and held the whole round
                 from moth_server.evolution.distributed import steps_for
 
-                spec["train"] = {**spec["train"], "steps": steps_for(c, spec, hw, ctx.db.get_config("compute_throughput", {}) or {}, worker["id"])}
+                base_steps = int(spec["train"].get("base_steps") or spec["train"]["steps"])
+                sized = steps_for(c, {**spec, "train": {**spec["train"], "steps": base_steps}}, hw,
+                                  ctx.db.get_config("compute_throughput", {}) or {}, worker["id"])
+                spec["train"] = {**spec["train"], "steps": sized, "base_steps": base_steps}
             if job["kind"] == "train_round" and ("job_id" not in spec or spec.get("round") != coord.config["round"]):
                 spec = {**coord.next_job(f"worker-{worker['id']}").to_dict(), "round": coord.config["round"]}
             res = c.execute(training_jobs.update().where(training_jobs.c.id == job["id"],

@@ -16,10 +16,10 @@ export interface OpenFile {
 
 export type View = "home" | "overview" | "data" | "activity" | "chat" | "workspace" | "intelligence" | "evolution" | "network" | "owner" | "training" | "models" | "settings";
 /** AI workspace sections. Older names (overview, training, improvements, advanced) remain accepted and map onto them. */
-export type AiTab = "evolution" | "model" | "data" | "history" | "settings";
+export type AiTab = "evolution" | "shared" | "model" | "data" | "history" | "settings";
 export type IntelligenceTab = AiTab | "overview" | "training" | "improvements" | "advanced" | "network";
 export function aiTab(tab: IntelligenceTab | string | undefined): AiTab {
-  if (tab === "model" || tab === "data" || tab === "history" || tab === "settings") return tab;
+  if (tab === "model" || tab === "data" || tab === "history" || tab === "settings" || tab === "shared") return tab;
   if (tab === "improvements") return "history";
   if (tab === "advanced") return "settings";
   return "evolution";

@@ -8,7 +8,7 @@ import { GenesisSetup } from "./GenesisSetup";
 import { modelLabel } from "@/lib/model-label";
 import { useSavedSection } from "@/lib/use-saved-section";
 import { useEffect, useState } from "react";
-import { Brain, Database, History, SlidersHorizontal, ChevronDown, Orbit, LogIn } from "lucide-react";
+import { Brain, Database, History, SlidersHorizontal, ChevronDown, Orbit, LogIn, Share2 } from "lucide-react";
 import { openAccountDialog } from "@/features/account/AccountDialog";
 import { serverApi, useAccount } from "@/lib/account";
 import { useApp, appStore, aiTab, type AiTab } from "@/lib/app-state";
@@ -32,10 +32,11 @@ import { ModelOverview } from "@/features/owner/ModelOverview";
 import { TrainingProgress } from "./TrainingProgress";
 import { MorningReport } from "./MorningReport";
 import { ModelTab } from "./ModelTab";
+import { SharedTraining } from "./SharedTraining";
 
 type Any = Record<string, any>;
 const TABS: [AiTab, string, React.ReactNode][] = [
-  ["evolution", "Evolution", <Brain />], ["model", "Model", <Orbit />], ["data", "Data", <Database />],
+  ["evolution", "Evolution", <Brain />], ["shared", "Shared training", <Share2 />], ["model", "Model", <Orbit />], ["data", "Data", <Database />],
   ["history", "History", <History />], ["settings", "AI Settings", <SlidersHorizontal />],
 ];
 /** Older views (Overview, Data, Activity, Training, Models) open the matching AI section. */
@@ -95,6 +96,7 @@ export function IntelligenceHub() {
           {p && <EvolutionActivity />}
           {p?.current ? <OverviewSummary progress={p} updatedAt={updatedAt} /> : owner && p && <Advanced title="Choose the model size and tokenizer yourself"><GenesisSetup /></Advanced>}
         </TabsContent>}
+        {tab === "shared" && <TabsContent value="shared">{owner ? <SharedTraining /> : <p className="text-xs text-muted">Only the Owner can see shared training.</p>}</TabsContent>}
         {tab === "model" && <TabsContent value="model"><ModelTab progress={p} /></TabsContent>}
         {tab === "data" && <TabsContent value="data" className="flex flex-col gap-4">
           <Tabs value={dataSection} onValueChange={(value) => setDataSection(value as "local" | "cloud")}>

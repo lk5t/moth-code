@@ -9,7 +9,7 @@
   --color-border-strong: #333333;
   --color-accent: #c1121f;
   --color-accent-hover: #d81e2c;
-  --color-accent-soft: rgb(193 18 31 / 0.14);
+  --color-accent-soft: rgb(var(--accent-rgb, 193 18 31) / 0.14);
   --color-fg: #f5f5f5;
   --color-muted: #9a9a9a;
   --color-faint: #5f5f5f;
@@ -20,8 +20,8 @@
   --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, "JetBrains Mono", ui-monospace, monospace;
 
-  --shadow-glow: 0 0 0 1px rgb(193 18 31 / 0.35), 0 0 18px rgb(193 18 31 / 0.18);
-  --shadow-glow-strong: 0 0 0 1px rgb(193 18 31 / 0.6), 0 0 28px rgb(193 18 31 / 0.3);
+  --shadow-glow: 0 0 0 1px rgb(var(--accent-rgb, 193 18 31) / 0.35), 0 0 18px rgb(var(--accent-rgb, 193 18 31) / 0.18);
+  --shadow-glow-strong: 0 0 0 1px rgb(var(--accent-rgb, 193 18 31) / 0.6), 0 0 28px rgb(var(--accent-rgb, 193 18 31) / 0.3);
 
   --animate-fade-in: fade-in 220ms ease-out both;
   --animate-rise: rise 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
@@ -44,7 +44,7 @@
   @keyframes slide-up { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
   @keyframes shimmer { from { background-position: -200% 0 } to { background-position: 200% 0 } }
   @keyframes ping-soft { 0% { transform: scale(1); opacity: 0.55 } 80%, 100% { transform: scale(2.2); opacity: 0 } }
-  @keyframes found { 0% { opacity: 0; transform: scale(0.9); box-shadow: 0 0 0 0 rgb(193 18 31 / 0.6) } 60% { opacity: 1; transform: scale(1.02); box-shadow: 0 0 0 6px rgb(193 18 31 / 0) } 100% { transform: none } }
+  @keyframes found { 0% { opacity: 0; transform: scale(0.9); box-shadow: 0 0 0 0 rgb(var(--accent-rgb, 193 18 31) / 0.6) } 60% { opacity: 1; transform: scale(1.02); box-shadow: 0 0 0 6px rgb(var(--accent-rgb, 193 18 31) / 0) } 100% { transform: none } }
 
   @keyframes view-in {
     from { opacity: 0; transform: translateY(10px) scale(0.995); filter: blur(3px) }
@@ -57,8 +57,8 @@
   @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
   @keyframes rise { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
   @keyframes pulse-glow {
-    0%, 100% { filter: drop-shadow(0 0 6px rgb(193 18 31 / 0.35)) }
-    50% { filter: drop-shadow(0 0 18px rgb(193 18 31 / 0.65)) }
+    0%, 100% { filter: drop-shadow(0 0 6px rgb(var(--accent-rgb, 193 18 31) / 0.35)) }
+    50% { filter: drop-shadow(0 0 18px rgb(var(--accent-rgb, 193 18 31) / 0.65)) }
   }
 }
 
@@ -75,7 +75,7 @@
     user-select: none;
   }
   input, textarea, [contenteditable], .selectable { user-select: text; }
-  ::selection { background: rgb(193 18 31 / 0.45); }
+  ::selection { background: rgb(var(--accent-rgb, 193 18 31) / 0.45); }
   * { scrollbar-width: thin; scrollbar-color: #2e2e2e transparent; }
   *::-webkit-scrollbar { width: 8px; height: 8px; }
   *::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
@@ -94,7 +94,7 @@
 [aria-orientation="horizontal"][data-separator]::after { inset: -3px 0; }
 [data-separator]:hover, [data-separator][data-separator-state="drag"], [data-separator]:focus-visible {
   background: var(--color-accent);
-  box-shadow: 0 0 8px rgb(193 18 31 / 0.5);
+  box-shadow: 0 0 8px rgb(var(--accent-rgb, 193 18 31) / 0.5);
 }
 
 .xterm { padding: 8px 10px; height: 100%; }
@@ -186,7 +186,7 @@
 
 /* Numbers that just changed glow briefly */
 .value-changed { animation: value-flash 900ms ease-out; }
-@keyframes value-flash { from { color: var(--color-accent-hover); text-shadow: 0 0 10px rgb(193 18 31 / 0.6) } to { color: inherit; text-shadow: none } }
+@keyframes value-flash { from { color: var(--color-accent-hover); text-shadow: 0 0 10px rgb(var(--accent-rgb, 193 18 31) / 0.6) } to { color: inherit; text-shadow: none } }
 
 /* Buttons press in */
 button:not(:disabled) { transition-property: color, background-color, border-color, box-shadow, transform; transition-duration: 150ms; }
@@ -236,15 +236,15 @@ button:not(:disabled):active { transform: scale(0.97); }
 
 /* ambient background: a slow glow that follows what MOTH is doing (set on <html data-ambient>) */
 .ambient { position: fixed; inset: -20%; z-index: 0; pointer-events: none; opacity: 0.55; transition: opacity 1.5s ease;
-  background: radial-gradient(40% 35% at 15% 10%, rgb(193 18 31 / var(--amb, 0.07)), transparent 70%),
-              radial-gradient(35% 30% at 85% 90%, rgb(193 18 31 / calc(var(--amb, 0.07) * 0.7)), transparent 70%);
+  background: radial-gradient(40% 35% at 15% 10%, rgb(var(--accent-rgb, 193 18 31) / var(--amb, 0.07)), transparent 70%),
+              radial-gradient(35% 30% at 85% 90%, rgb(var(--accent-rgb, 193 18 31) / calc(var(--amb, 0.07) * 0.7)), transparent 70%);
   animation: ambient-drift 28s ease-in-out infinite alternate; }
 html[data-ambient="thinking"] .ambient, html[data-ambient="generating"] .ambient { --amb: 0.12; animation-duration: 12s; }
 html[data-ambient="training"] .ambient { --amb: 0.14; animation-duration: 9s; }
 html[data-ambient="error"] .ambient { --amb: 0.05; filter: hue-rotate(25deg); }
 html[data-ambient="sleeping"] .ambient { opacity: 0.25; }
 @keyframes ambient-drift { from { transform: translate3d(-2%, -1%, 0) scale(1) } to { transform: translate3d(2%, 2%, 0) scale(1.06) } }
-.ambient-hero { background: radial-gradient(80% 120% at 0% 0%, rgb(193 18 31 / 0.22), transparent 60%), var(--color-surface); }
+.ambient-hero { background: radial-gradient(80% 120% at 0% 0%, rgb(var(--accent-rgb, 193 18 31) / 0.22), transparent 60%), var(--color-surface); }
 .ambient-hero::after { content: ""; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(110deg, transparent 30%, rgb(255 255 255 / 0.04) 50%, transparent 70%);
   animation: hero-sheen 7s ease-in-out infinite; }
@@ -292,3 +292,17 @@ html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="
 
 /* 2.0 speed: long chats only draw the messages on screen */
 .chat-row { content-visibility: auto; contain-intrinsic-size: auto 120px; }
+
+/* 2.4 light theme: the few light-pink highlights made for dark backgrounds get a darker shade */
+[data-theme="light"] .text-\[\#ff6b75\], [data-theme="light"] .text-\[\#ff5a64\], [data-theme="light"] .text-\[\#ff8a92\], [data-theme="light"] .text-\[\#ffb3b8\] { color: var(--color-accent); }
+[data-theme="light"] .text-\[\#b8f0d4\] { color: #157a4c; }
+[data-theme="light"] .lift:hover { box-shadow: 0 6px 24px rgb(0 0 0 / 0.08); }
+
+/* 2.3.2 shared training picture */
+@keyframes shared-flow { to { stroke-dashoffset: -20 } }
+.shared-flow { animation: shared-flow 0.9s linear infinite; }
+@keyframes shared-ping { 0% { transform: scale(1); opacity: 0.7 } 100% { transform: scale(1.7); opacity: 0 } }
+.shared-ping { animation: shared-ping 1.8s ease-out infinite; }
+@keyframes shared-core { 0%, 100% { transform: scale(1) } 50% { transform: scale(1.05) } }
+.shared-core { animation: shared-core 3s ease-in-out infinite; }
+:root[data-motion="off"] .shared-flow, :root[data-motion="off"] .shared-ping, :root[data-motion="off"] .shared-core { animation: none; }

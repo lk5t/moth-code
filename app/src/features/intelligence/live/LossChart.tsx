@@ -49,7 +49,7 @@ export function LossChart({ points, live }: { points: Point[]; live: boolean }) 
       className="h-44 w-full touch-none select-none" onPointerLeave={() => setHover(null)}
       onPointerMove={(e) => { const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect(); setHover((e.clientX - r.left) / r.width * W); }}>
       <defs>
-        <linearGradient id={`fill-${uid}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c1121f" stopOpacity="0.45" /><stop offset="100%" stopColor="#c1121f" stopOpacity="0" /></linearGradient>
+        <linearGradient id={`fill-${uid}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.45" /><stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0" /></linearGradient>
         <filter id={`glow-${uid}`} x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="2.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
       </defs>
       {ticks.map((t, i) => <g key={i}><line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} stroke="currentColor" strokeOpacity="0.08" />

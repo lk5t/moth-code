@@ -31,7 +31,9 @@ describe("2.1 settings sync", () => {
     expect(uiSizeStore.getState().size).toBe("large");
     expect(motionStore.getState().on).toBe(false);
     expect(alertPrefs().quiet).toBe(false);
-    expect(current()).toEqual({ ui_size: "large", motion: false, quiet_alerts: false, sounds: true });
+    expect(current()).toMatchObject({ ui_size: "large", motion: false, quiet_alerts: false, sounds: true, theme: "dark", accent: "red" });
+    applyPrefs({ theme: "midnight", accent: "blue", saved_prompts: ["Explain this"] });
+    expect(current()).toMatchObject({ theme: "midnight", accent: "blue", saved_prompts: ["Explain this"] });
     applyPrefs({ ui_size: "nonsense" as never });
     expect(uiSizeStore.getState().size).toBe("large");  // unknown values are ignored
   });

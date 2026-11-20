@@ -66,7 +66,9 @@ def put_consent(body: ConsentIn, auth: Auth = Depends(current_auth), ctx: Ctx = 
 
 # ---- 2.1 app preferences that follow the account to other computers --------------------------------------
 PREF_KEYS = {"ui_size": ("compact", "normal", "large"), "motion": (True, False), "quiet_alerts": (True, False),
-             "sounds": (True, False)}
+             "sounds": (True, False), "theme": ("dark", "midnight", "graphite", "light"),
+             "accent": ("red", "blue", "green", "purple", "orange", "pink")}
+LIST_PREFS = {"saved_prompts": (30, 2000)}  # 2.4: name → (max items, max characters each)
 
 
 class PrefsIn(BaseModel):
@@ -74,11 +76,14 @@ class PrefsIn(BaseModel):
     motion: bool | None = None
     quiet_alerts: bool | None = None
     sounds: bool | None = None
+    theme: str | None = None
+    accent: str | None = None
+    saved_prompts: list[str] | None = Field(default=None, max_length=30)
 
 
 def _prefs(user: dict) -> dict:
     ui = json.loads(user.get("settings") or "{}").get("ui") or {}
-    return {k: ui[k] for k in PREF_KEYS if k in ui}
+    return {k: ui[k] for k in (*PREF_KEYS, *LIST_PREFS) if k in ui}
 
 
 @router.get("/v1/me/preferences")
@@ -92,6 +97,11 @@ def put_prefs(body: PrefsIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depe
 
     values = {k: v for k, v in body.model_dump().items() if v is not None}
     for k, v in values.items():
+        if k in LIST_PREFS:
+            n, size = LIST_PREFS[k]
+            if len(v) > n or any(len(x) > size for x in v):
+                raise HTTPException(422, f"Too many or too long items in {k}.")
+            continue
         if v not in PREF_KEYS[k]:
             raise HTTPException(422, f"Unknown value for {k}.")
     with ctx.db.tx() as c:
@@ -99,7 +109,7 @@ def put_prefs(body: PrefsIn, auth: Auth = Depends(current_auth), ctx: Ctx = Depe
         s = json.loads(row[0] or "{}")
         s["ui"] = {**(s.get("ui") or {}), **values}
         c.execute(users.update().where(users.c.id == auth.uid).values(settings=json.dumps(s)))
-    return {"preferences": {k: s["ui"][k] for k in PREF_KEYS if k in s["ui"]}}
+    return {"preferences": {k: s["ui"][k] for k in (*PREF_KEYS, *LIST_PREFS) if k in s["ui"]}}
 
 
 # ---- conversations (memory controls) --------------------------------------------------------------------

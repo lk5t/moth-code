@@ -4,6 +4,7 @@
 
 ### What's new in 2.3
 
+- **2.3.2:** AI → **Shared training** shows a shared run as an animated picture in plain words. Attach folders, screenshots/photos (or paste them) and GitHub links. Edit or branch from any message, rate any answer, and pick a theme and accent colour.
 - **2.3.1:** Home shows this week's progress, how MOTH answers now (before and after its last upgrade) and a one-click **Train on this PC**. Network shows each computer's health and lets you set its training hours. The AI timeline says why each version was or was not promoted.
 - **A new, compact look:**
   - The sidebar has New chat, Search chats, **Projects as folders with their chats inside**, then Chats, and your account at the bottom.

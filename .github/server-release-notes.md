@@ -6,6 +6,7 @@ workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
 What's new in 2.3:
 
+- **2.3.2:** shared training no longer gets stuck: a part with no progress for 20 minutes goes to the next free computer, a round continues without a part nobody takes, and a part is resized for the computer that takes it.
 - **2.3.1:** side-by-side replies and the reason for each promotion on the timeline; a verified backup before every promotion; worker health (CPU, memory, GPU load and temperature, also on Windows); training hours per computer; a training-stalled alert; a weekly summary and example answers on Home; the Windows install command works from any Command Prompt; shared rounds no longer wait for a lost shard.
 - **Everyday conversation data:** about 45 % of the conversation training data is now greetings, small talk and short coding answers (it was mostly memory drills, which taught MOTH to recite facts). It is rebuilt on the next data preparation.
 

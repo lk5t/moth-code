@@ -37,7 +37,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe("Intelligence consolidation", () => {
   it("groups AI into Evolution, Model, Data, History and AI Settings, with training on the Evolution page", async () => {
     render(<IntelligenceHub />);
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Evolution", "Model", "Data", "History", "AI Settings"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Evolution", "Shared training", "Model", "Data", "History", "AI Settings"]);
     await screen.findByRole("button", { name: "Pause Evolution" });
     expect(screen.queryByText("Model Architecture")).toBeNull();  // 0.7.1: the model lives in its own Model tab
     expect(screen.getByText("Training has slowed down: testing a lower learning rate.")).toBeInTheDocument();

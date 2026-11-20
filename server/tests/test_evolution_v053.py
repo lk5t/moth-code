@@ -2,6 +2,7 @@
 curriculum mixture training, the development checkpoint carried to the next cycle, model versions,
 early stopping, and Adaptive Parameter Growth with Owner approval."""
 
+import time
 import hashlib
 import io
 
@@ -337,3 +338,89 @@ def test_progress_dashboard_and_timeline_from_measurements(client, settings, own
     assert experiment["metrics"] == stored["metrics"]
     assert experiment["metrics"]["training"]["batch_tuning"]["effective_batch_size"] == 8
     assert p["datasets"]["sources"][0]["license"] == "MIT" and p["timeline"][1]["datasets"][0]["build"]
+
+
+def test_a_shared_round_is_not_held_by_a_computer_that_stops_progressing(client, owner, tmp_path, monkeypatch):
+    """2.3.2: a worker that took its piece of a round and then made no progress (asleep, paused while its owner
+    works, or busy) but kept checking in held the whole experiment at step 0. After SHARD_STALL_SECONDS its
+    piece is taken back and goes to the next free computer, sized for that computer."""
+    from sqlalchemy import select
+
+    from moth_server.db import training_jobs
+    from moth_server.evolution import distributed as D
+    from moth_worker.client import WorkerClient
+    from moth_worker.runner import WorkerRunner
+
+    ctx, base_v = _world(client, owner, tmp_path, monkeypatch)
+    S.update(ctx, {"backends": {"local_cpu": False, "local_gpu": False, "workers": True},
+                   "training": {"steps": 20, "lr": 3e-3}, "distributed": {"min_participants": 2, "rounds": 2}})
+    o = H(owner["token"])
+    runners = []
+    for name in ("cpu-box-1", "cpu-box-2"):
+        e = client.post("/v1/training/enrollments", json={"name": name}, headers=o).json()
+        w = client.post("/v1/worker/enroll", json={"token": e["token"], "version": "0.5.3", "hardware": {
+            "gpus": [], "cpu_count": 4, "ram_gb": 16.0, "compute": "cpu", "machine_id": name}}).json()
+        r = WorkerRunner(WorkerClient("http://t", w["worker_token"], http=client), tmp_path / name,
+                         log=lambda m: None, heartbeat_seconds=3600, update_check_seconds=None)
+        r.beat()
+        runners.append((w, r))
+    for _ in range(4):
+        EN.tick(ctx)
+    (w1, r1), (w2, r2) = runners
+    held = client.post("/v1/worker/jobs/claim", headers=H(w1["worker_token"])).json()  # takes it, then stalls
+    mine = client.post("/v1/worker/jobs/claim", headers=H(w2["worker_token"])).json()
+    assert r2.run_job(mine)["accepted"]
+    clock = [time.time()]
+    monkeypatch.setattr(D, "now", lambda: clock[0])
+    for minutes in (0, 10, 25):  # still checking in (lease kept), never any progress
+        clock[0] += minutes * 60
+        client.post("/v1/worker/heartbeat", headers=H(w1["worker_token"]), json={"job_id": held["id"], "progress": 0.0})
+        EN.tick(ctx)
+    assert ctx.db.one(select(training_jobs).where(training_jobs.c.id == held["id"]))["status"] == "cancelled"
+    again = client.post("/v1/worker/jobs/claim", headers=H(w2["worker_token"])).json()
+    assert again["kind"] == "dist_shard" and again["spec"]["dist"] == held["spec"]["dist"] and again["id"] != held["id"]
+    assert again["spec"]["train"]["base_steps"] == held["spec"]["train"].get("base_steps", held["spec"]["train"]["steps"])
+    assert r2.run_job(again)["accepted"]
+    EN.tick(ctx)
+    exp = next(e for e in MEM.experiments(ctx) if e["backend"] == "distributed")
+    assert exp["resources"]["distributed"]["round"] == 1  # the round finished without the stalled computer
+    assert any(e["kind"] == "distributed.taken_back" for e in MEM.events(ctx, limit=50))
+
+
+def test_a_round_goes_on_when_nobody_takes_a_part(client, owner, tmp_path, monkeypatch):
+    """2.3.2 (seen in production): MOTH Cloud finished its part of round 1, the other part sat queued at 90% with
+    no computer to take it, and the experiment waited for good. After SHARD_STALL_SECONDS the round goes on with
+    the finished part."""
+    from moth_server.evolution import distributed as D
+    from moth_worker.client import WorkerClient
+    from moth_worker.runner import WorkerRunner
+
+    ctx, base_v = _world(client, owner, tmp_path, monkeypatch)
+    S.update(ctx, {"backends": {"local_cpu": False, "local_gpu": False, "workers": True},
+                   "training": {"steps": 20, "lr": 3e-3}, "distributed": {"min_participants": 2, "rounds": 2}})
+    o = H(owner["token"])
+    runners = []
+    for name in ("cpu-box-1", "cpu-box-2"):
+        e = client.post("/v1/training/enrollments", json={"name": name}, headers=o).json()
+        w = client.post("/v1/worker/enroll", json={"token": e["token"], "version": "0.5.3", "hardware": {
+            "gpus": [], "cpu_count": 4, "ram_gb": 16.0, "compute": "cpu", "machine_id": name}}).json()
+        r = WorkerRunner(WorkerClient("http://t", w["worker_token"], http=client), tmp_path / name,
+                         log=lambda m: None, heartbeat_seconds=3600, update_check_seconds=None)
+        r.beat()
+        runners.append((w, r))
+    for _ in range(4):
+        EN.tick(ctx)
+    w2, r2 = runners[1]
+    assert r2.run_job(client.post("/v1/worker/jobs/claim", headers=H(w2["worker_token"])).json())["accepted"]
+    # the other part stays queued: its computer is gone and the remaining one is told to wait (paused)
+    client.post(f"/v1/training/workers/{w2['worker_id']}/pause", headers=o)
+    clock = [time.time()]
+    monkeypatch.setattr(D, "now", lambda: clock[0])
+    for minutes in (0, 10, 25):
+        clock[0] += minutes * 60
+        EN.tick(ctx)
+    EN.tick(ctx)
+    exp = next(e for e in MEM.experiments(ctx) if e["backend"] == "distributed")
+    st = exp["resources"]["distributed"]
+    assert st["round"] == 1 and st["history"][0]["participants"] == 1
+    assert any(e["kind"] == "distributed.skipped" for e in MEM.events(ctx, limit=50))

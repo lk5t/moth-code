@@ -1,4 +1,5 @@
 import { navigate } from "@/lib/navigation";
+import { openIntelligence } from "@/lib/app-state";
 import { Button as ActionButton } from "@/components/ui/button";
 import { EvolutionControls } from "./EvolutionControls";
 /**
@@ -9,15 +10,14 @@ import { EvolutionControls } from "./EvolutionControls";
  * computer" lets this computer take part in the same experiment. Every number comes from MOTH Cloud.
  */
 import { useEffect, useState } from "react";
-import { Cloud, Cpu, Laptop, Play } from "lucide-react";
+import { Cloud, Laptop, Play } from "lucide-react";
 import { get, put, post } from "@/lib/backend";
 import { serverApi } from "@/lib/account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Progress } from "@/components/ui/progress";
-import { formatNumber, whenVisible } from "@/lib/utils";
+import { whenVisible } from "@/lib/utils";
 import { secure } from "@/features/owner/ops";
 
 type Any = Record<string, any>;
@@ -98,41 +98,11 @@ export function NetworkTraining({ scope = "all" }: { scope?: "all" | "training" 
         })).then(reloadEvo).catch((e) => setMsg((e as Error).message))} />
         {scope === "all" && <ParticipantSwitch />}
         {scope === "training" && <p className="text-muted">Prepare Data → Start Training → Evaluate Improvement → Apply Verified Model. Candidates keep the serving model available; only verified candidates may be promoted. <ActionButton size="sm" variant="ghost" onClick={()=>navigate("data")}>Prepare Data</ActionButton><ActionButton size="sm" variant="ghost" onClick={()=>navigate("network")}>Manage computers in Network</ActionButton></p>}
-        {exp && (
-          <div className="flex flex-col gap-2 rounded-md border border-border p-3">
-            <div className="flex items-center gap-2 text-fg">Experiment #{exp.id} · round {Math.min(exp.round + 1, exp.rounds)} of {exp.rounds}
-              <span className="text-muted">({exp.shards} participants, {exp.local_steps} steps each per round)</span></div>
-            <Progress value={(exp.round / Math.max(1, exp.rounds)) * 100} />
-            {exp.current_jobs.length > 0 && (
-              <div className="flex flex-col gap-1">
-                {exp.current_jobs.map((j: Any) => (
-                  <div key={j.shard} className="flex items-center gap-2">
-                    <span className="w-16 text-muted">shard {j.shard + 1}</span>
-                    <span className="w-48 truncate">{j.worker ? `${j.worker.name}${j.worker.this_app ? " (this computer)" : ""}` : "waiting for a participant"}</span>
-                    <Badge>{j.status}</Badge>
-                    {j.progress != null && <span className="text-muted">{Math.round(j.progress * 100)}%</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {exp.contributors.length > 0 && (
-              <div className="flex flex-col gap-1 pt-1">
-                <div className="text-muted">Contributions to this experiment (verified):</div>
-                {exp.contributors.map((c: Any) => (
-                  <div key={c.worker_id} className="flex items-center gap-2">
-                    {c.compute === "gpu" ? <Badge variant="accent">GPU</Badge> : <Badge><Cpu className="size-3" />CPU</Badge>}
-                    <span className="w-48 truncate text-fg">{c.name}{c.this_app ? " (this computer)" : ""}</span>
-                    <span className="text-muted">{formatNumber(c.tokens)} tokens · {c.rounds} round(s)</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {exp.history.length > 0 && (
-              <div className="text-muted">Last round: probe loss {exp.history.at(-1).probe_before.toFixed(3)} → {exp.history.at(-1).probe_after.toFixed(3)}
-                {exp.history.at(-1).accepted ? " (applied)" : " (discarded)"}</div>
-            )}
-          </div>
-        )}
+        {exp && <button className="flex items-center justify-between gap-2 rounded-md border border-border p-3 text-left hover:border-accent/50"
+          onClick={() => openIntelligence("shared")}>
+          <span><span className="text-fg">MOTH is being trained by {exp.shards} computers together</span>
+            <span className="block text-muted">Round {Math.min(exp.round + 1, exp.rounds)} of {exp.rounds}. See who is doing what in AI → Shared training.</span></span>
+          <span className="text-accent">Open →</span></button>}
         {msg && <div className="text-muted">{msg}</div>}
       </CardContent>
     </Card>

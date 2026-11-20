@@ -37,6 +37,7 @@ from moth_server.evolution import memory as MEM
 
 PROBE_TOLERANCE = 0.05
 ONLINE_SECONDS = 180
+SHARD_STALL_SECONDS = 20 * 60  # 2.3.2: a piece of a shared round with no progress this long is taken back
 
 
 def participants(ctx: Ctx, need_bytes: int, worker_ids: list[int] | None = None) -> list[dict]:
@@ -384,11 +385,16 @@ def advance(ctx: Ctx, exp: dict, settings: dict) -> dict[str, Any]:
     ids = {int(k): v for k, v in (st["jobs"].get(str(r)) or {}).items()}
     rows = {j["id"]: j for j in ctx.db.all(select(training_jobs).where(training_jobs.c.id.in_(list(ids.values()))))}
     done = [i for i, jid in ids.items() if (rd / f"delta-r{r:03d}-s{i}.pt").exists()]
+    skipped = set((st.get("skipped") or {}).get(str(r), []))  # 2.3.2: no computer took them in time
     failed = [i for i, jid in ids.items() if rows.get(jid, {}).get("status") in ("failed", "cancelled")
-              and i not in done]
-    pending = [i for i in ids if i not in done and i not in failed]
+              and i not in done and i not in skipped]
+    pending = [i for i in ids if i not in done and i not in failed and i not in skipped]
     progress = {"round": r, "rounds": st["rounds"], "done": len(done), "shards": st["shards"]}
     if pending:
+        before = json.dumps(st.get("watch"), sort_keys=True)
+        taken = _take_back_stuck(ctx, exp, st, r, ids, rows, pending, len(done))
+        if taken or json.dumps(st.get("watch"), sort_keys=True) != before:
+            _save(ctx, exp, st)  # the progress clock must survive between checks
         return {"state": "running", **progress}
     if failed and len(done) < int((settings.get("distributed") or {}).get("min_participants", 2)):
         base = M.release(ctx, exp["base_version"])
@@ -448,6 +454,60 @@ def advance(ctx: Ctx, exp: dict, settings: dict) -> dict[str, Any]:
         return {"state": "running", **progress, "round": st["round"]}
     _save(ctx, exp, st)
     return {"state": "finished", "result": _package(ctx, exp, base, st, rd)}
+
+
+def _take_back_stuck(ctx: Ctx, exp: dict, st: dict, r: int, ids: dict, rows: dict, pending: list[int], n_done: int) -> bool:
+    """2.3.2: a round waits for every piece, so one computer that took a piece and then stopped making progress
+    (asleep, paused while its owner works, busy, or gone while still checking in) held the whole experiment at
+    step 0 for good. A piece without progress for SHARD_STALL_SECONDS is cancelled and queued again for any
+    computer (MOTH Cloud's own worker included); a late result for the old piece is refused."""
+    t = now()
+    watch = st.setdefault("watch", {})
+    stuck, unclaimed = [], []
+    for i in pending:
+        j = rows.get(ids[i])
+        if not j:
+            continue
+        key = str(j["id"])
+        prog = round(float(j.get("progress") or 0.0), 4)
+        seen = watch.get(key)
+        if not seen or seen[0] != prog or seen[2] != j["status"]:
+            watch[key] = [prog, t, j["status"]]  # first sight, new progress or newly taken: the clock restarts
+            continue
+        if j["status"] == "leased" and t - seen[1] >= SHARD_STALL_SECONDS:
+            stuck.append((i, j))
+        elif j["status"] == "queued" and t - seen[1] >= SHARD_STALL_SECONDS and n_done > 0:
+            unclaimed.append((i, j))
+    if unclaimed:
+        # nobody took these for SHARD_STALL_SECONDS while the round's other pieces are done: the round goes on
+        # with the finished pieces (averaged as usual and checked on the probe) instead of waiting for good
+        with ctx.db.tx() as c:
+            for i, j in unclaimed:
+                c.execute(training_jobs.update().where(training_jobs.c.id == j["id"], training_jobs.c.status == "queued")
+                          .values(status="cancelled", updated_at=t, error="no computer took it; the round went on without it"))
+                watch.pop(str(j["id"]), None)
+        st.setdefault("skipped", {}).setdefault(str(r), []).extend(i for i, _ in unclaimed)
+        MEM.event(ctx, "distributed.skipped", f"Experiment #{exp['id']}: round {r + 1}: no computer took "
+                  f"{len(unclaimed)} part(s) for {SHARD_STALL_SECONDS // 60} minutes; the round continues with the "
+                  "finished parts", level="warning", cycle_id=exp["cycle_id"], experiment_id=exp["id"])
+        return True
+    if not stuck:
+        return False
+    with ctx.db.tx() as c:
+        for i, j in stuck:
+            c.execute(training_jobs.update().where(training_jobs.c.id == j["id"], training_jobs.c.status == "leased")
+                      .values(status="cancelled", lease_expires_at=None, updated_at=t,
+                              error=f"taken back: no progress for {SHARD_STALL_SECONDS // 60} minutes"))
+            watch.pop(str(j["id"]), None)
+    from moth_server import models as M
+    _create_round_jobs(ctx, exp, M.release(ctx, exp["base_version"]), {**st, "worker_ids": None},
+                       int((exp["resources"] or {}).get("need_bytes") or 0), only=[i for i, _ in stuck])
+    MEM.event(ctx, "distributed.taken_back", f"Experiment #{exp['id']}: round {r + 1}: "
+              + ", ".join(f"worker {j['worker_id']}" for _, j in stuck)
+              + f" made no progress for {SHARD_STALL_SECONDS // 60} minutes (asleep, paused or busy); "
+              "its part was taken back and goes to the next free computer", level="warning",
+              cycle_id=exp["cycle_id"], experiment_id=exp["id"])
+    return True
 
 
 def _save(ctx: Ctx, exp: dict, st: dict) -> None:

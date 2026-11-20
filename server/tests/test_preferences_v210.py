@@ -13,3 +13,13 @@ def test_preferences_round_trip_and_validation(client, settings):
     assert client.get("/v1/me/preferences").status_code == 401
     other = register_verified(client, settings, username="bob")["token"]
     assert client.get("/v1/me/preferences", headers=H(other)).json()["preferences"] == {}  # per account
+
+
+def test_theme_accent_and_saved_prompts_follow_the_account(client, settings):
+    tok = register_verified(client, settings)["token"]
+    r = client.put("/v1/me/preferences", headers=H(tok), json={"theme": "midnight", "accent": "blue", "saved_prompts": ["Explain this error", "Write tests for this"]})
+    assert r.json()["preferences"] == {"theme": "midnight", "accent": "blue", "saved_prompts": ["Explain this error", "Write tests for this"]}
+    assert client.get("/v1/me/preferences", headers=H(tok)).json()["preferences"]["saved_prompts"][1] == "Write tests for this"
+    assert client.put("/v1/me/preferences", headers=H(tok), json={"theme": "neon"}).status_code == 422
+    assert client.put("/v1/me/preferences", headers=H(tok), json={"saved_prompts": ["x" * 2001]}).status_code == 422
+    assert client.put("/v1/me/preferences", headers=H(tok), json={"saved_prompts": ["x"] * 31}).status_code == 422
