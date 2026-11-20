@@ -280,15 +280,22 @@ class Browser:
         self.profile.mkdir(parents=True, exist_ok=True)
         self.proc = subprocess.Popen([exe, f"--remote-debugging-port={self.port}", "--remote-debugging-address=127.0.0.1",
                                       f"--user-data-dir={self.profile}", "--no-first-run", "--no-default-browser-check",
-                                      *(["--headless=new", "--no-sandbox"] if os.environ.get("MOTH_BROWSER_HEADLESS") else []),
-                                      "--new-window", "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for _ in range(60):
+                                      *(["--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
+                                        if os.environ.get("MOTH_BROWSER_HEADLESS") else []),
+                                      "--new-window", "about:blank"], stdout=subprocess.DEVNULL,
+                                     stderr=open(self.profile / "browser.log", "wb"))  # noqa: SIM115 — closed with the process
+        end = time.time() + 45  # a first start (new profile) can take a while on a slow computer
+        while time.time() < end:
+            if self.proc.poll() is not None:
+                err = (self.profile / "browser.log").read_text("utf-8", errors="replace").strip().splitlines()
+                raise Refused("MOTH's browser closed while starting" + (f": {err[-1][:200]}" if err else ""))
             try:
                 httpx.get(f"http://127.0.0.1:{self.port}/json/version", timeout=1)
                 return
             except httpx.HTTPError:
                 time.sleep(0.25)
-        raise Refused("MOTH's browser did not start")
+        self.proc.terminate()
+        raise Refused("MOTH's browser did not start within 45 seconds")
 
     def _page_ws(self) -> str:
         pages = [t for t in httpx.get(f"http://127.0.0.1:{self.port}/json", timeout=5).json() if t.get("type") == "page"]

@@ -33,7 +33,7 @@ def fullscreen_app_running() -> bool:
     game stutter, and continues when it closes.
 
     2.4.1: it looks at the window actually in front — visible, covering its whole monitor, and not the desktop or
-    the taskbar. Windows' "busy" notification state alone also reads busy for a worker running as a background task
+    the taskbar, and without a title bar (a maximised ordinary window is not a game). Windows' "busy" notification state alone also reads busy for a worker running as a background task
     with no screen, which paused such workers for good. With no foreground window (a background task, a locked
     screen) nothing is full screen, so training continues. Nothing on screen is read or captured."""
     if os.name != "nt":
@@ -63,7 +63,13 @@ def fullscreen_app_running() -> bool:
         if not mon or not user32.GetMonitorInfoW(mon, ctypes.byref(info)):
             return False
         m = info.rcMonitor
-        return rect.left <= m.left and rect.top <= m.top and rect.right >= m.right and rect.bottom >= m.bottom
+        covers = rect.left <= m.left and rect.top <= m.top and rect.right >= m.right and rect.bottom >= m.bottom
+        # 2.4.1: a window with a title bar is an ordinary window, maximised or simply bigger than the screen (MOTH
+        # Code itself on a small display paused its own training); full-screen games, videos and presentations
+        # have no title bar
+        WS_CAPTION = 0x00C00000
+        titled = (user32.GetWindowLongW(hwnd, -16) & WS_CAPTION) == WS_CAPTION  # GWL_STYLE
+        return covers and not titled
     except Exception:  # noqa: BLE001 — never stop training because the check failed
         return False
 
