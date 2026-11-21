@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
+import posixpath
 import shutil
 import tarfile
 import time
@@ -24,6 +25,19 @@ NODE_BASE = "https://nodejs.org/dist"
 RETRY_AFTER_S = 6 * 3600             # a failed download is tried again after six hours
 ATTEMPT_KEY = "tools_node_attempt"
 
+
+
+def check_members(members: list[tarfile.TarInfo]) -> None:
+    """Refuse an archive with absolute paths, '..' escapes, devices, or links pointing outside it."""
+    for m in members:
+        name = posixpath.normpath(m.name)
+        if name.startswith(("/", "../")) or name == ".." or m.isdev():
+            raise RuntimeError(f"unsafe path in archive: {m.name}")
+        if m.issym() or m.islnk():
+            link = m.linkname
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(name), link) if m.issym() else link)
+            if posixpath.isabs(link) or target.startswith("../") or target == "..":
+                raise RuntimeError(f"unsafe link in archive: {m.name} -> {link}")
 
 def _arch() -> str | None:
     m = platform.machine().lower()
@@ -95,14 +109,10 @@ def ensure_node(ctx: Ctx, http_get=None) -> dict[str, Any]:
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir()
         with tarfile.open(archive) as tf:
+            check_members(tf.getmembers())  # every path and link stays inside the archive's own folder
             try:
-                tf.extractall(staging, filter="data")
-            except TypeError:  # Python without extraction filters: refuse unsafe paths ourselves
-                root = staging.resolve()
-                for m in tf.getmembers():
-                    target = (staging / m.name).resolve()
-                    if not str(target).startswith(str(root)) or m.isdev():
-                        raise RuntimeError(f"unsafe path in archive: {m.name}") from None
+                tf.extractall(staging, filter="fully_trusted")  # checked above (2.5: the "data" filter refused
+            except TypeError:  # Node's own relative links, e.g. bin/corepack -> ../lib/..., on some servers)
                 tf.extractall(staging)
         archive.unlink(missing_ok=True)
         shutil.rmtree(home, ignore_errors=True)

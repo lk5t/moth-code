@@ -10,6 +10,7 @@ current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOL
 - A grown successor needs about a third of the training, uses the normal learning rate and skips the chat warm-up, so bigger versions arrive sooner and are rarely worse than the model they replace.
 - Planned shapes now keep the current model's attention layout so growth stays exact.
 - Fixed: the check on training results compared updates of weights that start at zero against zero, so it would have refused every shared part of a grown model. It now compares them with a normally started weight's size; huge updates are still refused.
+- Fixed: MOTH Cloud could not install Node.js for the JavaScript exam ("LinkOutsideDestinationError" for Node's own `bin/corepack` link). The archive is now checked by MOTH itself (every file and link must stay inside its folder) and then unpacked.
 
 ## 2.4.3 — Handovers teach MOTH Cloud its real speed
 

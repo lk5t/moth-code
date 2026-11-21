@@ -16,6 +16,12 @@ def _archive(name: str) -> bytes:
         info = tarfile.TarInfo(f"{name}/bin/node")
         info.size, info.mode = len(data), 0o755
         tf.addfile(info, io.BytesIO(data))
+        js = tarfile.TarInfo(f"{name}/lib/node_modules/corepack/dist/corepack.js")
+        js.size = 2
+        tf.addfile(js, io.BytesIO(b"//"))
+        link = tarfile.TarInfo(f"{name}/bin/corepack")  # 2.5: Node's own relative link (refused in production)
+        link.type, link.linkname = tarfile.SYMTYPE, "../lib/node_modules/corepack/dist/corepack.js"
+        tf.addfile(link)
     return buf.getvalue()
 
 
@@ -45,6 +51,17 @@ def test_installs_a_verified_node_and_puts_it_on_path(ctx):
     assert all(u.startswith("https://nodejs.org/dist/") for u in urls)
     assert str(tools.node_home(ctx) / "bin") in os.environ["PATH"]
     assert tools.ensure_node(ctx, http_get=get)["status"] == "present"  # no second download
+    assert (tools.node_home(ctx) / "bin" / "corepack").read_text() == "//"
+
+
+@pytest.mark.parametrize("name,link", [("n/bin/x", "../../../etc/passwd"), ("n/bin/x", "/etc/passwd"), ("../x", None),
+                                       ("/abs", None)])
+def test_archives_escaping_their_folder_are_refused(name, link):
+    m = tarfile.TarInfo(name)
+    if link:
+        m.type, m.linkname = tarfile.SYMTYPE, link
+    with pytest.raises(RuntimeError):
+        tools.check_members([m])
 
 
 def test_a_tampered_download_is_refused(ctx):
