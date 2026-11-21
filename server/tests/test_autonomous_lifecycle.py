@@ -58,7 +58,13 @@ def test_empty_install_to_two_real_cpu_upgrades_and_rollback(client, owner, tmp_
         # A health probe alone must not count as monitored user traffic.
         assert M.deployed(ctx)['version'] != candidate
         assert _served_version(client, owner['token']) == candidate
-        cyc = drive(ctx, lambda c: c['status'] in MEM.TERMINAL_CYCLE)
+
+        def done_or_more_traffic(c):  # like real users, keep asking while monitoring has seen no request yet
+            # (the first request can land just before the monitoring window opens and count as baseline)
+            if c['status'] == 'monitoring' and not ((c.get('result') or {}).get('monitor') or {}).get('requests'):
+                _served_version(client, owner['token'])
+            return c['status'] in MEM.TERMINAL_CYCLE
+        cyc = drive(ctx, done_or_more_traffic)
         assert cyc['status'] == 'completed', cyc
         rel = M.deployed(ctx)
         assert rel['info']['model_version'] == expected
