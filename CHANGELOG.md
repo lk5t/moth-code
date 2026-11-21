@@ -21,6 +21,9 @@ current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOL
 - The "learning stage" meter (Babbling → Chat) was a guess drawn from the loss, so it is gone. The live view now shows measured speed, the held-out loss with its recent trend, the shared round, how many times the data has been read, and each training computer with its real GPU or CPU load, GPU temperature and progress on its part.
 - The Model tab has a model card: what MOTH can do today, the tokens it has been trained on, its data and its yardstick.
 
+**MOTH's browser starts reliably**
+- MOTH picked a free port for its browser and then handed it over; on a busy computer another program could take it first, and MOTH waited 45 seconds for nothing. The browser now picks its own port and reports it, local browser calls ignore any system proxy, and if it still fails the error shows the browser's own last log line.
+
 **Self-quiz while MOTH is small**
 - A model that gets almost nothing right learns little from quizzing itself every hour. Below 10% correct it now quizzes every 6 hours, below 25% every 3 hours, otherwise hourly. A new version is quizzed straight away.
 

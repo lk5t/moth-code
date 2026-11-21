@@ -17,7 +17,6 @@ import html as _html
 import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
 import threading
@@ -274,33 +273,44 @@ class Browser:
         exe = browser_exe()
         if not exe:
             raise Refused("no Edge or Chrome found on this computer; install one to let MOTH use a browser")
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            self.port = s.getsockname()[1]
         self.profile.mkdir(parents=True, exist_ok=True)
-        self.proc = subprocess.Popen([exe, f"--remote-debugging-port={self.port}", "--remote-debugging-address=127.0.0.1",
+        active = self.profile / "DevToolsActivePort"
+        active.unlink(missing_ok=True)
+        # 2.5.1: the browser picks its own free port and writes it to DevToolsActivePort. Picking a port here and
+        # handing it over could race with another program taking it on a busy computer (the browser then never
+        # answered and MOTH waited the full 45 s).
+        self.proc = subprocess.Popen([exe, "--remote-debugging-port=0", "--remote-debugging-address=127.0.0.1",
                                       f"--user-data-dir={self.profile}", "--no-first-run", "--no-default-browser-check",
                                       *(["--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
                                         if os.environ.get("MOTH_BROWSER_HEADLESS") else []),
                                       "--new-window", "about:blank"], stdout=subprocess.DEVNULL,
                                      stderr=open(self.profile / "browser.log", "wb"))  # noqa: SIM115 — closed with the process
+
+        def log_tail() -> str:
+            err = (self.profile / "browser.log").read_text("utf-8", errors="replace").strip().splitlines() \
+                if (self.profile / "browser.log").exists() else []
+            return f": {err[-1][:200]}" if err else ""
+
         end = time.time() + 45  # a first start (new profile) can take a while on a slow computer
         while time.time() < end:
             if self.proc.poll() is not None:
-                err = (self.profile / "browser.log").read_text("utf-8", errors="replace").strip().splitlines()
-                raise Refused("MOTH's browser closed while starting" + (f": {err[-1][:200]}" if err else ""))
+                raise Refused("MOTH's browser closed while starting" + log_tail())
             try:
-                httpx.get(f"http://127.0.0.1:{self.port}/json/version", timeout=1)
-                return
-            except httpx.HTTPError:
-                time.sleep(0.25)
+                first = active.read_text().splitlines()[0].strip() if active.exists() else ""
+                if first.isdigit():
+                    self.port = int(first)
+                    httpx.get(f"http://127.0.0.1:{self.port}/json/version", timeout=1, trust_env=False)
+                    return
+            except (OSError, IndexError, httpx.HTTPError):
+                pass
+            time.sleep(0.25)
         self.proc.terminate()
-        raise Refused("MOTH's browser did not start within 45 seconds")
+        raise Refused("MOTH's browser did not start within 45 seconds" + log_tail())
 
     def _page_ws(self) -> str:
-        pages = [t for t in httpx.get(f"http://127.0.0.1:{self.port}/json", timeout=5).json() if t.get("type") == "page"]
+        pages = [t for t in httpx.get(f"http://127.0.0.1:{self.port}/json", timeout=5, trust_env=False).json() if t.get("type") == "page"]
         if not pages:
-            pages = [httpx.put(f"http://127.0.0.1:{self.port}/json/new?about:blank", timeout=5).json()]
+            pages = [httpx.put(f"http://127.0.0.1:{self.port}/json/new?about:blank", timeout=5, trust_env=False).json()]
         return pages[0]["webSocketDebuggerUrl"]
 
     def call(self, method: str, params: dict | None = None, timeout: float = 30) -> dict:
