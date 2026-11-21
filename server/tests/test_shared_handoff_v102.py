@@ -55,7 +55,7 @@ def test_a_solo_successor_moves_to_shared_rounds_from_its_checkpoint(client, own
     assert any(e["kind"] == "experiment.shared" for e in MEM.events(ctx, limit=50))
 
 
-def test_every_online_computer_joins_gpu_rounds(client, owner, tmp_path, monkeypatch):
+def test_computers_near_the_fastest_join_gpu_rounds(client, owner, tmp_path, monkeypatch):
     ctx = client.app.state.ctx
     fast_cpu = _enroll(client, owner, gflops=40)
     slow_cpu = _enroll(client, owner, gflops=5)
@@ -66,6 +66,7 @@ def test_every_online_computer_joins_gpu_rounds(client, owner, tmp_path, monkeyp
     client.post("/v1/worker/heartbeat", json={"hardware": hw, "version": "1.0.2"},
                 headers={"Authorization": f"Bearer {g['worker_token']}"})
     ids = {w["id"] for w in D.participants(ctx, 1)}
-    # 1.0.9: everyone takes part (GPUs first); each gets a share of steps that matches its speed
-    assert {g["worker_id"], fast_cpu["worker_id"], slow_cpu["worker_id"]} <= ids
+    # 2.5: computers within SHARE_SPEED_RATIO of the fastest take part (GPUs first; each gets a share of steps
+    # that matches its speed); a much slower one would hold every round up, so it prepares data instead
+    assert {g["worker_id"], fast_cpu["worker_id"]} <= ids and slow_cpu["worker_id"] not in ids
     assert D.participants(ctx, 1)[0]["id"] == g["worker_id"]
