@@ -147,10 +147,16 @@ def _run(spec: dict[str, Any]) -> dict[str, Any]:
         old = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
         torch.manual_seed(int(spec.get("seed", 1337)))
         fresh = MothModel(base_cfg).state_dict()
-        old_cfg = MothConfig.from_dict(json.loads((base / "config.json").read_text()))  # the current model, before growth
-        # 2.5: exact growth when the shapes allow it (the successor starts as good as the current model)
-        state, how = grow_into({k: v.float() if v.is_floating_point() else v for k, v in old.items()}, old_cfg,
-                               base_cfg, fresh, seed=int(spec.get("seed", 1337)))
+        cfg_file = base / "config.json"  # the current model, before growth
+        known = json.loads(cfg_file.read_text()) if cfg_file.is_file() else (raw.get("model_config") if isinstance(raw, dict) else None)
+        old_f = {k: v.float() if v.is_floating_point() else v for k, v in old.items()}
+        if known:  # 2.5: exact growth when the shapes allow it (the successor starts as good as the current model)
+            state, how = grow_into(old_f, MothConfig.from_dict(known), base_cfg, fresh, seed=int(spec.get("seed", 1337)))
+        else:
+            from moth.model.growth import transfer_state
+
+            state, _ = transfer_state(old_f, fresh)
+            how = "partial"
         frac = 1.0 if how == "preserving" else 0.5
         tp = run_dir / "transfer-init.pt"
         atomic_torch_save({"model": state, "model_config": base_cfg.to_dict(),
