@@ -6,7 +6,7 @@ import { modelLabel } from "@/lib/model-label";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { NeuralNet } from "./live/NeuralNet";
 import { LossChart } from "./live/LossChart";
-import { StageMeter, WritingNow } from "./live/Learning";
+import { LiveVitals, WritingNow } from "./live/Learning";
 
 type Any = Record<string, any>;
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -40,7 +40,7 @@ function SystemStrip({ resources, network }: { resources: Any | null; network: A
   </dl>;
 }
 
-function Experiment({ experiment, report, paused, nowSec, arch }: { experiment: Any; report: Any; paused: boolean; nowSec: number; arch?: Any }) {
+function Experiment({ experiment, report, paused, nowSec, arch, passes }: { experiment: Any; report: Any; paused: boolean; nowSec: number; arch?: Any; passes?: number | null }) {
   const step = report.step, max = report.max_steps ?? experiment.plan?.steps;
   const phase: string | undefined = report.phase ?? experiment.progress?.phase; // 0.9.0: reported by the worker
   const fraction = num(report.fraction) ? report.fraction : num(step) && max > 0 ? step / max : num(experiment.progress) ? experiment.progress : null;
@@ -84,7 +84,7 @@ function Experiment({ experiment, report, paused, nowSec, arch }: { experiment: 
             learned={stageProgress(report.val_loss ?? report.train_loss, experiment.loss_per)} />
           <span className="absolute bottom-1 left-2 text-[0.625rem] text-faint">{arch?.n_layers ?? "?"} layers · {arch?.d_model ?? "?"} wide{active ? " · learning" : ""}</span>
         </div>
-        <StageMeter loss={report.val_loss ?? report.best_val ?? report.train_loss} per={experiment.loss_per === "token" ? "token" : "byte"} />
+        <LiveVitals report={report} compute={experiment.compute_live} passes={passes} />
       </div>
     </div>
     <WritingNow samples={report.samples ?? []} prompt={report.sample_prompt} />
@@ -138,7 +138,7 @@ export function TrainingProgress({ progress, resources }: { progress: Any | null
     <SystemStrip resources={resources} network={progress?.network ?? null} />
     {training?.cycle?.waiting_reason && <p role="status" className="text-xs text-warning">{training.cycle.waiting_reason}</p>}
     {!focus && <p className="text-xs text-muted">No experiment in this cycle yet. When Evolution runs, the active training job appears here with its real measurements.</p>}
-    {focus && <Experiment experiment={focus} report={reportOf(focus)} paused={!!training?.paused} nowSec={nowSec}
+    {focus && <Experiment experiment={focus} report={reportOf(focus)} paused={!!training?.paused} nowSec={nowSec} passes={progress?.data_status?.passes}
       arch={focus.successor?.architecture ?? progress?.current?.config ?? progress?.current?.architecture} />}
     {rest.length > 0 && <details className="text-xs"><summary className="cursor-pointer text-muted hover:text-fg">Other experiments in this cycle ({rest.length})</summary>
       <div className="mt-2 space-y-2">{rest.map((e) => <Experiment key={e.id} experiment={e} report={reportOf(e)} paused={!!training?.paused} nowSec={nowSec} />)}</div></details>}

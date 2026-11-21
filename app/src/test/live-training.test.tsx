@@ -1,18 +1,22 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { stageOf, StageMeter, WritingNow } from "@/features/intelligence/live/Learning";
+import { LiveVitals, recentTrend, WritingNow } from "@/features/intelligence/live/Learning";
 import { LossChart } from "@/features/intelligence/live/LossChart";
 import { alertPrefs, setAlertPrefs } from "@/lib/alerts";
 
 describe("0.10.0 live training", () => {
-  it("names the learning stage from the measured loss", () => {
-    expect(stageOf(4.0)?.index).toBe(0);           // babbling
-    expect(stageOf(2.0)?.index).toBe(2);           // words
-    expect(stageOf(1.0)?.index).toBe(4);           // sentences
-    expect(stageOf(3.6, "token")?.index).toBe(4);  // 1.0 per byte with a BPE tokenizer
-    expect(stageOf(null)).toBeNull();
-    render(<StageMeter loss={2.0} per="byte" />);
-    expect(screen.getByLabelText("Learning stage: Words")).toBeInTheDocument();
+  it("2.5: shows measured speed, held-out trend and each training computer's real load", () => {
+    const history = [3.0, 2.9, 2.8, 2.7, 2.6, 2.5].map((loss, i) => ({ step: i * 10, loss, split: "val" }));
+    expect(recentTrend(history)).toBeCloseTo((2.5 - 3.0) / 3.0);
+    expect(recentTrend([])).toBeNull();
+    render(<LiveVitals report={{ tokens_per_sec: 9400, val_loss: 2.5, history, round: 21, rounds: 29 }} passes={2.4}
+      compute={[{ name: "gpu-box", kind: "gpu", gpu: 0.93, gpu_temp_c: 71, part_progress: 0.4, seen_seconds_ago: 12 }]} />);
+    expect(screen.getByLabelText("Live measurements")).toBeInTheDocument();
+    expect(screen.getByText("22 / 29")).toBeInTheDocument();
+    expect(screen.getByText("2.4×")).toBeInTheDocument();
+    expect(screen.getByText("93%")).toBeInTheDocument();
+    expect(screen.getByText(/71°C/)).toBeInTheDocument();
+    expect(screen.getByText("40% of part")).toBeInTheDocument();
   });
 
   it("draws the loss curve and marks the drop since the start", () => {

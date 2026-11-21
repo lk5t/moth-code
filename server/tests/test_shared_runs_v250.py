@@ -52,3 +52,27 @@ def test_one_pass_counts_a_small_heavily_weighted_domain_first(tmp_path):
     mixed = V2.one_pass_tokens(str(tmp_path), {"code": 0.5, "chat": 0.5})
     assert mixed < 4_000  # the 1,000-token chat domain at half the mixture is repeated almost at once
     assert V2.one_pass_tokens(str(tmp_path / "missing"), {"code": 1.0}) is None
+
+
+def test_the_live_view_lists_the_computers_training_an_experiment(client, owner):
+    import json
+
+    from moth_server.db import now, training_jobs
+    from moth_server.evolution.native_reset import next_job_values
+    from moth_server.routes.intelligence import _compute_live
+    from test_network_v063 import _enroll
+
+    ctx = client.app.state.ctx
+    w = _enroll(client, owner)
+    with ctx.db.tx() as c:
+        values = next_job_values(ctx, c)
+        c.execute(training_jobs.insert().values(**values, kind="dist_shard", status="leased", worker_id=w["worker_id"],
+                                                progress=0.4, spec=json.dumps({"evolution_experiment": 78, "round": 3}),
+                                                attempts=0, max_attempts=3, created_at=now(), updated_at=now()))
+        c.execute(training_jobs.insert().values(**next_job_values(ctx, c), kind="dist_shard", status="leased",
+                                                worker_id=w["worker_id"], progress=0.9,
+                                                spec=json.dumps({"evolution_experiment": 780, "round": 1}),
+                                                attempts=0, max_attempts=3, created_at=now(), updated_at=now()))
+    live = _compute_live(ctx, {"id": 78})
+    assert len(live) == 1 and live[0]["kind"] == "cpu" and live[0]["cpu"] == 0.25 and live[0]["part_progress"] == 0.4
+    assert live[0]["seen_seconds_ago"] < 60

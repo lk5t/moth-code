@@ -1,48 +1,60 @@
 /**
- * 0.10.0: how far MOTH has come, in words people understand. The stage comes from the measured validation
- * loss per byte of text (a per-token loss is converted with a typical 3.6 bytes per BPE token), and the
- * live sample is the model's own answer to the same question at each evaluation.
+ * 0.10.0: the live sample is the model's own answer to the same question at each evaluation.
+ * 2.5: live measurements (speed, held-out loss, the training computers' load) replace the guessed stage meter.
  */
 import { useEffect, useRef, useState } from "react";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 
-export const STAGES = [
-  { name: "Babbling", hint: "random letters", max: Infinity },
-  { name: "Letters", hint: "spacing and common letters", max: 3.0 },
-  { name: "Words", hint: "real words appear", max: 2.2 },
-  { name: "Phrases", hint: "words fit together", max: 1.6 },
-  { name: "Sentences", hint: "understandable sentences", max: 1.2 },
-  { name: "Chat", hint: "answers that make sense", max: 0.95 },
-];
+type Any = Record<string, any>;
 
-export function stageOf(loss: number | null | undefined, per: "byte" | "token" = "byte") {
-  if (loss == null || !Number.isFinite(loss)) return null;
-  const perByte = per === "token" ? loss / 3.6 : loss;
-  let i = 0;
-  for (let k = 1; k < STAGES.length; k++) if (perByte <= STAGES[k].max) i = k;
-  const next = STAGES[i + 1];
-  const lo = next ? next.max : 0, hi = STAGES[i].max === Infinity ? 4.5 : STAGES[i].max;
-  const within = next ? Math.max(0, Math.min(1, (hi - perByte) / Math.max(1e-6, hi - lo))) : 1;
-  return { index: i, within, perByte };
+/** How the held-out loss moved over the last few measurements (negative = better). */
+export function recentTrend(history: Any[] | undefined, window = 5): number | null {
+  const val = (history ?? []).filter((p) => p.split === "val" && Number.isFinite(p.loss)).map((p) => Number(p.loss));
+  if (val.length < 2) return null;
+  const a = val[Math.max(0, val.length - 1 - window)], b = val[val.length - 1];
+  return a ? (b - a) / a : null;
 }
 
-export function StageMeter({ loss, per }: { loss: number | null | undefined; per: "byte" | "token" }) {
-  const st = stageOf(loss, per);
-  if (!st) return null;
-  const total = (st.index + st.within) / (STAGES.length - 1);
-  return <div aria-label={`Learning stage: ${STAGES[st.index].name}`} className="rounded-lg border border-border bg-bg p-3">
-    <div className="mb-2 flex items-baseline justify-between gap-2 text-xs">
-      <span className="text-faint">Learning stage</span>
-      <span className="font-medium text-fg">{STAGES[st.index].name} <span className="font-normal text-muted">· {STAGES[st.index].hint}</span></span>
+function Meter({ label, value, warn }: { label: string; value: number | null | undefined; warn?: boolean }) {
+  const v = typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : null;
+  return <div className="flex items-center gap-1.5">
+    <span className="w-8 text-faint">{label}</span>
+    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3">
+      {v != null && <div className={`h-full rounded-full transition-[width] duration-700 ease-out ${warn ? "bg-warning" : "bg-accent"}`} style={{ width: `${Math.max(2, v * 100)}%` }} />}
     </div>
-    <div className="relative h-2 rounded-full bg-surface-3">
-      <div className="progress-live absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-[#5a0a10] via-accent to-[#ff6b75] shadow-[0_0_12px_var(--color-accent)] transition-[width] duration-1000 ease-out"
-        style={{ width: `${Math.max(3, total * 100)}%` }} />
-      {STAGES.map((s, i) => <span key={s.name} title={s.name}
-        className={`absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-bg ${i <= st.index ? "bg-accent" : "bg-surface-3"}`}
-        style={{ left: `${(i / (STAGES.length - 1)) * 100}%` }} />)}
-    </div>
-    <ol className="mt-2 grid grid-cols-6 text-center text-[0.59375rem] leading-tight text-faint [&>li]:truncate">{STAGES.map((s, i) =>
-      <li key={s.name} className={i === st.index ? "font-medium text-fg" : i < st.index ? "text-muted" : ""}>{s.name}</li>)}</ol>
+    <span className="w-9 text-right font-mono text-muted">{v != null ? `${Math.round(v * 100)}%` : "—"}</span>
+  </div>;
+}
+
+/**
+ * 2.5: what is happening right now, measured — no estimates. Speed and held-out loss come from the run's own
+ * reports, the load bars from each training computer's last check-in, and the data reads from MOTH Cloud.
+ * (Replaces the "learning stage" meter, which was a guess drawn from the loss.)
+ */
+export function LiveVitals({ report, compute, passes }: { report: Any; compute?: Any[]; passes?: number | null }) {
+  const trend = recentTrend(report.history);
+  const val = report.val_loss ?? report.best_val;
+  return <div aria-label="Live measurements" className="rounded-lg border border-border bg-bg p-3 text-xs">
+    <div className="mb-2 flex items-center gap-1.5 text-faint"><span className="live-dot" />Live · measured</div>
+    <dl className="grid grid-cols-2 gap-2">
+      <div><dt className="text-faint">Speed</dt><dd className="font-mono text-fg">{typeof report.tokens_per_sec === "number"
+        ? <><AnimatedNumber value={report.tokens_per_sec} /> tok/s</> : <span className="text-muted">measuring…</span>}</dd></div>
+      <div><dt className="text-faint">Held-out loss</dt><dd className="font-mono text-fg">{typeof val === "number" ? <AnimatedNumber value={val} digits={3} /> : "—"}
+        {trend != null && <span className={`ml-1 ${trend <= 0 ? "text-success" : "text-warning"}`}>{trend <= 0 ? "▼" : "▲"}{Math.abs(trend * 100).toFixed(1)}%</span>}</dd></div>
+      {typeof report.rounds === "number" && <div><dt className="text-faint">Shared round</dt>
+        <dd className="font-mono text-fg">{Math.min(Number(report.round ?? 0) + 1, report.rounds)} / {report.rounds}</dd></div>}
+      {typeof passes === "number" && <div><dt className="text-faint">Data read</dt>
+        <dd className={`font-mono ${passes > 2 ? "text-warning" : "text-fg"}`}>{passes.toFixed(1)}×</dd></div>}
+    </dl>
+    {(compute ?? []).length > 0 && <ul className="mt-2 space-y-1.5 border-t border-border pt-2">{(compute ?? []).map((c, i) =>
+      <li key={i} className="space-y-1 animate-fade-in">
+        <div className="flex items-center gap-1.5"><span className={c.seen_seconds_ago < 90 ? "live-dot" : "size-1.5 rounded-full bg-faint"} />
+          <span className="truncate text-fg">{c.cloud ? "MOTH Cloud" : c.name}</span>
+          <span className="text-faint">{c.kind.toUpperCase()}{typeof c.gpu_temp_c === "number" ? ` · ${Math.round(c.gpu_temp_c)}°C` : ""}</span>
+          {typeof c.part_progress === "number" && <span className="ml-auto font-mono text-muted">{Math.round(c.part_progress * 100)}% of part</span>}</div>
+        {c.kind === "gpu" ? <Meter label="GPU" value={c.gpu} warn={typeof c.gpu === "number" && c.gpu < 0.5} />
+          : <Meter label="CPU" value={c.cpu} />}
+      </li>)}</ul>}
   </div>;
 }
 

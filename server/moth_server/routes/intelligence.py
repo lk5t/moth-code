@@ -549,6 +549,34 @@ def get_curriculum(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ct
 
 
 # ---- 0.5.4: progress dashboard and timeline (every signed-in user; measurements only) ------------------------
+def _compute_live(ctx: Ctx, e: dict) -> list[dict]:
+    """The workers holding this experiment's work now, with the load they last reported (0..1)."""
+    import json as _json
+    import time as _time
+
+    from sqlalchemy import select as _select
+
+    from moth_server.db import training_jobs, workers
+
+    try:
+        rows = ctx.db.all(_select(training_jobs.c.worker_id, workers.c.name, workers.c.hardware, workers.c.last_heartbeat_at,
+                                  training_jobs.c.progress)
+                          .select_from(training_jobs.join(workers, workers.c.id == training_jobs.c.worker_id))
+                          .where(training_jobs.c.status == "leased",
+                                 training_jobs.c.spec.like(f'%"evolution_experiment": {int(e["id"])},%')))
+    except Exception:  # noqa: BLE001 — live load is a nice-to-have
+        return []
+    out, t = [], _time.time()
+    for r in rows:
+        hw = _json.loads(r["hardware"] or "{}")
+        u = hw.get("utilization") or {}
+        out.append({"name": r["name"], "kind": "gpu" if hw.get("compute") == "gpu" else "cpu",
+                    "cloud": hw.get("worker_kind") == "cloud", "gpu": u.get("gpu"), "cpu": u.get("cpu"),
+                    "gpu_memory": u.get("gpu_memory"), "gpu_temp_c": u.get("gpu_temp_c"),
+                    "part_progress": r["progress"], "seen_seconds_ago": round(t - float(r["last_heartbeat_at"] or 0))})
+    return out
+
+
 def _data_status(ctx: Ctx) -> dict:
     from moth_server.evolution import autopilot as AP
     try:
@@ -681,6 +709,8 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
                                 else D.report(e) if e.get('backend') == 'distributed' and e['status'] == 'running' else {})
                           or (e.get('metrics') or {}).get('progress') or (e.get('metrics') or {}).get('training') or {},
                           "candidate_version": e.get("candidate_version"), "error": e.get("error"),
+                          # 2.5: the computers training it right now and their measured load (no estimates)
+                          "compute_live": _compute_live(ctx, e) if e["status"] == "running" else [],
                           # 0.6.2 telemetry: when it ran, on what data and at what settings (owner only below)
                           "started_at": e.get("started_at"), "finished_at": e.get("finished_at"),
                           # 0.8.1: measured by MOTH Cloud's clock from when the compute actually took the work
