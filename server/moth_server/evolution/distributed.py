@@ -33,6 +33,7 @@ from sqlalchemy import select
 from moth_server.evolution.native_reset import next_job_values
 from moth_server.context import Ctx
 from moth_server.db import now, training_jobs, workers
+from moth_server.evolution import compute as C
 from moth_server.evolution import memory as MEM
 
 PROBE_TOLERANCE = 0.05
@@ -560,6 +561,10 @@ def _hand_to_faster(ctx: Ctx, exp: dict, st: dict, r: int, ids: dict, rows: dict
             break
         else:
             return False
+    # 2.4.3: remember the slow computer's real pace (it was slower than measured, e.g. MOTH Cloud's CPU also serving
+    # chat), so the next round gives it a part it can finish in time instead of handing over every round
+    steps_done = p * int(spec["train"]["steps"])
+    C.record_throughput(ctx, f"worker:{j['worker_id']}", steps_done * tokens_per_step, ran)
     from moth_server import models as M
     _create_round_jobs(ctx, exp, M.release(ctx, exp["base_version"]), {**st, "worker_ids": [w["id"]]},
                        int((exp["resources"] or {}).get("need_bytes") or 0), only=[i])

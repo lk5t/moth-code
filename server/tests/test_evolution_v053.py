@@ -473,3 +473,6 @@ def test_an_idle_faster_computer_takes_over_a_slow_part(client, owner, tmp_path,
     exp = next(e for e in MEM.experiments(ctx) if e["backend"] == "distributed")
     assert exp["resources"]["distributed"]["round"] == 1
     assert any(e["kind"] == "distributed.handed_over" for e in MEM.events(ctx, limit=50))
+    # 2.4.3: its real (slower) pace is remembered, so the next round gives the slow computer a smaller part
+    tp = ctx.db.get_config("compute_throughput", {})
+    assert tp[f"worker:{slow['worker_id']}"] < 1000.0

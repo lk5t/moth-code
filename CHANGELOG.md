@@ -3,6 +3,11 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.4.3 — Handovers teach MOTH Cloud its real speed
+
+- After 2.4.2, MOTH Cloud's slow part of every shared round was handed over to your idle GPU. That worked, but it happened every round: MOTH Cloud started its part, fell behind, and the GPU waited (up to 15 minutes) until the handover.
+- A handover now records the slow computer's real pace. The next round gives it a part it can finish in time, so the fast computer isn't left waiting.
+
 ## 2.4.2 — A fast computer no longer waits for a slow one
 
 - In shared training, a computer that has finished its part used to sit idle while a slower one was still well behind. Seen in production: your GPU waited while MOTH Cloud's busy CPU was 38% through its part.

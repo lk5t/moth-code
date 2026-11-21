@@ -6,4 +6,4 @@ initialisation by :mod:`moth.training`. No pretrained weights and no third-party
 AI APIs are used anywhere.
 """
 
-__version__ = "2.4.2"
+__version__ = "2.4.3"
