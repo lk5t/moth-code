@@ -1,5 +1,6 @@
 /** 2.4: Home — this week's leaderboard and how MOTH's test scores changed across versions. */
-import { Trophy, TrendingUp } from "lucide-react";
+import { Database, Trophy, TrendingUp } from "lucide-react";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { serverApi, useAccount } from "@/lib/account";
 import { useCloudProgress } from "@/lib/cloud-progress";
 import { useResource } from "@/lib/hooks";
@@ -53,6 +54,32 @@ export function BenchmarkTrend() {
           <div className="text-[0.625rem] text-faint">{vals.length} versions · {higher ? "higher" : "lower"} is better</div>
         </div>;
       })}
+    </div>
+  </section>;
+}
+
+const short = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
+
+/** 2.5: the training data MOTH has (distinct tokens) against what a model of its size needs, and how many
+ * times it has read it. Measured on MOTH Cloud; the bar fills as the library grows. */
+export function DataMeter({ status }: { status?: Any | null }) {
+  if (!status || !status.needed_tokens) return null;
+  const have = Number(status.prepared_tokens || 0), need = Number(status.needed_tokens), pct = Math.min(1, have / need);
+  const passes = typeof status.passes === "number" ? status.passes : null;
+  return <section aria-label="Training data" className="rounded-xl border border-border bg-surface p-3 text-xs animate-slide-up">
+    <h2 className="mb-2 flex items-center gap-1.5 font-medium"><Database className="size-3.5 text-accent" /> Training data
+      <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[0.625rem]", status.enough ? "bg-success/15 text-success" : "bg-warning/15 text-warning")}>
+        {status.enough ? "enough for its size" : "growing"}</span></h2>
+    <div className="flex items-baseline justify-between font-mono">
+      <span className="text-fg"><AnimatedNumber value={have} /> <span className="text-faint">distinct tokens</span></span>
+      <span className="text-muted">need ~{short(need)}</span>
+    </div>
+    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct * 100)}>
+      <div className={cn("h-full rounded-full transition-[width] duration-1000 ease-out", status.enough ? "bg-success" : "bg-accent", !status.enough && "shimmer")} style={{ width: `${Math.max(2, pct * 100)}%` }} />
+    </div>
+    <div className="mt-1.5 flex justify-between text-muted">
+      <span>{status.sources ?? 0} sources · {short(Number(status.params || 0))} parameters</span>
+      {passes != null && <span className={cn(passes > 2 ? "text-warning" : "text-muted")}>read {passes.toFixed(1)}× {passes > 2 ? "(more data coming)" : ""}</span>}
     </div>
   </section>;
 }

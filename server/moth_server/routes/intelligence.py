@@ -549,6 +549,14 @@ def get_curriculum(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ct
 
 
 # ---- 0.5.4: progress dashboard and timeline (every signed-in user; measurements only) ------------------------
+def _data_status(ctx: Ctx) -> dict:
+    from moth_server.evolution import autopilot as AP
+    try:
+        return AP.data_status(ctx)
+    except Exception:  # noqa: BLE001 — the rest of the page does not depend on it
+        return {}
+
+
 @router.get("/v1/intelligence/progress")
 def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
     """MOTH's lineage, benchmarks per version, training state, datasets and contributions.
@@ -737,6 +745,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
             "experiments": experiment_history,
             "next_cycle_at_estimate": st.get("next_cycle_at") or None, "curriculum": CU.state(ctx).get("stage")},
         "datasets": lib,
+        "data_status": _data_status(ctx),  # 2.5: distinct tokens prepared vs needed, data passes
         "network": {"workers_online": len(on), "gpu_online": gpu, "cpu_online": len(on) - gpu,
                     "cloud_worker_online": bool(cloud_on),
                     "workers_registered": sum(1 for w in online if _json.loads(w["hardware"] or "{}").get("worker_kind") != "cloud"),

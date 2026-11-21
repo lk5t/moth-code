@@ -30,7 +30,8 @@ from moth_server.evolution import settings as S
 PRIORITY = ["python-stdlib", "synthetic-arithmetic", "synthetic-instructions", "synthetic-python", "synthetic-reasoning", "synthetic-language", "synthetic-dialogue", "synthetic-debugging", "synthetic-code_explain", "synthetic-test_writing", "synthetic-sql", "synthetic-javascript", "synthetic-shell", "synthetic-security_explain", "mbpp", "magicoder-oss", "codefeedback", "glaive-code", "bash-commands", "mitre-attack", "gsm8k", "arc", "oasst1",
             "dolly-15k"]
 GB = 1024 ** 3
-MAX_SOURCE_CHARS = 2_000_000_000   # per source; the library grows towards this as the model needs more data (0.9.0)
+MAX_SOURCE_CHARS = 2_000_000_000
+DATA_TOKENS_PER_PARAM = 20  # 2.5: distinct training tokens a model needs per parameter (compute-optimal rule)   # per source; the library grows towards this as the model needs more data (0.9.0)
 # 0.9.0: large licensed sources the library adds by itself, one per growth step, conversation and code first
 # (the 50/40/10 focus), then knowledge, maths and general language. Each is pinned file by file and used shard
 # by shard, so adding one downloads only what the current budget needs.
@@ -399,10 +400,27 @@ def scale_data(ctx: Ctx, force: bool = False, reason: str | None = None) -> dict
     prepared = sum(int(v.get("train", 0)) if isinstance(v, dict) else int(v or 0)
                    for v in (manifest.get("token_counts") or {}).values())
     trained = int(((dep.get("info") or {}).get("lineage_totals") or {}).get("tokens") or 0)
-    if prepared <= 0 or (trained < 3 * prepared and not force):
+    # 2.5: aim for DATA_TOKENS_PER_PARAM distinct tokens per parameter of the model in training; short of it,
+    # grow faster (up to 8x and two new sources at once); and act after two reads of the data, not three
+    need = DATA_TOKENS_PER_PARAM * _training_params(ctx, dep)
+    short = prepared < need
+    if prepared <= 0 or (trained < 2 * prepared and not short and not force):
         return None
-    new = min(MAX_SOURCE_CHARS, int(pol["max_source_chars"]) * 2)
+    from sqlalchemy import select as _select
+
+    from moth_server.db import library_builds
+    if ctx.db.one(_select(library_builds.c.id).where(library_builds.c.status.in_(("queued", "running")))):
+        return None  # the larger library is still being prepared: measure it before growing again
+    factor = 2
+    while short and factor < 8 and prepared * factor < need:
+        factor *= 2
+    new = min(MAX_SOURCE_CHARS, int(pol["max_source_chars"]) * factor)
     added = _next_large_source(ctx, pol)
+    if added and short:
+        second = _next_large_source(ctx, {**pol, "approved_sources": pol["approved_sources"] + [added]})
+        if second:
+            discovery.update(ctx, {"approved_sources": list(dict.fromkeys(pol["approved_sources"] + [second]))})
+            pol = {**pol, "approved_sources": pol["approved_sources"] + [second]}
     if new == pol["max_source_chars"] and not added:
         return None  # nothing left to grow: every source is at its maximum
     free = shutil.disk_usage(library.root(ctx)).free
@@ -412,7 +430,8 @@ def scale_data(ctx: Ctx, force: bool = False, reason: str | None = None) -> dict
         changes["approved_sources"] = list(dict.fromkeys(pol["approved_sources"] + [added]))
     discovery.update(ctx, changes)
     why = (reason + ", so" if force and reason else
-           f"MOTH has trained on {trained:,} tokens, more than three times the {prepared:,} prepared, so")
+           f"MOTH needs about {need:,} distinct tokens for its size and has {prepared:,}, so" if short else
+           f"MOTH has trained on {trained:,} tokens, more than twice the {prepared:,} prepared, so")
     from moth.datafactory import catalog
 
     extra = (f" It also adds a new licensed source: {catalog.source(added)['name']} "
@@ -425,6 +444,38 @@ def scale_data(ctx: Ctx, force: bool = False, reason: str | None = None) -> dict
     except Exception:  # noqa: BLE001 — preparation retries on its own
         pass
     return {"max_source_chars": new, "trained": trained, "prepared": prepared, "added": added}
+
+
+def _training_params(ctx: Ctx, dep: dict) -> int:
+    """Parameters of the biggest model being trained now (a successor), else of the serving model."""
+    best = int((dep.get("info") or {}).get("params") or 0)
+    for e in MEM.experiments(ctx, limit=30):
+        rb = (e.get("config") or {}).get("rebirth") or {}
+        if rb and e["status"] in ("planned", "waiting", "running", "paused"):
+            best = max(best, int(rb.get("params_after") or 0))
+    return best
+
+
+def data_status(ctx: Ctx) -> dict:
+    """2.5, for the app: distinct tokens prepared vs needed, and how many times the data has been read."""
+    from moth_server import models as M
+    from moth_server.intelligence import library
+
+    dep, build = M.deployed(ctx), library.latest_ready(ctx)
+    if not dep:
+        return {}
+    import json as _json
+
+    manifest = (build or {}).get("manifest")
+    manifest = _json.loads(manifest) if isinstance(manifest, str) else (manifest or {})
+    prepared = sum(int(v.get("train", 0)) if isinstance(v, dict) else int(v or 0)
+                   for v in (manifest.get("token_counts") or {}).values())
+    trained = int(((dep.get("info") or {}).get("lineage_totals") or {}).get("tokens") or 0)
+    params = _training_params(ctx, dep)
+    need = DATA_TOKENS_PER_PARAM * params
+    return {"prepared_tokens": prepared, "needed_tokens": need, "params": params,
+            "trained_tokens": trained, "passes": round(trained / prepared, 2) if prepared else None,
+            "enough": bool(prepared and prepared >= need), "sources": len(manifest.get("token_counts") or {})}
 
 
 def _next_large_source(ctx: Ctx, pol: dict) -> str | None:
