@@ -457,11 +457,19 @@ def advance(ctx: Ctx, exp: dict, settings: dict) -> dict[str, Any]:
               level="info" if accepted else "warning", cycle_id=exp["cycle_id"], experiment_id=exp["id"])
     st["round"] = r + 1
     st["weights_sha256"] = _sha(_round_weights(rd, r + 1))
+    if st["round"] < st["rounds"] and _stalled(st["history"], int(st["rounds"])):
+        st["stopped_early"] = {"after": st["round"], "planned": st["rounds"]}
+        MEM.event(ctx, "distributed.stopped_early", f"Experiment #{exp['id']}: held-out loss has not improved for "
+                  f"{PLATEAU_ROUNDS} rounds; finishing after round {st['round']} of {st['rounds']} (more rounds would "
+                  "only memorise the training data) and testing the result now.",
+                  cycle_id=exp["cycle_id"], experiment_id=exp["id"])
+        st["rounds"] = st["round"]
     if st["round"] < st["rounds"]:
         _create_round_jobs(ctx, exp, base, st, int((exp["resources"] or {}).get("need_bytes") or 0))
         _save(ctx, exp, st)
         return {"state": "running", **progress, "round": st["round"]}
     _save(ctx, exp, st)
+    _learn_shared_speed(ctx, exp, st)
     return {"state": "finished", "result": _package(ctx, exp, base, st, rd)}
 
 
@@ -519,6 +527,9 @@ def _take_back_stuck(ctx: Ctx, exp: dict, st: dict, r: int, ids: dict, rows: dic
     return True
 
 
+PLATEAU_ROUNDS = 6     # 2.5: stop a shared run whose held-out loss has not improved for this many rounds
+PLATEAU_GAIN = 0.01    # ... by at least 1 %
+SHARED_SPEED_KEY = "shared_successor_speed_factor"
 STEAL_MIN_SECONDS = 120  # 2.4.2: never judge a part's pace before it has run this long
 STEAL_MARGIN = 1.5  # the idle computer must be expected to finish at least this much sooner
 
@@ -632,6 +643,48 @@ def _package(ctx: Ctx, exp: dict, base: dict, st: dict, rd: Path) -> dict[str, A
     return result
 
 
+def _learn_shared_speed(ctx: Ctx, exp: dict, st: dict) -> None:
+    """2.5: a successor planned at "about 0.8 h at the measured speed" took ~10 h when shared (merging, waiting for
+    the slowest computer, small batches). The ratio of real to planned speed is remembered and applied to the next
+    successor's plan, so its time and length are realistic."""
+    rb = (exp.get("config") or {}).get("rebirth") or {}
+    real = real_speed(st.get("history") or [])
+    planned = float(rb.get("planned_tokens") or 0) / max(1.0, float(rb.get("planned_hours") or 0) * 3600)
+    if not real or not planned or not rb.get("planned_hours"):
+        return
+    ratio = max(0.01, min(2.0, real / planned))
+    old = ctx.db.get_config(SHARED_SPEED_KEY, None)
+    ctx.db.set_config(SHARED_SPEED_KEY, round(ratio if old is None else 0.5 * float(old) + 0.5 * ratio, 4))
+
+
+def shared_speed_factor(ctx: Ctx) -> float:
+    try:
+        return float(ctx.db.get_config(SHARED_SPEED_KEY, 1.0) or 1.0)
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def real_speed(hist: list[dict]) -> float | None:
+    """2.5: tokens per second a shared run really achieves (rounds after the first, waiting and merging included)."""
+    if len(hist) < 2 or any(h.get("at") is None for h in hist):
+        return None
+    span = float(hist[-1]["at"]) - float(hist[0]["at"])
+    return sum(int(h.get("tokens") or 0) for h in hist[1:]) / span if span > 0 else None
+
+
+def _stalled(hist: list[dict], rounds: int) -> bool:
+    """2.5: the held-out probe has not improved by PLATEAU_GAIN for PLATEAU_ROUNDS rounds, past a third of the run:
+    more rounds would only memorise the training data (training loss falls, held-out loss does not)."""
+    if len(hist) < max(PLATEAU_ROUNDS + 2, rounds // 3):
+        return False
+    probes = [float(h["probe_after"]) for h in hist if h.get("accepted") and h.get("probe_after") is not None]
+    earlier = [float(hist[0]["probe_before"])] + probes[:-PLATEAU_ROUNDS] if hist[0].get("probe_before") else probes[:-PLATEAU_ROUNDS]
+    recent = probes[-PLATEAU_ROUNDS:]
+    if not earlier:
+        return False
+    return not recent or min(recent) > min(earlier) * (1 - PLATEAU_GAIN)
+
+
 def report(exp: dict) -> dict[str, Any]:
     """0.10.0: live progress of a shared run for the live view (rounds as steps, probe loss as validation)."""
     st = (exp.get("resources") or {}).get("distributed") or {}
@@ -646,7 +699,8 @@ def report(exp: dict) -> dict[str, Any]:
         if h.get("train_loss") is not None:
             points.append({"step": step, "loss": h["train_loss"], "split": "train"})
     last = hist[-1] if hist else {}
-    return {"step": int(st.get("round") or 0) * per, "max_steps": int(st.get("rounds") or 0) * per,
+    tps = real_speed(hist)
+    return {"tokens_per_sec": round(tps, 1) if tps else None, "step": int(st.get("round") or 0) * per, "max_steps": int(st.get("rounds") or 0) * per,
             "fraction": min(1.0, int(st.get("round") or 0) / max(1, int(st.get("rounds") or 1))),
             "train_loss": last.get("train_loss"), "val_loss": last.get("probe_after"),
             "tokens_seen": sum(int(h.get("tokens") or 0) for h in hist), "history": points[-120:],

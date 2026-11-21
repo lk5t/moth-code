@@ -414,6 +414,8 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
     tokens_per_step = batch * seq
     speed = float(rs.get("successor_tokens_per_second")
                   or float(rs["tokens_per_second_now"]) * rs["params_before"] / max(1, rs["params_after"]))
+    from moth_server.evolution import distributed as _D
+    speed *= _D.shared_speed_factor(ctx)  # 2.5: what shared successor runs really achieved compared with their plan
     # a successor that did not beat the current model is retried once with twice the training
     retry = sum(1 for e in MEM.experiments(ctx, limit=200) if (e.get("config") or {}).get("rebirth")
                 and int(e["config"]["rebirth"].get("params_after") or 0) == rs["params_after"]

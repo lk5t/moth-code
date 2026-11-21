@@ -10,6 +10,12 @@ current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOL
 - A grown successor needs about a third of the training, uses the normal learning rate and skips the chat warm-up, so bigger versions arrive sooner and are rarely worse than the model they replace.
 - Planned shapes now keep the current model's attention layout so growth stays exact.
 - Fixed: the check on training results compared updates of weights that start at zero against zero, so it would have refused every shared part of a grown model. It now compares them with a normally started weight's size; huge updates are still refused.
+**Shared runs: honest time, no wasted hours**
+- Seen in production: a bigger successor was planned at "about 0.8 h" and took about 10 h when shared. The plan counted every computer's top speed, not the time spent merging rounds and waiting for the slowest one.
+- A shared run now shows its real speed (it said "Not reported").
+- When a shared successor finishes, MOTH remembers how its real speed compared with the plan and uses that for the next one, so planned times and lengths are realistic.
+- A shared run stops early when its held-out loss hasn't improved by 1% for 6 rounds (after at least a third of the run). More rounds would only memorise the training data. The result is then tested at once.
+
 - Fixed: MOTH Cloud could not install Node.js for the JavaScript exam ("LinkOutsideDestinationError" for Node's own `bin/corepack` link). The archive is now checked by MOTH itself (every file and link must stay inside its folder) and then unpacked.
 
 ## 2.4.3 — Handovers teach MOTH Cloud its real speed
