@@ -4,6 +4,7 @@
 
 ### What's new in 2.5
 
+- **2.5.1: real numbers.** Home and the Model tab show MOTH's training data (have vs need), a fixed yardstick chart, and live measurements of every computer training it (speed, GPU load, temperature) instead of a guessed "learning stage".
 - **Bigger MOTH, no restart from zero.** When MOTH grows (training on this PC or with others), the bigger model starts with the current one's answers and keeps learning, so new versions arrive sooner.
 
 ### What's new in 2.4

@@ -3,6 +3,27 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.5.1 — Real numbers, more data, one steady learning curve
+
+**More training data, aimed at a target**
+- MOTH now aims for about 20 tokens of distinct training data per parameter of the model it is training (the usual compute-optimal rule). When it has less, it grows the library faster: up to 8× per step and two new licensed sources at once, instead of doubling slowly. It also grows after the data has been read twice, not three times.
+- Home and the Model tab show a **Training data** meter: distinct tokens MOTH has against what its size needs, how many sources, and how many times it has read them.
+
+**A fixed yardstick**
+- The held-out test files changed every time the library was rebuilt, so scores from different months could not be compared. MOTH now freezes one held-out text the first time and scores every version on it in bits per byte. That number does not depend on the tokenizer or the model's size.
+- Home and the Model tab show it as a chart that draws itself, with the change since the first measured version.
+
+**One learning-rate curve for shared runs**
+- Workers trained every shared round at a fixed learning rate, with no warm-up and no slow-down at the end. Shared runs now follow one curve over all their rounds: a short warm-up, then a smooth decline. A run continued from a checkpoint skips the warm-up.
+- Checked and already in place: mixed precision, fast attention and compiled models on GPUs.
+
+**Real measurements instead of guesses**
+- The "learning stage" meter (Babbling → Chat) was a guess drawn from the loss, so it is gone. The live view now shows measured speed, the held-out loss with its recent trend, the shared round, how many times the data has been read, and each training computer with its real GPU or CPU load, GPU temperature and progress on its part.
+- The Model tab has a model card: what MOTH can do today, the tokens it has been trained on, its data and its yardstick.
+
+**Self-quiz while MOTH is small**
+- A model that gets almost nothing right learns little from quizzing itself every hour. Below 10% correct it now quizzes every 6 hours, below 25% every 3 hours, otherwise hourly. A new version is quizzed straight away.
+
 ## 2.5.0 — A bigger MOTH starts as good as the current one
 
 - When MOTH grows into a bigger model (more layers, wider, bigger memory), the new model used to start mostly from scratch and spend hours relearning what the old one knew. Many bigger attempts were then declined for being worse.
