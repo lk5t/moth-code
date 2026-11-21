@@ -270,6 +270,9 @@ def _create_round_jobs(ctx: Ctx, exp: dict, base: dict, st: dict, need_bytes: in
                     "train": {"steps": st["local_steps"], "lr": cfg["lr"], "batch_size": cfg["batch_size"],
                               "batch_autotune": bool(cfg.get("batch_autotune", True)),
                               "seq_len": cfg["seq_len"], "weight_decay": cfg["weight_decay"],
+                              # 2.5: one learning-rate curve over all rounds (workers before 2.5 ignore it)
+                              "schedule": {"round": r, "rounds": st["rounds"], "min_lr": float(cfg["lr"]) / 10,
+                                           "warmup": 0.0 if st.get("started_from") in ("checkpoint", "declined_attempt") else 0.02},
                               # 1.0.5: early rounds use the short context, like a local run
                               **({"short_context": int(cfg["short_context"])}
                                  if cfg.get("short_context") and r < float(cfg.get("short_until") or 0) * st["rounds"] else {})},

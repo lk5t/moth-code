@@ -23,6 +23,21 @@ CHECKPOINT_EVERY = 25
 SNAPSHOT_SECONDS = 300.0  # how often an evolution job sends its progress to MOTH Cloud (2.3: 5 min, was 10)
 
 
+
+def shared_lr(train: dict, step: int) -> float:
+    """2.5: the learning rate at ``step`` of this part, on the shared run's single curve: a short warm-up, then
+    cosine decay to ``min_lr`` over all rounds. Every round used to train at a fixed rate."""
+    import math
+
+    sch = train["schedule"]
+    lr, low = float(train["lr"]), float(sch.get("min_lr", float(train["lr"]) / 10))
+    rounds = max(1, int(sch["rounds"]))
+    frac = min(1.0, (int(sch["round"]) + step / max(1, int(train["steps"]))) / rounds)
+    warm = float(sch.get("warmup", 0.02))
+    if frac < warm:
+        return lr * max(0.05, frac / warm)
+    return low + 0.5 * (1 + math.cos(math.pi * (frac - warm) / max(1e-9, 1 - warm))) * (lr - low)
+
 class Stop(Exception):
     pass
 
@@ -643,6 +658,10 @@ class WorkerRunner:
                     (loss / accumulation).backward()
                     train_loss += loss.detach().item() / accumulation
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                if train.get("schedule"):  # 2.5: one learning-rate curve over the whole shared run, not per round
+                    lr_now = shared_lr(train, step)
+                    for g in opt.param_groups:
+                        g["lr"] = lr_now
                 opt.step()
                 opt.zero_grad(set_to_none=True)
                 n_tokens += micro * seq * accumulation
