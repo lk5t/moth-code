@@ -9,6 +9,7 @@ current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOL
 - Now the bigger model is grown from the current one so it gives the same answers at the start, then keeps learning. Width, depth and memory all grow this way (falls back to the old method only when the shape can't be grown exactly, e.g. a new tokenizer).
 - A grown successor needs about a third of the training, uses the normal learning rate and skips the chat warm-up, so bigger versions arrive sooner and are rarely worse than the model they replace.
 - Planned shapes now keep the current model's attention layout so growth stays exact.
+- Fixed: the check on training results compared updates of weights that start at zero against zero, so it would have refused every shared part of a grown model. It now compares them with a normally started weight's size; huge updates are still refused.
 
 ## 2.4.3 — Handovers teach MOTH Cloud its real speed
 

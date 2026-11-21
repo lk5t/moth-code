@@ -62,3 +62,16 @@ def test_shapes_that_cannot_be_preserved_fall_back_to_a_partial_copy():
     new = preserving_shape(OLD, d_model=96, n_layers=3, ffn_hidden=200)
     _, how = grow_into(_state(OLD), OLD, new, MothModel(new).state_dict())
     assert how == "preserving"
+
+
+def test_updates_to_zero_started_weights_are_accepted():
+    """A grown model's new layers start some weights at zero; training them is a normal update, not an attack."""
+    import torch
+
+    from moth.community.validation import validate_delta
+
+    base = {"new.wo": torch.zeros(64, 64), "old.w": torch.randn(64, 64) * 0.02}
+    ok = validate_delta(base, {"new.wo": torch.randn(64, 64) * 0.01, "old.w": torch.randn(64, 64) * 0.001}, 1000.0)
+    assert ok.ok, ok.reasons
+    huge = validate_delta(base, {"new.wo": torch.full((64, 64), 1e6), "old.w": torch.zeros(64, 64)}, 1000.0)
+    assert not huge.ok and "update too large" in huge.reasons[0]

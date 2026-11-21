@@ -33,6 +33,9 @@ def deserialize_state(data: bytes) -> dict[str, torch.Tensor]:
     return torch.load(io.BytesIO(data), map_location="cpu", weights_only=True)
 
 
+INIT_STD = 0.02  # the model's weight initialisation scale (MothModel._init_weights)
+
+
 def validate_delta(base: dict[str, torch.Tensor], delta: dict[str, torch.Tensor],
                    max_relative_norm: float = MAX_RELATIVE_NORM) -> ValidationReport:
     reasons: list[str] = []
@@ -53,7 +56,9 @@ def validate_delta(base: dict[str, torch.Tensor], delta: dict[str, torch.Tensor]
         wn = w.float().norm().item()
         dn = d.float().norm().item()
         total_sq += dn * dn
-        rel = dn / (wn + 1e-8)
+        # 2.5: weights a grown model starts at zero (new layers' output projections keep its answers unchanged)
+        # are compared with the size a normally initialised weight of that shape has, not with zero
+        rel = dn / max(wn, INIT_STD * math.sqrt(w.numel()), 1e-8)
         worst = max(worst, rel)
         if rel > max_relative_norm:
             reasons.append(f"{k}: update too large (relative norm {rel:.3f} > {max_relative_norm})")
