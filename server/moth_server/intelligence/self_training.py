@@ -204,6 +204,16 @@ def generation(ctx: Ctx) -> int:
     return n.bit_length()
 
 
+def interval_for(last: dict[str, Any]) -> float:
+    """2.5: a model that gets almost nothing right learns little from quizzing itself every hour (0/40 arithmetic):
+    below 10 % correct it quizzes every 6 hours, below 25 % every 3 hours, otherwise every hour. A new model
+    version is quizzed at the next check, whatever its predecessor scored."""
+    kinds = last.get("kinds") or {}
+    tried = sum(int(v.get("tried") or 0) for v in kinds.values())
+    rate = sum(int(v.get("correct") or 0) for v in kinds.values()) / tried if tried else 1.0
+    return INTERVAL * (6 if rate < 0.10 else 3 if rate < 0.25 else 1)
+
+
 def maybe_run(ctx: Ctx) -> bool:
     """Start a self-quiz in the background when one is due (called by the supervisor every minute)."""
     from moth_server.evolution import settings as S
@@ -214,8 +224,9 @@ def maybe_run(ctx: Ctx) -> bool:
         return False
     if ctx.extras.get("inference_engine") is None or ctx.extras.get("self_quiz_running"):
         return False
-    last = float((state(ctx).get("last") or {}).get("at") or 0)
-    if time.time() - last < INTERVAL:
+    last = state(ctx).get("last") or {}
+    new_version = last.get("version") is not None and last.get("version") != ctx.extras.get("deployed_version")
+    if not new_version and time.time() - float(last.get("at") or 0) < interval_for(last):
         return False
     ctx.extras["self_quiz_running"] = True
 
