@@ -21,6 +21,8 @@ import { EmptyState } from "@/components/ui/empty";
 import { LoadingBlock } from "@/components/ui/skeleton";
 import { MothEmblem } from "@/components/MothEmblem";
 import { cn } from "@/lib/utils";
+import { honestCapability } from "@/lib/capability";
+import { DataMeter, YardstickChart } from "@/features/home/HomeExtras";
 
 type Any = Record<string, any>;
 
@@ -169,6 +171,14 @@ export function ModelTab({ progress }: { progress: Any | null }) {
         </div>
       </CardContent>
     </Card>
+    {/* 2.5: the model card — what it can do today, the data behind it and its fixed yardstick, all measured */}
+    <section aria-label="Model card" className="grid gap-3 md:grid-cols-2">
+      <p role="note" className="rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted md:col-span-2 animate-slide-up">
+        <span className="font-medium text-fg">What it can do today: </span>{honestCapability(typeof cur.params === "number" ? cur.params : null) ?? "Not measured yet."}
+        {cur.lineage_totals?.tokens ? <> Trained on <span className="font-mono text-fg">{Number(cur.lineage_totals.tokens).toLocaleString()}</span> tokens so far.</> : null}</p>
+      <DataMeter status={p?.data_status} />
+      <YardstickChart timeline={p?.timeline ?? []} />
+    </section>
 
     <Card aria-label="Capability benchmarks"><CardContent className="p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-sm font-medium">Capabilities</h3>

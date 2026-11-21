@@ -93,7 +93,11 @@ export function yardstickPoints(timeline: Any[]): { version: number; bpb: number
 
 export function Yardstick() {
   const { data: p } = useCloudProgress();
-  const pts = yardstickPoints(p?.timeline ?? []);
+  return <YardstickChart timeline={p?.timeline ?? []} />;
+}
+
+export function YardstickChart({ timeline }: { timeline: Any[] }) {
+  const pts = yardstickPoints(timeline);
   if (!pts.length) return null;
   const vals = pts.map((x) => x.bpb), lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
   const xy = pts.map((x, i) => [pts.length === 1 ? 50 : (i / (pts.length - 1)) * 100, 6 + ((x.bpb - lo) / span) * 40] as const);
