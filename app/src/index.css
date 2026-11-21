@@ -306,3 +306,8 @@ html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="
 @keyframes shared-core { 0%, 100% { transform: scale(1) } 50% { transform: scale(1.05) } }
 .shared-core { animation: shared-core 3s ease-in-out infinite; }
 :root[data-motion="off"] .shared-flow, :root[data-motion="off"] .shared-ping, :root[data-motion="off"] .shared-core { animation: none; }
+
+/* 2.5: a chart line that draws itself when its data changes */
+.draw-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw-line 900ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+@keyframes draw-line { to { stroke-dashoffset: 0 } }
+@media (prefers-reduced-motion: reduce) { .draw-line { animation: none; stroke-dashoffset: 0 } }

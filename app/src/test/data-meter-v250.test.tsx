@@ -15,3 +15,16 @@ describe("2.5 training data meter", () => {
     expect(container.innerHTML).toBe("");
   });
 });
+
+import { yardstickPoints } from "@/features/home/HomeExtras";
+
+describe("2.5 yardstick", () => {
+  it("uses each version's bits per byte on the fixed text and skips versions not yet measured", () => {
+    const pts = yardstickPoints([
+      { version: 210, benchmarks: { yardstick: { value: 1.9, bits_per_byte: 2.4 } } },
+      { version: 211, benchmarks: {} },
+      { version: 212, benchmarks: { yardstick: { value: 1.7, bits_per_byte: 2.1 } } },
+    ]);
+    expect(pts).toEqual([{ version: 210, bpb: 2.4 }, { version: 212, bpb: 2.1 }]);
+  });
+});

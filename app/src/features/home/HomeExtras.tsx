@@ -1,5 +1,5 @@
 /** 2.4: Home — this week's leaderboard and how MOTH's test scores changed across versions. */
-import { Database, Trophy, TrendingUp } from "lucide-react";
+import { Database, Ruler, Trophy, TrendingUp } from "lucide-react";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { serverApi, useAccount } from "@/lib/account";
 import { useCloudProgress } from "@/lib/cloud-progress";
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 type Any = Record<string, any>;
 const fromCloud = (url: string) => serverApi<Any>(url);
 const NICE: Record<string, string> = { code: "Coding", codegen: "Coding", python: "Python", math: "Maths", arithmetic: "Maths",
-  conversation: "Conversation", dialogue: "Conversation", reasoning: "Reasoning", language: "Language", debugging: "Debugging" };
+  conversation: "Conversation", dialogue: "Conversation", yardstick: "Yardstick", reasoning: "Reasoning", language: "Language", debugging: "Debugging" };
 const nice = (k: string) => NICE[k.toLowerCase()] ?? NICE[k.toLowerCase().split(/[_-]/)[0]] ?? k.replace(/[_-]+/g, " ");
 
 export function Leaderboard() {
@@ -33,7 +33,7 @@ export function BenchmarkTrend() {
   const { data: p } = useCloudProgress();
   const versions: Any[] = (p?.timeline ?? []).filter((v: Any) => v.benchmarks && Object.keys(v.benchmarks).length);
   if (versions.length < 2) return null;
-  const keys = [...new Set(versions.flatMap((v) => Object.keys(v.benchmarks)))].filter((k) =>
+  const keys = [...new Set(versions.flatMap((v) => Object.keys(v.benchmarks)))].filter((k) => k !== "yardstick" &&
     versions.filter((v) => Number.isFinite(v.benchmarks[k]?.value)).length >= 2).slice(0, 6);
   if (!keys.length) return null;
   return <section aria-label="Test scores" className="rounded-xl border border-border bg-surface p-3 text-xs">
@@ -81,5 +81,38 @@ export function DataMeter({ status }: { status?: Any | null }) {
       <span>{status.sources ?? 0} sources · {short(Number(status.params || 0))} parameters</span>
       {passes != null && <span className={cn(passes > 2 ? "text-warning" : "text-muted")}>read {passes.toFixed(1)}× {passes > 2 ? "(more data coming)" : ""}</span>}
     </div>
+  </section>;
+}
+
+/** 2.5: MOTH's yardstick — the same frozen text scored for every version in bits per byte (lower is better),
+ * so this line is directly comparable across sizes and tokenizers. The line draws itself on change. */
+export function yardstickPoints(timeline: Any[]): { version: number; bpb: number }[] {
+  return timeline.map((v) => ({ version: Number(v.version), bpb: Number(v.benchmarks?.yardstick?.bits_per_byte) }))
+    .filter((p) => Number.isFinite(p.bpb) && p.bpb > 0);
+}
+
+export function Yardstick() {
+  const { data: p } = useCloudProgress();
+  const pts = yardstickPoints(p?.timeline ?? []);
+  if (!pts.length) return null;
+  const vals = pts.map((x) => x.bpb), lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
+  const xy = pts.map((x, i) => [pts.length === 1 ? 50 : (i / (pts.length - 1)) * 100, 6 + ((x.bpb - lo) / span) * 40] as const);
+  const path = xy.map(([x, y], i) => `${i ? "L" : "M"}${x},${y}`).join(" ");
+  const first = vals[0], last = vals.at(-1)!, change = first ? (first - last) / first : 0;
+  return <section aria-label="Yardstick" className="rounded-xl border border-border bg-surface p-3 text-xs animate-slide-up">
+    <h2 className="mb-1 flex items-center gap-1.5 font-medium"><Ruler className="size-3.5 text-accent" /> Yardstick
+      <span className="font-normal text-faint">same fixed text every version · bits per byte, lower is better</span></h2>
+    <div className="flex items-baseline gap-2 font-mono">
+      <span className="text-xl text-fg"><AnimatedNumber value={last} digits={3} /></span>
+      {pts.length > 1 && <span className={cn(change >= 0 ? "text-success" : "text-warning")}>
+        {change >= 0 ? "▼" : "▲"} {Math.abs(change * 100).toFixed(1)}% since v{pts[0].version}</span>}
+    </div>
+    <svg viewBox="0 0 100 52" preserveAspectRatio="none" className="mt-1 h-16 w-full" aria-hidden>
+      <path key={path} d={path} pathLength={1} fill="none" stroke="var(--color-accent)" strokeWidth={1.75}
+        vectorEffect="non-scaling-stroke" className="draw-line" />
+      {xy.map(([x, y], i) => <circle key={pts[i].version} cx={x} cy={y} r={1.6} className="fill-accent animate-pop"
+        style={{ animationDelay: `${i * 40}ms` }}><title>{`v${pts[i].version}: ${pts[i].bpb.toFixed(3)} bits per byte`}</title></circle>)}
+    </svg>
+    <div className="text-[0.625rem] text-faint">{pts.length} version{pts.length === 1 ? "" : "s"} measured</div>
   </section>;
 }

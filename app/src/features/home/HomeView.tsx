@@ -20,7 +20,7 @@ import { pickProject, openProjectPath } from "@/features/workspace/project-actio
 import { StageMeter } from "@/features/intelligence/live/Learning";
 import { CloneGitHub } from "./CloneGitHub";
 import { SideBySide } from "@/features/intelligence/SideBySide";
-import { BenchmarkTrend, DataMeter, Leaderboard } from "./HomeExtras";
+import { BenchmarkTrend, DataMeter, Leaderboard, Yardstick } from "./HomeExtras";
 
 type Any = Record<string, any>;
 
@@ -80,7 +80,7 @@ export function HomeView() {
       </section>
 
       <Honest params={typeof p?.current?.params === "number" ? p.current.params : null} />
-      <DataMeter status={p?.data_status} />
+      <div className="grid gap-3 md:grid-cols-2"><DataMeter status={p?.data_status} /><Yardstick /></div>
 
       {/* 2.1: everyone sees MOTH learning; the Owner can open the full live view */}
       {running && <section aria-label="MOTH is learning" className="grid gap-3 animate-slide-up md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">

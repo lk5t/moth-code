@@ -99,6 +99,42 @@ HOLDOUT_MAX_BYTES = 200_000
 PRESCREEN_DROP = 0.05  # 1.1: a candidate clearly worse on held-out text is rejected before the full exam
 
 
+YARDSTICK_BYTES_PER_DOMAIN = 40_000
+
+
+def yardstick(ctx: Ctx, eval_dir: Path | None) -> Path | None:
+    """2.5: MOTH's yardstick — held-out text frozen the first time it is needed and never changed afterwards
+    (the library's held-out files change with every rebuild, so their scores cannot be compared across
+    months). Scored in bits per byte, which does not depend on the tokenizer or the model's size."""
+    f = Path(ctx.settings.data_dir) / "evolution" / "yardstick" / "yardstick-v1.jsonl"
+    if f.is_file():
+        return f
+    if eval_dir is None:
+        return None
+    rows: list[str] = []
+    for p in sorted(eval_dir.glob("holdout_*.jsonl")):
+        used = 0
+        for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+            if used >= YARDSTICK_BYTES_PER_DOMAIN:
+                break
+            try:
+                text = json.loads(line).get("text")
+            except ValueError:
+                continue
+            if text:
+                rows.append(json.dumps({"text": text, "domain": p.stem.split("_", 1)[1]}))
+                used += len(text.encode("utf-8"))
+    if not rows:
+        return None
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    tmp.replace(f)
+    ctx.db.set_config("yardstick", {"version": 1, "sha256": hashlib.sha256(f.read_bytes()).hexdigest(),
+                                    "rows": len(rows), "bytes": f.stat().st_size})
+    return f
+
+
 def capability_suites(ctx: Ctx) -> list[dict[str, Any]]:
     """0.5.1 capability benchmarks from the latest dataset-library build (never-trained held-out data).
 
@@ -127,6 +163,12 @@ def capability_suites(ctx: Ctx) -> list[dict[str, Any]]:
         out.append({"id": "capability:instruction:conversation", "kind": "capability", "capability": "instruction",
                     "path": str(conv), "limit": lim, "name": "Instruction following",
                     "sha": _sha(f"capability/v1:instruction:{lim}:{file_sha(conv)}")})
+    ys = yardstick(ctx, d)
+    if ys is not None:  # 2.5: one frozen text every version is scored on, so progress is comparable for good
+        out.append({"id": "capability:yardstick:v1", "kind": "capability", "capability": "holdout", "path": str(ys),
+                    "limit": CAPABILITY_LIMITS["holdout"], "max_bytes": HOLDOUT_MAX_BYTES,
+                    "name": "Yardstick (fixed text, bits per byte)",
+                    "sha": _sha(f"yardstick/v1:{CAPABILITY_LIMITS['holdout']}:{HOLDOUT_MAX_BYTES}:{file_sha(ys)}")})
     for p in sorted(d.glob("holdout_*.jsonl")):
         dom = p.stem.split("_", 1)[1]
         lim = CAPABILITY_LIMITS["holdout"]

@@ -618,6 +618,7 @@ def progress(auth: Auth = Depends(current_auth), ctx: Ctx = Depends(get_ctx)):
             "growth": info.get("growth"), "lineage_totals": info.get("lineage_totals"),
             "datasets": ds_names(_json.loads(row["datasets"]) if isinstance(row["datasets"], str) else row["datasets"]),
             "benchmarks": {k: {"value": v["value"], "metric": v.get("metric"), "higher_is_better": v.get("higher_is_better"),
+                               "bits_per_byte": v.get("bits_per_byte"),
                                "evaluated_at": v.get("evaluated_at"), "skills": v.get("skills"),
                                "context_retention": v.get("context_retention")}
                            for k, v in reps.items()},
