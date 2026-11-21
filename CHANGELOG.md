@@ -3,6 +3,13 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.5.0 — A bigger MOTH starts as good as the current one
+
+- When MOTH grows into a bigger model (more layers, wider, bigger memory), the new model used to start mostly from scratch and spend hours relearning what the old one knew. Many bigger attempts were then declined for being worse.
+- Now the bigger model is grown from the current one so it gives the same answers at the start, then keeps learning. Width, depth and memory all grow this way (falls back to the old method only when the shape can't be grown exactly, e.g. a new tokenizer).
+- A grown successor needs about a third of the training, uses the normal learning rate and skips the chat warm-up, so bigger versions arrive sooner and are rarely worse than the model they replace.
+- Planned shapes now keep the current model's attention layout so growth stays exact.
+
 ## 2.4.3 — Handovers teach MOTH Cloud its real speed
 
 - After 2.4.2, MOTH Cloud's slow part of every shared round was handed over to your idle GPU. That worked, but it happened every round: MOTH Cloud started its part, fell behind, and the GPU waited (up to 15 minutes) until the handover.

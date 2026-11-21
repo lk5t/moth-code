@@ -317,6 +317,24 @@ def plan(ctx: Ctx, base: dict, settings: dict, cycle_seed: int) -> dict[str, Any
 REBIRTH_LR = 1e-3          # a fresh model learns fastest with a larger rate than continued training
 REBIRTH_MAX_HOURS = 10.0   # one successor run at most (it is checkpointed and resumable like any run)
 REBIRTH_MIN_STEPS = 500
+GROWN_TOKEN_FRACTION = 3   # 2.5: a model grown exactly from the current one needs about a third of the tokens
+
+
+def _grows_exactly(base: dict, rs: dict) -> bool:
+    """Can the current model grow into the planned successor without changing its answers?"""
+    import json as _json
+    from pathlib import Path
+
+    from moth.model.config import MothConfig
+    from moth.model.growth import can_widen
+
+    try:
+        f = Path(base["path"]) / "config.json"
+        old = MothConfig.from_dict(_json.loads(f.read_text()) if f.is_file() else base["info"]["config"])
+        new = MothConfig.from_dict({**old.to_dict(), **rs["architecture"]})
+        return can_widen(old, new) is None
+    except Exception:  # noqa: BLE001 — unknown: plan it like a fresh successor
+        return False
 
 
 MIN_SUCCESSOR_STEP_TOKENS = 8192
@@ -403,30 +421,36 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
     hours = min(REBIRTH_MAX_HOURS * (2 ** retry), float(settings["budget"]["max_cycle_hours"]) * 0.9)
     tokens = min(int(rs["tokens_target"]) * (2 ** retry), int(speed * hours * 3600))
     steps = max(REBIRTH_MIN_STEPS, tokens // max(1, tokens_per_step))
-    cfg = _config(base, arch, src, mix, REBIRTH_LR, steps, settings, seed)
     warm = _warm_start(ctx, rs, tok)
+    grows = not tok and not warm and _grows_exactly(base, rs)
+    if grows:
+        # 2.5: the successor is the current model grown exactly (same answers at step 0): it continues learning
+        # like any run of the current model, at the continued-training rate, and needs far fewer tokens than a
+        # model learning everything again
+        steps = max(REBIRTH_MIN_STEPS, steps // GROWN_TOKEN_FRACTION)
+    cfg = _config(base, arch, src, mix, float(tr.get("lr") or 3e-4) if grows else REBIRTH_LR, steps, settings, seed)
     if warm:  # 1.0.7: keep training the declined attempt instead of starting over from random weights
         cfg["warm_start"] = warm
-    elif seq > SHORT_CONTEXT and seq % SHORT_CONTEXT == 0:  # 1.0.5: short context first, full length at the end
+    elif seq > SHORT_CONTEXT and seq % SHORT_CONTEXT == 0 and not grows:  # 1.0.5: short context first, full length at the end
         cfg.update(short_context=SHORT_CONTEXT, short_until=SHORT_UNTIL)
     cfg.update(method="from_scratch", strategy="rebirth", batch_size=batch, seq_len=seq, no_single_worker=True,
                rebirth={"architecture": rs["architecture"], "params_before": rs["params_before"], "attempt": retry + 1,
                         "params_after": rs["params_after"], "optimal_params": rs["optimal_params"],
                         "speed_basis": rs.get("speed_basis", "estimated"),
                         # 1.1: same tokenizer and nothing to continue: start from the current model's weights
-                        "transfer_from_base": not tok and not warm,
+                        "transfer_from_base": not tok and not warm, "grows_exactly": grows,
                         **({"tokenizer": tok} if tok else {}),
                         "planned_tokens": steps * tokens_per_step,
                         "planned_hours": round(steps * tokens_per_step / max(1.0, speed) / 3600, 1)})
     cfg["eval_interval"] = max(int(cfg["eval_interval"]), steps // 40)
     cfg["checkpoint_interval"] = max(int(cfg["checkpoint_interval"]), steps // 40)
     sched = chat_schedule(cfg["mixture"]["weights"])
-    if sched:  # 0.10.1: chat warm-up first, a chat-heavy finish last
+    if sched and not grows:  # 0.10.1: chat warm-up first, a chat-heavy finish last (a grown model already chats)
         cfg["mixture_schedule"] = sched
     a = rs["architecture"]
     _add(ctx, out, cfg, src, f"Right-sized successor: {rs['params_before']:,} → {rs['params_after']:,} parameters, "
          f"{a.get('max_seq_len', 0):,}-token context{', new BPE tokenizer' if tok else ''}, "
-         f"{('continuing the declined attempt v' + str(warm['version']) if warm.get('version') else 'continuing experiment #' + str(warm['experiment']) + chr(39) + 's training (' + format(warm['steps'], ',') + ' steps done)') + ' for' if warm else 'trained from scratch for'} "
+         f"{('continuing the declined attempt v' + str(warm['version']) if warm.get('version') else 'continuing experiment #' + str(warm['experiment']) + chr(39) + 's training (' + format(warm['steps'], ',') + ' steps done)') + ' for' if warm else 'grown from the current model (same answers at the start) and trained for' if grows else 'trained from scratch for'} "
          f"{steps:,} steps (about {cfg['rebirth']['planned_hours']} h at the measured speed; shared with the workers "
          "when they are online). It replaces the current model only if it passes every gate.", 99)
 

@@ -267,3 +267,95 @@ def transfer_state(old: dict[str, torch.Tensor], new: dict[str, torch.Tensor]) -
         moved += c[sl].numel()
         out[k] = c
     return out, (moved / total if total else 0.0)
+
+
+# ---- 2.5: function-preserving *width* growth (residual stream, heads) -------------------------------------------
+def can_widen(old: MothConfig, new: MothConfig) -> str | None:
+    """None when ``old`` can grow into ``new`` without changing what it computes, else why not."""
+    if new.vocab_size != old.vocab_size:
+        return "the vocabulary changes (a new tokenizer)"
+    if new.tie_embeddings != old.tie_embeddings:
+        return "embedding tying changes"
+    if new.d_model < old.d_model or new.n_layers < old.n_layers or new.ffn_hidden < old.ffn_hidden:
+        return "a dimension would shrink"
+    if new.head_dim != old.head_dim:
+        return f"the head size changes ({old.head_dim} → {new.head_dim})"
+    if new.n_heads // new.n_kv_heads != old.n_heads // old.n_kv_heads:
+        return "the grouping of attention heads changes"
+    return None
+
+
+def preserving_shape(old: MothConfig, d_model: int, n_layers: int, ffn_hidden: int, **extra: Any) -> MothConfig:
+    """The target shape adjusted so ``old`` can grow into it exactly: the head size and head grouping stay, the
+    width is rounded to a whole number of heads."""
+    hd, group = old.head_dim, old.n_heads // old.n_kv_heads
+    heads = max(old.n_heads, (max(d_model, old.d_model) // hd) // group * group)
+    return MothConfig.from_dict({**old.to_dict(), **extra, "d_model": heads * hd, "n_heads": heads,
+                                 "n_kv_heads": heads // group, "n_layers": max(n_layers, old.n_layers),
+                                 "ffn_hidden": max(ffn_hidden, old.ffn_hidden)})
+
+
+def widen_state(state: dict[str, torch.Tensor], old: MothConfig, new: MothConfig, seed: int = 0,
+                noise: float = 1e-4) -> dict[str, torch.Tensor]:
+    """Grow ``state`` from ``old`` to ``new`` (wider residual stream, more heads, then deeper/wider FFN) so the
+    grown model gives (almost exactly) the same outputs: new residual dimensions start near zero, RMSNorm gains
+    are rescaled so the old dimensions see the same normalised values, new heads' outputs start at zero.
+    ``noise`` (tiny) breaks the symmetry so the new dimensions can learn; the output change is ~``noise``."""
+    why = can_widen(old, new)
+    if why:
+        raise ValueError(f"cannot grow without changing the model: {why}")
+    g = torch.Generator().manual_seed(seed)
+    d, D = old.d_model, new.d_model
+    hd = old.head_dim
+    nh, NH, nkv, NKV = old.n_heads, new.n_heads, old.n_kv_heads, new.n_kv_heads
+    scale = math.sqrt(d / D)
+
+    def rnd(*shape, std=0.02):
+        return torch.randn(*shape, generator=g, dtype=torch.float32) * std
+
+    def pad_cols(w, cols, std):  # new input dimensions
+        return torch.cat([w, rnd(w.shape[0], cols, std=std).to(w.dtype)], dim=1) if cols else w
+
+    out: dict[str, torch.Tensor] = {}
+    for k, v in state.items():
+        w = v.detach().clone()
+        if not w.is_floating_point():
+            out[k] = w
+            continue
+        if k in ("embed.weight", "lm_head.weight"):
+            w = pad_cols(w, D - d, noise)
+        elif k.endswith("norm.weight"):  # RMSNorm over more dimensions: keep the old ones' normalised values
+            w = torch.cat([w * scale, torch.full((D - d,), float(w.mean() * scale), dtype=w.dtype)])
+        elif k.endswith("attn.wq.weight"):
+            w = pad_cols(w, D - d, 0.02)
+            w = torch.cat([w, rnd((NH - nh) * hd, D).to(w.dtype)], dim=0) if NH > nh else w
+        elif k.endswith(("attn.wk.weight", "attn.wv.weight")):
+            w = pad_cols(w, D - d, 0.02)
+            w = torch.cat([w, rnd((NKV - nkv) * hd, D).to(w.dtype)], dim=0) if NKV > nkv else w
+        elif k.endswith("attn.wo.weight"):  # new heads write nothing; nothing is written into new dimensions
+            w = torch.cat([w, torch.zeros(d, (NH - nh) * hd, dtype=w.dtype)], dim=1)
+            w = torch.cat([w, torch.zeros(D - d, NH * hd, dtype=w.dtype)], dim=0)
+        elif k.endswith(("mlp.w1.weight", "mlp.w3.weight")):
+            w = pad_cols(w, D - d, 0.02)
+        elif k.endswith("mlp.w2.weight"):
+            w = torch.cat([w, torch.zeros(D - d, w.shape[1], dtype=w.dtype)], dim=0)
+        out[k] = w
+    mid = MothConfig.from_dict({**old.to_dict(), "d_model": D, "n_heads": NH, "n_kv_heads": NKV})
+    if new.n_layers > mid.n_layers or new.ffn_hidden > mid.ffn_hidden:
+        out, _ = expand_state(out, mid, MothConfig.from_dict({**mid.to_dict(), "n_layers": new.n_layers,
+                                                               "ffn_hidden": new.ffn_hidden}), seed=seed)
+    if new.tie_embeddings:
+        out["lm_head.weight"] = out["embed.weight"]
+    return out
+
+
+def grow_into(old_state: dict[str, torch.Tensor], old: MothConfig, new: MothConfig, fresh: dict[str, torch.Tensor],
+              seed: int = 0) -> tuple[dict[str, torch.Tensor], str]:
+    """2.5: the best start for a bigger successor: an exact (function-preserving) growth of the current model when
+    the shapes allow it, else the partial copy of ``transfer_state``. Returns the state and the method used."""
+    if can_widen(old, new) is None:
+        grown = widen_state(old_state, old, new, seed=seed)
+        if set(grown) == set(fresh) and all(grown[k].shape == fresh[k].shape for k in fresh):
+            return {k: grown[k].to(fresh[k].dtype) for k in fresh}, "preserving"
+    state, _ = transfer_state(old_state, fresh)
+    return state, "partial"

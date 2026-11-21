@@ -4,6 +4,10 @@ The MOTH Cloud server for self-managing operation: one-time installation (no sud
 signed updates, verified backups, health checks with automatic rollback, the fixed model publishing
 workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
+What's new in 2.5:
+
+- **2.5.0:** a bigger MOTH is grown from the current one so it starts with the same answers, then trains about a third as long at the normal rate. Bigger versions arrive sooner and are rarely worse.
+
 What's new in 2.4:
 
 - **2.4.3:** a handover records the slow computer's real pace, so the next round's parts are sized right and no one waits.

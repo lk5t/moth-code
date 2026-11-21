@@ -116,14 +116,21 @@ def _successor_init(exp: dict, base: dict) -> dict:
     m = MothModel(MothConfig.from_dict(model_config(exp, base)))
     state = {k: v.detach().float() if v.is_floating_point() else v for k, v in m.state_dict().items()}
     if ((exp.get("config") or {}).get("rebirth") or {}).get("transfer_from_base"):
-        # 1.1: same tokenizer: start from the current model's weights where the shapes overlap
+        # same tokenizer: 2.5 grow the current model exactly into the bigger shape when possible (it starts as good
+        # as the current one), else 1.1 copy its weights where the shapes overlap
         from pathlib import Path
 
-        from moth.model.growth import transfer_state
+        from moth.model.growth import grow_into
 
         raw = torch.load(Path(base["path"]) / "model.pt", map_location="cpu", weights_only=False)
         old = raw["model"] if isinstance(raw, dict) and "model" in raw else raw
-        state, _ = transfer_state({k: v.float() if v.is_floating_point() else v for k, v in old.items()}, state)
+        cfg_file = Path(base["path"]) / "config.json"
+        old_cfg = MothConfig.from_dict(json.loads(cfg_file.read_text()) if cfg_file.is_file()
+                                       else (raw.get("model_config") or base["info"]["config"]))
+        state, how = grow_into({k: v.float() if v.is_floating_point() else v for k, v in old.items()}, old_cfg,
+                               MothConfig.from_dict(model_config(exp, base)), state,
+                               seed=int((exp.get("config") or {}).get("seed") or 0))
+        exp.setdefault("resources", {})["growth_start"] = how
     return state
 
 

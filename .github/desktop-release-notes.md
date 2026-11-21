@@ -2,6 +2,10 @@
 
 ## MOTH Code __VERSION__ for Windows
 
+### What's new in 2.5
+
+- **Bigger MOTH, no restart from zero.** When MOTH grows (training on this PC or with others), the bigger model starts with the current one's answers and keeps learning, so new versions arrive sooner.
+
 ### What's new in 2.4
 
 - **2.4.1: Do it on my PC.** MOTH can work across your whole computer and the web: files anywhere, commands, web pages and its own browser window. It asks before every change, command, new site and anything it types, and never touches passwords or key files. The window is also smaller (1180 × 740).

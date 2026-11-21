@@ -473,11 +473,18 @@ def right_size(ctx: Ctx, base: dict, settings: dict, probe: bool = True) -> dict
     # and for the difference between a short probe and a real run.
     here = _probe(ctx, {**cfg_model.to_dict()}, seq) if probe else None
     factor = min(100.0, max(0.1, local / here)) if here else 1.0
-    shapes = []
+    shapes, seen = [], set()
     for d, layers, heads, ffn in _shapes():
-        c = MothConfig.from_dict({**cfg_model.to_dict(), "d_model": d, "n_layers": layers, "n_heads": heads,
-                                  "n_kv_heads": heads, "ffn_hidden": ffn, "vocab_size": vocab, "max_seq_len": context})
-        shapes.append((c.num_params(), c))
+        if tok:  # a new tokenizer: the successor is trained from scratch anyway
+            c = MothConfig.from_dict({**cfg_model.to_dict(), "d_model": d, "n_layers": layers, "n_heads": heads,
+                                      "n_kv_heads": heads, "ffn_hidden": ffn, "vocab_size": vocab, "max_seq_len": context})
+        else:  # 2.5: a shape the current model grows into exactly, so the successor starts as good as it
+            from moth.model.growth import preserving_shape
+            c = preserving_shape(cfg_model, d, layers, ffn, max_seq_len=context)
+        key = (c.d_model, c.n_layers, c.n_heads, c.ffn_hidden)
+        if key not in seen:
+            seen.add(key)
+            shapes.append((c.num_params(), c))
     for n, c in sorted(shapes, key=lambda x: x[0]):
         if n <= params * 1.05:
             continue
