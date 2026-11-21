@@ -104,7 +104,7 @@ def ensure(ctx: Ctx, exp: dict, cand: dict, settings: dict) -> bool:
     if state is None:
         if len(eligible_workers(ctx)) < 2:
             return False
-        suites = [s for s in capability_suites(ctx) if s["capability"] == "holdout"
+        suites = [s for s in capability_suites(ctx) if s["id"].startswith("capability:holdout:")  # 2.5: not the yardstick
                   and MEM.report(ctx, cand["version"], s["sha"]) is None]
         if not suites:
             return False

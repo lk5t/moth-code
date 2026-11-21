@@ -328,8 +328,10 @@ def main() -> None:
                     os.kill(int(pf.read_text()), signal.SIGKILL)
                 except (ProcessLookupError, ValueError):
                     pass
-        time.sleep(1)
-        assert api.health() is None
+        down_by = time.time() + 15  # a killed process can still answer for a moment on a busy machine
+        while api.health() is not None and time.time() < down_by:
+            time.sleep(0.5)
+        assert api.health() is None, "MOTH Cloud still answered 15 s after its processes were killed"
         sh([str(moth), "supervise"])  # what @reboot and the per-minute cron run
         try:
             h = api.wait(lambda h: h.get("version") == V4, "server after reboot", timeout=120)
