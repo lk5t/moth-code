@@ -77,7 +77,8 @@ def test_successor_is_trained_by_the_workers_together(client, owner, tmp_path, m
     if exp["config"]["rebirth"]["grows_exactly"]:
         # 2.5: grown from the current model (it already chats): the normal run schedule, continued-training rate
         assert phases == ["curriculum", "chat finish"]
-        assert exp["config"]["lr"] < V2.REBIRTH_LR and not exp["config"].get("short_context")
+        from moth_server.evolution import settings as S
+        assert exp["config"]["lr"] == float(S.get(ctx)["training"]["lr"]) and not exp["config"].get("short_context")
     else:  # 0.10.1: a fresh successor gets a chat warm-up first, chat-heavy finish last
         assert phases == ["chat warm-up", "curriculum", "chat finish"]
     arch = exp["config"]["rebirth"]["architecture"]
