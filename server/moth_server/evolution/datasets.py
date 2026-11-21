@@ -249,8 +249,3 @@ def write_shard(d: dict, dest: Path, max_tokens: int = 32 * 1024 * 1024) -> str:
     return _sha(dest)
 
 
-def tar_ok(path: Path) -> bool:
-    try:
-        return tarfile.is_tarfile(path)
-    except OSError:
-        return False

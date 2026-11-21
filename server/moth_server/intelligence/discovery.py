@@ -9,7 +9,6 @@ import hashlib
 import json
 import shutil
 import time
-import threading
 
 from moth_server.context import Ctx
 

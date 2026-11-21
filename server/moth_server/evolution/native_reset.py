@@ -4,7 +4,6 @@ Known owned roots only; account, billing, chat, consent, security keys and softw
 Failures remain fenced and resumable. Offline copies/backups are disclosed, never claimed erased.
 """
 from __future__ import annotations
-import hashlib
 import json
 import os
 from pathlib import Path

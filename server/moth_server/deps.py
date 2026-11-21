@@ -69,10 +69,6 @@ def require_owner(auth: Auth = Depends(current_auth)) -> Auth:
     return auth
 
 
-def require_admin(auth: Auth = Depends(current_auth)) -> Auth:
-    if not auth.is_admin:
-        raise HTTPException(403, "Administrator access required.")
-    return auth
 
 
 def require_recent_auth(auth: Auth, ctx: Ctx) -> None:

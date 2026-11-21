@@ -6,7 +6,6 @@ model also require a recent sign-in (HTTP 428 asks for the password again).
 
 from __future__ import annotations
 
-import json
 
 import tempfile
 import time

@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import logging
 import threading
-import time
 from typing import Any
 
 from sqlalchemy import select
@@ -478,6 +477,8 @@ def _training(ctx: Ctx, cyc: dict, settings: dict) -> None:
         return any((e["config"] or {}).get("rebirth") and e.get("backend") == "distributed" for e in running)
 
     for e in startable:
+        if shared_successor() and len(running) >= 1 + SIDE_RUNS_WITH_SUCCESSOR:
+            break  # 2.5: the long run gets the compute; short side experiments only add overhead and churn
         slots = _free_slots(ctx, settings, running, e)
         if not slots:
             break
@@ -666,6 +667,7 @@ def _free_slots(ctx: Ctx, settings: dict, running: list[dict], exp: dict) -> dic
     return {"settings": {**settings, "backends": be}}
 
 
+SIDE_RUNS_WITH_SUCCESSOR = 1  # 2.5: at most this many short experiments beside a shared successor
 FAST_WORKER_RATIO = 5.0  # 2.3: a worker this many times faster than MOTH Cloud's CPU is kept for the growth step
 
 
@@ -707,7 +709,8 @@ def _try_start(ctx: Ctx, cyc: dict, exp: dict, settings: dict, parallel: bool = 
         settings = {**settings, "backends": {**settings["backends"], "workers": False}}
     # conversation data (assistant-only loss mask) can go to workers that apply the mask
     choice, reasons = C.choose_backend(ctx, settings, need, None if not token_only or private else B.MASK_WORKER_VERSION)
-    ok, n = D.available(ctx, chosen if cfg_.get("no_single_worker") and not private else settings, need)
+    ok, n = D.available(ctx, chosen if cfg_.get("no_single_worker") and not private else settings, need,
+                        min_n=1 if cfg_.get("no_single_worker") else None)  # 2.5: a fast GPU trains a successor alone
     ok = ok and not private and not cfg_.get("local_only")  # 0.8.3: shared rounds carry the loss mask, so conversation data can be shared
     # Sharding one experiment across all workers only pays when nothing else could use them.
     if ok and not parallel and not (choice and choice.get("device", "").startswith("cuda")) and not (exp["config"] or {}).get("grow") and exp["status"] != "paused":

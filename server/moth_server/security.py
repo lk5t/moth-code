@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import re
 import secrets
 import unicodedata
@@ -81,8 +80,6 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def safe_equal(a: str, b: str) -> bool:
-    return hmac.compare_digest(a.encode(), b.encode())
 
 
 def referral_code() -> str:

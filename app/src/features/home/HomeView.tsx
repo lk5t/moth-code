@@ -79,6 +79,8 @@ export function HomeView() {
         <Tile icon={<MessageSquare />} label="Your chats" value={chats?.length ?? null} />
       </section>
 
+      <Honest params={typeof p?.current?.params === "number" ? p.current.params : null} />
+
       {/* 2.1: everyone sees MOTH learning; the Owner can open the full live view */}
       {running && <section aria-label="MOTH is learning" className="grid gap-3 animate-slide-up md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <StageMeter loss={m.val_loss ?? m.train_loss} per={running.loss_per === "token" ? "token" : "byte"} />
@@ -181,4 +183,21 @@ export function collapseRepeats<T extends { message: string }>(items: T[]): (T &
     else out.push({ ...it, times: 1 });
   }
   return out;
+}
+
+/** 2.5: what MOTH can really do at its current size, said plainly (it grows as it trains). */
+export function honestCapability(params: number | null): string | null {
+  if (params == null) return null;
+  const m = params / 1e6;
+  const size = m >= 1000 ? `${(m / 1000).toFixed(1)} billion` : `${m >= 10 ? Math.round(m) : m.toFixed(1)} million`;
+  if (m < 50) return `MOTH is a small model (${size} parameters) that is still learning. It can continue text and short code patterns, but it cannot yet reliably answer questions, write working programs or carry out tasks on your PC. It improves as it trains.`;
+  if (m < 1000) return `MOTH (${size} parameters) can complete and explain short code, but longer programs and multi-step tasks often need checking. Review what it changes.`;
+  return `MOTH has ${size} parameters. Review what it changes before you rely on it.`;
+}
+
+function Honest({ params }: { params: number | null }) {
+  const text = honestCapability(params);
+  if (!text) return null;
+  return <p role="note" className="rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted">
+    <span className="font-medium text-fg">What MOTH can do today: </span>{text}</p>;
 }

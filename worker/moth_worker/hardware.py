@@ -129,9 +129,6 @@ def _windows_memory() -> tuple[int, int] | None:
         return None
 
 
-def _windows_ram_gb() -> float | None:
-    measured = _windows_memory()
-    return round(measured[0] / 2**30, 1) if measured else None
 
 
 MIN_CPU_CORES = 2
@@ -225,24 +222,6 @@ def benchmark(device: str = "cpu", seconds: float = 1.5) -> dict[str, Any]:
             "measured_at": int(time.time())}
 
 
-def cached_benchmark(home: Path, device: str, max_age_s: float = 7 * 86400) -> dict[str, Any] | None:
-    p = Path(home) / "benchmark.json"
-    try:
-        b = json.loads(p.read_text())
-        if b.get("device") == device and time.time() - b.get("measured_at", 0) < max_age_s:
-            return b
-    except (OSError, ValueError):
-        pass
-    try:
-        b = benchmark(device)
-    except Exception:  # noqa: BLE001 — a benchmark failure never blocks the worker
-        return None
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(b))
-    except OSError:
-        pass
-    return b
 
 
 def measured_device(home: Path, hw: dict[str, Any]) -> tuple[str, dict | None]:

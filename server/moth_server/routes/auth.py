@@ -16,7 +16,7 @@ from moth_server.accounts import (
 from moth_server.audit import audit
 from moth_server.context import Ctx, client_ip, get_ctx, public_url
 from moth_server.db import now, sessions, users
-from moth_server.deps import Auth, bearer, current_auth
+from moth_server.deps import Auth, current_auth
 from moth_server.hooks import run_hook
 from moth_server.ratelimit import RateLimited
 from moth_server.security import (

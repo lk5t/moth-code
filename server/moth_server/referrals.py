@@ -25,7 +25,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.engine import Connection
 
 from moth_server.audit import audit
-from moth_server.billing import InsufficientUsage, ledger_entry
+from moth_server.billing import ledger_entry
 from moth_server.context import Ctx
 from moth_server.db import Database, credit_ledger, now, referral_rewards, referrals, sessions, users, workers
 from moth_server.hooks import register_hook

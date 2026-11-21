@@ -33,3 +33,22 @@ def test_the_next_successor_is_planned_with_the_real_shared_speed(client):
     assert abs(D.shared_speed_factor(ctx) - (0.1 + 1.0) / 2) < 1e-9  # averaged with the earlier run
     assert D.report({"resources": {"distributed": {"rounds": 3, "round": 2, "local_steps": 5, "history": st["history"]}}}
                     )["tokens_per_sec"] == 1000.0
+
+
+def test_one_pass_counts_a_small_heavily_weighted_domain_first(tmp_path):
+    import json
+
+    import numpy as np
+
+    from moth_server.evolution import v2 as V2
+
+    for d, n in (("code", 100_000), ("chat", 1_000)):
+        (tmp_path / d).mkdir()
+        np.zeros(n, dtype=np.uint32).tofile(tmp_path / d / "train.bin")
+        (tmp_path / d / "meta.json").write_text(json.dumps({"dtype": "uint32"}))
+    (tmp_path / "mixture.json").write_text(json.dumps({"domains": {"code": {"dir": "code"}, "chat": {"dir": "chat"}}}))
+    big = V2.one_pass_tokens(str(tmp_path), {"code": 1.0})
+    assert big == 100_000
+    mixed = V2.one_pass_tokens(str(tmp_path), {"code": 0.5, "chat": 0.5})
+    assert mixed < 4_000  # the 1,000-token chat domain at half the mixture is repeated almost at once
+    assert V2.one_pass_tokens(str(tmp_path / "missing"), {"code": 1.0}) is None

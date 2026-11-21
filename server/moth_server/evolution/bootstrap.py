@@ -77,7 +77,6 @@ def options(ctx: Ctx) -> dict:
 
 
 def initialize(ctx: Ctx, actor_id: int | None = None, size: str = "seed", tokenizer: str = "byte") -> dict:
-    from moth.model.config import preset
     from moth.model.registry import export_model
     from moth.model.tokenizer import Tokenizer
     from moth.model.transformer import MothModel

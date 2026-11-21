@@ -10,6 +10,14 @@ current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOL
 - A grown successor needs about a third of the training, uses the normal learning rate and skips the chat warm-up, so bigger versions arrive sooner and are rarely worse than the model they replace.
 - Planned shapes now keep the current model's attention layout so growth stays exact.
 - Fixed: the check on training results compared updates of weights that start at zero against zero, so it would have refused every shared part of a grown model. It now compares them with a normally started weight's size; huge updates are still refused.
+**Training goes where it is fastest**
+- A computer slower than a quarter of the fastest one no longer shares its rounds. Your GPU now trains a bigger successor alone, in checkpointed rounds that can be resumed, instead of waiting every round for MOTH Cloud's CPU. Slower computers keep preparing data and running tests, and computers of similar speed still share.
+- A round is kept only if it doesn't make MOTH worse (the allowance was 5%; a round that went 1.570 → 1.635 was kept). The held-out check uses 256k tokens instead of 32k, so it is less noisy.
+- A successor reads its training data at most about twice. Beyond that it was memorising (training loss 0.66, held-out 1.50), so MOTH now prepares more data instead.
+- While a bigger successor trains, at most one small experiment runs beside it.
+- Home says plainly what MOTH can do at its current size.
+- Removed code nothing used.
+
 **Shared runs: honest time, no wasted hours**
 - Seen in production: a bigger successor was planned at "about 0.8 h" and took about 10 h when shared. The plan counted every computer's top speed, not the time spent merging rounds and waiting for the slowest one.
 - A shared run now shows its real speed (it said "Not reported").

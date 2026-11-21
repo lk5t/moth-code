@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, select
 
 from moth_server.audit import audit
 from moth_server.evolution.native_reset import next_job_values

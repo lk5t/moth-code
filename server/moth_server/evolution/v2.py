@@ -137,6 +137,30 @@ def _replay_source(ctx, base, source, builds, approved):
             "domain_tokens": {d: v["tokens"]["train"] for d, v in mixture["domains"].items()}}
 
 
+
+MAX_DATA_PASSES = 2.0  # 2.5: a run reads its data at most about twice; more only memorises it
+
+
+def one_pass_tokens(mix_path: str, weights: dict[str, float]) -> int | None:
+    """Tokens a run sampling ``weights`` from the mixture can read before it has seen its data once on average
+    (each domain's passes weighted by its share: a small, heavily weighted domain is repeated soonest)."""
+    import numpy as np
+
+    try:
+        mix = json.loads((Path(mix_path) / "mixture.json").read_text())
+        names = [d for d in weights if d in mix["domains"] and weights[d] > 0]
+        total = sum(weights[d] for d in names)
+        load = 0.0
+        for d in names:
+            meta = json.loads((Path(mix_path) / mix["domains"][d]["dir"] / "meta.json").read_text())
+            n = np.memmap(Path(mix_path) / mix["domains"][d]["dir"] / "train.bin", dtype=np.dtype(meta["dtype"]), mode="r").shape[0]
+            p = weights[d] / total
+            load += p * p / max(1, n)
+        return round(1.0 / load) if load > 0 else None
+    except (OSError, ValueError, KeyError, ZeroDivisionError):
+        return None
+
+
 def write_mixture_shard(mix_path: str, weights: dict[str, float], n_tokens: int, seed: int, dest: Path,
                         mask_dest: Path | None = None) -> str:
     """A worker's training shard (uint32 tokens) sampled from the mixture's domains by weight.
@@ -425,6 +449,17 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
     steps = max(REBIRTH_MIN_STEPS, tokens // max(1, tokens_per_step))
     warm = _warm_start(ctx, rs, tok)
     grows = not tok and not warm and _grows_exactly(base, rs)
+    once = one_pass_tokens(src["path"], mix["weights"])
+    passes_cap = int(MAX_DATA_PASSES * once) // max(1, tokens_per_step) if once else None
+    data_limited = bool(passes_cap and steps > passes_cap)
+    if data_limited:  # 2.5: the rest would only repeat the same data; more data is prepared instead
+        steps = max(REBIRTH_MIN_STEPS, passes_cap)
+        try:
+            from moth_server.evolution import autopilot as AP
+
+            AP.scale_data(ctx, force=True, reason="the successor would read its training data more than twice")
+        except Exception:  # noqa: BLE001 — the run is planned either way
+            pass
     if grows:
         # 2.5: the successor is the current model grown exactly (same answers at step 0): it continues learning
         # like any run of the current model, at the continued-training rate, and needs far fewer tokens than a
@@ -442,7 +477,8 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
                         # 1.1: same tokenizer and nothing to continue: start from the current model's weights
                         "transfer_from_base": not tok and not warm, "grows_exactly": grows,
                         **({"tokenizer": tok} if tok else {}),
-                        "planned_tokens": steps * tokens_per_step,
+                        "planned_tokens": steps * tokens_per_step, "data_passes": round(steps * tokens_per_step / once, 2) if once else None,
+                        "data_limited": data_limited,
                         "planned_hours": round(steps * tokens_per_step / max(1.0, speed) / 3600, 1)})
     cfg["eval_interval"] = max(int(cfg["eval_interval"]), steps // 40)
     cfg["checkpoint_interval"] = max(int(cfg["checkpoint_interval"]), steps // 40)
@@ -540,7 +576,6 @@ def _explore(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, tilted: dict
 
 
 def _config(base, arch, src, mix, lr, steps, settings, seed) -> dict[str, Any]:
-    tr = settings["training"]
     cfg = _base_config(base, arch, src, mix, lr, steps, settings, seed)
     # 1.0: every run ends on mostly conversation (the last 15 %), so replies finish cleanly — the check that
     # rejected both v124 and v125. Successors also get the chat warm-up (see _plan_rebirth).
@@ -691,12 +726,6 @@ def store_dev_checkpoint(ctx: Ctx, version: int, src: str, sha: str) -> dict[str
 
 
 # ---- model versions ---------------------------------------------------------------------------------------
-def _parse(v: str | None) -> tuple[int, int] | None:
-    try:
-        a, b = str(v).split(".")[:2]
-        return int(a), int(b)
-    except (ValueError, AttributeError):
-        return None
 
 
 def assign_model_version(ctx: Ctx, version: int) -> str | None:

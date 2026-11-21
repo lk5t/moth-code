@@ -36,8 +36,10 @@ from moth_server.db import now, training_jobs, workers
 from moth_server.evolution import compute as C
 from moth_server.evolution import memory as MEM
 
-PROBE_TOLERANCE = 0.05
+PROBE_TOLERANCE = 0.005  # 2.5: was 5 %: rounds that made MOTH 4 % worse were kept (1.570 → 1.635)
 ONLINE_SECONDS = 180
+PROBE_TOKENS = 256 * 1024  # held-out tokens that decide whether a round is kept
+SHARE_SPEED_RATIO = 4.0  # 2.5: a computer slower than a quarter of the fastest one does not share its rounds
 SHARD_STALL_SECONDS = 20 * 60  # 2.3.2: a piece of a shared round with no progress this long is taken back
 
 
@@ -58,17 +60,25 @@ def participants(ctx: Ctx, need_bytes: int, worker_ids: list[int] | None = None)
             out.append({**w, "hw": hw})
     # Prefer workers with a history of verified useful work; new and slower devices remain eligible.
     out.sort(key=lambda w: (w['verified_jobs'] + 1) / (w['verified_jobs'] + w['failed_jobs'] + 2), reverse=True)
-    # 1.0.9: every online computer takes part (GPUs listed first); steps_for() gives each a share of the
-    # steps that matches its measured speed, so slower CPUs add work without holding a round up.
+    # 2.5: only computers within SHARE_SPEED_RATIO of the fastest take part. Seen in production: a GPU and
+    # MOTH Cloud's CPU shared a successor, and every round waited for the CPU, merged, and handed parts over;
+    # the run took ~10 h instead of the planned 0.8 h. A GPU much faster than the rest now trains alone in
+    # rounds (checkpointed, resumable); slower computers prepare data and run tests instead.
+    if out:
+        from moth_server.evolution import compute as _C
+
+        speed = {w["id"]: float(w["ratio"]) for w in _C.worker_speeds(ctx, need_bytes, worker_ids)}
+        top = max(speed.get(w["id"], 1.0) for w in out)
+        out = [w for w in out if speed.get(w["id"], 1.0) * SHARE_SPEED_RATIO >= top]
     return [w for w in out if w["hw"].get("compute") == "gpu"] + [w for w in out if w["hw"].get("compute") != "gpu"]
 
 
-def available(ctx: Ctx, settings: dict, need_bytes: int) -> tuple[bool, int]:
+def available(ctx: Ctx, settings: dict, need_bytes: int, min_n: int | None = None) -> tuple[bool, int]:
     d = settings.get("distributed") or {}
     if not d.get("enabled", True) or not (settings.get("backends") or {}).get("workers", True):
         return False, 0
     n = len(participants(ctx, need_bytes, settings.get("worker_ids")))
-    return n >= int(d.get("min_participants", 2)), n
+    return n >= (min_n if min_n is not None else int(d.get("min_participants", 2))), n
 
 
 def _sha(p: Path) -> str:
@@ -148,7 +158,9 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
     rd.mkdir(parents=True, exist_ok=True)
     d = settings.get("distributed") or {}
     people = participants(ctx, need_bytes, settings.get("worker_ids"))
-    n = max(int(d.get("min_participants", 2)), min(int(d.get("max_participants", 8)), len(people)))
+    # 2.5: one shard per taking part computer (a single fast GPU trains alone in rounds; it used to get
+    # min_participants shards and train them one after the other)
+    n = max(1, min(int(d.get("max_participants", 8)), len(people)))
     successor = bool(cfg.get("rebirth"))
     # 1.0.6: the participants *share* the steps (each trains about steps / n), so more computers finish
     # the run sooner instead of each repeating the whole run; they are averaged at least every
@@ -208,9 +220,10 @@ def start(ctx: Ctx, exp: dict, settings: dict, need_bytes: int) -> dict:
         for i, part in enumerate(np.array_split(toks, n)):
             part.tofile(rd / f"shard-{i}.bin")
         val = np.fromfile(Path(ds["path"]) / "val.bin", dtype=np.dtype(DS.meta(ds).get("dtype", "uint32")))
-        val[:64 * 1024].astype(np.uint32).tofile(rd / "probe.bin")
+        val[:PROBE_TOKENS].astype(np.uint32).tofile(rd / "probe.bin")
     state_info = {"round": 0, "rounds": rounds, "shards": n, "local_steps": local_steps, "history": [],
-                  "worker_ids": settings.get("worker_ids"),
+                  # 2.5: the parts go only to the computers chosen above (a slow one must not take the GPU's part)
+                  "worker_ids": [w["id"] for w in people[:n]] if people else settings.get("worker_ids"),
                   "weights_sha256": _sha(_round_weights(rd, 0)),
                   "started_from": "checkpoint" if resumed else "declined_attempt" if successor and cfg.get("warm_start") else "successor_init" if successor else "dev_checkpoint" if dev else "weights",
                   "jobs": {}}
@@ -229,7 +242,7 @@ def _probe_from_mixture(mixture: dict, dest: Path) -> None:
             continue
         meta = json.loads((Path(mixture["path"]) / info["dir"] / "meta.json").read_text())
         val = np.fromfile(Path(mixture["path"]) / info["dir"] / "val.bin", dtype=np.dtype(meta["dtype"]))
-        parts.append(val[: max(1024, int(32 * 1024 * w))].astype(np.uint32))
+        parts.append(val[: max(4096, int(PROBE_TOKENS * w))].astype(np.uint32))  # 2.5: was 32k tokens (noisy)
     np.concatenate(parts).tofile(dest)
 
 

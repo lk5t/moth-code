@@ -36,15 +36,6 @@ def allowed(ctx: Ctx) -> bool:
     return bool(be.get("local_cpu") or be.get("local_gpu"))
 
 
-def _rows(ctx: Ctx) -> list[dict]:
-    import json
-
-    from sqlalchemy import select
-
-    from moth_server.db import workers
-
-    return [w for w in ctx.db.all(select(workers).where(workers.c.name == NAME).order_by(workers.c.id.desc()))
-            if json.loads(w.get("hardware") or "{}").get("worker_kind") == "cloud"]
 
 
 def owner_revoked(ctx: Ctx) -> bool:

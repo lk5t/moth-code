@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import shlex
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
