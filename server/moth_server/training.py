@@ -467,6 +467,16 @@ def submit_result(ctx: Ctx, worker: dict, job_id: int, meta: dict, payload: byte
     return result
 
 
+def _cloud_paused(ctx: Ctx, worker: dict, job_id: int | None) -> bool:
+    """2.5.4: MOTH Cloud's own worker (now a separate process) waits while it is turned off in AI Settings, and
+    does not start new work while MOTH Cloud trains locally (a job already under way is finished)."""
+    if json.loads(worker.get("hardware") or "{}").get("worker_kind") != "cloud":
+        return False
+    from moth_server.evolution import cloud_worker as CW
+
+    return not CW.allowed(ctx) or (job_id is None and CW.local_busy(ctx))
+
+
 def fail_job(ctx: Ctx, worker: dict, job_id: int, error: str) -> None:
     leased_job(ctx, worker, job_id)
     t = now()
@@ -511,7 +521,8 @@ def heartbeat(ctx: Ctx, worker: dict, hardware: dict | None, job_id: int | None,
                                                            training_jobs.c.worker_id == worker['id'])
                               .values(result=json.dumps({'progress': metrics})))
     cmd = pending_command(ctx, worker["id"])
-    return {"reset_generation":generation,"paused": NR.fenced(ctx) or bool(worker["paused"]) or not worker_allowed(ctx, worker), "revoked": worker["revoked_at"] is not None,
+    paused = NR.fenced(ctx) or bool(worker["paused"]) or not worker_allowed(ctx, worker) or _cloud_paused(ctx, worker, job_id)
+    return {"reset_generation":generation,"paused": paused, "revoked": worker["revoked_at"] is not None,
             **({"command": cmd} if cmd else {}),
             "job_cancelled": job_cancelled, "update": _worker_update(ctx, worker, version),
             "limits": json.loads(worker["limits"] or "{}"), "server_time": t}

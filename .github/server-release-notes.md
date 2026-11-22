@@ -6,6 +6,7 @@ workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
 What's new in 2.5:
 
+- **2.5.4:** MOTH Cloud no longer freezes and restarts: its built-in worker trains in its own low-priority process instead of inside the server, so a large training job cannot stall the server or take it down when memory runs out.
 - **2.5.3:** MOTH Cloud stays responsive: model-shape timing is limited to 3 new shapes per pass on a quarter of the cores, and the data library grows at most 2× every 6 hours.
 - **2.5.2:** one chat that answers and acts (requests to do something run as live task cards); deeper, thinner model shapes; fill-in-the-middle training for code; proven settings instead of wide learning-rate searches; a width-based learning rate for new models.
 - **2.5.1:** training data grows toward 20 tokens per parameter (with a live meter); a fixed yardstick scores every version on the same text; shared runs follow one learning-rate curve; live measurements (speed, held-out trend, each computer's real GPU/CPU load) replace the guessed learning stage; self-quiz is less frequent while MOTH is small.

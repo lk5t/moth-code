@@ -77,8 +77,13 @@ def cmd_worker_release(args) -> int:
 def cmd_serve(args) -> int:
     import uvicorn
 
+    import os
+
     from moth_server.app import create_app
 
+    # 2.5.4: MOTH Cloud's built-in worker runs as its own process and reaches this server here
+    host = "127.0.0.1" if args.host in ("0.0.0.0", "::", "") else args.host
+    os.environ.setdefault("MOTH_SERVER_LOCAL_URL", f"http://{'[' + host + ']' if ':' in host else host}:{args.port}")
     uvicorn.run(create_app(), host=args.host, port=args.port, proxy_headers=False)
     return 0
 

@@ -142,6 +142,59 @@ def make_runner(ctx: Ctx, http):
                        log=lambda m: log.info("%s", m), heartbeat_seconds=30, update_check_seconds=None)
 
 
+def local_url() -> str | None:
+    """2.5.4: where this server listens on the machine itself (set by ``moth-server serve``)."""
+    return os.environ.get("MOTH_SERVER_LOCAL_URL") or None
+
+
+def _child_env(cred: str) -> dict:
+    """The worker process finds the same code as the server (source tree or release layout)."""
+    import moth
+    import moth_server
+
+    _import_worker()
+    import moth_worker
+
+    env = dict(os.environ)
+    paths = [str(Path(m.__file__).resolve().parents[1]) for m in (moth, moth_server, moth_worker)]
+    env["PYTHONPATH"] = os.pathsep.join(dict.fromkeys(paths + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])))
+    env["MOTH_CLOUD_WORKER_CREDENTIAL"] = cred
+    return env
+
+
+def _run_child(ctx: Ctx, url: str, cred: str) -> int:
+    """2.5.4: run the built-in worker as its own low-priority process. Training inside the server process
+    (earlier versions) used every core and as much memory as the model needed, so a large shared training
+    job made MOTH Cloud stop answering and then be killed by the system for lack of memory. A separate
+    process keeps the server responsive; if memory runs out, the system stops the worker, not the server."""
+    import subprocess
+
+    from moth_server.evolution.supervisor import beat as loop_beat
+
+    state = Path(ctx.settings.data_dir) / "cloud-worker"
+    state.mkdir(parents=True, exist_ok=True)
+    with open(state / "worker.log", "ab") as logf:
+        proc = subprocess.Popen([sys.executable, "-m", "moth_server.evolution.cloud_worker", url, str(state)],
+                                stdout=logf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                env=_child_env(cred), start_new_session=True, cwd=str(state))
+    ctx.extras["cloud_worker_proc"] = proc
+    try:
+        while proc.poll() is None:
+            loop_beat(ctx, "cloud-worker")
+            if not allowed(ctx):  # turned off in AI Settings: stop now
+                proc.terminate()
+                try:
+                    proc.wait(30)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                break
+            time.sleep(15)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    return proc.wait()
+
+
 def start(ctx: Ctx, delay: float = 20.0) -> threading.Thread | None:
     if os.environ.get("MOTH_CLOUD_WORKER", "1") == "0" or ctx.extras.get("disable_background"):
         return None
@@ -155,6 +208,25 @@ def start(ctx: Ctx, delay: float = 20.0) -> threading.Thread | None:
             try:
                 if not allowed(ctx):
                     set_status(ctx, "off")
+                    time.sleep(60)
+                    continue
+                url = local_url()
+                if url:  # 2.5.4: its own process, talking to this server over the machine's loopback
+                    cred = credential(ctx)
+                    if cred is None:
+                        set_status(ctx, "waiting", "no active Owner account to enroll with yet")
+                        time.sleep(60)
+                        continue
+                    set_status(ctx, "running")
+                    rc = _run_child(ctx, url, cred)
+                    if allowed(ctx):
+                        from moth_server import training as T
+
+                        if not T.worker_by_token(ctx, cred):
+                            set_status(ctx, "re-enrolling", "its worker registration was no longer valid")
+                        elif rc != 0:
+                            set_status(ctx, "error", f"the worker process stopped (exit {rc}); "
+                                                     "see cloud-worker/worker.log")
                     time.sleep(60)
                     continue
                 http = http or TestClient(ctx.extras["app"])
@@ -178,3 +250,32 @@ def start(ctx: Ctx, delay: float = 20.0) -> threading.Thread | None:
     t = threading.Thread(target=loop, daemon=True, name="moth-cloud-worker")
     t.start()
     return t
+
+
+def child_main(url: str, state_dir: str) -> int:
+    """The worker process (2.5.4). Lower priority than the server, and the first thing the system stops if
+    memory runs out. Pausing (turned off, or MOTH Cloud training locally) comes from the server's heartbeat."""
+    try:
+        os.nice(10)
+    except OSError:
+        pass
+    try:
+        Path("/proc/self/oom_score_adj").write_text("1000")
+    except OSError:
+        pass
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    WorkerClient, WorkerRunner = _import_worker()
+
+    class ChildRunner(WorkerRunner):
+        def hardware(self):
+            return {k: v for k, v in super().hardware().items() if k != "machine_id"}
+
+    cred = os.environ.pop("MOTH_CLOUD_WORKER_CREDENTIAL", "")
+    runner = ChildRunner(WorkerClient(url, cred), Path(state_dir), allow_cpu=True, log=lambda m: log.info("%s", m),
+                         heartbeat_seconds=30, update_check_seconds=None, dedicated=False)
+    runner.run(idle_sleep=15.0)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(child_main(sys.argv[1], sys.argv[2]))

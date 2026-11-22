@@ -3,6 +3,11 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.5.4 — MOTH Cloud's worker trains in its own process
+
+- 2.5.3 did not stop the freezes: MOTH Cloud still stopped answering about 2 minutes after each start and was then restarted. The cause was MOTH Cloud's built-in worker, which trained its share of shared training runs *inside the server process*, on every core and with as much memory as the model needed. The larger 2.5 models made that enough to stall the server and run it out of memory.
+- The built-in worker is now a separate process at lower priority, talking to the server over the machine's own loopback address. If memory runs out, the system stops the worker first, never the server. It still pauses when it is turned off in AI Settings, and does not start new work while MOTH Cloud trains locally (the server tells it so through the normal heartbeat). Its log is `cloud-worker/worker.log` in the data directory.
+
 ## 2.5.3 — MOTH Cloud stays responsive
 
 - After the 2.5.2 update MOTH Cloud stopped answering for minutes at a time, a couple of minutes after each start. Two kinds of background work run inside MOTH Cloud's own process and both had become much heavier:
