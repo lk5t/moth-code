@@ -17,6 +17,7 @@ adjustment is recorded with the reason and the numbers behind it.
 from __future__ import annotations
 
 import copy
+import time
 import shutil
 from typing import Any
 
@@ -31,6 +32,9 @@ PRIORITY = ["python-stdlib", "synthetic-arithmetic", "synthetic-instructions", "
             "dolly-15k"]
 GB = 1024 ** 3
 MAX_SOURCE_CHARS = 2_000_000_000
+SCALE_EVERY = 6 * 3600  # 2.5.3: the library grows at most this often (preparing it is heavy work)
+SCALED_AT_KEY = "data_scaled_at"
+FORCED_SCALE_EVERY = 3600  # … and at most hourly when a plan asks for more data (each plan would otherwise ask again)
 DATA_TOKENS_PER_PARAM = 20  # 2.5: distinct training tokens a model needs per parameter (compute-optimal rule)   # per source; the library grows towards this as the model needs more data (0.9.0)
 # 0.9.0: large licensed sources the library adds by itself, one per growth step, conversation and code first
 # (the 50/40/10 focus), then knowledge, maths and general language. Each is pinned file by file and used shard
@@ -411,21 +415,20 @@ def scale_data(ctx: Ctx, force: bool = False, reason: str | None = None) -> dict
     from moth_server.db import library_builds
     if ctx.db.one(_select(library_builds.c.id).where(library_builds.c.status.in_(("queued", "running")))):
         return None  # the larger library is still being prepared: measure it before growing again
-    factor = 2
-    while short and factor < 8 and prepared * factor < need:
-        factor *= 2
-    new = min(MAX_SOURCE_CHARS, int(pol["max_source_chars"]) * factor)
+    # 2.5.3: at most 2× and one new source per step, and at most every SCALE_EVERY seconds. Data preparation runs
+    # inside MOTH Cloud's process; 2.5.1 grew it up to 8× with two new sources at once, and each restart (which
+    # marks an unfinished preparation as interrupted) grew it again, keeping MOTH Cloud too busy to answer.
+    last = float(ctx.db.get_config(SCALED_AT_KEY, 0) or 0)
+    if time.time() - last < (FORCED_SCALE_EVERY if force else SCALE_EVERY):
+        return None
+    new = min(MAX_SOURCE_CHARS, int(pol["max_source_chars"]) * 2)
     added = _next_large_source(ctx, pol)
-    if added and short:
-        second = _next_large_source(ctx, {**pol, "approved_sources": pol["approved_sources"] + [added]})
-        if second:
-            discovery.update(ctx, {"approved_sources": list(dict.fromkeys(pol["approved_sources"] + [second]))})
-            pol = {**pol, "approved_sources": pol["approved_sources"] + [second]}
     if new == pol["max_source_chars"] and not added:
         return None  # nothing left to grow: every source is at its maximum
     free = shutil.disk_usage(library.root(ctx)).free
     budget = max(int(pol["max_download_bytes"]), int(min(10**12, free * 0.5)))  # downloads may use half the free disk
     changes = {"max_source_chars": new, "max_download_bytes": budget}
+    ctx.db.set_config(SCALED_AT_KEY, time.time())
     if added:
         changes["approved_sources"] = list(dict.fromkeys(pol["approved_sources"] + [added]))
     discovery.update(ctx, changes)

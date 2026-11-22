@@ -3,6 +3,12 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.5.3 — MOTH Cloud stays responsive
+
+- After the 2.5.2 update MOTH Cloud stopped answering for minutes at a time, a couple of minutes after each start. Two kinds of background work run inside MOTH Cloud's own process and both had become much heavier:
+  - **Timing model shapes.** 2.5.2 added many deeper candidate shapes, and MOTH timed every new one on all CPU cores at once. Now at most 3 new shapes are timed per planning pass, on a quarter of the cores; already-timed shapes are reused, failures are remembered, and the rest use the estimate until a later pass.
+  - **Growing the training data.** 2.5.1 grew the library up to 8× with two new sources at a time, and every restart (which marks an unfinished preparation as interrupted) grew it again. It now grows at most 2× and one source per step, at most every 6 hours (hourly when a plan specifically asks for more data).
+
 ## 2.5.2 — One chat that answers and acts
 
 - The **Chat** / **Do it on my PC** switch is gone; there is one chat, like Claude. Ask a question and MOTH answers. Tell it to do something ("open my Downloads folder", "run the tests", "fix the bug in parser.py", "organise my Downloads by file type") and it does it right in the conversation, in the open project or across your computer, asking before every change, command and new website as before.

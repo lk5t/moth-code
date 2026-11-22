@@ -249,6 +249,8 @@ def test_library_adds_large_sources_by_itself(client, owner, monkeypatch):
     monkeypatch.setattr(library, "latest_ready", lambda ctx: {"manifest": {"token_counts": {"code": {"train": 1_000_000}}}})
     monkeypatch.setattr(discovery, "ensure_data", lambda ctx, wait=False: {"status": "preparing"})
     r1 = AP.scale_data(ctx)
+    assert AP.scale_data(ctx) is None  # 2.5.3: not again right away (preparing data is heavy work for MOTH Cloud)
+    ctx.db.set_config(AP.SCALED_AT_KEY, 0)  # … six hours later
     r2 = AP.scale_data(ctx)
     assert (r1["added"], r2["added"]) == (AP.LADDER[0], AP.LADDER[1])
     pol = discovery.policy(ctx)
@@ -257,6 +259,7 @@ def test_library_adds_large_sources_by_itself(client, owner, monkeypatch):
     ev = next(e for e in MEM.events(ctx, limit=5) if e["kind"] == "data.scaled")
     assert catalog.source(AP.LADDER[1])["name"] in ev["message"]
     discovery.update(ctx, {"autonomous_sources": False})  # the Owner can turn it off
+    ctx.db.set_config(AP.SCALED_AT_KEY, 0)
     assert AP.scale_data(ctx)["added"] is None
 
 

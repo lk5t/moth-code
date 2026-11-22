@@ -84,3 +84,26 @@ def test_deeper_shapes_win_when_sizes_are_close():
     shapes = CAP._shapes()
     assert max(layers for d, layers, _, _ in shapes if d == 384) >= 20   # 2.5.2: deep shapes exist
     assert all(d // heads == 32 or d < 64 for d, _, heads, _ in shapes if d % 32 == 0)
+
+
+def test_shape_timing_is_bounded(client, monkeypatch):
+    """2.5.3: at most MAX_NEW_PROBES new shapes are timed per pass, on a quarter of the cores; failures are cached."""
+    import torch
+
+    from moth_server.evolution import capacity as CAP
+
+    ctx = client.app.state.ctx
+    calls, threads = [], []
+    monkeypatch.setattr("moth.training.speed_probe.measure", lambda cfg, seq: (calls.append(cfg), threads.append(torch.get_num_threads()), 1000.0)[2])
+    budget = [CAP.MAX_NEW_PROBES]
+    shapes = [{"d_model": 64 + 32 * i, "n_layers": 2} for i in range(6)]
+    got = [CAP._probe(ctx, s, 256, budget) for s in shapes]
+    assert len(calls) == CAP.MAX_NEW_PROBES and got.count(None) == len(shapes) - CAP.MAX_NEW_PROBES
+    assert all(t <= max(1, (__import__("os").cpu_count() or 4) // 4) for t in threads)
+    assert CAP._probe(ctx, shapes[0], 256, [0]) == 1000.0  # cached: no budget needed
+    def boom(cfg, seq):
+        calls.append(cfg); raise RuntimeError("no")
+    monkeypatch.setattr("moth.training.speed_probe.measure", boom)
+    n = len(calls)
+    assert CAP._probe(ctx, {"d_model": 999}, 256) is None and CAP._probe(ctx, {"d_model": 999}, 256) is None
+    assert len(calls) == n + 1  # a failure is remembered, not retried every pass

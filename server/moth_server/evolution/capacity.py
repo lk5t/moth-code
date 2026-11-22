@@ -416,19 +416,37 @@ SUCCESSOR_CONTEXT = 2048      # 2.1: successors read 2,048 tokens at once (0.10.
 PROBE_TTL = DAY_SECONDS       # measured shape speeds are reused for a day
 
 
-def _probe(ctx: Ctx, model_config: dict, seq_len: int) -> float | None:
-    """Measured training speed (tokens/s) of a shape on this server, cached (moth.training.speed_probe)."""
+MAX_NEW_PROBES = 3  # 2.5.3: uncached shapes timed per sizing pass (the rest use the estimate until later passes)
+
+
+def _probe(ctx: Ctx, model_config: dict, seq_len: int, budget: list[int] | None = None) -> float | None:
+    """Measured training speed (tokens/s) of a shape on this server, cached (moth.training.speed_probe).
+
+    2.5.3: timing runs inside MOTH Cloud's own process, so it uses at most a quarter of the CPU cores and at most
+    ``budget`` new shapes per pass; failures are remembered too. (2.5.2 added deep shapes and timed them all on
+    every core at once: MOTH Cloud stopped answering for minutes.)"""
     key = "speed_probe:" + MEM.config_hash({**model_config, "seq": seq_len, "cpus": os.cpu_count(),
                                             "day": int(time.time() // DAY_SECONDS)})[:40]  # one day's probes together
     hit = ctx.db.get_config(key, None)
     if hit and time.time() - float(hit.get("at", 0)) < PROBE_TTL:
-        return float(hit["tokens_per_second"])
+        return float(hit["tokens_per_second"]) if hit.get("tokens_per_second") else None
+    if budget is not None:
+        if budget[0] <= 0:
+            return None
+        budget[0] -= 1
+    import torch
+
+    before = torch.get_num_threads()
     try:
         from moth.training.speed_probe import measure
 
+        torch.set_num_threads(max(1, (os.cpu_count() or 4) // 4))
         tps = measure(model_config, seq_len)
     except Exception:  # noqa: BLE001 — without a measurement the compute rule is used instead
+        ctx.db.set_config(key, {"tokens_per_second": None, "at": time.time()})
         return None
+    finally:
+        torch.set_num_threads(before)
     ctx.db.set_config(key, {"tokens_per_second": tps, "at": time.time()})
     return tps
 
@@ -487,6 +505,7 @@ def right_size(ctx: Ctx, base: dict, settings: dict, probe: bool = True) -> dict
             seen.add(key)
             shapes.append((c.num_params(), c))
     fits: list = []
+    budget = [MAX_NEW_PROBES]
     for n, c in sorted(shapes, key=lambda x: x[0]):
         if n <= params * 1.05:
             continue
@@ -496,7 +515,7 @@ def right_size(ctx: Ctx, base: dict, settings: dict, probe: bool = True) -> dict
         estimate = flops_rate / (6.0 * n)
         if estimate * 8 < need:
             break                                            # even 8× faster than the rule would not do
-        tps = _probe(ctx, c.to_dict(), seq) if probe and here else None
+        tps = _probe(ctx, c.to_dict(), seq, budget) if probe and here else None
         if tps is None:
             tps, basis = estimate * share, "estimated"
         else:
