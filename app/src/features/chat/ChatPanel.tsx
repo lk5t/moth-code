@@ -1,13 +1,13 @@
 import { navigate } from "@/lib/navigation";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MothEvent } from "@/lib/events";
-import { ArrowUp, Bug, Code2, HelpCircle, Radar, ShieldCheck, Cloud, Copy, FileText, GitBranch, Pencil, LogIn, MessageSquarePlus, RefreshCw, Square, Upload, X } from "lucide-react";
+import { ArrowUp, FolderOpen, Play, Bug, Code2, HelpCircle, Radar, ShieldCheck, Cloud, Copy, FileText, GitBranch, Pencil, LogIn, MessageSquarePlus, RefreshCw, Square, Upload, X } from "lucide-react";
 import { formatAttachments, formatBytes, imageUrl, onDesktopDrop, splitAttachments, type Attachment } from "@/lib/attachments";
 import { AttachMenu, ingestFiles, ingestPaths } from "./AttachMenu";
 import { SavedPrompts } from "./SavedPrompts";
 import { useCloudStatus } from "@/lib/cloud";
 import { openAccountDialog } from "@/features/account/AccountDialog";
-import { get, post } from "@/lib/backend";
+import { get, post, put, type ApiError } from "@/lib/backend";
 import { useEvent } from "@/lib/events";
 import { appStore, useApp } from "@/lib/app-state";
 import { useResource } from "@/lib/hooks";
@@ -18,7 +18,8 @@ import { MothEmblem } from "@/components/MothEmblem";
 import { cn } from "@/lib/utils";
 import { AnswerContext, Markdown, CopyText } from "./Markdown";
 import { ErrorNotice } from "@/components/ErrorNotice";
-import { AgentPanel } from "@/features/agent/AgentPanel";
+import { TaskCard } from "@/features/agent/TaskCard";
+import { wantsAction } from "@/lib/intent";
 import { sounds } from "@/lib/sounds";
 import { AnswerFooter, type AnswerMeta } from "@/features/intelligence/AnswerFooter";
 import { useCloudProgress } from "@/lib/cloud-progress";
@@ -32,7 +33,7 @@ interface ChatMessage {
   role: "user" | "assistant" | "error" | "scan";
   scan?: { stage: "confirm" | "starting" | "running" | "cancelled" | "refused"; text: string; plan?: ScanPlan; refused?: string; id?: string };
   content: string;
-  meta?: ({ report?: AuditReport; scan_id?: string; code_checks?: { language: string; ok: boolean; problem: string | null }[]; via?: string; prompt?: string; model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string; compacted?: boolean } & AnswerMeta) | null;
+  meta?: ({ task_id?: string; report?: AuditReport; scan_id?: string; code_checks?: { language: string; ok: boolean; problem: string | null }[]; via?: string; prompt?: string; model?: string; tokens?: number; tokens_per_sec?: number; stop_reason?: string; compacted?: boolean } & AnswerMeta) | null;
   streaming?: boolean;
 }
 
@@ -41,6 +42,7 @@ const STARTERS = [
   { label: "Fix a bug in my code", text: "Fix this bug: ", icon: Bug },
   { label: "Explain an error", text: "Explain this error and how to fix it: ", icon: HelpCircle },
   { label: "Write a function", text: "Write a Python function that ", icon: Code2 },
+  { label: "Tidy my Downloads", text: "Organise my Downloads folder into subfolders by file type", icon: FolderOpen },
   { label: "Scan my server", text: "Check 192.168.1.10 for vulnerabilities", icon: Radar },
   { label: "Learn a security topic", text: "Explain how SQL injection works and how to prevent it", icon: ShieldCheck },
 ];
@@ -62,16 +64,16 @@ interface Conversation {
 export function ChatPanel({ general = false, contextProjectId = null }: { general?: boolean; contextProjectId?: number | null } = {}) {
   const workspaceProject = useApp((s) => s.project);
   const project = general ? null : workspaceProject;
-  const [mode, setMode] = useState<"chat" | "agent">("chat");
   const [remembered, setRemembered] = useState<string | null>(null);
   useEffect(() => { if (!remembered) return; const t = setTimeout(() => setRemembered(null), 6000); return () => clearTimeout(t); }, [remembered]);
   useEffect(() => {  // 2.1: "Ask MOTH" on a security finding puts the question in the chat box
-    const ask = (e: Event) => { setMode("chat"); setInput((e as CustomEvent<string>).detail); setTimeout(() => composer.current?.focus(), 0); };
+    const ask = (e: Event) => { setInput((e as CustomEvent<string>).detail); setTimeout(() => composer.current?.focus(), 0); };
     window.addEventListener("moth:ask", ask);
     return () => window.removeEventListener("moth:ask", ask);
   }, []);
-  useEffect(() => {  // 1.0: "Fix this" and the error watcher open the agent with the new task
-    const open = () => setMode("agent");
+  useEffect(() => {  // 1.0: "Fix this" and the error watcher start a task: 2.5.2 it appears here, in the chat
+    const open = (e: Event) => { const id = (e as CustomEvent<string>).detail; if (id) setMessages((m) => [...m,
+      { id: `t${id}`, role: "assistant", content: "", meta: { task_id: id } }]); };
     window.addEventListener("moth:open-agent", open);
     return () => window.removeEventListener("moth:open-agent", open);
   }, []);
@@ -174,7 +176,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     });
     observer.observe(field);
     return () => observer.disconnect();
-  }, [input, mode]);
+  }, [input]);
 
   useEffect(() => {
     if (cidRef.current !== null) void post(`/api/chat/${cidRef.current}/cancel`).catch(() => {});
@@ -274,8 +276,31 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
     }).catch(() => {});
   });
 
-  const send = async (regenerate = false) => {
-    const typed = input.trim() || (attached.length ? "Take a look at these files." : "");
+  /** 2.5.2: one chat — a request to do something runs as a task right here (open project, or this computer). */
+  const runTask = async (goal: string) => {
+    setInput(""); followTail.current = true; sounds.click(); setBusy(true);
+    setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: goal }, { id: `a${Date.now()}`, role: "assistant", content: "", streaming: true }]);
+    const body = { goal, conversation_id: cid, project_id: project?.id ?? contextProjectId ?? null };
+    try {
+      let r: { conversation_id: number };
+      try { r = await post<{ conversation_id: number }>("/api/chat/task", body); }
+      catch (e) {
+        if ((e as ApiError).status === 401) { openAccountDialog("login"); throw e; }
+        if ((e as ApiError).status !== 412 || body.project_id === null) throw e;
+        if (!confirm("Allow MOTH Cloud to read files from this project while it works?\n\nIt sends the files it opens and command output to decide each step. Credentials are redacted and nothing is used for training; you can revoke this in the workspace menu.")) throw new Error("MOTH Cloud access for this project was not granted.");
+        await put(`/api/projects/${body.project_id}/cloud-consent`, { granted: true });
+        r = await post<{ conversation_id: number }>("/api/chat/task", body);
+      }
+      const history = await get<ChatMessage[]>(`/api/conversations/${r.conversation_id}/messages?limit=100`);
+      skipFetch.current = r.conversation_id; cidRef.current = r.conversation_id; setCid(r.conversation_id); setMessages(history);
+      reloadConversations();
+    } catch (e) {
+      setMessages((m) => [...m.filter((x) => !x.streaming), { id: `e${Date.now()}`, role: "error", content: String((e as Error).message ?? e) }]);
+    } finally { setBusy(false); }
+  };
+
+  const send = async (regenerate = false, answerOnly?: string) => {
+    const typed = answerOnly ?? (input.trim() || (attached.length ? "Take a look at these files." : ""));
     const text = regenerate ? [...messages].reverse().find((m)=>m.role === "user")?.content ?? "" : formatAttachments(typed, attached);
     if (!text || busy) return;
     if (!regenerate) {  // 2.1: "audit my code" / "check my dependencies" / "is this nginx config secure?" run here, on your files
@@ -303,6 +328,8 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
         return;
       }
     }
+    // 2.5.2: one chat — after the built-in security checks and scans, a request to act runs as a task here
+    if (!regenerate && answerOnly === undefined && editing === null && !attached.length && wantsAction(typed)) return runTask(typed);
     if (!regenerate && editing !== null && cid !== null) {  // 2.4: the edited message replaces the old one and what followed it
       try { await post(`/api/conversations/${cid}/truncate`, { message_id: editing }); }
       catch (e) { setDropNote((e as Error).message); return; }
@@ -362,33 +389,8 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
 
   return (
     <div className="flex h-full flex-col">
-      {general && <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2">
-        <div className="flex rounded-md border border-border p-0.5" role="tablist" aria-label="Chat or act on this computer">
-          {(["chat", "agent"] as const).map((m) => (
-            <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
-              title={m === "agent" ? "MOTH works on your files, apps and the web, asking before every change" : "Talk with MOTH"}
-              className={cn("cursor-pointer rounded px-2.5 py-0.5 text-[0.6875rem] font-medium text-muted transition-colors", mode === m && "bg-accent text-white shadow-glow")}>
-              {m === "chat" ? "Chat" : "Do it on my PC"}</button>))}
-        </div>
-      </div>}
       {!general && <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2">
-        {!general && (
-          <div className="flex rounded-md border border-border p-0.5">
-            {(["chat", "agent"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={cn(
-                  "cursor-pointer rounded px-2.5 py-0.5 text-[0.6875rem] font-medium capitalize text-muted transition-colors",
-                  mode === m && "bg-accent text-white shadow-glow",
-                )}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        )}
-        {mode === "chat" && (
+        {(
           <Select
             className="h-7 min-w-[7.5rem] max-w-56 flex-1 text-xs"
             aria-label="Conversation" disabled={busy} title={busy ? "Stop or wait for the current reply before changing conversations" : "Conversation history"}
@@ -403,9 +405,9 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
             {conversations?.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
           </Select>
         )}
-        {mode === "chat" && <input aria-label="Search conversations" placeholder="Search history" value={search} onChange={(event)=>setSearch(event.target.value)} className="h-7 w-24 min-w-0 shrink rounded border border-border bg-bg px-2 text-xs focus:w-40 transition-[width] xl:w-40" />}
+        {<input aria-label="Search conversations" placeholder="Search history" value={search} onChange={(event)=>setSearch(event.target.value)} className="h-7 w-24 min-w-0 shrink rounded border border-border bg-bg px-2 text-xs focus:w-40 transition-[width] xl:w-40" />}
         <div className="flex-1" />
-        {mode === "chat" && (
+        {(
           <Button variant="ghost" size="icon-sm" title={busy ? "Stop or wait for the current reply" : "New conversation"} disabled={busy} aria-label="New conversation" onClick={() => { setCid(null); setMessages([]); }}>
             <MessageSquarePlus />
           </Button>
@@ -416,9 +418,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
         </span>}
       </div>}
 
-      {mode === "agent" ? (
-        <AgentPanel computer={general} />
-      ) : (
+      {(
         <div className="relative flex min-h-0 flex-1 flex-col"
           onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
           onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
@@ -468,6 +468,14 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                           : m.scan.stage === "cancelled" ? <div className="text-[0.8125rem] text-muted">Okay, nothing was scanned.</div>
                           : <div className="max-w-xl rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[0.8125rem] text-warning">I won't scan that: {m.scan.refused}</div>}
                       </div>
+                    ) : m.role === "assistant" && m.meta?.task_id ? (
+                      <div className="flex w-full min-w-0 flex-col gap-1">
+                        <div className="flex items-center gap-1.5 text-[0.6875rem] text-muted"><MothEmblem motion="none" className="size-3.5 shrink-0" />MOTH</div>
+                        <TaskCard taskId={m.meta.task_id} onAnswerInstead={busy ? undefined : () => {
+                          const asked = [...messages.slice(0, index)].reverse().find((x) => x.role === "user")?.content;
+                          if (asked) void send(false, splitAttachments(asked).body);
+                        }} />
+                      </div>
                     ) : m.role === "assistant" && m.meta?.report ? (
                       <div className="flex w-full gap-2.5"><MothEmblem motion="none" className="mt-0.5 size-5 shrink-0" />
                         <div className="min-w-0 flex-1 space-y-1.5"><ReportCard report={m.meta.report} />
@@ -516,6 +524,12 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                             {index === lastAssistant && !messages.slice(index+1).some((message)=>message.role === "user") && cid !== null &&
                               <Button size="sm" variant="ghost" disabled={busy} onClick={()=>send(true)}>Regenerate</Button>}
                             {cid !== null && <Button size="sm" variant="ghost" disabled={busy} title="A new chat with everything up to this answer" onClick={() => void branch(m)}><GitBranch />Branch</Button>}
+                            {index === lastAssistant && (() => {  // 2.5.2: MOTH answered, but you wanted it done
+                              const asked = [...messages.slice(0, index)].reverse().find((x) => x.role === "user")?.content;
+                              return asked ? <Button size="sm" variant="ghost" disabled={busy || !!noModel}
+                                title={general ? "MOTH does this on your computer, asking before every change" : "MOTH does this in the open project, asking before every change"}
+                                onClick={() => void runTask(splitAttachments(asked).body)}><Play />{general ? "Do it on my PC" : "Do it in this project"}</Button> : null;
+                            })()}
                           </div>}
                           {!m.streaming && m.content && <AnswerFooter meta={m.meta ?? {}} answer={m.content}
                             prompt={m.meta?.prompt ?? splitAttachments([...messages.slice(0, index)].reverse().find((x) => x.role === "user")?.content ?? "").body} />}
@@ -545,7 +559,7 @@ export function ChatPanel({ general = false, contextProjectId = null }: { genera
                 rows={1}
                 value={input}
                 aria-label="Message MOTH"
-                placeholder={signedOut ? "Sign in to chat with MOTH" : noModel ? (cloud?.reachable === false ? "MOTH Cloud can't be reached" : "MOTH can't answer yet") : general ? "Message MOTH…" : `Ask MOTH about ${project?.name ?? "this project"}…`}
+                placeholder={signedOut ? "Sign in to chat with MOTH" : noModel ? (cloud?.reachable === false ? "MOTH Cloud can't be reached" : "MOTH can't answer yet") : general ? "Ask anything, or tell MOTH what to do on your PC…" : `Ask about ${project?.name ?? "this project"} or tell MOTH what to change…`}
                 title="Enter to send · Shift+Enter for a new line"
                 disabled={!!noModel}
                 className="max-h-48 min-h-11 border-0 bg-transparent px-3.5 pb-1 pt-3 text-[0.8125rem] focus:shadow-none"

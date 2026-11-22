@@ -5,7 +5,7 @@ vi.mock("@/lib/backend", () => ({ get: mocks.get, post: mocks.post, isTauri: () 
 vi.mock("@/lib/cloud", () => ({ useCloudStatus: () => ({ status: { signed_in: true, available: true, model: { name: "MOTH" } }, reload: vi.fn() }) }));
 vi.mock("@/lib/cloud-progress", () => ({ useCloudProgress: () => ({ data: { current: { name: "MOTH" }, serving: { accepting_requests: true } } }) }));
 vi.mock("@/lib/hooks", () => ({ useResource: () => ({ data: null, reload: vi.fn() }) }));
-vi.mock("@/features/agent/AgentPanel", () => ({ AgentPanel: () => null }));
+vi.mock("@/features/agent/TaskCard", () => ({ TaskCard: () => null }));
 vi.mock("@/features/account/AccountDialog", () => ({ openAccountDialog: vi.fn() }));
 import { ChatPanel } from "@/features/chat/ChatPanel";
 import { appStore } from "@/lib/app-state";

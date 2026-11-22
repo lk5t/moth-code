@@ -3,6 +3,13 @@
 Newest first. Links to design notes of past versions were removed with those notes (1.0.16 clean-up); the
 current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
+## 2.5.2 — One chat that answers and acts
+
+- The **Chat** / **Do it on my PC** switch is gone; there is one chat, like Claude. Ask a question and MOTH answers. Tell it to do something ("open my Downloads folder", "run the tests", "fix the bug in parser.py", "organise my Downloads by file type") and it does it right in the conversation, in the open project or across your computer, asking before every change, command and new website as before.
+- The work shows as a live card in the chat: what MOTH is doing now, every step it took, MOTH's plan when it asks first, and a report of what really changed — with **Stop**, **Keep going** and **Undo changes** on the card. Cards stay in the conversation when you come back to it.
+- If MOTH guessed wrong, one click switches: **Just answer instead** on a task card, **Do it on my PC** / **Do it in this project** under an answer.
+- Tasks started from "Fix this" or the error watcher appear in the chat the same way.
+
 ## 2.5.1 — Real numbers, more data, one steady learning curve
 
 **More training data, aimed at a target**

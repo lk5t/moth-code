@@ -18,6 +18,12 @@ class TaskIn(BaseModel):
     approve_plan: bool = False  # 1.0 plan first
 
 
+class ChatTaskIn(BaseModel):
+    goal: str
+    conversation_id: int | None = None
+    project_id: int | None = None  # None: this whole computer (home folder, other folders, the web)
+
+
 class PlanIn(BaseModel):
     plan: list[str]
 
@@ -109,6 +115,28 @@ def register(app: FastAPI, svc: Services, deps) -> None:
         svc.project(body.project_id)
         return _start(body.project_id, body.goal, EngineConfig(max_steps=body.max_steps, verify=body.verify,
                                                                 approve_plan=body.approve_plan))
+
+    @app.post("/api/chat/task", dependencies=deps)
+    def chat_task(body: ChatTaskIn):
+        """2.5.2: one chat, like Claude: a request to do something starts a task right in the conversation (in the
+        open project, or across this computer), saved as your message plus MOTH's task card."""
+        import json as _json
+        import time as _time
+
+        pid = body.project_id if body.project_id is not None else computer()["id"]
+        svc.project(pid)
+        t = _start(pid, body.goal, EngineConfig())
+        cid, now = body.conversation_id, _time.time()
+        if cid is None or not svc.db.one("SELECT id FROM conversations WHERE id=?", (cid,)):
+            cid = int(svc.db.execute("INSERT INTO conversations(project_id, title, created_at) VALUES (?,?,?)",
+                                     (body.project_id, body.goal.strip()[:60], now)).lastrowid)
+        svc.db.execute("INSERT INTO messages(conversation_id, role, content, meta, ts) VALUES (?,?,?,?,?)",
+                       (cid, "user", body.goal.strip()[:4000], None, now))
+        svc.db.execute("INSERT INTO messages(conversation_id, role, content, meta, ts) VALUES (?,?,?,?,?)",
+                       (cid, "assistant", f"Working on it: {body.goal.strip()[:200]}",
+                        _json.dumps({"model": "MOTH agent", "task_id": t["id"]}), now + 0.001))
+        svc.bus.publish("conversations", {"changed": [cid]})
+        return {"conversation_id": cid, "task": t}
 
     @app.post("/api/tasks/{task_id}/plan", dependencies=deps)
     def approve_plan(task_id: str, body: PlanIn):
