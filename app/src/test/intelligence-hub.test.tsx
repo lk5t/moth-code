@@ -40,7 +40,7 @@ describe("Intelligence consolidation", () => {
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Evolution", "Shared training", "Model", "Data", "History", "AI Settings"]);
     await screen.findByRole("button", { name: "Pause Evolution" });
     expect(screen.queryByText("Model Architecture")).toBeNull();  // 0.7.1: the model lives in its own Model tab
-    expect(screen.getByText("Training has slowed down: testing a lower learning rate.")).toBeInTheDocument();
+    expect(await screen.findByText("Training has slowed down: testing a lower learning rate.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Train MOTH now" })).toBeNull();  // manual controls live in AI Settings
     expect(screen.queryByRole("switch", { name: "Contribute this computer" })).toBeNull();
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Data" }), { button: 0 });
