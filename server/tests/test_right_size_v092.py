@@ -17,8 +17,12 @@ def test_right_size_from_measured_compute(client, owner, tmp_path, monkeypatch):
     assert rs and 1.8 * rs["params_before"] <= rs["params_after"] <= 3 * rs["params_before"]
     assert rs["params_after"] <= rs["optimal_params"] and rs["gradual"]
     assert rs["architecture"]["d_model"] > json.loads(open(f"{base['path']}/config.json").read())["d_model"]
-    S.update(ctx, {"growth": {"max_params": rs["params_before"] * 2}})  # the Owner's ceiling is respected
+    # the Owner's ceiling is respected: below the smallest worthwhile step (1.8×) there is no growth at all
+    S.update(ctx, {"growth": {"max_params": int(rs["params_before"] * 1.5)}})
     assert CAP.right_size(ctx, base, S.get(ctx)) is None
+    S.update(ctx, {"growth": {"max_params": rs["params_before"] * 2}})  # 2.5.2: a deeper shape may fit under 2×
+    capped = CAP.right_size(ctx, base, S.get(ctx))
+    assert capped is None or capped["params_after"] <= rs["params_before"] * 2
 
 
 def test_successor_trains_from_scratch_and_must_pass_the_gates(client, owner, tmp_path, monkeypatch):

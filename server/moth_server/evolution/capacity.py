@@ -77,12 +77,13 @@ def _shapes():
         heads = max(1, d // 32)
         while (d // heads) % 2:
             heads -= 1
-        for layers in (2, 3, 4, 6, 8, 10, 12):
-            if layers > max(2, d // 24):
+        for layers in (2, 3, 4, 6, 8, 10, 12, 16, 20, 24):
+            if layers > max(2, d // 16):  # 2.5.2: deeper shapes allowed (small models gain more from depth)
                 continue
             out.append((d, layers, heads, 3 * d))
     return out
 TOKENS_PER_PARAM_TARGET = 20.0
+DEPTH_SLACK = 0.25  # 2.5.2: a shape up to 25 % smaller than the largest that fits may win by being deeper
 DAY_SECONDS = 86400.0
 
 
@@ -485,6 +486,7 @@ def right_size(ctx: Ctx, base: dict, settings: dict, probe: bool = True) -> dict
         if key not in seen:
             seen.add(key)
             shapes.append((c.num_params(), c))
+    fits: list = []
     for n, c in sorted(shapes, key=lambda x: x[0]):
         if n <= params * 1.05:
             continue
@@ -501,7 +503,12 @@ def right_size(ctx: Ctx, base: dict, settings: dict, probe: bool = True) -> dict
             tps *= factor * share
         if tps < need:
             break
-        best = (n, c, tps)
+        fits.append((n, c, tps))
+    # 2.5.2 deep and thin: at this size more layers beat more width for the same parameters, so among the shapes
+    # within DEPTH_SLACK of the largest that fits, the deepest is chosen (then the larger)
+    if fits:
+        top = max(n for n, _, _ in fits)
+        best = max((f for f in fits if f[0] >= top * (1 - DEPTH_SLACK)), key=lambda f: (f[1].n_layers, f[0]))
     if best is None:
         return None
     n, cfg_new, tps = best

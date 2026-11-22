@@ -34,7 +34,8 @@ def test_exploration_supplies_new_experiments_every_cycle(client, monkeypatch):
         assert any("exploring" in n for n in out["notes"])
     assert len(seen) == len(set(seen)) and len(seen) >= 6
     lrs = {round(e, 8) for e in [3e-4 * f for f in v2.EXPLORE_LR]}
-    assert len(lrs) == len(v2.EXPLORE_LR)  # a spread of learning rates around the best known one
+    assert len(lrs) == len(v2.EXPLORE_LR)  # different learning rates around the best known one …
+    assert all(0.5 <= f <= 2.0 for f in v2.EXPLORE_LR)  # 2.5.2: … but close to it (proven settings, not a search)
 
 
 def test_elapsed_time_counts_from_when_the_worker_took_the_job():

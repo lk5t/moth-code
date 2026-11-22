@@ -10,6 +10,13 @@ current design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/EVOL
 - If MOTH guessed wrong, one click switches: **Just answer instead** on a task card, **Do it on my PC** / **Do it in this project** under an answer.
 - Tasks started from "Fix this" or the error watcher appear in the chat the same way.
 
+**Engine upgrades for MOTH's own model**
+- **Deeper, thinner models.** At MOTH's size, more layers beat more width for the same number of parameters. Shapes up to 24 layers are now possible, and when several sizes fit the time budget about equally, the deepest one wins (e.g. 16 layers × 384 rather than 3 layers wide).
+- **Fill-in-the-middle for code.** About half of the code documents are now trained as "before / after → fill the gap", which is how code models learn to edit the middle of a file instead of only continuing it. The choice is made from each document's own content, so it is the same on MOTH Cloud and on every worker.
+- **Proven settings instead of a search.** When the usual settings are used up, MOTH no longer tries learning rates from 1/8× to 8× the best one; it stays close to it and spends the run on longer training and fresh data. A new model trained from scratch gets a learning rate set by its width (smaller for wider models) instead of one fixed value.
+- **Tokenizer.** The switch to an 8,192-piece tokenizer (instead of reading one byte at a time) happens automatically once MOTH's next bigger model is planned and the tokenizer has been built from its data; the yardstick compares the two fairly.
+- The Model tab says what shape MOTH has and how it reads text.
+
 ## 2.5.1 — Real numbers, more data, one steady learning curve
 
 **More training data, aimed at a target**

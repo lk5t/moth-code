@@ -175,7 +175,8 @@ export function ModelTab({ progress }: { progress: Any | null }) {
     <section aria-label="Model card" className="grid gap-3 md:grid-cols-2">
       <p role="note" className="rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted md:col-span-2 animate-slide-up">
         <span className="font-medium text-fg">What it can do today: </span>{honestCapability(typeof cur.params === "number" ? cur.params : null) ?? "Not measured yet."}
-        {cur.lineage_totals?.tokens ? <> Trained on <span className="font-mono text-fg">{Number(cur.lineage_totals.tokens).toLocaleString()}</span> tokens so far.</> : null}</p>
+        {cur.lineage_totals?.tokens ? <> Trained on <span className="font-mono text-fg">{Number(cur.lineage_totals.tokens).toLocaleString()}</span> tokens so far.</> : null}
+        {shapeText(cur.config) && <span className="mt-1 block">{shapeText(cur.config)}</span>}</p>
       <DataMeter status={p?.data_status} />
       <YardstickChart timeline={p?.timeline ?? []} />
     </section>
@@ -249,4 +250,13 @@ export function BenchmarkHistory({ timeline }: { timeline: Any[] }) {
       </tr>)}</tbody>
     </table></div>
   </CardContent></Card>;
+}
+
+/** 2.5.2: the model's shape and tokenizer in plain words (from its real configuration). */
+export function shapeText(cfg: Any | undefined): string | null {
+  if (!cfg?.n_layers || !cfg?.d_model) return null;
+  const vocab = Number(cfg.vocab_size || 0);
+  const tok = vocab && vocab <= 512 ? "reads text one byte at a time" : vocab ? `reads text in ${vocab.toLocaleString()} word pieces` : null;
+  const ctx = cfg.max_seq_len ? `, sees ${Number(cfg.max_seq_len).toLocaleString()} tokens at once` : "";
+  return `Shape: ${cfg.n_layers} layers × ${cfg.d_model} wide${ctx}${tok ? `; ${tok}` : ""}.`;
 }

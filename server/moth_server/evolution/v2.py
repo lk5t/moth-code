@@ -344,6 +344,12 @@ REBIRTH_MIN_STEPS = 500
 GROWN_TOKEN_FRACTION = 3   # 2.5: a model grown exactly from the current one needs about a third of the tokens
 
 
+def width_lr(d_model: int) -> float:
+    """2.5.2: a fresh model's learning rate from its width (the usual rule: wider models need smaller steps),
+    REBIRTH_LR at 512 wide, between 3e-4 and 3e-3."""
+    return min(3e-3, max(3e-4, REBIRTH_LR * 512 / max(32, d_model)))
+
+
 def _grows_exactly(base: dict, rs: dict) -> bool:
     """Can the current model grow into the planned successor without changing its answers?"""
     import json as _json
@@ -465,7 +471,8 @@ def _plan_rebirth(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, mix: di
         # like any run of the current model, at the continued-training rate, and needs far fewer tokens than a
         # model learning everything again
         steps = max(REBIRTH_MIN_STEPS, steps // GROWN_TOKEN_FRACTION)
-    cfg = _config(base, arch, src, mix, float(tr.get("lr") or 3e-4) if grows else REBIRTH_LR, steps, settings, seed)
+    cfg = _config(base, arch, src, mix, float(tr.get("lr") or 3e-4) if grows else width_lr(int(rs["architecture"].get("d_model") or 512)),
+                  steps, settings, seed)
     if warm:  # 1.0.7: keep training the declined attempt instead of starting over from random weights
         cfg["warm_start"] = warm
     elif seq > SHORT_CONTEXT and seq % SHORT_CONTEXT == 0 and not grows:  # 1.0.5: short context first, full length at the end
@@ -535,8 +542,10 @@ def blended_weights(weights: dict[str, float], schedule: list[dict] | None) -> d
 # further from the best known one, longer training, a fresh data sample (the exploration number is part
 # of the configuration) and the other curriculum; the data library is also asked to grow. Every candidate
 # still passes the same gates, so exploration can never promote a worse model.
-EXPLORE_LR = (0.5, 2.0, 0.25, 4.0, 0.7, 1.4, 0.125, 8.0)
-EXPLORE_STEPS = (1, 2, 1, 3)
+# 2.5.2: proven settings, not a search: at this size learning rates far from a good one only waste a run, so
+# exploration stays near the best known rate and spends its compute on longer training and fresh data instead
+EXPLORE_LR = (1.0, 0.7, 1.4, 0.85)
+EXPLORE_STEPS = (2, 3, 2, 4)
 
 
 def _explore(ctx: Ctx, out: dict, base: dict, arch: str, src: dict, tilted: dict, balanced: dict,

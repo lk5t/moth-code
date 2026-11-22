@@ -11,3 +11,14 @@ describe("honest capability text", () => {
     expect(honestCapability(3e9)).toMatch(/3\.0 billion/);
   });
 });
+
+import { shapeText } from "@/features/intelligence/ModelTab";
+
+describe("2.5.2 model shape in plain words", () => {
+  it("describes layers, width, context and tokenizer", () => {
+    expect(shapeText({ n_layers: 3, d_model: 384, vocab_size: 512, max_seq_len: 2048 }))
+      .toBe("Shape: 3 layers × 384 wide, sees 2,048 tokens at once; reads text one byte at a time.");
+    expect(shapeText({ n_layers: 16, d_model: 384, vocab_size: 8192 })).toContain("8,192 word pieces");
+    expect(shapeText({})).toBeNull();
+  });
+});

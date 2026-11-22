@@ -289,9 +289,34 @@ def _encode(tok, rec: dict[str, Any]) -> tuple[list[int], list[int]]:
         ids, mask = encode_chat(tok, [Message(m["role"], m["content"]) for m in rec["messages"]],
                                 add_generation_prompt=False)
     else:
-        ids = tok.encode(rec["text"])
+        ids = fim_encode(tok, rec["text"]) if rec.get("domain") == "code" else None
+        if ids is None:
+            ids = tok.encode(rec["text"])
         mask = [1] * len(ids)
     return ids + [tok.eos_id], mask + [1]
+
+
+FIM_RATE = 0.5      # 2.5.2: share of code documents rewritten as fill-in-the-middle
+FIM_MIN_CHARS = 64
+
+
+def fim_encode(tok, text: str) -> list[int] | None:
+    """2.5.2 fill-in-the-middle: a coding assistant mostly edits the middle of files, but next-token training only
+    teaches continuing from the left. About half of the code documents become ``<|fim_prefix|> before
+    <|fim_suffix|> after <|fim_middle|> middle`` (the usual prefix-suffix-middle order), so MOTH also learns to
+    fill a gap from both sides. The choice and the cut points come from the text's own hash, so the same record
+    always encodes the same way (workers' preparation is checked by re-encoding)."""
+    import hashlib
+
+    if len(text) < FIM_MIN_CHARS or not all(t in tok.special_ids for t in ("<|fim_prefix|>", "<|fim_suffix|>", "<|fim_middle|>")):
+        return None
+    h = hashlib.sha256(text.encode("utf-8", "surrogatepass")).digest()
+    if int.from_bytes(h[:4], "big") / 2**32 >= FIM_RATE:
+        return None
+    a, b = sorted(int.from_bytes(h[4 + 4 * i:8 + 4 * i], "big") % (len(text) + 1) for i in range(2))
+    sp = tok.special_ids
+    return ([sp["<|fim_prefix|>"]] + tok.encode(text[:a]) + [sp["<|fim_suffix|>"]] + tok.encode(text[b:])
+            + [sp["<|fim_middle|>"]] + tok.encode(text[a:b]))
 
 
 # ---- chunked preparation (0.7.2): identical on MOTH Cloud and on workers -------------------------------

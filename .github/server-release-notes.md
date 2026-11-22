@@ -6,6 +6,7 @@ workflow (evaluation datasets, resumable uploads) and the Owner Dashboard APIs.
 
 What's new in 2.5:
 
+- **2.5.2:** one chat that answers and acts (requests to do something run as live task cards); deeper, thinner model shapes; fill-in-the-middle training for code; proven settings instead of wide learning-rate searches; a width-based learning rate for new models.
 - **2.5.1:** training data grows toward 20 tokens per parameter (with a live meter); a fixed yardstick scores every version on the same text; shared runs follow one learning-rate curve; live measurements (speed, held-out trend, each computer's real GPU/CPU load) replace the guessed learning stage; self-quiz is less frequent while MOTH is small.
 - **2.5.0:** a bigger MOTH is grown from the current one so it starts with the same answers, then trains about a third as long at the normal rate. Bigger versions arrive sooner and are rarely worse.
 

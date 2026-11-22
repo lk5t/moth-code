@@ -76,3 +76,11 @@ def test_the_live_view_lists_the_computers_training_an_experiment(client, owner)
     live = _compute_live(ctx, {"id": 78})
     assert len(live) == 1 and live[0]["kind"] == "cpu" and live[0]["cpu"] == 0.25 and live[0]["part_progress"] == 0.4
     assert live[0]["seen_seconds_ago"] < 60
+
+
+def test_deeper_shapes_win_when_sizes_are_close():
+    from moth_server.evolution import capacity as CAP
+
+    shapes = CAP._shapes()
+    assert max(layers for d, layers, _, _ in shapes if d == 384) >= 20   # 2.5.2: deep shapes exist
+    assert all(d // heads == 32 or d < 64 for d, _, heads, _ in shapes if d % 32 == 0)
