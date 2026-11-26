@@ -63,7 +63,10 @@ def settings(tmp_path):
 
 @pytest.fixture
 def client(settings):
-    with TestClient(create_app(settings, extras={"synchronous_jobs": True, "disable_background": True})) as c:
+    # library_in_process: tests replace the data sources in this process, which a separate build process
+    # cannot see; test_library_process_v254 covers the separate process used in production
+    with TestClient(create_app(settings, extras={"synchronous_jobs": True, "disable_background": True,
+                                                 "library_in_process": True})) as c:
         yield c
 
 

@@ -199,8 +199,7 @@ def start_build(ctx: Ctx, actor_id: int | None, config: dict[str, Any] | None = 
 
 
 def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
-    from moth.datafactory import build as factory
-    from moth.model.tokenizer import Tokenizer, train_bpe
+    from moth.model.tokenizer import Tokenizer
 
     from moth_server.evolution import datasets as DS
     from moth_server.intelligence import feedback
@@ -228,15 +227,18 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
                           "license": "CC0-1.0", "attribution": "Generated and checked by MOTH (CC0)",
                           "domain": "conversation", "records": own})
         cfg = {**config, "pins": pins(ctx)}
-        manifest = factory.build(root(ctx) / "cache", out, cfg, log=progress, extra_sources=extra)
-        tok_path = None if config.get("new_tokenizer") else _lineage_tokenizer(ctx)
+        from moth_server.intelligence import library_proc as LP
+
+        own_process = not ctx.extras.get("library_in_process")
+        lineage = None if config.get("new_tokenizer") else _lineage_tokenizer(ctx)
+        # 2.5.4: the heavy steps run in their own process (a new lineage or a successor also trains its tokenizer)
+        manifest, tok_path = LP.run("collect", {
+            "cache": str(root(ctx) / "cache"), "out": str(out), "cfg": cfg, "extra": extra,
+            "tokenizer": str(lineage) if lineage else None, "vocab": int(config.get("vocab_size", 16384)),
+            "tokenizer_chars": int(config.get("tokenizer_chars", 4_000_000))}, progress, in_process=not own_process)
+        tok_path = Path(tok_path)
         if config.get("new_tokenizer"):
             manifest["successor_tokenizer"] = True
-        if tok_path is None:  # a new lineage (or a successor): train its tokenizer once from the corpus
-            tok_path = out / "tokenizer.json"
-            vocab = int(config.get("vocab_size", 16384))
-            train_bpe(factory.iter_texts(out, per_domain_chars=int(config.get("tokenizer_chars", 4_000_000))),
-                      vocab).save(tok_path)
         tok = Tokenizer.load(tok_path)
         chunks = None
         try:  # 0.7.2: workers tokenize public domains with MOTH Cloud (verified); None = no workers online
@@ -245,7 +247,8 @@ def _run_build(ctx: Ctx, bid: int, config: dict[str, Any]) -> None:
             chunks = DP.prepare(ctx, bid, out, tok, tok_path, progress)
         except Exception as exc:  # noqa: BLE001 — preparation on MOTH Cloud alone always works
             progress(f"worker preparation unavailable ({exc}); preparing on MOTH Cloud")
-        mix = factory.tokenize_build(out, tok, tok_path, log=progress, train_chunks=chunks)
+        mix = LP.run("tokenize", {"out": str(out), "tokenizer": str(tok_path), "chunks": chunks}, progress,
+                     in_process=not own_process)
         registered = 0
         registration_errors = []
         for d, info in mix["domains"].items():
